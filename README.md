@@ -8,16 +8,12 @@ Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.
 
 A Python-based coupled cluster implementation.
 
-This repository is currently under development. To do a developmental install, download this repository and type
+This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
-`pip install -e .`
-
-in the repository directory.
-
-Thjis package requires the following:
-  - psi4
-  - numpy
-  - opt_einsum
+This package requires the following:
+  - [psi4](https://psicode.org)
+  - [numpy](https://numpy.org/)
+  - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
 
 ### Copyright
 
