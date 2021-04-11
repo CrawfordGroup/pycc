@@ -14,6 +14,11 @@ This repository is currently under development. To do a developmental install, d
 
 in the repository directory.
 
+Thjis package requires the following:
+  - psi4
+  - numpy
+  - opt_einsum
+
 ### Copyright
 
 Copyright (c) 2021, T Daniel Crawford
