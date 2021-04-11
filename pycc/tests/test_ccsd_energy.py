@@ -28,7 +28,7 @@ def test_ccsd_h2o_sto3g():
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    ccsd = pycc.ccwfn(mol, rhf_wfn, memory)
+    ccsd = pycc.ccwfn(rhf_wfn, memory)
     eccsd = ccsd.solve_ccsd(e_conv,r_conv,maxiter)
     epsi4 = -0.070616830152761  
     assert (abs(epsi4 - eccsd) < 1e-11)

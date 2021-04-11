@@ -1,6 +1,14 @@
 from opt_einsum import contract
 
 
+def build_Goo(t2, l2):
+    return contract('mjab,ijab->mi', t2, l2)
+
+
+def build_Gvv():
+    return -1.0 * contract('ijeb,ijab->ae', t2, l2)
+
+
 def r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
     r_l1 = 2.0 * Hov.copy()
     r_l1 += contract('ie,ea->ia', l1, Hvv)

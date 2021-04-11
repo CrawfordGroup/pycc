@@ -23,6 +23,8 @@ class ccwfn(object):
 
     Attributes
     ----------
+    ref : Psi4 SCF Wavefunction object
+        the reference wave function built by Psi4 energy() method
     eref : float
         the energy of the reference wave function (including nuclear repulsion contribution)
     nfzc : int
@@ -58,12 +60,10 @@ class ccwfn(object):
         Solves the CCSD T amplitude equations
     """
 
-    def __init__(self, mol, scf_wfn, memory=2):
+    def __init__(self, scf_wfn, memory=2):
         """
         Parameters
         ----------
-        mol : Psi4 Molecule Object
-            probably can remove
         scf_wfn : Psi4 Wavefunction Object
             computed by Psi4 energy() method
         memory : int
@@ -76,23 +76,23 @@ class ccwfn(object):
 
         time_init = time.time()
 
-        ref = scf_wfn
-        self.eref = ref.energy()
-        self.nfzc = ref.frzcpi()[0]                # assumes symmetry c1
-        self.no = ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
-        self.nmo = ref.nmo()                       # all MOs/AOs
+        self.ref = scf_wfn
+        self.eref = self.ref.energy()
+        self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
+        self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
+        self.nmo = self.ref.nmo()                       # all MOs/AOs
         self.nv = self.nmo - self.no - self.nfzc   # active virt
 
         # Get MOs
-        C = ref.Ca_subset("AO", "ACTIVE")
+        C = self.ref.Ca_subset("AO", "ACTIVE")
         npC = np.asarray(C)  # as numpy array
 
         # Get MO Fock matrix
-        self.F = np.asarray(ref.Fa())
+        self.F = np.asarray(self.ref.Fa())
         self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
 
         # Get MO two-electron integrals in Dirac notation
-        mints = psi4.core.MintsHelper(ref.basisset())
+        mints = psi4.core.MintsHelper(self.ref.basisset())
         self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
@@ -197,3 +197,9 @@ class ccwfn(object):
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+
+
+#class cclambda(object):
+#
+#
+#    def __init__(self, ccwfn):
