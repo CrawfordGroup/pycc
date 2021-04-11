@@ -6,7 +6,7 @@ Test CCSD equation solution using various molecule test cases.
 import psi4
 import pycc
 import pytest
-from .molecules import *
+from ..data.molecules import *
 
 def test_ccsd_h2o_sto3g():
     """H2O STO-3G"""
