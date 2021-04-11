@@ -9,6 +9,10 @@ dependencies:
   - python
   - pip
 
+    # Package dependencies
+  - numpy
+  - opt_einsum
+
     # Testing
   - pytest
   - pytest-cov
