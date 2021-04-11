@@ -1,8 +1,9 @@
 PyCC
 ==============================
 [//]: # (Badges)
-[![GitHub Actions Build Status](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/pycc/workflows/CI/badge.svg)](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/pycc/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/PyCC/branch/master/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/PyCC/branch/master)
+[![GitHub Actions Build
+Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/lothian/pycc/branch/master/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/master)
 
 
 A Python-based coupled cluster implementation.
