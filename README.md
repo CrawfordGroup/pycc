@@ -8,6 +8,12 @@ Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.
 
 A Python-based coupled cluster implementation.
 
+This repository is currently under development. To do a developmental install, download this repository and type
+
+`pip install -e .`
+
+in the repository directory.
+
 ### Copyright
 
 Copyright (c) 2021, T Daniel Crawford
