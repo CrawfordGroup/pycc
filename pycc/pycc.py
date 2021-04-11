@@ -12,6 +12,9 @@ import time
 import numpy as np
 from opt_einsum import contract
 from .utils import helper_diis
+from .ccsd_eqs import build_Fae, build_Fmi, build_Fme
+from .ccsd_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
+from .ccsd_eqs import r_T1, r_T2, ccsd_energy
 
 
 class ccwfn(object):
