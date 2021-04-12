@@ -5,6 +5,7 @@ PyCC
 Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/lothian/pycc/branch/master/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/master)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/alerts/)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
 
 A Python-based coupled cluster implementation.
