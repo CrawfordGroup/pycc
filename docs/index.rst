@@ -3,8 +3,10 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to PyCC's documentation!
+PyCC: A Python implementation of coupled cluster theory
 =========================================================
+This package provides simple functionality for the coupled cluster method
+of *ab initio* quantum chemistry.
 
 .. toctree::
    :maxdepth: 2
