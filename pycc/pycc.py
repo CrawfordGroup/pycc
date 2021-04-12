@@ -17,9 +17,9 @@ from .ccsd_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
 from .ccsd_eqs import r_T1, r_T2, ccsd_energy
 
 
-class ccwfn(object):
+class ccenergy(object):
     """
-    An RHF-CCSD wave function object.
+    An RHF-CCSD wave function and energy object.
 
     Attributes
     ----------
@@ -60,14 +60,12 @@ class ccwfn(object):
         Solves the CCSD T amplitude equations
     """
 
-    def __init__(self, scf_wfn, memory=2):
+    def __init__(self, scf_wfn):
         """
         Parameters
         ----------
         scf_wfn : Psi4 Wavefunction Object
             computed by Psi4 energy() method
-        memory : int
-            memory limit (GiB)
 
         Returns
         -------
@@ -96,7 +94,7 @@ class ccwfn(object):
         self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
-        
+
         # orbital subspaces
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
@@ -135,7 +133,7 @@ class ccwfn(object):
         Returns
         -------
         ecc : float
-            CCSD correlation energy       
+            CCSD correlation energy
         """
         ccsd_tstart = time.time()
 
@@ -196,9 +194,3 @@ class ccwfn(object):
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
-
-
-#class cclambda(object):
-#
-#
-#    def __init__(self, ccwfn):

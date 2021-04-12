@@ -42,3 +42,7 @@ def r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovo
     r_l2 -= contract('mi,mjab->ijab', Goo, L[o,o,v,v])
     r_l2 += r_l2.swapaxes(2,3)
     return r_l2
+
+
+def ccsd_pseudoenergy(o, v, ERI, l2):
+    return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
