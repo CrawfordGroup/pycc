@@ -154,7 +154,6 @@ class ccwfn(object):
 
         diis = helper_diis(t1, t2, max_diis)
 
-        ediff = ecc
         rms = 0
         niter = 0
 
