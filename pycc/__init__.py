@@ -4,7 +4,7 @@ A Python-based coupled cluster implementation.
 """
 
 # Add imports here
-from .pycc import ccwfn
+from .pycc import ccenergy
 
 # Handle versioneer
 from ._version import get_versions

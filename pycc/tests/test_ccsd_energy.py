@@ -13,7 +13,6 @@ def test_ccsd_h2o_sto3g():
     # Psi4 Setup
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    memory = 2
     psi4.set_options({'basis': 'STO-3G',
                       'scf_type': 'pk',
                       'mp2_type': 'conv',
@@ -28,7 +27,7 @@ def test_ccsd_h2o_sto3g():
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    ccsd = pycc.ccwfn(rhf_wfn, memory)
+    ccsd = pycc.ccenergy(rhf_wfn)
     eccsd = ccsd.solve_ccsd(e_conv,r_conv,maxiter)
     epsi4 = -0.070616830152761  
     assert (abs(epsi4 - eccsd) < 1e-11)
