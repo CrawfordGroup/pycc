@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis):
 
@@ -37,13 +38,14 @@ class helper_diis(object):
         self.diis_size = len(self.diis_errors)
 
         # Build error matrix B
-        B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1 
+        B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
         B[-1, -1] = 0
 
         for n1, e1 in enumerate(self.diis_errors):
             B[n1, n1] = np.dot(e1, e1)
             for n2, e2 in enumerate(self.diis_errors):
-                if n1 >= n2: continue
+                if n1 >= n2:
+                    continue
                 B[n1, n2] = np.dot(e1, e2)
                 B[n2, n1] = B[n1, n2]
 

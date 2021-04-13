@@ -35,7 +35,7 @@ class ccenergy(object):
         the number of active virtual orbitals
     nmo : int
         the number of active orbitals
-    F : NumPy array 
+    F : NumPy array
         the Fock matrix: F(p,q) = h(p,q) + [2 <pm|qm> - <pm|mq>]
     ERI : NumPy array
         MO-basis electron-electron repulsion integrals in Dirac ordering: <pq|rs>
