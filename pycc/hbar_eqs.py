@@ -18,7 +18,7 @@ def build_Hvv(o, v, F, L, t1, t2):
 
 def build_Hoo(o, v, F, L, t1, t2):
     Hoo = F[o,o].copy()
-    Hoo += contract('ie,me->mi', F[o,v], t1)
+    Hoo += contract('ie,me->mi', t1, F[o,v])
     Hoo += contract('ne,mnie->mi', t1, L[o,o,o,v])
     Hoo += contract('inef,mnef->mi', build_tau(t1, t2), L[o,o,v,v])
     return Hoo

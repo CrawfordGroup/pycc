@@ -1,6 +1,5 @@
 """
-pycc.py
-A Python-based coupled cluster implementation.
+ccenergy.py: T-amplitude Solver
 """
 
 if __name__ == "__main__":
@@ -153,9 +152,8 @@ class ccenergy(object):
         diis = helper_diis(t1, t2, max_diis)
 
         rms = 0.0
-        niter = 0
 
-        for niter in range(maxiter+1):
+        for niter in range(1, maxiter+1):
 
             ecc_last = ecc
 

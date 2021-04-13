@@ -1,4 +1,5 @@
 from opt_einsum import contract
+import numpy as np
 
 
 def build_Goo(t2, l2):
@@ -16,8 +17,8 @@ def r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, 
     r_l1 += contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
     r_l1 += contract('imef,efam->ia', l2, Hvvvo)
     r_l1 -= contract('mnae,iemn->ia', l2, Hovoo)
-    r_l1 += 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
-    r_l1 -= contract('ef,eiaf->ia', Gvv, Hvovv)
+    r_l1 -= 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
+    r_l1 += contract('ef,eiaf->ia', Gvv, Hvovv)
     r_l1 -= 2.0 * contract('mn,mina->ia', Goo, Hooov)
     r_l1 += contract('mn,imna->ia', Goo, Hooov)
     return r_l1
@@ -33,14 +34,14 @@ def r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovo
     r_l2 += 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
     r_l2 += 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
     r_l2 -= contract('ie,ejba->ijab', l1, Hvovv)
-    r_l2 += 2.0 * contract('mb,jima->ijab', l1, Hooov)
-    r_l2 -= contract('mb,ijma->ijab', l1, Hooov)
+    r_l2 -= 2.0 * contract('mb,jima->ijab', l1, Hooov)
+    r_l2 += contract('mb,ijma->ijab', l1, Hooov)
     r_l2 += contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
     r_l2 -= contract('mibe,jema->ijab', l2, Hovov)
     r_l2 -= contract('mieb,jeam->ijab', l2, Hovvo)
     r_l2 += contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
     r_l2 -= contract('mi,mjab->ijab', Goo, L[o,o,v,v])
-    r_l2 += r_l2.swapaxes(2,3)
+    r_l2 += r_l2.swapaxes(0,1).swapaxes(2,3)
     return r_l2
 
 

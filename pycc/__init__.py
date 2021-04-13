@@ -1,10 +1,12 @@
 """
-PyCC
-A Python-based coupled cluster implementation.
+PyCC: A Python-based coupled cluster implementation.
+====================================================
+
+
 """
 
 # Add imports here
-from .pycc import ccenergy
+from .ccenergy import ccenergy
 from .hbar import cchbar
 from .cclambda import cclambda
 
