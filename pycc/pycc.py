@@ -12,9 +12,9 @@ import time
 import numpy as np
 from opt_einsum import contract
 from .utils import helper_diis
-from .ccsd_eqs import build_Fae, build_Fmi, build_Fme
-from .ccsd_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
-from .ccsd_eqs import r_T1, r_T2, ccsd_energy
+from .cc_eqs import build_Fae, build_Fmi, build_Fme
+from .cc_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
+from .cc_eqs import r_T1, r_T2, ccsd_energy
 
 
 class ccenergy(object):
@@ -152,7 +152,7 @@ class ccenergy(object):
 
         diis = helper_diis(t1, t2, max_diis)
 
-        rms = 0
+        rms = 0.0
         niter = 0
 
         for niter in range(maxiter+1):
@@ -181,7 +181,7 @@ class ccenergy(object):
 
             ecc = ccsd_energy(o, v, F, L, t1, t2)
             ediff = ecc - ecc_last
-            print('CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  rms = % .5E' % (niter, ecc, ediff, rms))
+            print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
             # check for convergence
             if ((abs(ediff) < e_conv) and rms < r_conv):

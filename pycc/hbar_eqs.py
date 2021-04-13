@@ -1,5 +1,5 @@
 from opt_einsum import contract
-from .ccsd_eqs import build_tau
+from .cc_eqs import build_tau
 
 
 def build_Hov(o, v, F, L, t1):
@@ -89,7 +89,7 @@ def build_Hvvvo(o, v, F, ERI, L, t1, t2):
 def build_Hovoo(o, v, F, ERI, L, t1, t2):
     Hovoo = ERI[o,v,o,o].copy()
     Hovoo += contract('je,mbie->mbij', t1, ERI[o,v,o,v])
-    Hovoo += contract('ie,mbje->mbij', t1, ERI[v,o,o,v])
+    Hovoo += contract('ie,bmje->mbij', t1, ERI[v,o,o,v])
     Hovoo -= contract('nb,mnij->mbij', t1, ERI[o,o,o,o])
     Hovoo -= contract('ineb,nmje->mbij', build_tau(t1, t2), ERI[o,o,o,v])
     Hovoo -= contract('jneb,mnie->mbij', build_tau(t1, t2), ERI[o,o,o,v])

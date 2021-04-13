@@ -5,7 +5,7 @@ def build_Goo(t2, l2):
     return contract('mjab,ijab->mi', t2, l2)
 
 
-def build_Gvv():
+def build_Gvv(t2, l2):
     return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
@@ -44,5 +44,5 @@ def r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovo
     return r_l2
 
 
-def ccsd_pseudoenergy(o, v, ERI, l2):
+def pseudoenergy(o, v, ERI, l2):
     return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)

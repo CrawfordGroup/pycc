@@ -5,6 +5,8 @@ A Python-based coupled cluster implementation.
 
 # Add imports here
 from .pycc import ccenergy
+from .hbar import cchbar
+from .cclambda import cclambda
 
 # Handle versioneer
 from ._version import get_versions
