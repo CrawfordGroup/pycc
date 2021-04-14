@@ -1,6 +1,7 @@
 PyCC
 ==============================
 [//]: # (Badges)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![GitHub Actions Build
 Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/lothian/pycc/branch/master/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/master)
