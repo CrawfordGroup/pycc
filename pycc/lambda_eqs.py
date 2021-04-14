@@ -1,5 +1,4 @@
 from opt_einsum import contract
-import numpy as np
 
 
 def build_Goo(t2, l2):

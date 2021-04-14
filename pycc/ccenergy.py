@@ -151,8 +151,6 @@ class ccenergy(object):
 
         diis = helper_diis(t1, t2, max_diis)
 
-        rms = 0.0
-
         for niter in range(1, maxiter+1):
 
             ecc_last = ecc

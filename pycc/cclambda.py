@@ -45,8 +45,6 @@ class cclambda(object):
 
         diis = helper_diis(l1, l2, max_diis)
 
-        rms = 0.0
-
         for niter in range(1,maxiter+1):
 
             lecc_last = lecc
