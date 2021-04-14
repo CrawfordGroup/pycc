@@ -26,14 +26,16 @@ def build_Hoo(o, v, F, L, t1, t2):
 
 def build_Hoooo(o, v, ERI, t1, t2):
     Hoooo = ERI[o,o,o,o].copy()
-    Hoooo += 2.0 * contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+    tmp = contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+    Hoooo += tmp + tmp.swapaxes(0,1).swapaxes(2,3)
     Hoooo += contract('ijef,mnef->mnij', build_tau(t1, t2), ERI[o,o,v,v])
     return Hoooo
 
 
 def build_Hvvvv(o, v, ERI, t1, t2):
     Hvvvv = ERI[v,v,v,v].copy()
-    Hvvvv -= 2.0 * contract('mb,amef->abef', t1, ERI[v,o,v,v])
+    tmp = contract('mb,amef->abef', t1, ERI[v,o,v,v])
+    Hvvvv -= tmp + tmp.swapaxes(0,1).swapaxes(2,3)
     Hvvvv += contract('mnab,mnef->abef', build_tau(t1, t2), ERI[o,o,v,v])
     return Hvvvv
 
@@ -67,15 +69,16 @@ def build_Hovov(o, v, ERI, t1, t2):
     return Hovov
 
 
-def build_Hvvvo(o, v, F, ERI, L, t1, t2):
+def build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2):
     Hvvvo = ERI[v,v,v,o].copy()
-    Hvvvo += contract('if,abef->abei', t1, ERI[v,v,v,v])
+    Hvvvo -= contract('me,miab->abei', Hov, t2)
+    Hvvvo += contract('if,abef->abei', t1, Hvvvv])
+
     Hvvvo -= contract('mb,amei->abei', t1, ERI[v,o,v,o])
     Hvvvo -= contract('ma,bmie->abei', t1, ERI[v,o,o,v])
     Hvvvo -= contract('imfa,mbef->abei', build_tau(t1, t2), ERI[o,v,v,v])
     Hvvvo -= contract('imfb,amef->abei', build_tau(t1, t2), ERI[v,o,v,v])
     Hvvvo += contract('mnab,mnei->abei', build_tau(t1, t2), ERI[o,o,v,o])
-    Hvvvo -= contract('me,miab->abei', F[o,v], t2)
     Hvvvo += contract('mifb,amef->abei', t2, L[v,o,v,v])
     Hvvvo += contract('if,mnab,mnef->abei', t1, t2, ERI[o,o,v,v])
     Hvvvo += contract('ma,infb,mnef->abei', t1, t2, ERI[o,o,v,v])
@@ -83,6 +86,21 @@ def build_Hvvvo(o, v, F, ERI, L, t1, t2):
     Hvvvo -= contract('mf,niab,mnfe->abei', t1, t2, L[o,o,v,v])
     Hvvvo -= contract('na,mifb,mnfe->abei', t1, t2, L[o,o,v,v])
     Hvvvo += contract('if,ma,nb,mnef->abei', t1, t1, t1, ERI[o,o,v,v])
+#    Hvvvo = ERI[v,v,v,o].copy()
+#    Hvvvo += contract('if,abef->abei', t1, ERI[v,v,v,v])
+#    Hvvvo -= contract('mb,amei->abei', t1, ERI[v,o,v,o])
+#    Hvvvo -= contract('ma,bmie->abei', t1, ERI[v,o,o,v])
+#    Hvvvo -= contract('imfa,mbef->abei', build_tau(t1, t2), ERI[o,v,v,v])
+#    Hvvvo -= contract('imfb,amef->abei', build_tau(t1, t2), ERI[v,o,v,v])
+#    Hvvvo += contract('mnab,mnei->abei', build_tau(t1, t2), ERI[o,o,v,o])
+#    Hvvvo -= contract('me,miab->abei', F[o,v], t2)
+#    Hvvvo += contract('mifb,amef->abei', t2, L[v,o,v,v])
+#    Hvvvo += contract('if,mnab,mnef->abei', t1, t2, ERI[o,o,v,v])
+#    Hvvvo += contract('ma,infb,mnef->abei', t1, t2, ERI[o,o,v,v])
+#    Hvvvo += contract('nb,miaf,mnef->abei', t1, t2, ERI[o,o,v,v])
+#    Hvvvo -= contract('mf,niab,mnfe->abei', t1, t2, L[o,o,v,v])
+#    Hvvvo -= contract('na,mifb,mnfe->abei', t1, t2, L[o,o,v,v])
+#    Hvvvo += contract('if,ma,nb,mnef->abei', t1, t1, t1, ERI[o,o,v,v])
     return Hvvvo
 
 

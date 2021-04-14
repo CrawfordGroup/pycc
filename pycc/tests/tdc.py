@@ -14,7 +14,7 @@ import molecules as mol
 psi4.set_memory('2 GiB')
 psi4.core.set_output_file('output.dat', False)
 memory = 2
-psi4.set_options({'basis': 'STO-3G',
+psi4.set_options({'basis': 'cc-pVDZ',
                   'scf_type': 'pk',
                   'mp2_type': 'conv',
                   'freeze_core': 'false',
