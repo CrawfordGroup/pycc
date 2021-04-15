@@ -7,7 +7,7 @@ PyCC: A Python-based coupled cluster implementation.
 
 # Add imports here
 from .ccenergy import ccenergy
-from .hbar import cchbar
+from .cchbar import cchbar
 from .cclambda import cclambda
 
 # Handle versioneer
