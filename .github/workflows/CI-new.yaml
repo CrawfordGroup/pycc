@@ -40,6 +40,8 @@ jobs:
       run: |
         conda info
         conda list --show-channel-urls
+        hash -r
+        which psi4-path-advisor
         `psi4-path-advisor --gcc`       
 
 #    - name: Compile Psi4
