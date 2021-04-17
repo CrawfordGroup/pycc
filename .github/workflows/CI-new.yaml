@@ -34,12 +34,15 @@ jobs:
         activate-environment: test
         environment-file: devtools/conda-envs/psi.yaml
         python-version: 3.8
-        auto-activate-base: false
+        auto-activate-base: true
 
     - name: Environment Information
       run: |
         conda info
         conda list --show-channel-urls
+
+    - name: Install Psi4
+      run: conda install psi4 psi4-rt python=3.9 -c psi4/label/dev
 
 #    - name: Install PyCC
 #      run: |
