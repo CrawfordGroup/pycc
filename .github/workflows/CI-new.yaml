@@ -43,7 +43,7 @@ jobs:
         hash -r
         env
 #        which psi4-path-advisor
-#        `psi4-path-advisor --gcc`       
+        `psi4-path-advisor --gcc`       
 
 #    - name: Compile Psi4
 #      run: |
