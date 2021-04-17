@@ -1,4 +1,4 @@
-name: CI
+name: CI-new
 
 on:
   push:
@@ -47,6 +47,7 @@ jobs:
         conda info
         conda list --show-channel-urls
         env
+        which psi4
 
 #    - name: Install PyCC
 #      run: |
