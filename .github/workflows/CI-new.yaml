@@ -53,13 +53,14 @@ jobs:
         conda list --show-channel-urls
         env
         conda install psi4 psi4-rt python=3.8
-        ls -l /usr/local/bin
-        ls -l /usr/share/miniconda/envs
-        ls -l /usr/share/miniconda/envs/p4dev
         ls -l /usr/share/miniconda/envs/p4dev/bin
 
-#    - name: Test Psi4
-#      run: psi4 --test
+    - name: Test Psi4
+      run: |
+        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
+        env
+        hash -r
+        which psi4
 
 #    - name: Install PyCC
 #      run: |
