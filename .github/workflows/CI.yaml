@@ -16,8 +16,13 @@ jobs:
       run:
         shell: bash -l {0}
 
-    name: PyCC Test
-    runs-on: ubuntu-latest
+    name: PyCC Test: ${{ matrix.os }}, Python ${{ maxtrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macOS-latest, ubuntu-latest]
+        python-version: [3.7, 3.8, 3.9]
+
     steps:
     - uses: actions/checkout@v2
 
@@ -33,7 +38,7 @@ jobs:
       with:
         activate-environment: p4dev
         environment-file: devtools/conda-envs/psi.yaml
-        python-version: 3.8
+        python-version: ${{ matrix.python-version }}
         auto-activate-base: true
 
     - name: Environment Information
@@ -48,7 +53,7 @@ jobs:
         conda info
         conda list --show-channel-urls
         env
-        conda install psi4 psi4-rt python=3.8
+        conda install psi4 psi4-rt python=${{ matrix.python-version }}
         ls -l /usr/share/miniconda/envs/p4dev/bin
         ls -l /usr/share/miniconda/envs/p4dev/lib
         ls -l /usr/share/miniconda/envs/p4dev/share
