@@ -15,7 +15,7 @@ class cclambda(object):
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
-    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=5, max_diis=8, start_diis=1):
+    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=50, max_diis=8, start_diis=1):
         lambda_tstart = time.time()
 
         o = self.ccwfn.o
@@ -41,6 +41,7 @@ class cclambda(object):
         Hovoo = self.hbar.Hovoo
 
         lecc = pseudoenergy(o, v, ERI, l2)
+
         print("\nLCCSD Iter %3d: LCCSD PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
         diis = helper_diis(l1, l2, max_diis)

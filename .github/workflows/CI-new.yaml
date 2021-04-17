@@ -43,10 +43,6 @@ jobs:
         hash -r
         env
 
-#    - name: Compile Psi4
-#      run: |
-#        git clone git@github.com:lothian/psi4.git && cd psi4
-
     - name: Install Psi4
       run: |
         conda info

@@ -22,5 +22,5 @@ class cchbar(object):
         self.Hooov = build_Hooov(o, v, ERI, t1)
         self.Hovvo = build_Hovvo(o, v, ERI, L, t1, t2)
         self.Hovov = build_Hovov(o, v, ERI, t1, t2)
-        self.Hvvvo = build_Hvvvo(o, v, F, ERI, L, self.Hov, self.Hvvvv, t1, t2)
-        self.Hovoo = build_Hovoo(o, v, F, ERI, L, self.Hov, self.Hoooo, t1, t2)
+        self.Hvvvo = build_Hvvvo(o, v, ERI, L, self.Hov, self.Hvvvv, t1, t2)
+        self.Hovoo = build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
