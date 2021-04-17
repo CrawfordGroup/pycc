@@ -53,7 +53,7 @@ jobs:
         conda list --show-channel-urls
         env
         conda install psi4 psi4-rt python=3.8
-
+        ls -l /usr/local
         
 #    - name: Test Psi4
 #      run: psi4 --test
