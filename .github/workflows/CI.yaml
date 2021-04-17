@@ -20,8 +20,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-latest, ubuntu-latest]
-        python-version: [3.7, 3.8, 3.9]
+        os: [macOS-latest]
+        python-version: [3.8]
 
     steps:
     - uses: actions/checkout@v2
@@ -63,20 +63,16 @@ jobs:
 
     - name: Test Psi4 Python Loading
       run: |
-        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
-        export PATH=/usr/local/miniconda/envs/p4dev/bin:$PATH
-        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH
-        export PYTHONPATH=/usr/local/miniconda/envs/p4dev/lib:$PYTHONPATH
+        export PATH=$CONDA_PREFIX/bin:$PATH
+        export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
         python -c 'import psi4'
 
-    - name: Install PyCC
+    - name: Install PyCC and Deps
       run: |
         env
-        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
-        export PATH=/usr/local/miniconda/envs/p4dev/bin:$PATH
-        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH      
-        export PYTHONPATH=/usr/local/miniconda/envs/p4dev/lib:$PYTHONPATH      
-        python -m pip install . --no-deps
+        export PATH=$CONDA_PREFIX/bin:$PATH
+        export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
+        python -m pip install .
         conda list
 
     - name: PyTest
