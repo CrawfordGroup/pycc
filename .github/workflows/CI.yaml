@@ -16,7 +16,7 @@ jobs:
       run:
         shell: bash -l {0}
 
-    name: PyCC Test: ${{ matrix.os }}, Python ${{ maxtrix.python-version }}
+    name: PyCC Test ${{ matrix.os }}, Python ${{ maxtrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
