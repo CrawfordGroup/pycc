@@ -62,23 +62,23 @@ jobs:
         export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
         export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH
         python -c 'import psi4'
-#        env
-#        hash -r
-#        which psi4
-#        psi4 --test
 
-#    - name: Install PyCC
-#      run: |
-#        python -m pip install . --no-deps
-#        conda list
-#
-#    - name: PyTest
-#
-#        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/
-#
-#    - name: CodeCov
-#      uses: codecov/codecov-action@v1
-#      with:
-#        file: ./coverage.xml
-#        flags: unittests
-#        name: codecov-pycc
+    - name: Install PyCC
+      run: |
+        run
+        env
+        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
+        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH      
+        python -m pip install . --no-deps
+        conda list
+
+    - name: PyTest
+      run: |
+        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/
+
+    - name: CodeCov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-pycc
