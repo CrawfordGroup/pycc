@@ -28,21 +28,23 @@ jobs:
         df -h
         ulimit -a
 
-    - name: Create Psi4 Environment
-      uses: conda-incubator/setup-miniconda@v2
-      with:
-        activate-environment: test
-        environment-file: devtools/conda-envs/psi.yaml
-        python-version: 3.8
-        auto-activate-base: true
-
-    - name: Environment Information
-      run: |
-        conda info
-        conda list --show-channel-urls
+#    - name: Create Psi4 Environment
+#      uses: conda-incubator/setup-miniconda@v2
+#      with:
+#        activate-environment: test
+#        environment-file: devtools/conda-envs/psi.yaml
+#        python-version: 3.8
+#        auto-activate-base: true
+#
+#    - name: Environment Information
+#      run: |
+#        conda info
+#        conda list --show-channel-urls
 
     - name: Install Psi4
-      run: conda install psi4 psi4-rt python=3.9 -c psi4/label/dev
+      run: |
+        conda install psi4 psi4-rt python=3.9 -c psi4/label/dev
+        which psi4
 
 #    - name: Install PyCC
 #      run: |
