@@ -47,9 +47,9 @@ jobs:
         conda info
         conda list --show-channel-urls
         env
-
-     - name: Test Psi4
-       run: psi4 --test
+        
+    - name: Test Psi4
+      run: psi4 --test
 
 #    - name: Install PyCC
 #      run: |
