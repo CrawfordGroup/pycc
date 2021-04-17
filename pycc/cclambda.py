@@ -1,3 +1,11 @@
+"""                                                                                                            
+cclambda.py: Lambda-amplitude Solver
+"""
+
+if __name__ == "__main__":
+    raise Exception("This file cannot be invoked on its own.")
+
+
 import numpy as np
 import time
 from opt_einsum import contract
@@ -6,8 +14,38 @@ from .lambda_eqs import r_L1, r_L2, build_Goo, build_Gvv, pseudoenergy
 
 
 class cclambda(object):
+    """
+    An RHF-CCSD wave function and energy object.
 
+    Attributes
+    ----------
+    ccwfn : PyCC ccenergy object
+        the coupled cluster T amplitudes and supporting data structures
+    hbar : PyCC cchbar object
+        the coupled cluster similarity-transformed Hamiltonian
+    l1 : NumPy array
+        L1 amplitudes
+    l2 : NumPy array
+        L2 amplitudes
+
+    Methods
+    -------
+    solve_lambda()
+        Solves the CCSD Lambda amplitude equations
+    """
     def __init__(self, ccwfn, hbar):
+        """
+        Parameters
+        ----------
+        ccwfn : PyCC ccenergy object
+            the coupled cluster T amplitudes and supporting data structures
+        hbar : PyCC cchbar object
+            the coupled cluster similarity-transformed Hamiltonian
+
+        Returns
+        -------
+        None
+        """
 
         self.ccwfn = ccwfn
         self.hbar = hbar
@@ -15,7 +53,27 @@ class cclambda(object):
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
-    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=50, max_diis=8, start_diis=1):
+    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+        """
+        Parameters
+        ----------
+        e_conv : float
+            convergence condition for correlation energy (default if 1e-7)
+        r_conv : float
+            convergence condition for wave function rmsd (default if 1e-7)
+        maxiter : int
+            maximum allowed number of iterations of the CC equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        Returns
+        -------
+        lecc : float
+            CCSD pseudoenergy
+
+        """
         lambda_tstart = time.time()
 
         o = self.ccwfn.o

@@ -4,4 +4,6 @@ API Documentation
 .. autosummary::
    :toctree: autosummary
 
-   pycc.ccwfn
+   pycc.ccenergy
+   pycc.cchbar
+   pycc.cclambda

@@ -31,4 +31,3 @@ def test_ccsd_h2o_sto3g():
     eccsd = ccsd.solve_ccsd(e_conv,r_conv,maxiter)
     epsi4 = -0.070616830152761  
     assert (abs(epsi4 - eccsd) < 1e-11)
-
