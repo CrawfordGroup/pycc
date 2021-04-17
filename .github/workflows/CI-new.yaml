@@ -44,7 +44,9 @@ jobs:
     - name: Install Psi4
       run: |
         conda install psi4 psi4-rt python=3.9 -c psi4/label/dev
-        which psi4
+        conda info
+        conda list --show-channel-urls
+        env
 
 #    - name: Install PyCC
 #      run: |
