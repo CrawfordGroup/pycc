@@ -61,6 +61,7 @@ jobs:
         env
         hash -r
         which psi4
+        psi4 --test
 
 #    - name: Install PyCC
 #      run: |
