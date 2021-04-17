@@ -52,14 +52,7 @@ jobs:
       run: |
         conda info
         conda list --show-channel-urls
-        env
-        conda install psi4 psi4-rt python=${{ matrix.python-version }}
-#        ls -l /usr/share/miniconda/envs/p4dev/bin
-#        ls -l /usr/share/miniconda/envs/p4dev/lib
-#        ls -l /usr/share/miniconda/envs/p4dev/share
-#        ls -l /usr/local/miniconda/envs/p4dev/bin
-#        ls -l /usr/local/miniconda/envs/p4dev/lib
-#        ls -l /usr/local/miniconda/envs/p4dev/share
+        conda install psi4 python=${{ matrix.python-version }} -c psi4/label/dev
 
     - name: Test Psi4 Python Loading
       run: |
