@@ -31,7 +31,7 @@ jobs:
     - name: Create Psi4 Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
-        activate-environment: test
+        activate-environment: p4dev
         environment-file: devtools/conda-envs/psi.yaml
         python-version: 3.8
         auto-activate-base: true
@@ -41,8 +41,9 @@ jobs:
         conda info
         conda list --show-channel-urls
         hash -r
-        which psi4-path-advisor
-        `psi4-path-advisor --gcc`       
+        env
+#        which psi4-path-advisor
+#        `psi4-path-advisor --gcc`       
 
 #    - name: Compile Psi4
 #      run: |
