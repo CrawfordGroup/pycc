@@ -42,19 +42,18 @@ jobs:
         conda list --show-channel-urls
         hash -r
         env
-#        which psi4-path-advisor
-        `psi4-path-advisor --gcc`       
 
 #    - name: Compile Psi4
 #      run: |
 #        git clone git@github.com:lothian/psi4.git && cd psi4
 
-#    - name: Install Psi4
-#      run: |
-#        conda install psi4 psi4-rt python=3.9 -c psi4/label/dev
-#        conda info
-#        conda list --show-channel-urls
-#        env
+    - name: Install Psi4
+      run: |
+        conda info
+        conda list --show-channel-urls
+        env
+        conda install psi4 psi4-rt python=3.8
+
         
 #    - name: Test Psi4
 #      run: psi4 --test
