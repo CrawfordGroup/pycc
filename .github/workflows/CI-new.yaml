@@ -65,7 +65,6 @@ jobs:
 
     - name: Install PyCC
       run: |
-        run
         env
         export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
         export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH      
