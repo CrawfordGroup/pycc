@@ -54,14 +54,18 @@ jobs:
         env
         conda install psi4 psi4-rt python=3.8
         ls -l /usr/share/miniconda/envs/p4dev/bin
+        ls -l /usr/share/miniconda/envs/p4dev/lib
+        ls -l /usr/share/miniconda/envs/p4dev/share
 
     - name: Test Psi4
       run: |
         export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
-        env
-        hash -r
-        which psi4
-        psi4 --test
+        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH
+        python -c 'import psi4'
+#        env
+#        hash -r
+#        which psi4
+#        psi4 --test
 
 #    - name: Install PyCC
 #      run: |
