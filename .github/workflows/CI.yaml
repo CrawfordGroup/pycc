@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  test:
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    name: PyCC Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Additional info about the build
+      shell: bash
+      run: |
+        uname -a
+        df -h
+        ulimit -a
+
+    - name: Create Psi4 Environment
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: p4dev
+        environment-file: devtools/conda-envs/psi.yaml
+        python-version: 3.8
+        auto-activate-base: true
+
+    - name: Environment Information
+      run: |
+        conda info
+        conda list --show-channel-urls
+        hash -r
+        env
+
+    - name: Install Psi4
+      run: |
+        conda info
+        conda list --show-channel-urls
+        env
+        conda install psi4 psi4-rt python=3.8
+        ls -l /usr/share/miniconda/envs/p4dev/bin
+        ls -l /usr/share/miniconda/envs/p4dev/lib
+        ls -l /usr/share/miniconda/envs/p4dev/share
+
+    - name: Test Psi4
+      run: |
+        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
+        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH
+        python -c 'import psi4'
+
+    - name: Install PyCC
+      run: |
+        env
+        export PATH=/usr/share/miniconda/envs/p4dev/bin:$PATH
+        export PYTHONPATH=/usr/share/miniconda/envs/p4dev/lib:$PYTHONPATH      
+        python -m pip install . --no-deps
+        conda list
+
+    - name: PyTest
+      run: |
+        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/
+
+    - name: CodeCov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-pycc
