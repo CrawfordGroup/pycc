@@ -14,7 +14,7 @@ import molecules as mol
 psi4.set_memory('2 GiB')
 psi4.core.set_output_file('output.dat', False)
 memory = 2
-psi4.set_options({'basis': 'STO-3G',
+psi4.set_options({'basis': 'cc-pVDZ',
                   'scf_type': 'pk',
                   'mp2_type': 'conv',
                   'freeze_core': 'false',
@@ -31,12 +31,17 @@ r_conv = 1e-13
 cc = pycc.ccenergy(rhf_wfn)
 ecc = cc.solve_ccsd(e_conv, r_conv, maxiter)
 
-#hbar = pycc.cchbar(cc)
+hbar = pycc.cchbar(cc)
 
-#maxiter = 75
-#max_diis = 8
-#cclambda = pycc.cclambda(cc, hbar)
-#lecc = cclambda.solve_lambda(e_conv, r_conv, maxiter, max_diis)
+maxiter = 75
+max_diis = 8
+cclambda = pycc.cclambda(cc, hbar)
+lecc = cclambda.solve_lambda(e_conv, r_conv, maxiter, max_diis)
+
+ccdensity = pycc.ccdensity(cc, cclambda)
+ecc_test = ccdensity.compute_energy()
+
+print("ECC from density       = %20.15f" % ccdensity.ecc)
+print("ECC from wave function = %20.15f" % cc.ecc)
 
 #epsi4 = psi4.gradient('CCSD')
-#psi4.core.cclambda(rhf_wfn)

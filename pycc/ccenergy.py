@@ -52,6 +52,8 @@ class ccenergy(object):
         T1 amplitudes
     t2 : NumPy array
         T2 amplitudes
+    ecc | float
+        the final CC correlation energy
 
     Methods
     -------
@@ -185,6 +187,7 @@ class ccenergy(object):
                 print("E(REF)  = %20.15f" % self.eref)
                 print("E(CCSD) = %20.15f" % ecc)
                 print("E(TOT)  = %20.15f" % (ecc + self.eref))
+                self.ecc = ecc
                 return ecc
 
             diis.add_error_vector(self.t1, self.t2)
