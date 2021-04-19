@@ -41,7 +41,7 @@ class ccdensity(object):
         The occ,vir,occ,occ block of the two-body density.
 
     """
-    def __init__(self, ccwfn, cclambda):
+    def __init__(self, ccwfn, cclambda, onlyone=False):
         """
         Parameters
         ----------
@@ -69,12 +69,16 @@ class ccdensity(object):
         self.Dvo = build_Dvo(l1)
         self.Dvv = build_Dvv(t1, t2, l1, l2)
         self.Doo = build_Doo(t1, t2, l1, l2)
-        self.Doooo = build_Doooo(t1, t2, l2)
-        self.Dvvvv = build_Dvvvv(t1, t2, l2)
-        self.Dooov = build_Dooov(t1, t2, l1, l2)
-        self.Dvvvo = build_Dvvvo(t1, t2, l1, l2)
-        self.Dovov = build_Dovov(t1, t2, l1, l2)
-        self.Doovv = build_Doovv(t1, t2, l1, l2)
+
+        self.onlyone = onlyone
+
+        if onlyone == False:
+            self.Doooo = build_Doooo(t1, t2, l2)
+            self.Dvvvv = build_Dvvvv(t1, t2, l2)
+            self.Dooov = build_Dooov(t1, t2, l1, l2)
+            self.Dvvvo = build_Dvvvo(t1, t2, l1, l2)
+            self.Dovov = build_Dovov(t1, t2, l1, l2)
+            self.Doovv = build_Doovv(t1, t2, l1, l2)
 
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
@@ -94,30 +98,33 @@ class ccdensity(object):
         v = self.ccwfn.v
         F = self.ccwfn.F
         ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
 
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
         eone = oo_energy + vv_energy
-
-        oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], self.Doooo)
-        vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], self.Dvvvv)
-        ooov_energy = contract('ijka,ijka->', ERI[o,o,o,v], self.Dooov)
-        vvvo_energy = contract('abci,abci->', ERI[v,v,v,o], self.Dvvvo)
-        ovov_energy = contract('iajb,iajb->', ERI[o,v,o,v], self.Dovov)
-        oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], self.Doovv)
-        etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
-
-        print("OOOV Energy = %20.15f" % oooo_energy)
-        print("OOOV Energy = %20.15f" % vvvv_energy)
-        print("OOOV Energy = %20.15f" % ooov_energy)
-        print("VVVO Energy = %20.15f" % vvvo_energy)
-        print("OVOV Energy = %20.15f" % ovov_energy)
-        print("OOVV Energy = %20.15f" % oovv_energy)
         print("One-electron CCSD energy = %20.15f" % eone)
-        print("Two-electron CCSD energy = %20.15f" % etwo)
 
-        ecc = eone + etwo
+        if self.onlyone == True:
+            print("Only one-electron density available.")
+            ecc = eone
+        else:
+            oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], self.Doooo)
+            vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], self.Dvvvv)
+            ooov_energy = contract('ijka,ijka->', ERI[o,o,o,v], self.Dooov)
+            vvvo_energy = contract('abci,abci->', ERI[v,v,v,o], self.Dvvvo)
+            ovov_energy = contract('iajb,iajb->', ERI[o,v,o,v], self.Dovov)
+            oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], self.Doovv)
+            etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
+
+            print("OOOV Energy = %20.15f" % oooo_energy)
+            print("OOOV Energy = %20.15f" % vvvv_energy)
+            print("OOOV Energy = %20.15f" % ooov_energy)
+            print("VVVO Energy = %20.15f" % vvvo_energy)
+            print("OVOV Energy = %20.15f" % ovov_energy)
+            print("OOVV Energy = %20.15f" % oovv_energy)
+            print("Two-electron CCSD energy = %20.15f" % etwo)
+            ecc = eone + etwo
+
         print("CCSD Correlation Energy  = %20.15f" % ecc)
 
         self.ecc = ecc
