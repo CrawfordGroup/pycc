@@ -98,7 +98,6 @@ class ccdensity(object):
         v = self.ccwfn.v
         F = self.ccwfn.F
         ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
 
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
