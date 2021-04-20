@@ -11,6 +11,7 @@ from .density_eqs import build_Dov, build_Dvo, build_Dvv, build_Doo
 from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
+import numpy as np
 
 
 class ccdensity(object):
@@ -130,3 +131,18 @@ class ccdensity(object):
         self.ecc = ecc
 
         return ecc
+
+    def onepdm(self):
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+        nt = no + nv
+
+        opdm = np.zeros((nt, nt))
+        opdm[o,o] = self.Doo
+        opdm[v,v] = self.Dvv
+        opdm[o,v] = self.Dov
+        opdm[v,o] = self.Dvo
+
+        return opdm
