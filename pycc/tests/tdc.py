@@ -26,7 +26,7 @@ psi4.set_options({'basis': 'cc-pVDZ',
                   'd_convergence': 1e-13,
                   'r_convergence': 1e-13,
                   'diis': 1})
-mol = psi4.geometry(mol.moldict["H2O"])
+mol = psi4.geometry(mol.moldict["(H2O)_2"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
 maxiter = 75
@@ -50,15 +50,20 @@ print("ECC from wave function = %20.15f" % cc.ecc)
 
 # compute the dipole moment
 onepdm = ccdensity.onepdm()
+# add SCF component
+for i in range(cc.no):
+    onepdm[i,i] += 2.0
+#print(onepdm)
 mints = psi4.core.MintsHelper(cc.ref.basisset())
 dipole_ints = mints.ao_dipole()
 C = np.asarray(cc.ref.Ca_subset("AO", "ACTIVE"))
 cart = ["X", "Y", "Z"]
 for i in range(0,3):
     mu = C.T @ np.asarray(dipole_ints[i]) @ C
-    dip = 2.0 * onepdm.flatten().dot(mu.flatten())
+    dip = onepdm.flatten().dot(mu.flatten())
     print("MU-%s = %20.12f" % (cart[i], dip))
 
+# All the ugly steps to get Psi4 to produce a CCSD dipole moment in PSI_API mode
 psi4.core.set_global_option('WFN', 'CCSD')
 epsi4, ccwfn = psi4.energy('CCSD', return_wfn=True)
 psi4.core.cchbar(ccwfn)
@@ -68,6 +73,5 @@ psi4.core.cclambda(ccwfn)
 psi4.core.ccdensity(ccwfn)
 oe = psi4.core.OEProp(ccwfn)
 oe.add('DIPOLE')
+oe.set_title('CCSD')
 oe.compute()
-
-#psi4.oeprop('CCSD', "DIPOLE")
