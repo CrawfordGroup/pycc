@@ -7,3 +7,4 @@ API Documentation
    pycc.ccenergy
    pycc.cchbar
    pycc.cclambda
+   pycc.ccdensity

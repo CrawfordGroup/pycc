@@ -38,7 +38,7 @@ class ccdensity(object):
     Dovov : NumPy array
         The occ,vir,occ,vir block of the two-body density.
     Doovv : NumPy array
-        The occ,vir,occ,occ block of the two-body density.
+        The occ,occ,vir,vir block of the two-body density.
 
     """
     def __init__(self, ccwfn, cclambda, onlyone=False):
