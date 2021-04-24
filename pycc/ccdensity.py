@@ -41,15 +41,23 @@ class ccdensity(object):
     Doovv : NumPy array
         The occ,occ,vir,vir block of the two-body density.
 
+    Methods
+    -------
+    compute_energy()
+        Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
+    onepdm()
+        Return the CC onepdm as a full matrix.
     """
     def __init__(self, ccwfn, cclambda, onlyone=False):
         """
         Parameters
         ----------
         ccwfn : PyCC ccenergy object
-            amplitudes instantiated to defaults or converged
+            contains the necessary T-amplitudes (either instantiated to defaults or converged)
         cclambda : PyCC cclambda object
-            amplitudes instantiated to defaults or converged
+            Contains the necessary Lambda-amplitudes (instantiated to defaults or converged)
+        onlyone : Boolean
+            only compute the onepdm if True
 
         Returns
         -------
@@ -85,6 +93,8 @@ class ccdensity(object):
 
     def compute_energy(self):
         """
+        Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
+
         Parameters
         ----------
         None
@@ -133,6 +143,19 @@ class ccdensity(object):
         return ecc
 
     def onepdm(self):
+        """
+        Return the one-electron density as a full matrix.  This is convenient for computing one-electron properties.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        onepdm | NumPy array
+            The CC onepdm as a full no+nv x no+nv matrix.
+
+        """
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
