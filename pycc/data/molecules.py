@@ -1,3 +1,10 @@
+# He atom
+he = """
+He
+symmetry c1
+"""
+
+### Water molecule from CrawfordGroup/Programming Projects
 h2o_tutorial = """
 O  0.000000000000  -0.143225816552   0.000000000000
 H  1.638036840407   1.136548822547  -0.000000000000
@@ -219,6 +226,7 @@ symmetry c1
 """
 
 moldict = {}
+moldict["He"] = he
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
 moldict["(H2O)_2"] = h2o_2
