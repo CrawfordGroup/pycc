@@ -193,3 +193,22 @@ class ccenergy(object):
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+
+    def residuals(self, F, t1, t2):
+        o = self.o
+        v = self.v
+        ERI = self.ERI
+        L = self.L
+
+        Fae = build_Fae(o, v, F, L, t1, t2)
+        Fmi = build_Fmi(o, v, F, L, t1, t2)
+        Fme = build_Fme(o, v, F, L, t1)
+        Wmnij = build_Wmnij(o, v, ERI, t1, t2)
+        Wmbej = build_Wmbej(o, v, ERI, L, t1, t2)
+        Wmbje = build_Wmbje(o, v, ERI, t1, t2)
+        Zmbij = build_Zmbij(o, v, ERI, t1, t2)
+
+        r1 = r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
+        r2 = r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+
+        return r1, r2

@@ -10,15 +10,14 @@ import sys
 sys.path.insert(0, '../data')
 import molecules as mol
 from lasers import gaussian_laser
-sys.path.insert(0, '../../../')
-from ODE.helper_method import *
-from ODE.helper_solver import *
+sys.path.insert(0, '../')
+import ode as ode
 
 # Psi4 Setup
 psi4.set_memory('2 GiB')
 psi4.core.set_output_file('output.dat', False)
 memory = 2
-psi4.set_options({'basis': 'STO-3G',
+psi4.set_options({'basis': 'cc-pVDZ',
                   'scf_type': 'pk',
                   'mp2_type': 'conv',
                   'freeze_core': 'false',
@@ -50,8 +49,15 @@ F_str = 0.01
 omega = 2.874
 sigma = 0.446994
 center = 2.5
-E = gaussian_laser(F_str, omega, sigma, center)
+V = gaussian_laser(F_str, omega, sigma, center)
 
-# Top-level RTCC interface
-# Initialize the RTCC object
-rtcc = pycc.rtcc(cc, cclambda, E, RK4())
+print("no = %d   nv = %d   len1 = %d  len2 = %d" % (cc.no, cc.nv, cc.no*cc.nv, cc.no*cc.no*cc.nv*cc.nv))
+
+axis = 2  # z-axis for field
+t0 = 0
+tf = 2
+h = 0.01
+rtcc = pycc.rtcc(cc, cclambda, V, axis, t0, tf, h, ode.RK4())
+step = rtcc.RK.step()
+y = next(step)
+print(y)

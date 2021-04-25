@@ -135,3 +135,28 @@ class cclambda(object):
             diis.add_error_vector(self.l1, self.l2)
             if niter >= start_diis:
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
+
+    def residuals(self, F, t1, t2, l1, l2):
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        ERI = self.ccwfn.ERI
+        L = self.ccwfn.L
+
+        Hov = build_Hov(o, v, F, L, t1)
+        Hvv = build_Hvv(o, v, F, L, t1, t2)
+        Hoo = build_Hoo(o, v, F, L, t1, t2)
+        Hoooo = build_Hoooo(o, v, ERI, t1, t2)
+        Hvvvv = build_Hvvvv(o, v, ERI, t1, t2)
+        Hvovv = build_Hvovv(o, v, ERI, t1)
+        Hooov = build_Hooov(o, v, ERI, t1)
+        Hovvo = build_Hovvo(o, v, ERI, L, t1, t2)
+        Hovov = build_Hovov(o, v, ERI, t1, t2)
+        Hvvvo = build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
+        Hovoo = build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
+
+        Goo = build_Goo(t2, l2)
+        Gvv =  build_Gvv(t2, l2)
+        r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+        r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+
+        return r1, r2
