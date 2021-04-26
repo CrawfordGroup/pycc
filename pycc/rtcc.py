@@ -32,12 +32,12 @@ class rtcc(object):
 
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
-        rt1 *= (-1.0j)
-        rt2 *= (-1.0j)
+        rt1 = rt1 * (-1.0j)
+        rt2 = rt2 * (-1.0j)
 
         rl1, rl2 = self.cclambda.residuals(F, t1, t2, l1, l2)
-        rl1 *= (+1.0j)
-        rl2 *= (+1.0j)
+        rl1 = rl1 * (+1.0j)
+        rl2 = rl2 * (+1.0j)
 
         # Pack up the residuals
         y = np.concatenate((rt1, rt2, rl1, rl2), axis=None)
@@ -46,7 +46,7 @@ class rtcc(object):
 
     def extract_amps(self, y):
         no = self.ccwfn.no
-        nv = self.ccefn.nv
+        nv = self.ccwfn.nv
 
         # Extract the amplitudes
         len1 = no*nv

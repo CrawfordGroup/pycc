@@ -11,6 +11,9 @@ import time
 from opt_einsum import contract
 from .utils import helper_diis
 from .lambda_eqs import r_L1, r_L2, build_Goo, build_Gvv, pseudoenergy
+from .hbar_eqs import build_Hov, build_Hvv, build_Hoo
+from .hbar_eqs import build_Hoooo, build_Hvvvv, build_Hvovv, build_Hooov
+from .hbar_eqs import build_Hovvo, build_Hovov, build_Hvvvo, build_Hovoo
 
 
 class cclambda(object):
