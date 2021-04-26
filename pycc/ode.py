@@ -275,10 +275,13 @@ class RK(object):
 
     def stages(self,t_n,y_n):
         s = len(self.c)
-        k = np.zeros((s))
+        k = np.zeros((s,len(y_n)))
         for i in range(s):
-            k[i] = self.f(t_n + self.c[i]*self.h , y_n + self.h*np.dot(self.A[i,:],k))
-            self.counter += 1
+            y = np.zeros_like(y_n)
+            for j in range(s):
+                y = y + self.A[i,j] * k[j]
+                k[i] = self.f(t_n + self.c[i]*self.h, y_n + self.h*y)
+                self.counter += 1
         return k
 
     def step(self):
@@ -289,7 +292,8 @@ class RK(object):
         for n in range(1,self.N):
             k_n = self.stages(t_n,y_n)
             t_n += self.h
-            y_n += self.h*np.dot(self.b,k_n)
+            for i in range(len(self.b)):
+                y_n = y_n + self.h*self.b[i]*k_n[i]
             #print('{:<6s}{:5d}'.format('Step #',n)+'{:>15s}{:6.2f}'.format('time = ',t_n)+'{:>13s}{:10.6f}'.format('y = ',y_n))
             #print('{:>15s}{:10.6f}'.format('k1 = ',k_n[0]))
             #print('{:>15s}{:10.6f}'.format('k2 = ',k_n[1]))
