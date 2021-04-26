@@ -24,6 +24,8 @@ class rtcc(object):
         self.mu = C.T @ np.asarray(dipole_ints[axis]) @ C
 
     def f(self, t, y):
+        print("Starting f(): dtype of y is", y.dtype)
+
         # Extract amplitude tensors
         t1, t2, l1, l2 = self.extract_amps(y)
 
@@ -42,6 +44,7 @@ class rtcc(object):
         # Pack up the residuals
         y = np.concatenate((rt1, rt2, rl1, rl2), axis=None)
 
+        print("Leaving f(): dtype of y is", y.dtype)
         return y
 
     def extract_amps(self, y):

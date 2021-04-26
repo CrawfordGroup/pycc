@@ -280,6 +280,7 @@ class RK(object):
             y = np.zeros_like(y_n)
             for j in range(s):
                 y = y + self.A[i,j] * k[j]
+                print("dtype of y = is", y.dtype)
                 k[i] = self.f(t_n + self.c[i]*self.h, y_n + self.h*y)
                 self.counter += 1
         return k
