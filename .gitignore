@@ -106,5 +106,7 @@ ENV/
 *profraw
 
 
-output.dat
+output*.dat
+input*.dat
 timer.dat
+*.swp

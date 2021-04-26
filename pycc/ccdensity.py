@@ -130,3 +130,5 @@ class ccdensity(object):
         self.ecc = ecc
 
         return ecc
+
+    def compute_onepdm(

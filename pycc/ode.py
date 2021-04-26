@@ -259,13 +259,14 @@ class GL6(Implicit):          # order 6
 
 
 class RK(object):
-    def __init__(self,f,y0,t0,tf,h,method):
+    def __init__(self,f,y0,t0,tf,h,method,dtype='complex128'):
         self.f  = f
         self.y0 = y0
         self.t0 = t0
         self.h  = h
         self.N  = int((tf-t0)/h)+1
         self.grid = np.linspace(t0,tf,self.N)
+        self.dtype = dtype
 
         self.A = method.A
         self.b = method.b
@@ -275,12 +276,11 @@ class RK(object):
 
     def stages(self,t_n,y_n):
         s = len(self.c)
-        k = np.zeros((s,len(y_n)))
+        k = np.zeros((s,len(y_n)),dtype=self.dtype)
         for i in range(s):
             y = np.zeros_like(y_n)
             for j in range(s):
                 y = y + self.A[i,j] * k[j]
-                print("dtype of y = is", y.dtype)
                 k[i] = self.f(t_n + self.c[i]*self.h, y_n + self.h*y)
                 self.counter += 1
         return k

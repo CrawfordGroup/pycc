@@ -51,7 +51,7 @@ sigma = 0.446994
 center = 2.5
 V = gaussian_laser(F_str, omega, sigma, center)
 
-print("no = %d   nv = %d   len1 = %d  len2 = %d" % (cc.no, cc.nv, cc.no*cc.nv, cc.no*cc.no*cc.nv*cc.nv))
+#print("no = %d   nv = %d   len1 = %d  len2 = %d" % (cc.no, cc.nv, cc.no*cc.nv, cc.no*cc.no*cc.nv*cc.nv))
 
 axis = 2  # z-axis for field
 t0 = 0
