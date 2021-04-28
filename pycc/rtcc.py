@@ -4,6 +4,9 @@
 import psi4
 import numpy as np
 from .cc_eqs import build_tau
+from .density_eqs import build_Dov, build_Dvo, build_Dvv, build_Doo
+from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
+from .density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 
 class rtcc(object):
@@ -71,3 +74,26 @@ class rtcc(object):
         ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
         return ecc
 
+    def lagrangian(self, t, t1, t2, l1, l2):
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        ERI = self.ccwfn.ERI
+        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+        Doooo = build_Doooo(t1, t2, l2)
+        Dvvvv = build_Dvvvv(t1, t2, l2)
+        Dooov = build_Dooov(t1, t2, l1, l2)
+        Dvvvo = build_Dvvvo(t1, t2, l1, l2)
+        Dovov = build_Dovov(t1, t2, l1, l2)
+        Doovv = build_Doovv(t1, t2, l1, l2)
+
+        F = self.ccwfn.F.copy() + self.mu * self.V(t)
+        eone = F.flatten().dot(opdm.flatten())
+        oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
+        vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)
+        ooov_energy = contract('ijka,ijka->', ERI[o,o,o,v], Dooov)
+        vvvo_energy = contract('abci,abci->', ERI[v,v,v,o], Dvvvo)
+        ovov_energy = contract('iajb,iajb->', ERI[o,v,o,v], Dovov)
+        oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], Doovv)
+        etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
+
+        return eone + etwo

@@ -64,7 +64,7 @@ ODE.set_initial_value(y0, t0)
 t = t0
 t1, t2, l1, l2 = rtcc.extract_amps(y0)
 dip0 = rtcc.dipole(t1, t2, l1, l2)
-ecc0 = rtcc.energy(t, t1, t2, l1, l2)
+ecc0 = rtcc.lagrangian(t, t1, t2, l1, l2)
 time = [t0]
 dip_z = [dip0]
 energy = [ecc0]
@@ -76,7 +76,7 @@ while ODE.successful() and ODE.t < tf:
     t = ODE.t
     t1, t2, l1, l2 = rtcc.extract_amps(y)
     dip = rtcc.dipole(t1, t2, l1, l2)
-    ecc = rtcc.energy(t, t1, t2, l1, l1)
+    ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
     time.append(t)
     dip_z.append(dip)
     energy.append(ecc+rhf_e)
