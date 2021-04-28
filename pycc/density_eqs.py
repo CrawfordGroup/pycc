@@ -16,7 +16,7 @@ def build_Dvv(t1, t2, l1, l2):  # complete
 
 
 def build_Dvo(l1):  # complete
-    return l1.copy();
+    return l1.T.copy()
 
 
 def build_Dov(t1, t2, l1, l2):  # complete

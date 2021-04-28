@@ -10,6 +10,7 @@ import time
 from .density_eqs import build_Dov, build_Dvo, build_Dvv, build_Doo
 from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
+import numpy as np
 from opt_einsum import contract
 
 
@@ -131,4 +132,17 @@ class ccdensity(object):
 
         return ecc
 
-    def compute_onepdm(
+    def compute_onepdm(self, t1, t2, l1, l2):
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+        nt = no + nv
+
+        opdm = np.zeros((nt, nt), dtype='complex128')
+        opdm[o,o] = build_Doo(t1, t2, l1, l2)
+        opdm[v,v] = build_Dvv(t1, t2, l1, l2)
+        opdm[o,v] = build_Dov(t1, t2, l1, l2)
+        opdm[v,o] = build_Dvo(l1)
+
+        return opdm
