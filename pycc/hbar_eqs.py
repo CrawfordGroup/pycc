@@ -27,7 +27,7 @@ def build_Hoo(o, v, F, L, t1, t2):
 def build_Hoooo(o, v, ERI, t1, t2):
     Hoooo = ERI[o,o,o,o].copy()
     tmp = contract('je,mnie->mnij', t1, ERI[o,o,o,v])
-    Hoooo = Hoooo + tmp + tmp.swapaxes(0,1).swapaxes(2,3)
+    Hoooo = Hoooo + (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
     Hoooo = Hoooo + contract('ijef,mnef->mnij', build_tau(t1, t2), ERI[o,o,v,v])
     return Hoooo
 
@@ -35,7 +35,7 @@ def build_Hoooo(o, v, ERI, t1, t2):
 def build_Hvvvv(o, v, ERI, t1, t2):
     Hvvvv = ERI[v,v,v,v].copy()
     tmp = contract('mb,amef->abef', t1, ERI[v,o,v,v])
-    Hvvvv = Hvvvv - tmp + tmp.swapaxes(0,1).swapaxes(2,3)
+    Hvvvv = Hvvvv - (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
     Hvvvv = Hvvvv + contract('mnab,mnef->abef', build_tau(t1, t2), ERI[o,o,v,v])
     return Hvvvv
 

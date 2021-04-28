@@ -48,14 +48,14 @@ print("ECC from density       = %20.15f" % ccdensity.ecc)
 print("ECC from wave function = %20.15f" % cc.ecc)
 
 # Gaussian pulse (a.u.)
-F_str = 10.0
+F_str = 1.0
 omega = 2.87
 tprime = 5.0
 V = sine_square_laser(F_str, omega, tprime)
 
 axis = 2  # z-axis for field
 t0 = 0
-tf = 1005.0
+tf = 10.0
 h = 0.01
 rtcc = pycc.rtcc(cc, cclambda, ccdensity, V, axis)
 y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
@@ -79,8 +79,7 @@ while ODE.successful() and ODE.t < tf:
     ecc = rtcc.energy(t, t1, t2, l1, l1)
     time.append(t)
     dip_z.append(dip)
-    energy.append(ecc)
+    energy.append(ecc+rhf_e)
     print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e, ecc.imag, dip.real, dip.imag))
 
-np.savez("helium_cc-pvdz_F_str=10.0_omega=2.87.npz", time_points=time, energy=energy, dip_x=dip_z, dip_y=dip_z,
-        dip_z=dip_z)
+#np.savez("helium_cc-pvdz_F_str=10.0_omega=2.87.npz", time_points=time, energy=energy, dip_x=dip_z, dip_y=dip_z, dip_z=dip_z)

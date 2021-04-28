@@ -157,18 +157,7 @@ class ccenergy(object):
 
             ecc_last = ecc
 
-            t1 = self.t1
-            t2 = self.t2
-            Fae = build_Fae(o, v, F, L, t1, t2)
-            Fmi = build_Fmi(o, v, F, L, t1, t2)
-            Fme = build_Fme(o, v, F, L, t1)
-            Wmnij = build_Wmnij(o, v, ERI, t1, t2)
-            Wmbej = build_Wmbej(o, v, ERI, L, t1, t2)
-            Wmbje = build_Wmbje(o, v, ERI, t1, t2)
-            Zmbij = build_Zmbij(o, v, ERI, t1, t2)
-
-            r1 = r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
-            r2 = r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+            r1, r2 = self.residuals(F, self.t1, self.t2)
 
             self.t1 += r1/Dia
             self.t2 += r2/Dijab
@@ -177,7 +166,7 @@ class ccenergy(object):
             rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
             rms = np.sqrt(rms)
 
-            ecc = ccsd_energy(o, v, F, L, t1, t2)
+            ecc = ccsd_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
             print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 

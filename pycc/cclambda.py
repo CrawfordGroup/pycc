@@ -119,7 +119,6 @@ class cclambda(object):
             r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
             r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
-#print("niter = %d; r1 norm = %20.15f;  r2 norm = %20.15f" %(niter, np.linalg.norm(r1), np.linalg.norm(r2)))
             self.l1 += r1/Dia
             self.l2 += r2/Dijab
 
