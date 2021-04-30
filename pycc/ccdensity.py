@@ -140,6 +140,7 @@ class ccdensity(object):
         nt = no + nv
 
         opdm = np.zeros((nt, nt), dtype='complex128')
+#        opdm += 2.0 * np.eye(no)  # Reference contribution
         opdm[o,o] = build_Doo(t1, t2, l1, l2)
         opdm[v,v] = build_Dvv(t1, t2, l1, l2)
         opdm[o,v] = build_Dov(t1, t2, l1, l2)

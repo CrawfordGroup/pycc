@@ -1,3 +1,9 @@
+# Be atom
+be = """
+Be
+symmetry c1
+"""
+
 # He atom
 he = """
 He
@@ -227,6 +233,7 @@ symmetry c1
 
 moldict = {}
 moldict["He"] = he
+moldict["Be"] = be
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
 moldict["(H2O)_2"] = h2o_2

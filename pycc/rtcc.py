@@ -10,25 +10,27 @@ from .density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 
 class rtcc(object):
-    def __init__(self, ccwfn, cclambda, ccdensity, V, axis):
+    def __init__(self, ccwfn, cclambda, ccdensity, V):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
         self.V = V
-        self.axis = axis
 
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
         dipole_ints = mints.ao_dipole()
         C = np.asarray(ccwfn.ref.Ca_subset("AO", "ACTIVE"))
-        self.mu = C.T @ np.asarray(dipole_ints[axis]) @ C
+        self.mu = []
+        for axis in range(3):
+            self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
+        self.mu_tot = sum(self.mu)/np.sqrt(3.0)
 
     def f(self, t, y):
         # Extract amplitude tensors
         t1, t2, l1, l2 = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
-        F = self.ccwfn.F.copy() + (self.mu * self.V(t))/np.sqrt(3.0)
+        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
 
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
@@ -63,12 +65,15 @@ class rtcc(object):
 
     def dipole(self, t1, t2, l1, l2):
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
-        return self.mu.flatten().dot(opdm.flatten())
+        mu_x = self.mu[0].flatten().dot(opdm.flatten())
+        mu_y = self.mu[1].flatten().dot(opdm.flatten())
+        mu_z = self.mu[2].flatten().dot(opdm.flatten())
+        return mu_x, mu_y, mu_z
 
     def energy(self, t, t1, t2, l1, l2):
         o = self.ccwfn.o
         v = self.ccwfn.v
-        F = self.ccwfn.F.copy() + self.mu * self.V(t)
+        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
         ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
         L = self.ccwfn.L
         ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
@@ -86,7 +91,7 @@ class rtcc(object):
         Dovov = build_Dovov(t1, t2, l1, l2)
         Doovv = build_Doovv(t1, t2, l1, l2)
 
-        F = self.ccwfn.F.copy() + self.mu * self.V(t)
+        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
         eone = F.flatten().dot(opdm.flatten())
         oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
         vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)
