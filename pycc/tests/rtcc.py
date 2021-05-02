@@ -31,12 +31,10 @@ psi4.set_options({'basis': 'cc-pVDZ',
                   'diis': 1})
 mol = psi4.geometry(mol.moldict["LiH"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-enuc = mol.nuclear_repulsion_energy()
-print("Enuc = %20.15f" % enuc)
-rhf_e -= enuc  # To match Oslo codes
+enuc0 = mol.nuclear_repulsion_energy()
+print("Enuc = %20.15f" % enuc0)
 nucdip = mol.nuclear_dipole()
 print(nucdip)
-sys.exit()
 
 ## Set up initial (t=0) amplitudes
 maxiter = 75
@@ -74,13 +72,14 @@ t = t0
 t1, t2, l1, l2 = rtcc.extract_amps(y0)
 mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
 ecc0 = rtcc.lagrangian(t, t1, t2, l1, l2)
+enuc = enuc0 + rtcc.nucrep(nucdip, t)
 time = [t0]
 dip_x = [mu_x]
 dip_y = [mu_y]
 dip_z = [mu_z]
-energy = [ecc0+rhf_e]
-print("Time(s)                  Energy (a.u.)                               X-Dipole (a.u.)     ")
-print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc0.real+rhf_e, ecc0.imag, mu_x.real, mu_x.imag))
+energy = [ecc0+rhf_e-enuc]
+print("Time(s)                  Energy (a.u.)                               Z-Dipole (a.u.)     ")
+print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc0.real+rhf_e-enuc, ecc0.imag, mu_z.real, mu_z.imag))
 
 while ODE.successful() and ODE.t < tf:
     y = ODE.integrate(ODE.t+h)
@@ -88,12 +87,13 @@ while ODE.successful() and ODE.t < tf:
     t1, t2, l1, l2 = rtcc.extract_amps(y)
     mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
     ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
+    enuc = enuc0 + rtcc.nucrep(nucdip, t)
     time.append(t)
     dip_x.append(mu_x)
     dip_y.append(mu_y)
     dip_z.append(mu_z)
-    energy.append(ecc+rhf_e)
-    print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e, ecc.imag, mu_x.real, mu_x.imag))
+    energy.append(ecc+rhf_e-enuc)
+    print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e-enuc, ecc.imag, mu_z.real, mu_z.imag))
 
 np.savez("lih_cc-pvdz_F_str=0.05_omega=0.05_tightconv.npz", time_points=time, energy=energy, dip_x=dip_x, dip_y=dip_y, dip_z=dip_z)
 

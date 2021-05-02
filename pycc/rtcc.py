@@ -64,11 +64,17 @@ class rtcc(object):
         return t1, t2, l1, l2
 
     def dipole(self, t1, t2, l1, l2):
-        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=True)
         mu_x = self.mu[0].flatten().dot(opdm.flatten())
         mu_y = self.mu[1].flatten().dot(opdm.flatten())
         mu_z = self.mu[2].flatten().dot(opdm.flatten())
         return mu_x, mu_y, mu_z
+
+    def nucrep(self, nucdip, t):
+        enuc = 0.0
+        for i in range(3):
+            enuc += (self.V(t) * nucdip[i])/np.sqrt(3)
+        return enuc
 
     def energy(self, t, t1, t2, l1, l2):
         o = self.ccwfn.o

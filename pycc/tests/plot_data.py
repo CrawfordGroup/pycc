@@ -43,7 +43,7 @@ def get_spectral_lines(
 #basis = str(sys.argv[2])
 
 samples = np.load(
-    f"helium_cc-pvdz_F_str=100.0_omega=2.87.npz",
+    f"helium_cc-pvdz_F_str=10.0_omega=2.87.npz",
     allow_pickle=True,
 )
 
