@@ -22,7 +22,7 @@ psi4.set_options({'basis': 'cc-pVDZ',
                   'd_convergence': 1e-13,
                   'r_convergence': 1e-13,
                   'diis': 1})
-mol = psi4.geometry(mol.moldict["H2O"])
+mol = psi4.geometry(mol.moldict["Be"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
 maxiter = 75
@@ -44,4 +44,4 @@ ecc_test = ccdensity.compute_energy()
 print("ECC from density       = %20.15f" % ccdensity.ecc)
 print("ECC from wave function = %20.15f" % cc.ecc)
 
-#epsi4 = psi4.gradient('CCSD')
+epsi4 = psi4.gradient('CCSD')

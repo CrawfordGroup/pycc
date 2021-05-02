@@ -1,6 +1,6 @@
 import numpy as np
 
-samples = np.load("helium_cc-pvdz_F_str=1.0_omega=2.87.npz")
+samples = np.load("lih_cc-pvdz_F_str=0.05_omega=0.05.npz")
 
 #print(sorted(samples.files))
 time_points = samples["time_points"]

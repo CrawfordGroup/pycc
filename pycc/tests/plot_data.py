@@ -43,7 +43,7 @@ def get_spectral_lines(
 #basis = str(sys.argv[2])
 
 samples = np.load(
-    f"beryllium_cc-pvdz_F_str=0.3_omega=0.2.npz",
+    f"helium_cc-pvdz_F_str=100.0_omega=2.87.npz",
     allow_pickle=True,
 )
 
@@ -95,7 +95,7 @@ one_ev = 27.211386245988468
 
 plt.figure()
 plt.plot(freq*one_ev, a)
-plt.xlim(0,30)
+plt.xlim(0,90)
 plt.ylabel('Relative intensity')
 plt.xlabel('frequency (eV)')
 plt.show()

@@ -11,12 +11,11 @@ sys.path.insert(0, '../data')
 import molecules as mol
 from lasers import sine_square_laser
 from lasers import gaussian_laser
-sys.path.insert(0, '../')
+#sys.path.insert(0, '../')
 #import ode as myode
 import numpy as np
 from scipy.integrate import complex_ode as ode
 import time as timer
-from time_dep_lagranian import *
 
 # Psi4 Setup
 psi4.set_memory('2 GiB')
@@ -30,8 +29,14 @@ psi4.set_options({'basis': 'cc-pVDZ',
                   'd_convergence': 1e-13,
                   'r_convergence': 1e-13,
                   'diis': 1})
-mol = psi4.geometry(mol.moldict["Be"])
+mol = psi4.geometry(mol.moldict["LiH"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+enuc = mol.nuclear_repulsion_energy()
+print("Enuc = %20.15f" % enuc)
+rhf_e -= enuc  # To match Oslo codes
+nucdip = mol.nuclear_dipole()
+print(nucdip)
+sys.exit()
 
 ## Set up initial (t=0) amplitudes
 maxiter = 75
@@ -53,17 +58,17 @@ print("Starting RTCC propagation...")
 time_init = timer.time()
 
 # Sine squared pulse (a.u.)
-F_str = 0.3
-omega = 0.2
+F_str = 0.05
+omega = 0.05
 tprime = 5.0
 V = sine_square_laser(F_str, omega, tprime)
 
 t0 = 0
-tf = 1005.0
+tf = 1.0
 h = 0.01
 rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
 y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
-ODE = ode(rtcc.f).set_integrator('vode')
+ODE = ode(rtcc.f).set_integrator('vode',atol=1e-13,rtol=1e-13)
 ODE.set_initial_value(y0, t0)
 t = t0
 t1, t2, l1, l2 = rtcc.extract_amps(y0)
@@ -74,8 +79,8 @@ dip_x = [mu_x]
 dip_y = [mu_y]
 dip_z = [mu_z]
 energy = [ecc0+rhf_e]
-print("Time(s)                  Energy (a.u.)                               Z-Dipole (a.u.)     ")
-print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc0.real+rhf_e, ecc0.imag, mu_z.real, mu_z.imag))
+print("Time(s)                  Energy (a.u.)                               X-Dipole (a.u.)     ")
+print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc0.real+rhf_e, ecc0.imag, mu_x.real, mu_x.imag))
 
 while ODE.successful() and ODE.t < tf:
     y = ODE.integrate(ODE.t+h)
@@ -88,8 +93,8 @@ while ODE.successful() and ODE.t < tf:
     dip_y.append(mu_y)
     dip_z.append(mu_z)
     energy.append(ecc+rhf_e)
-    print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e, ecc.imag, mu_z.real, mu_z.imag))
+    print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e, ecc.imag, mu_x.real, mu_x.imag))
 
-np.savez("beryllium_cc-pvdz_F_str=0.3_omega=0.2.npz", time_points=time, energy=energy, dip_x=dip_x, dip_y=dip_y, dip_z=dip_z)
+np.savez("lih_cc-pvdz_F_str=0.05_omega=0.05_tightconv.npz", time_points=time, energy=energy, dip_x=dip_x, dip_y=dip_y, dip_z=dip_z)
 
 print("\nRTCC propagation over %.2f a.u. completed in %.3f seconds.\n" % (tf-t0, timer.time() - time_init))
