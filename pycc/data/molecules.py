@@ -1,3 +1,11 @@
+# Håkon's H2 test case
+h2="""
+        units au
+        H 0.0 0.0 0.0
+        H 0.0 0.0 1.4
+        symmetry c1
+        """
+
 # Be atom
 be = """
 Be
@@ -252,6 +260,7 @@ moldict = {}
 moldict["He"] = he
 moldict["Be"] = be
 moldict["LiH"] = lih
+moldict["H2"] = h2
 moldict["H2O_HEK"] = h2o_hek
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o

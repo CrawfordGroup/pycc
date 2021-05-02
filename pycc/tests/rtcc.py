@@ -31,10 +31,8 @@ psi4.set_options({'basis': 'cc-pVDZ',
                   'diis': 1})
 mol = psi4.geometry(mol.moldict["LiH"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-enuc0 = mol.nuclear_repulsion_energy()
-print("Enuc = %20.15f" % enuc0)
-nucdip = mol.nuclear_dipole()
-print(nucdip)
+enuc = mol.nuclear_repulsion_energy()
+print("Enuc = %20.15f" % enuc)
 
 ## Set up initial (t=0) amplitudes
 maxiter = 75
@@ -51,6 +49,8 @@ ccdensity = pycc.ccdensity(cc, cclambda)
 ecc_test = ccdensity.compute_energy()
 print("ECC from density       = %20.15f" % ccdensity.ecc)
 print("ECC from wave function = %20.15f" % cc.ecc)
+
+epsi4 = psi4.gradient('CCSD')
 
 print("Starting RTCC propagation...")
 time_init = timer.time()
@@ -72,7 +72,6 @@ t = t0
 t1, t2, l1, l2 = rtcc.extract_amps(y0)
 mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
 ecc0 = rtcc.lagrangian(t, t1, t2, l1, l2)
-enuc = enuc0 + rtcc.nucrep(nucdip, t)
 time = [t0]
 dip_x = [mu_x]
 dip_y = [mu_y]
@@ -87,7 +86,6 @@ while ODE.successful() and ODE.t < tf:
     t1, t2, l1, l2 = rtcc.extract_amps(y)
     mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
     ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
-    enuc = enuc0 + rtcc.nucrep(nucdip, t)
     time.append(t)
     dip_x.append(mu_x)
     dip_y.append(mu_y)
@@ -95,6 +93,6 @@ while ODE.successful() and ODE.t < tf:
     energy.append(ecc+rhf_e-enuc)
     print("%7.2f  %20.15f + %20.15fi  %20.15f + %20.15fi" % (t, ecc.real+rhf_e-enuc, ecc.imag, mu_z.real, mu_z.imag))
 
-np.savez("lih_cc-pvdz_F_str=0.05_omega=0.05_tightconv.npz", time_points=time, energy=energy, dip_x=dip_x, dip_y=dip_y, dip_z=dip_z)
+#np.savez("lih_cc-pvdz_F_str=0.05_omega=0.05_tightconv.npz", time_points=time, energy=energy, dip_x=dip_x, dip_y=dip_y, dip_z=dip_z)
 
 print("\nRTCC propagation over %.2f a.u. completed in %.3f seconds.\n" % (tf-t0, timer.time() - time_init))

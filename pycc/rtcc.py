@@ -70,12 +70,6 @@ class rtcc(object):
         mu_z = self.mu[2].flatten().dot(opdm.flatten())
         return mu_x, mu_y, mu_z
 
-    def nucrep(self, nucdip, t):
-        enuc = 0.0
-        for i in range(3):
-            enuc += (self.V(t) * nucdip[i])/np.sqrt(3)
-        return enuc
-
     def energy(self, t, t1, t2, l1, l2):
         o = self.ccwfn.o
         v = self.ccwfn.v
