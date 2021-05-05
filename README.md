@@ -26,7 +26,7 @@ This package requires the following:
   - [psi4](https://psicode.org)
   - [numpy](https://numpy.org/)
   - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
-  - [scipy] (https://www.scipy.org/)
+  - [scipy](https://www.scipy.org/)
 
 ### Copyright
 
