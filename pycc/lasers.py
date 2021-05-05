@@ -1,4 +1,13 @@
+"""
+lasers.py:  Two simple pulse definitions.  Written by Håkon E. Kristiansen (U. Oslo)
+"""
+
+if __name__ == "__main__":
+    raise Exception("This file cannot be invoked on its own.")
+
+
 import numpy as np
+
 
 class gaussian_laser:
     def __init__(self, F_str, omega, sigma, center=0.):
@@ -18,6 +27,7 @@ class gaussian_laser:
             * np.cos(self.omega * dt)
         )
         return self.F_str*pulse
+
 
 class sine_square_laser:
     def __init__(self, F_str, omega, tprime, phase=0):

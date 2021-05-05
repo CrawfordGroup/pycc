@@ -10,6 +10,7 @@ import time
 from .hbar_eqs import build_Hov, build_Hvv, build_Hoo
 from .hbar_eqs import build_Hoooo, build_Hvvvv, build_Hvovv, build_Hooov
 from .hbar_eqs import build_Hovvo, build_Hovov, build_Hvvvo, build_Hovoo
+import numpy as np
 
 
 class cchbar(object):
@@ -75,5 +76,11 @@ class cchbar(object):
         self.Hovov = build_Hovov(o, v, ERI, t1, t2)
         self.Hvvvo = build_Hvvvo(o, v, ERI, L, self.Hov, self.Hvvvv, t1, t2)
         self.Hovoo = build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
+
+        print("Hov norm = %20.15f" % np.linalg.norm(self.Hov))
+        print("Hvv norm = %20.15f" % np.linalg.norm(self.Hvv))
+        print("Hoo norm = %20.15f" % np.linalg.norm(self.Hoo))
+        print("Hoooo norm = %20.15f" % np.linalg.norm(self.Hoooo))
+        print("Hvvvv norm = %20.15f" % np.linalg.norm(self.Hvvvv))
 
         print("\nHBAR constructed in %.3f seconds.\n" % (time.time() - time_init))

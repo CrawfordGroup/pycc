@@ -67,6 +67,7 @@ jobs:
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
         python -m pip install .
         python -m pip install opt_einsum
+        python -m pip install scipy
         conda list
 
     - name: PyTest

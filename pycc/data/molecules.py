@@ -1,3 +1,41 @@
+# Håkon's H2 test case
+h2="""
+        units au
+        H 0.0 0.0 0.0
+        H 0.0 0.0 1.4
+        symmetry c1
+        """
+
+# Be atom
+be = """
+Be
+symmetry c1
+"""
+
+# He atom
+he = """
+He
+symmetry c1
+"""
+
+# Håkon's LiH test case
+lih="""
+        units au
+        Li 0.0 0.0 0.0
+        H  0.0 0.0 3.08
+        symmetry c1
+        """
+
+# Håkon's H2O test case
+h2o_hek="""
+        units au
+        O
+        H 1 1.8103
+        H 1 1.8103 2 104.48
+        symmetry c1
+        """
+
+### Water molecule from CrawfordGroup/Programming Projects
 h2o_tutorial = """
 O  0.000000000000  -0.143225816552   0.000000000000
 H  1.638036840407   1.136548822547  -0.000000000000
@@ -219,6 +257,11 @@ symmetry c1
 """
 
 moldict = {}
+moldict["He"] = he
+moldict["Be"] = be
+moldict["LiH"] = lih
+moldict["H2"] = h2
+moldict["H2O_HEK"] = h2o_hek
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
 moldict["(H2O)_2"] = h2o_2

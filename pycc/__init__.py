@@ -10,6 +10,7 @@ from .ccenergy import ccenergy
 from .cchbar import cchbar
 from .cclambda import cclambda
 from .ccdensity import ccdensity
+from .rtcc import rtcc
 
 # Handle versioneer
 from ._version import get_versions

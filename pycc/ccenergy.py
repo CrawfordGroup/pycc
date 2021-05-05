@@ -59,6 +59,8 @@ class ccenergy(object):
     -------
     solve_ccsd()
         Solves the CCSD T amplitude equations
+    residuals()
+        Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
     def __init__(self, scf_wfn):
@@ -141,7 +143,6 @@ class ccenergy(object):
         o = self.o
         v = self.v
         F = self.F
-        ERI = self.ERI
         L = self.L
         t1 = self.t1
         t2 = self.t2
@@ -157,18 +158,7 @@ class ccenergy(object):
 
             ecc_last = ecc
 
-            t1 = self.t1
-            t2 = self.t2
-            Fae = build_Fae(o, v, F, L, t1, t2)
-            Fmi = build_Fmi(o, v, F, L, t1, t2)
-            Fme = build_Fme(o, v, F, L, t1)
-            Wmnij = build_Wmnij(o, v, ERI, t1, t2)
-            Wmbej = build_Wmbej(o, v, ERI, L, t1, t2)
-            Wmbje = build_Wmbje(o, v, ERI, t1, t2)
-            Zmbij = build_Zmbij(o, v, ERI, t1, t2)
-
-            r1 = r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
-            r2 = r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+            r1, r2 = self.residuals(F, self.t1, self.t2)
 
             self.t1 += r1/Dia
             self.t2 += r2/Dijab
@@ -177,7 +167,7 @@ class ccenergy(object):
             rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
             rms = np.sqrt(rms)
 
-            ecc = ccsd_energy(o, v, F, L, t1, t2)
+            ecc = ccsd_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
             print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
@@ -193,3 +183,38 @@ class ccenergy(object):
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+
+    def residuals(self, F, t1, t2):
+        """
+        Parameters
+        ----------
+        F: NumPy array
+            Fock matrix
+        t1: NumPy array
+            Current T1 amplitudes
+        t2: NumPy array
+            Current T2 amplitudes
+
+        Returns
+        -------
+        r1, r2: NumPy arrays
+            New T1 and T2 residuals: r_mu = <mu|HBAR|0>
+        """
+
+        o = self.o
+        v = self.v
+        ERI = self.ERI
+        L = self.L
+
+        Fae = build_Fae(o, v, F, L, t1, t2)
+        Fmi = build_Fmi(o, v, F, L, t1, t2)
+        Fme = build_Fme(o, v, F, L, t1)
+        Wmnij = build_Wmnij(o, v, ERI, t1, t2)
+        Wmbej = build_Wmbej(o, v, ERI, L, t1, t2)
+        Wmbje = build_Wmbje(o, v, ERI, t1, t2)
+        Zmbij = build_Zmbij(o, v, ERI, t1, t2)
+
+        r1 = r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
+        r2 = r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+
+        return r1, r2

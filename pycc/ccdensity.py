@@ -10,6 +10,7 @@ import time
 from .density_eqs import build_Dov, build_Dvo, build_Dvv, build_Doo
 from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
+import numpy as np
 from opt_einsum import contract
 import numpy as np
 
@@ -40,13 +41,14 @@ class ccdensity(object):
         The occ,vir,occ,vir block of the two-body density.
     Doovv : NumPy array
         The occ,occ,vir,vir block of the two-body density.
+        The occ,vir,occ,occ block of the two-body density.
 
     Methods
     -------
-    compute_energy()
+    compute_energy() :
         Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
-    onepdm()
-        Return the CC onepdm as a full matrix.
+    compute_onepdm() : 
+        Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
     def __init__(self, ccwfn, cclambda, onlyone=False):
         """
@@ -81,7 +83,7 @@ class ccdensity(object):
 
         self.onlyone = onlyone
 
-        if onlyone == False:
+        if onlyone is False:
             self.Doooo = build_Doooo(t1, t2, l2)
             self.Dvvvv = build_Dvvvv(t1, t2, l2)
             self.Dooov = build_Dooov(t1, t2, l1, l2)
@@ -115,7 +117,7 @@ class ccdensity(object):
         eone = oo_energy + vv_energy
         print("One-electron CCSD energy = %20.15f" % eone)
 
-        if self.onlyone == True:
+        if self.onlyone is True:
             print("Only one-electron density available.")
             ecc = eone
         else:
@@ -142,19 +144,19 @@ class ccdensity(object):
 
         return ecc
 
-    def onepdm(self):
+    def compute_onepdm(self, t1, t2, l1, l2, withref=False):
         """
-        Return the one-electron density as a full matrix.  This is convenient for computing one-electron properties.
-
         Parameters
         ----------
-        None
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes
+        withref : Boolean (default: False)
+            include the reference contribution if True
 
         Returns
         -------
-        onepdm | NumPy array
-            The CC onepdm as a full no+nv x no+nv matrix.
-
+        onepdm : NumPy array
+            the CC one-electron density as a single, full matrix
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -162,10 +164,12 @@ class ccdensity(object):
         nv = self.ccwfn.nv
         nt = no + nv
 
-        opdm = np.zeros((nt, nt))
-        opdm[o,o] = self.Doo
-        opdm[v,v] = self.Dvv
-        opdm[o,v] = self.Dov
-        opdm[v,o] = self.Dvo
+        opdm = np.zeros((nt, nt), dtype='complex128')
+        opdm[o,o] = build_Doo(t1, t2, l1, l2)
+        if withref is True:
+            opdm[o,o] += 2.0 * np.eye(no)  # Reference contribution
+        opdm[v,v] = build_Dvv(t1, t2, l1, l2)
+        opdm[o,v] = build_Dov(t1, t2, l1, l2)
+        opdm[v,o] = build_Dvo(l1)
 
         return opdm

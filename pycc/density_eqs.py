@@ -16,7 +16,7 @@ def build_Dvv(t1, t2, l1, l2):  # complete
 
 
 def build_Dvo(l1):  # complete
-    return l1.T.copy();
+    return l1.T.copy()
 
 
 def build_Dov(t1, t2, l1, l2):  # complete
@@ -74,7 +74,7 @@ def build_Dvvvo(t1, t2, l1, l2):  # complete
     tmp = contract('imbe,nmce->ibnc', t2, l2)
     Dvvvo += 2.0 * contract('ibnc,na->abci', tmp, t1)
     Dvvvo -= contract('ianc,nb->abci', tmp, t1)
- 
+
     tmp = contract('nmab,nmce->abce', t2, l2)
     Dvvvo -= contract('abce,ie->abci', tmp, t1)
     tmp = contract('niae,nmce->iamc', t2, l2)
@@ -111,7 +111,7 @@ def build_Doovv(t1, t2, l1, l2):
     Doovv -= contract('ijmb,ma->ijab', tmp2, t1)
     tmp2 = 2.0 * contract('jmba,me->jeba', tau_spinad, l1)
     Doovv -= contract('jeba,ie->ijab', tmp2, t1)
- 
+
     Doovv += 4.0 * contract('imae,mjeb->ijab', t2, l2)
     Doovv -= 2.0 * contract('mjbe,imae->ijab', tau, l2)
 
@@ -125,14 +125,14 @@ def build_Doovv(t1, t2, l1, l2):
     Doovv += 4.0 * contract('eb,ijae->ijab', Gvv, tau)
     Doovv -= 2.0 * contract('ea,ijbe->ijab', Gvv, tau)
     Goo = build_Goo(t2, l2)
-    Doovv -= 4.0 * contract('jm,imab->ijab', Goo, tau) # use tau_spinad?
+    Doovv -= 4.0 * contract('jm,imab->ijab', Goo, tau)  # use tau_spinad?
     Doovv += 2.0 * contract('jm,imba->ijab', Goo, tau)
     tmp1 = contract('inaf,mnef->iame', t2, l2)
     Doovv -= 4.0 * contract('iame,mjbe->ijab', tmp1, tau)
     Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
     Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
     Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
- 
+
     # this can definitely be optimized better
     tmp = contract('nb,ijmn->ijmb', t1, tmp_oooo)
     Doovv += contract('ma,ijmb->ijab', t1, tmp)
