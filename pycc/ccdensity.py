@@ -12,6 +12,7 @@ from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
 import numpy as np
 from opt_einsum import contract
+import numpy as np
 
 
 class ccdensity(object):
@@ -39,21 +40,26 @@ class ccdensity(object):
     Dovov : NumPy array
         The occ,vir,occ,vir block of the two-body density.
     Doovv : NumPy array
+        The occ,occ,vir,vir block of the two-body density.
         The occ,vir,occ,occ block of the two-body density.
 
     Methods
     -------
-    compute_onepdm() : Compute the one-electron density for a given set of amplitudes (useful for RTCC)
-
+    compute_energy() :
+        Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
+    compute_onepdm() : 
+        Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
     def __init__(self, ccwfn, cclambda, onlyone=False):
         """
         Parameters
         ----------
         ccwfn : PyCC ccenergy object
-            amplitudes instantiated to defaults or converged
+            contains the necessary T-amplitudes (either instantiated to defaults or converged)
         cclambda : PyCC cclambda object
-            amplitudes instantiated to defaults or converged
+            Contains the necessary Lambda-amplitudes (instantiated to defaults or converged)
+        onlyone : Boolean
+            only compute the onepdm if True
 
         Returns
         -------
@@ -89,6 +95,8 @@ class ccdensity(object):
 
     def compute_energy(self):
         """
+        Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
+
         Parameters
         ----------
         None
