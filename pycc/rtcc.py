@@ -1,5 +1,6 @@
-# We will assume that the ccwfn and cclambda objects already
-# contain the t=0 amplitudes we need for the initial step
+"""
+rtcc.py: Real-time coupled object that provides data for an ODE propagator
+"""
 
 import psi4
 import numpy as np
@@ -10,6 +11,37 @@ from .density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 
 class rtcc(object):
+    """
+    A Real-time CCSD object for ODE propagation.
+
+    Attributes
+    -----------
+    ccwfn: PyCC ccenergy object
+        the coupled cluster T amplitudes and supporting data structures
+    cclambda : PyCC cclambda object
+        the coupled cluster Lambda amplitudes and supporting data structures
+    ccdensity : PyCC ccdensity object
+        the coupled cluster one- and two-electron densities
+    V: the time-dependent laser field 
+        must accept only the current time as an argument, e.g., as defined in lasers.py
+    mu: list of NumPy arrays
+        the dipole integrals for each Cartesian direction
+    mu_tot: NumPy arrays
+        1/sqrt(3) * sum of dipole integrals (for isotropic field)
+
+    Methods
+    -------
+    f(): Returns a flattened NumPy array of cluster amplitudes
+        The ODE defining function (the right-hand-side of a Runge-Kutta solver)
+    collect_amps():
+        Collect the cluster amplitudes into a single vector
+    dipole()
+        Compute the electronic dipole moment for a given time t
+    energy()
+        Compute the CC correlation energy for a given time t
+    lagrangian()
+        Compute the CC Lagrangian energy for a given time t
+    """
     def __init__(self, ccwfn, cclambda, ccdensity, V):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
@@ -23,7 +55,7 @@ class rtcc(object):
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
-        self.mu_tot = sum(self.mu)/np.sqrt(3.0)
+        self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
     def f(self, t, y):
         # Extract amplitude tensors
@@ -92,7 +124,12 @@ class rtcc(object):
         Doovv = build_Doovv(t1, t2, l1, l2)
 
         F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
+
+        eref = 2.0 * np.trace(F[o,o])
+        eref -= np.trace(np.trace(self.ccwfn.L[o,o,o,o], axis1=1, axis2=3))
+
         eone = F.flatten().dot(opdm.flatten())
+
         oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
         vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)
         ooov_energy = contract('ijka,ijka->', ERI[o,o,o,v], Dooov)
@@ -100,5 +137,4 @@ class rtcc(object):
         ovov_energy = contract('iajb,iajb->', ERI[o,v,o,v], Dovov)
         oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], Doovv)
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
-
-        return eone + etwo
+        return eref + eone + etwo

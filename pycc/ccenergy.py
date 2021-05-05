@@ -59,6 +59,8 @@ class ccenergy(object):
     -------
     solve_ccsd()
         Solves the CCSD T amplitude equations
+    residuals()
+        Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
     def __init__(self, scf_wfn):
@@ -184,6 +186,21 @@ class ccenergy(object):
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
 
     def residuals(self, F, t1, t2):
+        """
+        Parameters
+        ----------
+        F: NumPy array
+            Fock matrix
+        t1: NumPy array
+            Current T1 amplitudes
+        t2: NumPy array
+            Current T2 amplitudes
+
+        Returns
+        -------
+        r1, r2: NumPy arrays
+            New single- and double-amplitude residuals: <phi|HBAR|0> = r_phi
+        """
         o = self.o
         v = self.v
         ERI = self.ERI
