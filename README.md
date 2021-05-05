@@ -8,8 +8,17 @@ Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
+A Python-based coupled cluster implementation.  Current capabilities include:
+  - Spin-adapted RHF-CCSD Energies
+  - RHF-CCSD densities
+  - Real-time CCSD
 
-A Python-based coupled cluster implementation.
+Future plans:
+  - CC2, CCSD(T), CC3
+  - Linear and quadratic response functions
+  - EOM-CC
+  - Single- and mixed-precision arithmetic
+  - Analytic gradients
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
@@ -17,10 +26,11 @@ This package requires the following:
   - [psi4](https://psicode.org)
   - [numpy](https://numpy.org/)
   - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
+  - [scipy] (https://www.scipy.org/)
 
 ### Copyright
 
-Copyright (c) 2021, T Daniel Crawford
+Copyright (c) 2021, T. Daniel Crawford
 
 
 #### Acknowledgements
