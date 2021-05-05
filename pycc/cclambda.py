@@ -1,4 +1,4 @@
-"""                                                                                                            
+"""
 cclambda.py: Lambda-amplitude Solver
 """
 
@@ -35,6 +35,8 @@ class cclambda(object):
     -------
     solve_lambda()
         Solves the CCSD Lambda amplitude equations
+    residuals()
+        Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
     def __init__(self, ccwfn, hbar):
         """
@@ -107,7 +109,7 @@ class cclambda(object):
 
         diis = helper_diis(l1, l2, max_diis)
 
-        for niter in range(1,maxiter+1):
+        for niter in range(1, maxiter+1):
 
             lecc_last = lecc
 
@@ -115,7 +117,7 @@ class cclambda(object):
             l2 = self.l2
 
             Goo = build_Goo(t2, l2)
-            Gvv =  build_Gvv(t2, l2)
+            Gvv = build_Gvv(t2, l2)
             r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
             r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
@@ -139,6 +141,21 @@ class cclambda(object):
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
 
     def residuals(self, F, t1, t2, l1, l2):
+        """
+        Parameters
+        ----------
+        F : NumPy array
+            current Fock matrix (useful when adding one-electron fields)
+        t1, t2: NumPy arrays
+            current T1 and T2 amplitudes
+        l1, l2: NumPy arrays
+            current L1 and L2 amplitudes
+
+        Returns
+        -------
+        r1, r2: L1 and L2 residuals: r_mu = <0|(1+L) [HBAR, tau_mu]|0>
+        """
+
         o = self.ccwfn.o
         v = self.ccwfn.v
         ERI = self.ccwfn.ERI
@@ -157,7 +174,7 @@ class cclambda(object):
         Hovoo = build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
 
         Goo = build_Goo(t2, l2)
-        Gvv =  build_Gvv(t2, l2)
+        Gvv = build_Gvv(t2, l2)
         r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
         r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 

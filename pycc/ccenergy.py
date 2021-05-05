@@ -143,7 +143,6 @@ class ccenergy(object):
         o = self.o
         v = self.v
         F = self.F
-        ERI = self.ERI
         L = self.L
         t1 = self.t1
         t2 = self.t2
@@ -199,8 +198,9 @@ class ccenergy(object):
         Returns
         -------
         r1, r2: NumPy arrays
-            New single- and double-amplitude residuals: <phi|HBAR|0> = r_phi
+            New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
+
         o = self.o
         v = self.v
         ERI = self.ERI

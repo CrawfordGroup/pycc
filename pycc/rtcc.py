@@ -5,10 +5,10 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 import psi4
 import numpy as np
 from .cc_eqs import build_tau
-from .density_eqs import build_Dov, build_Dvo, build_Dvv, build_Doo
 from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
+
 
 class rtcc(object):
     """
@@ -22,7 +22,7 @@ class rtcc(object):
         the coupled cluster Lambda amplitudes and supporting data structures
     ccdensity : PyCC ccdensity object
         the coupled cluster one- and two-electron densities
-    V: the time-dependent laser field 
+    V: the time-dependent laser field
         must accept only the current time as an argument, e.g., as defined in lasers.py
     mu: list of NumPy arrays
         the dipole integrals for each Cartesian direction
@@ -31,10 +31,12 @@ class rtcc(object):
 
     Methods
     -------
-    f(): Returns a flattened NumPy array of cluster amplitudes
+    f(): Returns a flattened NumPy array of cluster residuals
         The ODE defining function (the right-hand-side of a Runge-Kutta solver)
     collect_amps():
         Collect the cluster amplitudes into a single vector
+    extract_amps():
+        Separate a flattened array of cluster amplitudes into the t1, t2, l1, and l2 components
     dipole()
         Compute the electronic dipole moment for a given time t
     energy()
@@ -58,6 +60,19 @@ class rtcc(object):
         self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
     def f(self, t, y):
+        """
+        Parameters
+        ----------
+        t : float
+            Current time step in the external ODE solver
+        y : NumPy array
+            flattened array of cluster amplitudes
+
+        Returns
+        -------
+        f(t, y): NumPy array
+            flattened array of cluster residuals
+        """
         # Extract amplitude tensors
         t1, t2, l1, l2 = self.extract_amps(y)
 
@@ -79,9 +94,31 @@ class rtcc(object):
         return y
 
     def collect_amps(self, t1, t2, l1, l2):
+        """
+        Parameters
+        ----------
+        t1, t2, l2, l2 : NumPy arrays
+            current cluster amplitudes or residuals
+
+        Returns
+        -------
+        NumPy array
+            amplitudes or residuals as a vector (flattened array)
+        """
         return np.concatenate((t1, t2, l1, l2), axis=None)
 
     def extract_amps(self, y):
+        """
+        Parameters
+        ----------
+        y : NumPy array
+            flattened array of cluster amplitudes or residuals
+
+        Returns
+        -------
+        t1, t2, l2, l2 : NumPy arrays
+            current cluster amplitudes or residuals
+        """
         no = self.ccwfn.no
         nv = self.ccwfn.nv
 
@@ -96,6 +133,17 @@ class rtcc(object):
         return t1, t2, l1, l2
 
     def dipole(self, t1, t2, l1, l2):
+        """
+        Parameters
+        ----------
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes
+
+        Returns
+        -------
+        mu_x, mu_y, mu_z : complex128
+            Cartesian components of the dipole moment
+        """
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=True)
         mu_x = self.mu[0].flatten().dot(opdm.flatten())
         mu_y = self.mu[1].flatten().dot(opdm.flatten())
@@ -103,6 +151,19 @@ class rtcc(object):
         return mu_x, mu_y, mu_z
 
     def energy(self, t, t1, t2, l1, l2):
+        """
+        Parameters
+        ----------
+        t : float
+            current time step in external ODE solver
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes
+
+        Returns
+        -------
+        ecc : complex128
+            CC correlation energy
+        """
         o = self.ccwfn.o
         v = self.ccwfn.v
         F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
@@ -112,6 +173,19 @@ class rtcc(object):
         return ecc
 
     def lagrangian(self, t, t1, t2, l1, l2):
+        """
+        Parameters
+        ----------
+        t : float
+            current time step in external ODE solver
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes
+
+        Returns
+        -------
+        ecc : complex128
+            CC Lagrangian energy (including reference contribution, but excluding nuclear repulsion)
+        """
         o = self.ccwfn.o
         v = self.ccwfn.v
         ERI = self.ccwfn.ERI
