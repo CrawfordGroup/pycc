@@ -10,15 +10,15 @@ import pytest
 from ..data.molecules import *
 
 
-def test_density_ccsd_h2o_sto3g():
-    """H2O STO-3G"""
+def test_density_ccsd_h2o():
+    """H2O"""
     # Psi4 Setup
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
+    psi4.set_options({'basis': 'STO-3G',
                       'scf_type': 'pk',
                       'mp2_type': 'conv',
-                      'freeze_core': 'false',
+                      'freeze_core': 'true',
                       'e_convergence': 1e-12,
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
@@ -32,19 +32,28 @@ def test_density_ccsd_h2o_sto3g():
 
     ccsd = pycc.ccenergy(rhf_wfn)
     eccsd = ccsd.solve_ccsd(e_conv, r_conv)
-
     hbar = pycc.cchbar(ccsd)
-
     cclambda = pycc.cclambda(ccsd, hbar)
-
     lccsd = cclambda.solve_lambda(e_conv, r_conv)
-
-    epsi4 = -0.223910018703575
-    lpsi4 = -0.219688229733860
-
+    epsi4 = -0.070616830152761
+    lpsi4 = -0.068826452648939
     ccdensity = pycc.ccdensity(ccsd, cclambda)
     ecc_density = ccdensity.compute_energy()
+    assert (abs(epsi4 - eccsd) < 1e-11)
+    assert (abs(lpsi4 - lccsd) < 1e-11)
+    assert (abs(epsi4 - ecc_density) < 1e-11)
 
+    psi4.set_options({'basis': 'cc-pVDZ'})
+    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    ccsd = pycc.ccenergy(rhf_wfn)
+    eccsd = ccsd.solve_ccsd(e_conv, r_conv)
+    hbar = pycc.cchbar(ccsd)
+    cclambda = pycc.cclambda(ccsd, hbar)
+    lccsd = cclambda.solve_lambda(e_conv, r_conv)
+    epsi4 = -0.222029814166783
+    lpsi4 = -0.217838951550509
+    ccdensity = pycc.ccdensity(ccsd, cclambda)
+    ecc_density = ccdensity.compute_energy()
     assert (abs(epsi4 - eccsd) < 1e-11)
     assert (abs(lpsi4 - lccsd) < 1e-11)
     assert (abs(epsi4 - ecc_density) < 1e-11)

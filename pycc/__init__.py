@@ -10,7 +10,10 @@ from .ccenergy import ccenergy
 from .cchbar import cchbar
 from .cclambda import cclambda
 from .ccdensity import ccdensity
+from .cctriples import cctriples
 from .rtcc import rtcc
+from .lasers import gaussian_laser
+from .lasers import sine_square_laser
 
 # Handle versioneer
 from ._version import get_versions
