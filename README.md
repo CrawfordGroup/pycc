@@ -9,12 +9,13 @@ Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
 A Python-based coupled cluster implementation.  Current capabilities include:
-  - Spin-adapted RHF-CCSD Energies
+  - Spin-adapted RHF-CCSD and RHF-CCSD(T) energies
+  - Triples-drivers for (T), CC3, and other approximate triples
   - RHF-CCSD densities
   - Real-time CCSD
 
 Future plans:
-  - CC2, CCSD(T), CC3
+  - CC2 and CC3 methods
   - Linear and quadratic response functions
   - EOM-CC
   - Single- and mixed-precision arithmetic
