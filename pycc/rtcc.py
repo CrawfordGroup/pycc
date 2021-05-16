@@ -62,7 +62,7 @@ class rtcc(object):
         self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
         if magnetic:
-            m_ints = mints.ao_angular_momentum()
+            m_ints = -0.5 * mints.ao_angular_momentum()
             self.m = []
             for axis in range(3):
                 self.m.append(C.T @ np.asarray(m_ints[axis]) @ C)
