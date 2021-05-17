@@ -146,6 +146,10 @@ class rtcc(object):
         ----------
         t1, t2, l1, l2 : NumPy arrays
             current cluster amplitudes
+        withref        : Bool (default = True)
+            include reference contribution to the OPDM
+        magnetic       : Bool (default = False)
+            compute magnetic dipole rather than electric
 
         Returns
         -------
