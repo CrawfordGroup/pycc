@@ -28,6 +28,8 @@ class rtcc(object):
         the dipole integrals for each Cartesian direction
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
+    m: list of NumPy arrays
+        the magnetic dipole integrals for each Cartesian direction (only if dipole = True)
 
     Methods
     -------
@@ -38,13 +40,13 @@ class rtcc(object):
     extract_amps():
         Separate a flattened array of cluster amplitudes into the t1, t2, l1, and l2 components
     dipole()
-        Compute the electronic dipole moment for a given time t
+        Compute the electronic or magnetic dipole moment for a given time t
     energy()
         Compute the CC correlation energy for a given time t
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
@@ -58,6 +60,12 @@ class rtcc(object):
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
         self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
+
+        if magnetic:
+            m_ints = mints.ao_angular_momentum()
+            self.m = []
+            for axis in range(3):
+                self.m.append(C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
 
     def f(self, t, y):
         """
@@ -132,23 +140,31 @@ class rtcc(object):
 
         return t1, t2, l1, l2
 
-    def dipole(self, t1, t2, l1, l2):
+    def dipole(self, t1, t2, l1, l2, withref = True, magnetic = False):
         """
         Parameters
         ----------
         t1, t2, l1, l2 : NumPy arrays
             current cluster amplitudes
+        withref        : Bool (default = True)
+            include reference contribution to the OPDM
+        magnetic       : Bool (default = False)
+            compute magnetic dipole rather than electric
 
         Returns
         -------
-        mu_x, mu_y, mu_z : complex128
+        x, y, z : complex128
             Cartesian components of the dipole moment
         """
-        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=True)
-        mu_x = self.mu[0].flatten().dot(opdm.flatten())
-        mu_y = self.mu[1].flatten().dot(opdm.flatten())
-        mu_z = self.mu[2].flatten().dot(opdm.flatten())
-        return mu_x, mu_y, mu_z
+        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+        if magnetic:
+            ints = self.m
+        else:
+            ints = self.mu
+        x = ints[0].flatten().dot(opdm.flatten())
+        y = ints[1].flatten().dot(opdm.flatten())
+        z = ints[2].flatten().dot(opdm.flatten())
+        return x, y, z
 
     def energy(self, t, t1, t2, l1, l2):
         """
