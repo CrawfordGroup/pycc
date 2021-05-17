@@ -62,10 +62,10 @@ class rtcc(object):
         self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
         if magnetic:
-            m_ints = -0.5 * mints.ao_angular_momentum()
+            m_ints = mints.ao_angular_momentum()
             self.m = []
             for axis in range(3):
-                self.m.append(C.T @ np.asarray(m_ints[axis]) @ C)
+                self.m.append(C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
 
     def f(self, t, y):
         """
@@ -140,7 +140,7 @@ class rtcc(object):
 
         return t1, t2, l1, l2
 
-    def dipole(self, t1, t2, l1, l2, magnetic = False):
+    def dipole(self, t1, t2, l1, l2, withref = True, magnetic = False):
         """
         Parameters
         ----------
@@ -152,7 +152,7 @@ class rtcc(object):
         x, y, z : complex128
             Cartesian components of the dipole moment
         """
-        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=True)
+        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
         if magnetic:
             ints = self.m
         else:

@@ -209,6 +209,15 @@ symmetry c1
 """
 
 # Chiral molecules
+# H2 dimer
+h2_2 = """
+H
+H 1 0.75
+H 2 1.5 1 90.0
+H 3 0.75 2 90.0 1 60.0
+symmetry c1
+"""
+
 # (S)-1,3-dimethylallene
 sdma = """
 C  0.000000  0.000000  0.414669
@@ -272,6 +281,7 @@ moldict["(H2O)_6"] = h2o_6
 moldict["(H2O)_7"] = h2o_7
 moldict["uracil"] = uracil
 moldict["benzene"] = benzene
+moldict["(H2)_2"] = h2_2
 moldict["(S)-dimethylallene"] = sdma
 moldict["(S)-2-chloropropionitrile"] = s2cpn
 moldict["(R)-methylthiirane"] = rmt
