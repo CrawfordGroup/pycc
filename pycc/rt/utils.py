@@ -28,9 +28,13 @@ class Pade():
     """
 
     def __init__(self,data,dt=1):
-        self.data = data
-        self.M = len(data)
-        self.N = M//2
+        if (len(data) % 2 == 0):
+            print("Odd number required - removing last data point.")
+            self.data = data[:-1]
+        else:
+            self.data = data
+        self.M = len(data)-1
+        self.N = self.M//2
         self.dt = dt
 
     def build(self,toeplitz_solver=True):
