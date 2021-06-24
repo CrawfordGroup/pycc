@@ -90,7 +90,7 @@ def r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
     return r_T2
 
 
-def ccsd_energy(o, v, F, L, t1, t2):
+def cc_energy(o, v, F, L, t1, t2):
     ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
     ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
     return ecc

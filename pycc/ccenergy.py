@@ -18,7 +18,7 @@ from .cc_eqs import r_T1, r_T2, ccsd_energy
 
 class ccenergy(object):
     """
-    An RHF-CCSD wave function and energy object.
+    An RHF-CC wave function and energy object.
 
     Attributes
     ----------
@@ -57,13 +57,13 @@ class ccenergy(object):
 
     Methods
     -------
-    solve_ccsd()
-        Solves the CCSD T amplitude equations
+    solve_cc()
+        Solves the CC T amplitude equations
     residuals()
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn):
+    def __init__(self, scf_wfn, model='CCSD'):
         """
         Parameters
         ----------
@@ -102,7 +102,6 @@ class ccenergy(object):
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
 
-        # For convenience
         o = self.o
         v = self.v
 
@@ -116,9 +115,9 @@ class ccenergy(object):
         self.t1 = np.zeros((self.no, self.nv))
         self.t2 = self.ERI[o,o,v,v]/self.Dijab
 
-        print("CCSD initialized in %.3f seconds." % (time.time() - time_init))
+        print("CC object initialized in %.3f seconds." % (time.time() - time_init))
 
-    def solve_ccsd(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+    def solve_cc(self, method='CCSD', e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
         """
         Parameters
         ----------
@@ -136,9 +135,9 @@ class ccenergy(object):
         Returns
         -------
         ecc : float
-            CCSD correlation energy
+            CC correlation energy
         """
-        ccsd_tstart = time.time()
+        cc_tstart = time.time()
 
         o = self.o
         v = self.v
@@ -149,8 +148,8 @@ class ccenergy(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
-        ecc = ccsd_energy(o, v, F, L, t1, t2)
-        print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
+        ecc = cc_energy(o, v, F, L, t1, t2)
+        print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
         diis = helper_diis(t1, t2, max_diis)
 
@@ -167,13 +166,13 @@ class ccenergy(object):
             rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
             rms = np.sqrt(rms)
 
-            ecc = ccsd_energy(o, v, F, L, self.t1, self.t2)
+            ecc = cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
-            print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
+            print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
             # check for convergence
             if ((abs(ediff) < e_conv) and rms < r_conv):
-                print("\nCCSD has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                 print("E(REF)  = %20.15f" % self.eref)
                 print("E(CCSD) = %20.15f" % ecc)
                 print("E(TOT)  = %20.15f" % (ecc + self.eref))
