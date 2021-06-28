@@ -7,19 +7,21 @@ def FT(data,dt=1,norm=False,n=None):
     Quick Fourier transform through scipy's FFTPACK
     Given data, timestep
     Returns positive region of symmetric FFT
-    Optional normalization (base peak to 1)
+    Optional normalization (base peak of real and imag to +/-1)
     Optional padding or cutting of resulting FFT
     """
     if not n:
         n = len(data)
 
-    FT = fft(data,n=n)
-    freq = fftfreq(FT.size)*2*np.pi/dt
+    FT = fft(data,n=n)[1:n//2]
+    freq = fftfreq(n)[1:n//2]*2*np.pi/dt
 
-    if norm:
-        FT /= FT.max()
+    if norm: # normalize real and imaginary components separately
+        r = np.real(FT) / np.abs(np.real(FT)).max()
+        i = np.imag(FT) / np.abs(np.imag(FT)).max()
+        FT = r + i*1j
 
-    return freq[1:len(freq)//2],FT[1:len(freq)//2]
+    return freq,FT
 
 class Pade():
     """
