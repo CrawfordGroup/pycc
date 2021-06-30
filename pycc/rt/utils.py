@@ -42,12 +42,11 @@ def denoise(f, filter_level, timestep):
     fifft = np.fft.ifft(fhat) #Inverse FFT
     return np.real(fifft)
     
-def damp(f, timestep):
+def damp(f, timestep, Tau):
     """
     Dampen the signal in the time domain
     """
     t = np.arange(0, len(f))*timestep
-    T = int(input("Enter Tau: "))
     damped_sig = f*np.exp(-t/T)
     x_array = np.arange(0, len(damped_sig))
     return damped_sig
