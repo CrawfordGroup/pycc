@@ -94,6 +94,8 @@ class Pade():
         F = p/q
 
         if norm:
-            F /= F.max()
+            r = np.real(F) / np.abs(np.real(F)).max()
+            i = np.imag(F) / np.abs(np.imag(F)).max()
+            F = r + i*1j
 
         return F
