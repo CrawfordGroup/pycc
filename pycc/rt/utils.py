@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import solve,toeplitz
 from scipy.fftpack import fft,fftfreq
+from scipy.signal import chirp, find_peaks, peak_widths
 
 def FT(data,dt=1,norm=False,n=None):
     """
@@ -22,6 +23,53 @@ def FT(data,dt=1,norm=False,n=None):
         FT = r + i*1j
 
     return freq,FT
+
+def denoise(f, filter_level, timestep):
+    """
+    Denoise the signal in the time domain using FFT
+    """
+    # Use PS to filter out the noise
+    length = len(f) #Number of data points
+    x_array = np.arange(0, length)
+    fhat = np.fft.fft(f, length) #FFT
+    PS = fhat * np.conj(fhat)/length #Power spectrum
+    freq = np.fft.fftfreq(length)*2*np.pi/timestep
+    L = np.arange(1, np.floor(length/2), dtype = 'int')
+    
+    indices = PS > filter_level #Filter out the significant frequencies
+    PSClean = PS * indices #Zero out all other values
+    fhat = indices * fhat  #Zero out small FT coeff.
+    fifft = np.fft.ifft(fhat) #Inverse FFT
+    return np.real(fifft)
+    
+def damp(f, timestep):
+    """
+    Dampen the signal in the time domain
+    """
+    t = np.arange(0, len(f))*timestep
+    T = int(input("Enter Tau: "))
+    damped_sig = f*np.exp(-t/T)
+    x_array = np.arange(0, len(damped_sig))
+    return damped_sig
+    
+def FWHM(freq_f, timestep):
+    """
+    Find the FWHM of the signal in the frequency domain
+    """
+
+    if len(freq_f)%2 == 1:
+        length = 2*(len(freq_f)+1)
+    else:
+        length = 2*len(freq_f)
+    freq = np.fft.fftfreq(length)*2*np.pi/timestep
+    L = np.arange(1, np.floor(length/2), dtype = 'int')
+    
+    peaks, _ = find_peaks(freq_f)
+    sf = abs(freq[L][0]-freq[L][1])
+    results_half = peak_widths(freq_f, peaks, rel_height=0.5)
+    FWHM = results_half[0][np.where(results_half[1] == max(results_half[1]))]*sf
+    max_height = max(results_half[1])*2
+    return FWHM[0]    
 
 class Pade():
     """
