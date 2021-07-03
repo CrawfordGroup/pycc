@@ -40,3 +40,17 @@ def test_ft_norm():
     assert np.allclose(w, w_ref)
     assert np.allclose(i, i_ref)
 
+def test_ft_sanity():
+    '''given enough points, FFT[sin(t) + cos(3t)] should have one real and imaginary
+    peak at 1 and 3, respectively, but numerically there will be slight errors'''
+    t = np.linspace(0,2*np.pi*100,10000)
+    y = np.sin(t) + np.cos(3*t)
+    dt = t[-1] - t[-2]
+
+    w, i = FT(y,dt=dt,norm=True)
+
+    re_max = np.argmax(np.abs(np.real(i)))
+    im_max = np.argmax(np.abs(np.imag(i)))
+
+    assert (w[re_max] - 3) < 1E-4 
+    assert (w[im_max] - 1) < 1E-4 

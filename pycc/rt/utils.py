@@ -20,7 +20,7 @@ def FT(data,dt=1,norm=False,n=None):
     norm : bool
         return component-normalized signal, default=False
     n : int
-        number of points desired for the FFT, dampens or zero-pads
+        number of points desired for the FFT, truncates or zero-pads
         default=None [len(data) is used]
 
     Returns
@@ -70,8 +70,7 @@ def damp(f, timestep, Tau):
     Dampen the signal in the time domain
     """
     t = np.arange(0, len(f))*timestep
-    damped_sig = f*np.exp(-t/T)
-    x_array = np.arange(0, len(damped_sig))
+    damped_sig = f*np.exp(-t/Tau)
     return damped_sig
     
 def FWHM(freq_f, timestep):
@@ -125,7 +124,6 @@ class Pade():
             self.data = copy.deepcopy(data[:-1])
         else:
             self.data = copy.deepcopy(data)
-        self.data -= self.data[0] # center about 0
         self.M = len(self.data) - 1
         self.N = int(self.M / 2)
         self.dt = dt
