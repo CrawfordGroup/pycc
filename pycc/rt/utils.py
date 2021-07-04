@@ -65,18 +65,18 @@ def denoise(f, filter_level, timestep):
     fifft : np.ndarray
             denoised signal in the time domain
     """
-    # Use PS to filter out the noise
-    length = len(f) #Number of data points
+
+    length = len(f) 
     x_array = np.arange(0, length)
-    fhat = fft(f, length) #FFT
-    PS = fhat * np.conj(fhat)/length #Power spectrum
+    fhat = fft(f, length) 
+    PS = fhat * np.conj(fhat)/length 
     freq = fftfreq(length)*2*np.pi/timestep
     L = np.arange(1, np.floor(length/2), dtype = 'int')
     
-    indices = PS > filter_level #Filter out the significant frequencies
-    PSClean = PS * indices #Zero out all other values
-    fhat = indices * fhat  #Zero out small FT coeff.
-    fifft = ifft(fhat) #Inverse FFT
+    indices = PS > filter_level 
+    PSClean = PS * indices 
+    fhat = indices * fhat  
+    fifft = ifft(fhat) 
     fifft = np.real(fifft)
     return fifft
     
