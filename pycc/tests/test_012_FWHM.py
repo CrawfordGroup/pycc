@@ -1,5 +1,6 @@
 #Import required packages
 from pycc.rt.utils import FWHM
+from scipy.fftpack import fft
 import numpy as np
 import pytest
 
@@ -11,7 +12,7 @@ def test_FWHM():
     f = np.cos(2*np.pi*12*t) + np.sin(2*np.pi*50*t)
     f = f + np.random.randn(len(t))
 
-    fourier_transform = np.fft.fft(f, len(f))
+    fourier_transform = fft(f, len(f))
     test_FWHM = FWHM(fourier_transform, timestep)
 
     valid_FWHM = 6.30807298
