@@ -47,28 +47,26 @@ def damp(f, timestep, Tau):
     Dampen the signal in the time domain
     """
     t = np.arange(0, len(f))*timestep
-    damped_sig = f*np.exp(-t/T)
-    x_array = np.arange(0, len(damped_sig))
+    damped_sig = f*np.exp(-t/Tau)
     return damped_sig
     
 def FWHM(freq_f, timestep):
     """
     Find the FWHM of the signal in the frequency domain
     """
+    length = len(freq_f)
 
-    if len(freq_f)%2 == 1:
-        length = 2*(len(freq_f)+1)
-    else:
-        length = 2*len(freq_f)
-    freq = np.fft.fftfreq(length)*2*np.pi/timestep
+    PS = np.real(freq_f * np.conj(freq_f)/length)
+    freq = np.real(np.fft.fftfreq(length)*2*np.pi/timestep)
     L = np.arange(1, np.floor(length/2), dtype = 'int')
-    
-    peaks, _ = find_peaks(freq_f)
+
+    peaks, _ = find_peaks(PS[L])
     sf = abs(freq[L][0]-freq[L][1])
-    results_half = peak_widths(freq_f, peaks, rel_height=0.5)
+
+    results_half = peak_widths(PS[L], peaks, rel_height=0.5)
     FWHM = results_half[0][np.where(results_half[1] == max(results_half[1]))]*sf
     max_height = max(results_half[1])*2
-    return FWHM[0]    
+    return FWHM[0]        
 
 class Pade():
     """
