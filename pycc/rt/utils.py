@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import solve,toeplitz
-from scipy.fftpack import fft,fftfreq
+from scipy.fftpack import fft,fftfreq, ifft
 import copy
 from scipy.signal import chirp, find_peaks, peak_widths
 
@@ -49,25 +49,59 @@ def FT(data,dt=1,norm=False,n=None):
 
 def denoise(f, filter_level, timestep):
     """
-    Denoise the signal in the time domain using FFT
+    Denoise a given signal in the time domain using fast fourier transform
+
+    Parameters
+    ----------
+    f : np.ndarray
+        one-dimensional time-domain data
+    filter_level : float/int
+                   level below which the values can be zeroed out
+                    in the frequency domain
+    timestep : float/int
+               incremental change in the independent variable
+    Returns
+    -------
+    fifft : np.ndarray
+            denoised signal in the time domain
     """
-    # Use PS to filter out the noise
-    length = len(f) #Number of data points
+
+    length = len(f) 
     x_array = np.arange(0, length)
-    fhat = np.fft.fft(f, length) #FFT
-    PS = fhat * np.conj(fhat)/length #Power spectrum
-    freq = np.fft.fftfreq(length)*2*np.pi/timestep
+    fhat = fft(f, length) 
+    PS = fhat * np.conj(fhat)/length 
+    freq = fftfreq(length)*2*np.pi/timestep
     L = np.arange(1, np.floor(length/2), dtype = 'int')
     
-    indices = PS > filter_level #Filter out the significant frequencies
-    PSClean = PS * indices #Zero out all other values
-    fhat = indices * fhat  #Zero out small FT coeff.
-    fifft = np.fft.ifft(fhat) #Inverse FFT
-    return np.real(fifft)
+    indices = PS > filter_level 
+    PSClean = PS * indices 
+    fhat = indices * fhat  
+    fifft = ifft(fhat) 
+    fifft = np.real(fifft)
+    return fifft
     
 def damp(f, timestep, Tau):
     """
-    Dampen the signal in the time domain
+    Dampen a given signal in the time domain using the
+    equation: f*e^(-t*Tau), where t is the time domain.
+
+    Parameters
+    ----------
+    f : np.ndarray
+        one-dimensional time-domain data
+
+    timestep : float/int
+               incremental change in the independent variable
+    
+    Tau : float/int
+          Damping factor
+
+    Returns
+    -------
+    damped_sig : np.ndarray
+                 dampened signal in the time domain using the
+                 equation: f*e^(-t*Tau), where t is the time
+                 domain.
     """
     t = np.arange(0, len(f))*timestep
     damped_sig = f*np.exp(-t/Tau)
@@ -75,12 +109,28 @@ def damp(f, timestep, Tau):
     
 def FWHM(freq_f, timestep):
     """
-    Find the FWHM of the signal in the frequency domain
+    Find the Full Width Half Max of a function by returning the 
+    width at the halfway point of the highest peak in the frequency 
+    domain.
+
+    Parameters
+    ----------
+    freq_f : np.ndarray
+             one-dimensional frequency-domain data
+
+    timestep : float/int
+               incremental change in the independent variable
+      
+    Returns
+    -------
+    FWHM : float/int
+           the full width half max of the signal in the frequency domain
     """
+
     length = len(freq_f)
 
     PS = np.real(freq_f * np.conj(freq_f)/length)
-    freq = np.real(np.fft.fftfreq(length)*2*np.pi/timestep)
+    freq = np.real(fftfreq(length)*2*np.pi/timestep)
     L = np.arange(1, np.floor(length/2), dtype = 'int')
 
     peaks, _ = find_peaks(PS[L])
@@ -89,7 +139,8 @@ def FWHM(freq_f, timestep):
     results_half = peak_widths(PS[L], peaks, rel_height=0.5)
     FWHM = results_half[0][np.where(results_half[1] == max(results_half[1]))]*sf
     max_height = max(results_half[1])*2
-    return FWHM[0]        
+    FWHM = FWHM[0]
+    return FWHM
 
 class Pade():
     """
