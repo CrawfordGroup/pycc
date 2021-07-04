@@ -1,15 +1,38 @@
 import numpy as np
 from scipy.linalg import solve,toeplitz
 from scipy.fftpack import fft,fftfreq
+import copy
 from scipy.signal import chirp, find_peaks, peak_widths
 
 def FT(data,dt=1,norm=False,n=None):
     """
-    Quick Fourier transform through scipy's FFTPACK
-    Given data, timestep
-    Returns positive region of symmetric FFT
-    Optional normalization (base peak of real and imag to +/-1)
-    Optional padding or cutting of resulting FFT
+    Fast discrete Fourier transform through scipy's FFTPACK
+
+    Parameters
+    ----------
+    data : array
+        one-dimensional time-domain data
+
+    Optionals
+    ---------
+    dt : float
+        time step for calculating frequency, default=1
+    norm : bool
+        return component-normalized signal, default=False
+    n : int
+        number of points desired for the FFT, truncates or zero-pads
+        default=None [len(data) is used]
+
+    Returns
+    -------
+    freq : np.ndarray
+        frequencies of the resulting FFT
+    FT : np.ndarray
+        the resulting frequencies
+
+    Examples
+    --------
+    >>> w,i = FT(dipole_array,dt=0.01,norm=True)
     """
     if not n:
         n = len(data)
@@ -72,30 +95,60 @@ class Pade():
     """
     A container for Padé approximants
     Based on Bruner et al (10.1021/acs.jctc.6b00511)
+
+    Methods
+    -------
+    build()
+        solves the system of equations for the a and b Padé coefficients
+    approx()
+        approximates the discrete Fourier transform for a given frequency range
     """
 
     def __init__(self,data,dt=1):
+        """
+        Parameters
+        ----------
+        data : array
+            one-dimensional time-domain data
+    
+        Optionals
+        ---------
+        dt : float
+            time step for calculating frequency, default=1
+        """
+        # len(data) == M+1 and we require type(N) == type(M/2) == int
+        # therefore len(data) needs to be odd
         if (len(data) % 2 == 0):
             print("Odd number required - removing last data point.")
-            self.data = data[:-1]
+            self.data = copy.deepcopy(data[:-1])
         else:
-            self.data = data
-        self.M = len(data)-1
-        self.N = self.M//2
+            self.data = copy.deepcopy(data)
+        self.M = len(self.data) - 1
+        self.N = int(self.M / 2)
         self.dt = dt
 
     def build(self,toeplitz_solver=True):
         """
-        form c, d, and G
+        forms c, d, and G
         solve Eq34 for b and Eq35 for a
+
+        Optionals
+        ---------
+        toeplitz_solver : bool
+            solve the b equations by recognizing G as a toeplitz matrix
+            default = True
         """
         M = self.M
         N = self.N
 
-        c = self.data[:M+1]
-        d = -1 * c[N+1:]
+        c = self.data # M+1 data points
+        d = -1 * c[N+1:] 
+        if len(d) != N:
+            raise ValueError("Why is your d vector {} elements long?".format(len(d)))
+        self.d = d
 
         # solve eq 34
+        # toeplitz solve courtesy of Eirill Strand Hauge
         b = np.ones(N+1)
         if toeplitz_solver:
             G = (c[N:2*N], np.flip(c[:N+1])[:-1])
@@ -105,22 +158,34 @@ class Pade():
             for k in range(0,N):
                 for m in range(0,N):
                     G[k][m] = c[N-m+k]
-
             b[1:] = solve(G,d)
 
         # solve eq 35
-        a = np.zeros(N+1)
-        a[0] = c[0]
-        for k in range(1,N+1):
-            for m in range(k+1):
-                a[k] += b[m]*c[k-m]
-
-        self.a = a
-        self.b = b
+        # toeplitz courtesy of Joshua Goings
+        if toeplitz_solver:
+            a = np.dot(np.tril(toeplitz(c[0:N+1])),b)
+        else:
+            a = np.zeros(N+1)
+            a[0] = c[0]
+            for k in range(1,N+1):
+                for m in range(0,k+1):
+                    a[k] += b[m]*c[k-m]
+        self.a = np.asarray(a)
+        self.b = np.asarray(b)
 
     def approx(self,o,norm=False):
         """
         approximate spectrum in range o (Eq29)
+
+        Parameters
+        ----------
+        o : array
+            array of frequencies to evaluate FFT[data]
+
+        Optionals
+        ---------
+        norm : bool
+            return component-normalized signal, default=False
         """
         try:
             a = self.a
@@ -128,17 +193,16 @@ class Pade():
         except AttributeError:
             raise AttributeError("Please `build()` Padé object.")
 
+        # poly1d trick courtesy of Joshua Goings
         O = np.exp(-1j*o*self.dt)
-        p = np.zeros(len(o), dtype='complex128') + a[0]
-        q = np.zeros(len(o), dtype='complex128') + b[0]
-        z = 1
-        for k in range(1, len(a)):
-            z *= O
-            p += a[k]*z
-            q += b[k]*z
-        F = p/q
+        p = np.poly1d(np.flip(a))
+        q = np.poly1d(np.flip(b))
+    
+        F = p(O)/q(O)
 
         if norm:
-            F /= F.max()
+            r = np.real(F) / np.abs(np.real(F)).max()
+            i = np.imag(F) / np.abs(np.imag(F)).max()
+            F = r + i*1j
 
-        return F
+        return np.asarray(F)
