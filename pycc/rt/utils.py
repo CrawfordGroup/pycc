@@ -82,7 +82,8 @@ def denoise(f, filter_level, timestep):
     
 def damp(f, timestep, Tau):
     """
-    Dampen a given signal in the time domain
+    Dampen a given signal in the time domain using the
+    equation: f*e^(-t*Tau), where t is the time domain.
 
     Parameters
     ----------
@@ -99,8 +100,8 @@ def damp(f, timestep, Tau):
     -------
     damped_sig : np.ndarray
                  dampened signal in the time domain using the
-                 equation: f*e^(-t*Tau), where t is independent
-                 axis.
+                 equation: f*e^(-t*Tau), where t is the time
+                 domain.
     """
     t = np.arange(0, len(f))*timestep
     damped_sig = f*np.exp(-t/Tau)
