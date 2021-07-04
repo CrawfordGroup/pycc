@@ -153,6 +153,12 @@ class Pade():
         solves the system of equations for the a and b Padé coefficients
     approx()
         approximates the discrete Fourier transform for a given frequency range
+
+    Examples
+    --------
+    >>> p = Pade(data,dt=0.01)
+    >>> p.build()
+    >>> F = p.approx(np.linspace(0,10,101),norm=True)
     """
 
     def __init__(self,data,dt=1):
@@ -237,6 +243,11 @@ class Pade():
         ---------
         norm : bool
             return component-normalized signal, default=False
+
+        Returns
+        -------
+        F : np.ndarray
+            Complex Padé approximant to the Fourier transform
         """
         try:
             a = self.a
