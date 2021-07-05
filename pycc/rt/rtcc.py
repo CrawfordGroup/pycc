@@ -4,9 +4,9 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 
 import psi4
 import numpy as np
-from .cc_eqs import build_tau
-from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
-from .density_eqs import build_Dovov, build_Doovv
+from pycc.cc_eqs import build_tau
+from pycc.density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
+from pycc.density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 
 
