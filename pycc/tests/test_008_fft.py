@@ -4,7 +4,7 @@ FFT test for the real-time submodule.
 
 # Import package, test suite, and other packages as needed
 from pycc.rt.utils import FT
-from scipy.fftpack import fft,fftfreq
+from scipy.fft import fft,fftfreq
 import pytest
 import numpy as np
 

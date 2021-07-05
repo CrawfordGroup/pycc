@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import solve,toeplitz
-from scipy.fftpack import fft,fftfreq, ifft
+from scipy.fft import fft,fftfreq,ifft
 import copy
 from scipy.signal import chirp, find_peaks, peak_widths
 

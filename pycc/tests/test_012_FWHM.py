@@ -1,6 +1,6 @@
 #Import required packages
 from pycc.rt.utils import FWHM
-from scipy.fftpack import fft
+from scipy.fft import fft
 import numpy as np
 import pytest
 
