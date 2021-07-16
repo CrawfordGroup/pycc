@@ -63,7 +63,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn):
+    def __init__(self, scf_wfn, local):
         """
         Parameters
         ----------
@@ -83,6 +83,8 @@ class ccenergy(object):
         self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
         self.nmo = self.ref.nmo()                       # all MOs/AOs
         self.nv = self.nmo - self.no - self.nfzc   # active virt
+
+        H = Hamiltonian(scf_wfn, local=local)
 
         # Get MOs
         C = self.ref.Ca_subset("AO", "ACTIVE")
