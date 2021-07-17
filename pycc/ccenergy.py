@@ -34,12 +34,8 @@ class ccenergy(object):
         the number of active virtual orbitals
     nmo : int
         the number of active orbitals
-    F : NumPy array
-        the Fock matrix: F(p,q) = h(p,q) + [2 <pm|qm> - <pm|mq>]
-    ERI : NumPy array
-        MO-basis electron-electron repulsion integrals in Dirac ordering: <pq|rs>
-    L : NumPy array
-        Spin-adapted linear combination of ERIs: 2 <pq|rs> - <pq|sr>
+    H : Hamiltonian object
+        the normal-ordered Hamiltonian, which includes the Fock matrix, the ERIs, and the spin-adapted ERIs (L)
     o : NumPy slice
         occupied orbital subspace
     v : NumPy slice
@@ -84,21 +80,7 @@ class ccenergy(object):
         self.nmo = self.ref.nmo()                       # all MOs/AOs
         self.nv = self.nmo - self.no - self.nfzc   # active virt
 
-        H = Hamiltonian(scf_wfn, local=local)
-
-        # Get MOs
-        C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C)  # as numpy array
-
-        # Get MO Fock matrix
-        self.F = np.asarray(self.ref.Fa())
-        self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
-
-        # Get MO two-electron integrals in Dirac notation
-        mints = psi4.core.MintsHelper(self.ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
-        self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
-        self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
+        self.H = Hamiltonian(scf_wfn, local=local)
 
         # orbital subspaces
         self.o = slice(0, self.no)
@@ -109,14 +91,14 @@ class ccenergy(object):
         v = self.v
 
         # denominators
-        eps_occ = np.diag(self.F)[o]
-        eps_vir = np.diag(self.F)[v]
+        eps_occ = np.diag(self.H.F)[o]
+        eps_vir = np.diag(self.H.F)[v]
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
 
         # first-order amplitudes
         self.t1 = np.zeros((self.no, self.nv))
-        self.t2 = self.ERI[o,o,v,v]/self.Dijab
+        self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
 
         print("CCSD initialized in %.3f seconds." % (time.time() - time_init))
 
@@ -144,8 +126,8 @@ class ccenergy(object):
 
         o = self.o
         v = self.v
-        F = self.F
-        L = self.L
+        F = self.H.F
+        L = self.H.L
         t1 = self.t1
         t2 = self.t2
         Dia = self.Dia
@@ -205,8 +187,8 @@ class ccenergy(object):
 
         o = self.o
         v = self.v
-        ERI = self.ERI
-        L = self.L
+        ERI = self.H.ERI
+        L = self.H.L
 
         Fae = build_Fae(o, v, F, L, t1, t2)
         Fmi = build_Fmi(o, v, F, L, t1, t2)

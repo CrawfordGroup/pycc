@@ -11,15 +11,22 @@ class Hamiltonian(object):
     def __init__(self, ref, local=None):
         self.ref = ref
 
-        if (local != None):
-            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
-            Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.bassiset(), C_occ)
-
         # Get MOs
         C = self.ref.Ca_subset("AO", "ACTIVE")
         npC = np.asarray(C)  # as numpy array
 
-        # Get MO Fock matrix
+        # Localize occupied MOs if requested
+        if (local != None):
+            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
+            npC_occ = np.asarray(C_occ)
+            no = self.ref.doccpi()[0] - self.ref.frzcpi()[0]  # assumes symmetry c1
+            Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.bassiset(), C_occ)
+            Local.localize()
+            npL = np.asarray(Local.L)
+            npC[:,no] = npL
+            C = psi4.core.Matrix.from_array(npC)
+
+        # Generate MO Fock matrix
         self.F = np.asarray(self.ref.Fa())
         self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
 
