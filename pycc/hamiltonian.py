@@ -5,10 +5,12 @@ if __name__ == "__main__":
 import psi4
 import numpy as np
 
+np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
+
 class Hamiltonian(object):
 
 
-    def __init__(self, ref, local=None):
+    def __init__(self, ref, local=False):
         self.ref = ref
 
         # Get MOs
@@ -16,14 +18,14 @@ class Hamiltonian(object):
         npC = np.asarray(C)  # as numpy array
 
         # Localize occupied MOs if requested
-        if (local != None):
+        if (local == True):
             C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
             npC_occ = np.asarray(C_occ)
             no = self.ref.doccpi()[0] - self.ref.frzcpi()[0]  # assumes symmetry c1
-            Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.bassiset(), C_occ)
+            Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.basisset(), C_occ)
             Local.localize()
             npL = np.asarray(Local.L)
-            npC[:,no] = npL
+            npC[:,:no] = npL
             C = psi4.core.Matrix.from_array(npC)
 
         # Generate MO Fock matrix
@@ -35,3 +37,5 @@ class Hamiltonian(object):
         self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
+
+        print(self.F)

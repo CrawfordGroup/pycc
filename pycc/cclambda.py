@@ -88,8 +88,8 @@ class cclambda(object):
         l2 = self.l2
         Dia = self.ccwfn.Dia
         Dijab = self.ccwfn.Dijab
-        ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
+        ERI = self.ccwfn.H.ERI
+        L = self.ccwfn.H.L
 
         Hov = self.hbar.Hov
         Hvv = self.hbar.Hvv
@@ -158,8 +158,8 @@ class cclambda(object):
 
         o = self.ccwfn.o
         v = self.ccwfn.v
-        ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
+        ERI = self.ccwfn.H.ERI
+        L = self.ccwfn.H.L
 
         Hov = build_Hov(o, v, F, L, t1)
         Hvv = build_Hvv(o, v, F, L, t1, t2)

@@ -14,6 +14,8 @@ from .utils import helper_diis
 from .cc_eqs import build_Fae, build_Fmi, build_Fme
 from .cc_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
 from .cc_eqs import r_T1, r_T2, ccsd_energy
+from .hamiltonian import Hamiltonian
+from .local import Local
 
 
 class ccenergy(object):
@@ -59,7 +61,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, local):
+    def __init__(self, scf_wfn, local=False):
         """
         Parameters
         ----------
@@ -80,8 +82,6 @@ class ccenergy(object):
         self.nmo = self.ref.nmo()                       # all MOs/AOs
         self.nv = self.nmo - self.no - self.nfzc   # active virt
 
-        self.H = Hamiltonian(scf_wfn, local=local)
-
         # orbital subspaces
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
@@ -89,6 +89,12 @@ class ccenergy(object):
         # For convenience
         o = self.o
         v = self.v
+
+        self.H = Hamiltonian(self.ref, local=local)
+
+        if (local != False):
+            lpno_cutoff = 1e-5  # testing
+            self.Local = Local(self.ref, o, v, self.H, lpno_cutoff)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
