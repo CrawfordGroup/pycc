@@ -46,11 +46,12 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
         self.V = V
+        self.kick = kick
 
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
@@ -59,7 +60,11 @@ class rtcc(object):
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
-        self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
+        if kick:
+            s_to_i = {"x":0, "y":1, "z":2}
+            self.mu_tot = self.mu[s_to_i[kick.lower()]]
+        else:
+            self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
         if magnetic:
             m_ints = mints.ao_angular_momentum()
