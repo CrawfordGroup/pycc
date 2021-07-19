@@ -37,7 +37,9 @@ def FT(data,dt=1,norm=False,n=None):
     if not n:
         n = len(data)
 
-    FT = fft(data,n=n)[1:n//2]
+    dip_pad = np.insert(data, n,np.zeros(50000)) # zero-pad
+
+    FT = fft(dip_pad,n=n)[1:n//2]
     freq = fftfreq(n)[1:n//2]*2*np.pi/dt
 
     if norm: # normalize real and imaginary components separately
