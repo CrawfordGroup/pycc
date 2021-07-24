@@ -28,22 +28,22 @@ class Local(object):
         rmsd = 0.0
         niter = 0
 
-#        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
-#            elast = emp2
-#
-#            r2 = 0.5 * H.ERI[o,o,v,v].copy()
-#            r2 += contract('ijae,be->ijab', t2, H.F[v,v])
-#            r2 -= contract('imab,mj->ijab', t2, H.F[o,o])
-#            r2 = r2 + r2.swapaxes(0,1).swapaxes(2,3)
-#
-#            t2 += r2/Dijab
-#
-#            rmsd = np.sqrt(contract('ijab,ijab->', r2/Dijab, r2/Dijab))
-#
-#            emp2 = contract('ijab,ijab->', t2, H.L[o,o,v,v])
-#            ediff = emp2 - elast
-#
-#            print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
+        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            elast = emp2
+
+            r2 = 0.5 * H.ERI[o,o,v,v].copy()
+            r2 += contract('ijae,be->ijab', t2, H.F[v,v])
+            r2 -= contract('imab,mj->ijab', t2, H.F[o,o])
+            r2 = r2 + r2.swapaxes(0,1).swapaxes(2,3)
+
+            t2 += r2/Dijab
+
+            rmsd = np.sqrt(contract('ijab,ijab->', r2/Dijab, r2/Dijab))
+
+            emp2 = contract('ijab,ijab->', t2, H.L[o,o,v,v])
+            ediff = emp2 - elast
+
+            print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
 
         ## Build LPNOs and store transformation matrices
         print("Computing PNOs.  Canonical VMO dim: %d" % (nv))
@@ -68,13 +68,6 @@ class Local(object):
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
             dim[ij] = (occ[ij] > cutoff).sum()
             Q.append(Q_full[ij, :, (nv-dim[ij]):])
-
-            print("ij = %d" % (ij))
-            print("Q^+ * Q = ")
-            print(Q[ij].T @ Q[ij])
-
-            print("Q^+ * Q = ")
-            print(Q[ij] @ Q[ij].T)
 
             # Compute semicanonical virtual space
             F = Q[ij].T @ H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
@@ -149,14 +142,8 @@ class Local(object):
             i = ij // no
             j = ij % no
 
-#            print("R2 %d before localization:" % (ij))
-#            print(r2[i,j])
-
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
-
-#            print("R2 %d after localization:" % (ij))
-#            print(t2[i,j])
 
         return t1, t2
 
