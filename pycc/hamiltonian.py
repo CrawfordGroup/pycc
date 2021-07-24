@@ -16,6 +16,7 @@ class Hamiltonian(object):
         # Get MOs
         C = self.ref.Ca_subset("AO", "ACTIVE")
         npC = np.asarray(C)  # as numpy array
+        self.C = C
 
         # Localize occupied MOs if requested
         if (local == True):
@@ -27,6 +28,7 @@ class Hamiltonian(object):
             npL = np.asarray(Local.L)
             npC[:,:no] = npL
             C = psi4.core.Matrix.from_array(npC)
+            self.C = C
 
         # Generate MO Fock matrix
         self.F = np.asarray(self.ref.Fa())

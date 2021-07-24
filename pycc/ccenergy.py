@@ -61,7 +61,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, local=False):
+    def __init__(self, scf_wfn, local=False, lpno_cutoff=1e-5):
         """
         Parameters
         ----------
@@ -92,9 +92,9 @@ class ccenergy(object):
 
         self.H = Hamiltonian(self.ref, local=local)
 
-        if (local != False):
-            lpno_cutoff = 1e-5  # testing
-            self.Local = Local(self.ref, o, v, self.H, lpno_cutoff)
+        self.local = local
+        if local is not False:
+            self.Local = Local(self.no, self.nv, self.H, lpno_cutoff)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
@@ -104,7 +104,11 @@ class ccenergy(object):
 
         # first-order amplitudes
         self.t1 = np.zeros((self.no, self.nv))
-        self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
+        if local is not False:
+            self.t1, self.t2 = self.Local.filter_amps(self.t1, self.H.ERI[o,o,v,v])
+        else:
+            self.t1 = np.zeros((self.no, self.nv))
+            self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
 
         print("CCSD initialized in %.3f seconds." % (time.time() - time_init))
 
@@ -150,12 +154,19 @@ class ccenergy(object):
 
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
-            self.t1 += r1/Dia
-            self.t2 += r2/Dijab
-
-            rms = contract('ia,ia->', r1/Dia, r1/Dia)
-            rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-            rms = np.sqrt(rms)
+            if self.local is not False:
+                inc1, inc2 = self.Local.filter_amps(r1, r2)
+                self.t1 += inc1
+                self.t2 += inc2
+                rms = contract('ia,ia->', inc1, inc1)
+                rms += contract('ijab,ijab->', inc2, inc2)
+                rms = np.sqrt(rms)
+            else:
+                self.t1 += r1/Dia
+                self.t2 += r2/Dijab
+                rms = contract('ia,ia->', r1/Dia, r1/Dia)
+                rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                rms = np.sqrt(rms)
 
             ecc = ccsd_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last

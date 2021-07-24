@@ -121,12 +121,19 @@ class cclambda(object):
             r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
             r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
-            self.l1 += r1/Dia
-            self.l2 += r2/Dijab
-
-            rms = contract('ia,ia->', r1/Dia, r1/Dia)
-            rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-            rms = np.sqrt(rms)
+            if self.ccwfn.local is not False:
+                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
+                self.l1 += inc1
+                self.l2 += inc2
+                rms = contract('ia,ia->', inc1, inc1)
+                rms += contract('ijab,ijab->', inc2, inc2)
+                rms = np.sqrt(rms)
+            else:
+                self.l1 += r1/Dia
+                self.l2 += r2/Dijab
+                rms = contract('ia,ia->', r1/Dia, r1/Dia)
+                rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                rms = np.sqrt(rms)
 
             lecc = pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
