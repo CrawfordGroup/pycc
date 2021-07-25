@@ -32,7 +32,8 @@ class Hamiltonian(object):
 
         # Generate MO Fock matrix
         self.F = np.asarray(self.ref.Fa())
-        self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
+        # self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
+        self.F = npC.T @ self.F @ npC
 
         # Get MO two-electron integrals in Dirac notation
         mints = psi4.core.MintsHelper(self.ref.basisset())
@@ -40,4 +41,7 @@ class Hamiltonian(object):
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
 
+        print("AO Fock matrix from reference wave function:")
+        print(np.asarray(self.ref.Fa()))
+        print("MO Fock matrix:")
         print(self.F)
