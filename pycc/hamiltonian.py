@@ -43,5 +43,7 @@ class Hamiltonian(object):
 
         print("AO Fock matrix from reference wave function:")
         print(np.asarray(self.ref.Fa()))
+        print("MOs (may be localized):")
+        print(npC)
         print("MO Fock matrix:")
         print(self.F)
