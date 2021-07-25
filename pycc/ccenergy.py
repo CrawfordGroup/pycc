@@ -14,6 +14,8 @@ from .utils import helper_diis
 from .cc_eqs import build_Fae, build_Fmi, build_Fme
 from .cc_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
 from .cc_eqs import r_T1, r_T2, ccsd_energy
+from .hamiltonian import Hamiltonian
+from .local import Local
 
 
 class ccenergy(object):
@@ -34,12 +36,8 @@ class ccenergy(object):
         the number of active virtual orbitals
     nmo : int
         the number of active orbitals
-    F : NumPy array
-        the Fock matrix: F(p,q) = h(p,q) + [2 <pm|qm> - <pm|mq>]
-    ERI : NumPy array
-        MO-basis electron-electron repulsion integrals in Dirac ordering: <pq|rs>
-    L : NumPy array
-        Spin-adapted linear combination of ERIs: 2 <pq|rs> - <pq|sr>
+    H : Hamiltonian object
+        the normal-ordered Hamiltonian, which includes the Fock matrix, the ERIs, and the spin-adapted ERIs (L)
     o : NumPy slice
         occupied orbital subspace
     v : NumPy slice
@@ -63,7 +61,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn):
+    def __init__(self, scf_wfn, local=False, lpno_cutoff=1e-5):
         """
         Parameters
         ----------
@@ -84,20 +82,6 @@ class ccenergy(object):
         self.nmo = self.ref.nmo()                       # all MOs/AOs
         self.nv = self.nmo - self.no - self.nfzc   # active virt
 
-        # Get MOs
-        C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C)  # as numpy array
-
-        # Get MO Fock matrix
-        self.F = np.asarray(self.ref.Fa())
-        self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
-
-        # Get MO two-electron integrals in Dirac notation
-        mints = psi4.core.MintsHelper(self.ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
-        self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
-        self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
-
         # orbital subspaces
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
@@ -106,15 +90,25 @@ class ccenergy(object):
         o = self.o
         v = self.v
 
+        self.H = Hamiltonian(self.ref, local=local)
+
+        self.local = local
+        if local is not False:
+            self.Local = Local(self.no, self.nv, self.H, lpno_cutoff)
+
         # denominators
-        eps_occ = np.diag(self.F)[o]
-        eps_vir = np.diag(self.F)[v]
+        eps_occ = np.diag(self.H.F)[o]
+        eps_vir = np.diag(self.H.F)[v]
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
 
         # first-order amplitudes
         self.t1 = np.zeros((self.no, self.nv))
-        self.t2 = self.ERI[o,o,v,v]/self.Dijab
+        if local is not False:
+            self.t1, self.t2 = self.Local.filter_amps(self.t1, self.H.ERI[o,o,v,v])
+        else:
+            self.t1 = np.zeros((self.no, self.nv))
+            self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
 
         print("CCSD initialized in %.3f seconds." % (time.time() - time_init))
 
@@ -142,8 +136,8 @@ class ccenergy(object):
 
         o = self.o
         v = self.v
-        F = self.F
-        L = self.L
+        F = self.H.F
+        L = self.H.L
         t1 = self.t1
         t2 = self.t2
         Dia = self.Dia
@@ -160,12 +154,19 @@ class ccenergy(object):
 
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
-            self.t1 += r1/Dia
-            self.t2 += r2/Dijab
-
-            rms = contract('ia,ia->', r1/Dia, r1/Dia)
-            rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-            rms = np.sqrt(rms)
+            if self.local is not False:
+                inc1, inc2 = self.Local.filter_amps(r1, r2)
+                self.t1 += inc1
+                self.t2 += inc2
+                rms = contract('ia,ia->', inc1, inc1)
+                rms += contract('ijab,ijab->', inc2, inc2)
+                rms = np.sqrt(rms)
+            else:
+                self.t1 += r1/Dia
+                self.t2 += r2/Dijab
+                rms = contract('ia,ia->', r1/Dia, r1/Dia)
+                rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                rms = np.sqrt(rms)
 
             ecc = ccsd_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
@@ -203,8 +204,8 @@ class ccenergy(object):
 
         o = self.o
         v = self.v
-        ERI = self.ERI
-        L = self.L
+        ERI = self.H.ERI
+        L = self.H.L
 
         Fae = build_Fae(o, v, F, L, t1, t2)
         Fmi = build_Fmi(o, v, F, L, t1, t2)

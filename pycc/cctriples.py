@@ -15,9 +15,9 @@ class cctriples(object):
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
-        F = self.ccwfn.F
-        ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        L = self.ccwfn.H.L
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
         X1 = np.zeros_like(self.ccwfn.t1)
@@ -45,9 +45,9 @@ class cctriples(object):
         v = self.ccwfn.v
         no = self.ccwfn.no
         nv = self.ccwfn.nv
-        F = self.ccwfn.F
-        ERI = self.ccwfn.ERI
-        L = self.ccwfn.L
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        L = self.ccwfn.H.L
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
         X1 = np.zeros_like(t1.T)
@@ -75,8 +75,8 @@ class cctriples(object):
         v = self.ccwfn.v
         no = self.ccwfn.no
         nv = self.ccwfn.nv
-        F = self.ccwfn.F
-        ERI = self.ccwfn.ERI
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
 

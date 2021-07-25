@@ -55,7 +55,7 @@ class rtcc(object):
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
         dipole_ints = mints.ao_dipole()
-        C = np.asarray(ccwfn.ref.Ca_subset("AO", "ACTIVE"))
+        C = np.asarray(self.ccwfn.H.C)  # May be localized MOs, so we take them from H
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
@@ -85,16 +85,20 @@ class rtcc(object):
         t1, t2, l1, l2 = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
-        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
+        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
         rt2 = rt2 * (-1.0j)
+        if self.ccwfn.local is not False:
+            rt1, rt2 = self.ccwfn.Local.filter_res(rt1, rt2)
 
         rl1, rl2 = self.cclambda.residuals(F, t1, t2, l1, l2)
         rl1 = rl1 * (+1.0j)
         rl2 = rl2 * (+1.0j)
+        if self.ccwfn.local is not False:
+            rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
         # Pack up the residuals
         y = self.collect_amps(rt1, rt2, rl1, rl2)
@@ -182,9 +186,9 @@ class rtcc(object):
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
-        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
+        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
         ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
-        L = self.ccwfn.L
+        L = self.ccwfn.H.L
         ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
         return ecc
 
@@ -204,7 +208,7 @@ class rtcc(object):
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
-        ERI = self.ccwfn.ERI
+        ERI = self.ccwfn.H.ERI
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
         Doooo = build_Doooo(t1, t2, l2)
         Dvvvv = build_Dvvvv(t1, t2, l2)
@@ -213,10 +217,10 @@ class rtcc(object):
         Dovov = build_Dovov(t1, t2, l1, l2)
         Doovv = build_Doovv(t1, t2, l1, l2)
 
-        F = self.ccwfn.F.copy() + self.mu_tot * self.V(t)
+        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 
         eref = 2.0 * np.trace(F[o,o])
-        eref -= np.trace(np.trace(self.ccwfn.L[o,o,o,o], axis1=1, axis2=3))
+        eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
 
         eone = F.flatten().dot(opdm.flatten())
 
