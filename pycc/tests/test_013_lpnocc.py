@@ -42,5 +42,5 @@ def test_lpno_ccsd():
     epsi4 = -0.221156413159674
     lpsi4 = -0.217144045119535
 
-    assert (abs(epsi4 - eccsd) < 1e-11)
-    assert (abs(lpsi4 - lccsd) < 1e-11)
+    assert (abs(epsi4 - eccsd) < 1e-7)
+    assert (abs(lpsi4 - lccsd) < 1e-7)
