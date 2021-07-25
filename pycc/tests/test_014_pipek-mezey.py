@@ -96,3 +96,43 @@ def test_pipek_mezey_CO_631gss():
     assert((np.abs(np.asarray(Local.L)[5,1]) - pm_C_1s_local) < 1e-4)
 
     assert(False)
+
+def test_pipek_mezey_H2_2_ccpvdz():
+    """CO Pipek-Mezey Test"""
+    # Psi4 Setup
+    psi4.set_memory('2 GB')
+    psi4.core.set_output_file('output.dat', False)
+    psi4.set_options({'basis': 'cc-pVDZ',
+                      'scf_type': 'pk',
+                      'mp2_type': 'conv',
+                      'freeze_core': 'false',
+                      'e_convergence': 1e-13,
+                      'd_convergence': 1e-13,
+                      'r_convergence': 1e-13,
+                      'diis': 1})
+    mol = psi4.geometry(moldict["(H2)_2"])
+    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+
+    print("Canonical Occupied MOs:")
+    C_occ = rhf_wfn.Ca_subset("AO", "ACTIVE_OCC")
+    print(np.asarray(C_occ))
+
+#    pm_O_1s_canon = 0.9941
+#    pm_C_1s_canon = 0.9936
+
+    Local = psi4.core.Localizer.build("PIPEK_MEZEY", rhf_wfn.basisset(), C_occ)
+    Local.localize()
+    print("Pipek-Mezey Localized Occupied MOs:")
+    print(np.asarray(Local.L))
+
+#    # From Table II of J. Pipek and P.G. Mezey, J. Chem. Phys. 90, 4916-4926 (1989).
+#    pm_O_1s_local = 1.0250
+#    pm_C_1s_local = 1.0189
+
+    assert(False)
+#    assert((np.abs(np.asarray(C_occ)[0,0]) - pm_O_1s_canon) < 1e-4)
+#    assert((np.abs(np.asarray(C_occ)[5,1]) - pm_C_1s_canon) < 1e-4)
+#    assert((np.abs(np.asarray(Local.L)[0,0]) - pm_O_1s_local) < 1e-4)
+#    assert((np.abs(np.asarray(Local.L)[5,1]) - pm_C_1s_local) < 1e-4)
+
+
