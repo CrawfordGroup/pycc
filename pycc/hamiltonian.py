@@ -5,7 +5,8 @@ if __name__ == "__main__":
 import psi4
 import numpy as np
 
-np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
+np.set_printoptions(precision=15, linewidth=200, threshold=200, suppress=False)
+np.set_printoptions(edgeitems=10)
 
 class Hamiltonian(object):
 
@@ -41,9 +42,7 @@ class Hamiltonian(object):
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
 
-        print("AO Fock matrix from reference wave function:")
-        print(np.asarray(self.ref.Fa()))
-        print("MOs (may be localized):")
-        print(npC)
-        print("MO Fock matrix:")
-        print(self.F)
+#        print("MOs (may be localized):")
+#        print(npC)
+#        print("MO Fock matrix:")
+#        print(self.F)

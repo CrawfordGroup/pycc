@@ -33,13 +33,13 @@ jobs:
         df -h
         ulimit -a
 
-#    - name: Create Psi4 Environment
-#      uses: conda-incubator/setup-miniconda@v2
-#      with:
-#        activate-environment: p4dev
-#        environment-file: devtools/conda-envs/psi.yaml
-#        python-version: ${{ matrix.python-version }}
-#        auto-activate-base: true
+    - name: Create Psi4 Environment
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: p4dev
+        environment-file: devtools/conda-envs/psi.yaml
+        python-version: ${{ matrix.python-version }}
+        auto-activate-base: true
 
     - name: Environment Information
       run: |
@@ -53,6 +53,7 @@ jobs:
         conda info
         conda list --show-channel-urls
         conda install psi4 python=${{ matrix.python-version }} -c psi4/label/dev
+        ls -l $CONDA
 
     - name: Test Psi4 Python Loading
       run: |
