@@ -13,6 +13,7 @@ A Python-based coupled cluster implementation.  Current capabilities include:
   - Triples-drivers for (T), CC3, and other approximate triples
   - RHF-CCSD densities
   - Real-time CCSD
+  - LPNO-CCSD energies and RT-CC (preliminary)
 
 Future plans:
   - CC2 and CC3 methods
