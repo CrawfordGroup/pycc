@@ -33,13 +33,13 @@ jobs:
         df -h
         ulimit -a
 
-    - name: Create Psi4 Environment
-      uses: conda-incubator/setup-miniconda@v2
-      with:
-        activate-environment: p4dev
-        environment-file: devtools/conda-envs/psi.yaml
-        python-version: ${{ matrix.python-version }}
-        auto-activate-base: true
+#    - name: Create Psi4 Environment
+#      uses: conda-incubator/setup-miniconda@v2
+#      with:
+#        activate-environment: p4dev
+#        environment-file: devtools/conda-envs/psi.yaml
+#        python-version: ${{ matrix.python-version }}
+#        auto-activate-base: true
 
     - name: Environment Information
       run: |
@@ -72,7 +72,7 @@ jobs:
 
     - name: PyTest
       run: |
-        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/
+        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/test_013_lpnocc.py
 
     - name: CodeCov
       uses: codecov/codecov-action@v1
