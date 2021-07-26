@@ -5,8 +5,8 @@ if __name__ == "__main__":
 import psi4
 import numpy as np
 
-class Hamiltonian(object):
 
+class Hamiltonian(object):
 
     def __init__(self, ref, local=False):
         self.ref = ref
@@ -17,9 +17,8 @@ class Hamiltonian(object):
         self.C = C
 
         # Localize occupied MOs if requested
-        if (local == True):
+        if (local is not False):
             C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
-            npC_occ = np.asarray(C_occ)
             no = self.ref.doccpi()[0] - self.ref.frzcpi()[0]  # assumes symmetry c1
             Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.basisset(), C_occ)
             Local.localize()

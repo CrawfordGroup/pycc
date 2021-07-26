@@ -1,6 +1,5 @@
 import numpy as np
 from opt_einsum import contract
-import scipy.linalg
 
 
 class Local(object):
@@ -10,7 +9,7 @@ class Local(object):
         o = slice(0, no)
         v = slice(no, no+nv)
 
-        ## Compute MP2 amplitudes in non-canonical MO basis
+        # Compute MP2 amplitudes in non-canonical MO basis
         eps_occ = np.diag(H.F)[o]
         eps_vir = np.diag(H.F)[v]
         Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
@@ -21,9 +20,9 @@ class Local(object):
         emp2 = contract('ijab,ijab->', t2, H.L[o,o,v,v])
         print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E" % (0, emp2, -emp2))
 
-        e_conv=1e-7
-        r_conv=1e-7
-        maxiter=100
+        e_conv = 1e-7
+        r_conv = 1e-7
+        maxiter = 100
         ediff = emp2
         rmsd = 0.0
         niter = 0
@@ -45,7 +44,7 @@ class Local(object):
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
 
-        ## Build LPNOs and store transformation matrices
+        # Build LPNOs and store transformation matrices
         print("Computing PNOs.  Canonical VMO dim: %d" % (nv))
         T_ij = t2.copy().reshape((no*no, nv, nv))
         Tt_ij = 2.0 * T_ij - T_ij.swapaxes(1,2)
@@ -62,7 +61,7 @@ class Local(object):
 
             # Compute pair density
             D[ij] = contract('ab,bc->ac', T_ij[ij], Tt_ij[ij].T) + contract('ab,bc->ac', T_ij[ij].T, Tt_ij[ij])
-            D[ij] *= 2.0/(1 + int(i==j))
+            D[ij] *= 2.0/(1 + int(i == j))
 
             # Compute PNOs and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
@@ -88,7 +87,6 @@ class Local(object):
         self.dim = dim  # dimension of LPNO space
         self.eps = eps  # semicananonical LPNO energies
         self.L = L  # transform between LPNO and semicanonical LPNO spaces
-
 
     def filter_amps(self, r1, r2):
         no = self.no
@@ -118,7 +116,7 @@ class Local(object):
 
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
-                     Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+                    Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
 
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
@@ -128,7 +126,6 @@ class Local(object):
     def filter_res(self, r1, r2):
         no = self.no
         nv = self.nv
-        dim = self.dim
 
         t1 = np.zeros((no,nv)).astype('complex128')
         for i in range(no):
@@ -146,4 +143,3 @@ class Local(object):
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
         return t1, t2
-

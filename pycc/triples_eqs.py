@@ -3,6 +3,7 @@
 import numpy as np
 from opt_einsum import contract
 
+
 def t3c_ijk(o, v, i, j, k, t2, ERI, F, WithDenom=True):
 
     t3 = contract('eab,ce->abc', ERI[i,v,v,v], t2[k,j])
@@ -27,6 +28,7 @@ def t3c_ijk(o, v, i, j, k, t2, ERI, F, WithDenom=True):
         return t3/denom
     else:
         return t3
+
 
 def t3c_abc(o, v, a, b, c, t2, ERI, F, WithDenom=True):
     no = o.stop
@@ -53,6 +55,7 @@ def t3c_abc(o, v, a, b, c, t2, ERI, F, WithDenom=True):
         return t3/denom
     else:
         return t3
+
 
 def t3d_ijk(o, v, i, j, k, t1, t2, ERI, F, WithDenom=True):
     t3 = contract('ab,c->abc', ERI[i,j,v,v], t1[k])

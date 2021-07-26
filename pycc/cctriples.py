@@ -38,9 +38,9 @@ class cctriples(object):
 
         return ET
 
-
     # Vikings' formulation – inverted algorithm
     def t_vikings_inverted(self):
+
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
@@ -68,7 +68,6 @@ class cctriples(object):
 
         return ET
 
-
     # Lee and Rendell's formulation
     def t_tjl(self):
         o = self.ccwfn.o
@@ -90,7 +89,7 @@ class cctriples(object):
                     for a in range(nv):
                         for b in range(nv):
                             for c in range(nv):
-                                V3[a,b,c] /= (1.0 + int(a==b) + int(a==c) + int(b==c))
+                                V3[a,b,c] /= (1.0 + int(a == b) + int(a == c) + int(b == c))
 
                     X3 = W3 * V3  # abc
                     X3 += W3.swapaxes(1,2) * V3.swapaxes(1,2)  # acb
@@ -112,7 +111,7 @@ class cctriples(object):
                             for c in range(b+1):
                                 ET += (
                                     (Y3[a,b,c] - 2.0 * Z3[a,b,c]) * (W3[a,b,c] + W3[b,c,a] + W3[c,a,b])
-                                   +(Z3[a,b,c] - 2.0 * Y3[a,b,c]) * (W3[a,c,b] + W3[b,a,c] + W3[c,b,a])
-                                   + 3.0 * X3[a,b,c]) * (2.0 - (int(i==j) + int(i==k) + int(j==k)))/denom[a,b,c]
+                                    + (Z3[a,b,c] - 2.0 * Y3[a,b,c]) * (W3[a,c,b] + W3[b,a,c] + W3[c,b,a])
+                                    + 3.0 * X3[a,b,c]) * (2.0 - (int(i == j) + int(i == k) + int(j == k)))/denom[a,b,c]
 
         return ET
