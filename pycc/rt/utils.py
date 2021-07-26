@@ -2,7 +2,8 @@ import numpy as np
 from scipy.linalg import solve,toeplitz
 from scipy.fft import fft,fftfreq,ifft
 import copy
-from scipy.signal import chirp, find_peaks, peak_widths
+from scipy.signal import find_peaks, peak_widths
+
 
 def FT(data,dt=1,norm=False,n=None):
     """
@@ -37,9 +38,7 @@ def FT(data,dt=1,norm=False,n=None):
     if not n:
         n = len(data)
 
-    dip_pad = np.insert(data, n,np.zeros(50000)) # zero-pad
-
-    FT = fft(dip_pad,n=n)[1:n//2]
+    FT = fft(data,n=n)[1:n//2]
     freq = fftfreq(n)[1:n//2]*2*np.pi/dt
 
     if norm: # normalize real and imaginary components separately
@@ -48,6 +47,7 @@ def FT(data,dt=1,norm=False,n=None):
         FT = r + i*1j
 
     return freq,FT
+
 
 def denoise(f, filter_level, timestep):
     """
@@ -68,20 +68,17 @@ def denoise(f, filter_level, timestep):
             denoised signal in the time domain
     """
 
-    length = len(f) 
-    x_array = np.arange(0, length)
-    fhat = fft(f, length) 
-    PS = fhat * np.conj(fhat)/length 
-    freq = fftfreq(length)*2*np.pi/timestep
-    L = np.arange(1, np.floor(length/2), dtype = 'int')
-    
-    indices = PS > filter_level 
-    PSClean = PS * indices 
-    fhat = indices * fhat  
-    fifft = ifft(fhat) 
+    length = len(f)
+    fhat = fft(f, length)
+    PS = fhat * np.conj(fhat)/length
+
+    indices = PS > filter_level
+    fhat = indices * fhat
+    fifft = ifft(fhat)
     fifft = np.real(fifft)
     return fifft
-    
+
+
 def damp(f, timestep, Tau):
     """
     Dampen a given signal in the time domain using the
@@ -94,7 +91,7 @@ def damp(f, timestep, Tau):
 
     timestep : float/int
                incremental change in the independent variable
-    
+
     Tau : float/int
           Damping factor
 
@@ -108,11 +105,12 @@ def damp(f, timestep, Tau):
     t = np.arange(0, len(f))*timestep
     damped_sig = f*np.exp(-t/Tau)
     return damped_sig
-    
+
+
 def FWHM(freq_f, timestep):
     """
-    Find the Full Width Half Max of a function by returning the 
-    width at the halfway point of the highest peak in the frequency 
+    Find the Full Width Half Max of a function by returning the
+    width at the halfway point of the highest peak in the frequency
     domain.
 
     Parameters
@@ -122,7 +120,7 @@ def FWHM(freq_f, timestep):
 
     timestep : float/int
                incremental change in the independent variable
-      
+
     Returns
     -------
     FWHM : float/int
@@ -140,9 +138,9 @@ def FWHM(freq_f, timestep):
 
     results_half = peak_widths(PS[L], peaks, rel_height=0.5)
     FWHM = results_half[0][np.where(results_half[1] == max(results_half[1]))]*sf
-    max_height = max(results_half[1])*2
     FWHM = FWHM[0]
     return FWHM
+
 
 class Pade():
     """
@@ -169,7 +167,7 @@ class Pade():
         ----------
         data : array
             one-dimensional time-domain data
-    
+
         Optionals
         ---------
         dt : float
@@ -186,6 +184,7 @@ class Pade():
         self.N = int(self.M / 2)
         self.dt = dt
 
+
     def build(self,toeplitz_solver=True):
         """
         forms c, d, and G
@@ -197,11 +196,10 @@ class Pade():
             solve the b equations by recognizing G as a toeplitz matrix
             default = True
         """
-        M = self.M
         N = self.N
 
         c = self.data # M+1 data points
-        d = -1 * c[N+1:] 
+        d = -1 * c[N+1:]
         if len(d) != N:
             raise ValueError("Why is your d vector {} elements long?".format(len(d)))
         self.d = d
@@ -232,6 +230,7 @@ class Pade():
         self.a = np.asarray(a)
         self.b = np.asarray(b)
 
+
     def approx(self,o,norm=False):
         """
         approximate spectrum in range o (Eq29)
@@ -261,7 +260,7 @@ class Pade():
         O = np.exp(-1j*o*self.dt)
         p = np.poly1d(np.flip(a))
         q = np.poly1d(np.flip(b))
-    
+
         F = p(O)/q(O)
 
         if norm:
