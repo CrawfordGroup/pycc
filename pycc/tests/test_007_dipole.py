@@ -52,6 +52,6 @@ def test_dipole_h2_2_cc_pvdz():
     ref = [0, 0, -2.3037968376087573E-5]
     m_x, m_y, m_z = rtcc.dipole(t1, t2, l1, l2, magnetic = True)
 
-    assert (abs(ref[0] - m_x) < 1E-10)
-    assert (abs(ref[1] - m_y) < 1E-10)
-    assert (abs(ref[2] - m_z) < 1E-10)
+    assert (abs(ref[0]*1.0j - m_x) < 1E-10)
+    assert (abs(ref[1]*1.0j - m_y) < 1E-10)
+    assert (abs(ref[2]*1.0j - m_z) < 1E-10)
