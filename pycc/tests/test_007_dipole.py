@@ -27,7 +27,7 @@ def test_dipole_h2_2_cc_pvdz():
     r_conv = 1e-13
 
     cc = pycc.ccenergy(rhf_wfn)
-    ecc = cc.solve_ccsd(e_conv, r_conv)
+    ecc = cc.solve_cc(e_conv, r_conv)
 
     hbar = pycc.cchbar(cc)
 

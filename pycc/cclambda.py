@@ -18,7 +18,7 @@ from .hbar_eqs import build_Hovvo, build_Hovov, build_Hvvvo, build_Hovoo
 
 class cclambda(object):
     """
-    An RHF-CCSD wave function and energy object.
+    An RHF-CC wave function and energy object.
 
     Attributes
     ----------
@@ -34,7 +34,7 @@ class cclambda(object):
     Methods
     -------
     solve_lambda()
-        Solves the CCSD Lambda amplitude equations
+        Solves the CC Lambda amplitude equations
     residuals()
         Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """

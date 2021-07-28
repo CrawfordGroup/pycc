@@ -57,7 +57,7 @@ class ccenergy(object):
     solve_cc()
         Solves the CC T amplitude equations
     residuals()
-        Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
+        Computes the T-amplitude residuals for a given set of amplitudes and Fock operator
     """
 
     def __init__(self, scf_wfn, model='CCSD', local=False, lpno_cutoff=1e-5):
@@ -73,6 +73,8 @@ class ccenergy(object):
         """
 
         time_init = time.time()
+
+        self.model = model
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
@@ -110,7 +112,7 @@ class ccenergy(object):
 
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
 
-    def solve_cc(self, method='CCSD', e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+    def solve_cc(self, model='CCSD', e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
         """
         Parameters
         ----------
@@ -172,7 +174,7 @@ class ccenergy(object):
 
             # check for convergence
             if ((abs(ediff) < e_conv) and rms < r_conv):
-                print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                print("\nCC has converged in %.3f seconds.\n" % (time.time() - cc_tstart))
                 print("E(REF)  = %20.15f" % self.eref)
                 print("E(CCSD) = %20.15f" % ecc)
                 print("E(TOT)  = %20.15f" % (ecc + self.eref))

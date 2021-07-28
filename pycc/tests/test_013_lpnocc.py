@@ -33,7 +33,7 @@ def test_lpno_ccsd():
     local = True
     local_cutoff = 1e-5
     ccsd = pycc.ccenergy(rhf_wfn, local, local_cutoff)
-    eccsd = ccsd.solve_ccsd(e_conv, r_conv, maxiter)
+    eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)
     cclambda = pycc.cclambda(ccsd, hbar)

@@ -30,7 +30,7 @@ def test_lambda_ccsd_h2o():
     r_conv = 1e-12
 
     ccsd = pycc.ccenergy(rhf_wfn)
-    eccsd = ccsd.solve_ccsd(e_conv, r_conv)
+    eccsd = ccsd.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(ccsd)
     cclambda = pycc.cclambda(ccsd, hbar)
     lccsd = cclambda.solve_lambda(e_conv, r_conv)
@@ -43,7 +43,7 @@ def test_lambda_ccsd_h2o():
     psi4.set_options({'basis': 'cc-pVDZ'})
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
     ccsd = pycc.ccenergy(rhf_wfn)
-    eccsd = ccsd.solve_ccsd(e_conv,r_conv,maxiter)
+    eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(ccsd)
     cclambda = pycc.cclambda(ccsd, hbar)
     lccsd = cclambda.solve_lambda(e_conv, r_conv)
