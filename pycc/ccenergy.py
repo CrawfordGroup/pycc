@@ -12,7 +12,7 @@ from opt_einsum import contract
 from .utils import helper_diis
 from .cc_eqs import build_Fae, build_Fmi, build_Fme
 from .cc_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
-from .cc_eqs import r_T1, r_T2, ccsd_energy
+from .cc_eqs import r_T1, r_T2, cc_energy
 from .hamiltonian import Hamiltonian
 from .local import Local
 
