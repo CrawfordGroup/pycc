@@ -29,7 +29,14 @@ class rtcc(object):
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
     m: list of NumPy arrays
-        the magnetic dipole integrals for each Cartesian direction (only if dipole = True)
+        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True)
+
+    Parameters
+    ----------
+    magnetic: bool
+        optionally store magnetic dipole integrals (default = False)
+    kick: bool or str
+        optionally isolate 'x', 'y', or 'z' electric field kick (default = False)
 
     Methods
     -------
@@ -51,7 +58,6 @@ class rtcc(object):
         self.cclambda = cclambda
         self.ccdensity = ccdensity
         self.V = V
-        self.kick = kick
 
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
@@ -70,7 +76,8 @@ class rtcc(object):
             m_ints = mints.ao_angular_momentum()
             self.m = []
             for axis in range(3):
-                self.m.append(C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
+                m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
+                self.m.append(m*1.0j)
 
     def f(self, t, y):
         """
