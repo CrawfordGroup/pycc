@@ -3,8 +3,8 @@ PyCC
 [//]: # (Badges)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![GitHub Actions Build
-Status](https://github.com/lothian/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/lothian/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/main)
+Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/main)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
@@ -13,6 +13,7 @@ A Python-based coupled cluster implementation.  Current capabilities include:
   - Triples-drivers for (T), CC3, and other approximate triples
   - RHF-CCSD densities
   - Real-time CCSD
+  - LPNO-CCSD energies and RT-CC (preliminary)
 
 Future plans:
   - CC2 and CC3 methods

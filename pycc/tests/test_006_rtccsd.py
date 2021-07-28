@@ -7,7 +7,7 @@ import psi4
 import pycc
 import pytest
 from scipy.integrate import complex_ode as ode
-from ..lasers import sine_square_laser
+from pycc.rt.lasers import sine_square_laser
 from ..data.molecules import *
 
 def test_rtcc_he_cc_pvdz():

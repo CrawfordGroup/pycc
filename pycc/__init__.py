@@ -11,9 +11,9 @@ from .cchbar import cchbar
 from .cclambda import cclambda
 from .ccdensity import ccdensity
 from .cctriples import cctriples
-from .rtcc import rtcc
-from .lasers import gaussian_laser
-from .lasers import sine_square_laser
+from pycc.rt.rtcc import rtcc
+
+__all__ = ['ccenergy', 'cchbar', 'cclambda', 'ccdensity', 'cctriples', 'rtcc']
 
 # Handle versioneer
 from ._version import get_versions

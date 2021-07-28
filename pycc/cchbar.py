@@ -59,9 +59,9 @@ class cchbar(object):
 
         o = ccwfn.o
         v = ccwfn.v
-        F = ccwfn.F
-        ERI = ccwfn.ERI
-        L = ccwfn.L
+        F = ccwfn.H.F
+        ERI = ccwfn.H.ERI
+        L = ccwfn.H.L
         t1 = ccwfn.t1
         t2 = ccwfn.t2
 

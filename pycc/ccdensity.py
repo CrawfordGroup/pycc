@@ -12,7 +12,6 @@ from .density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from .density_eqs import build_Dovov, build_Doovv
 import numpy as np
 from opt_einsum import contract
-import numpy as np
 
 
 class ccdensity(object):
@@ -47,7 +46,7 @@ class ccdensity(object):
     -------
     compute_energy() :
         Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
-    compute_onepdm() : 
+    compute_onepdm() :
         Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
     def __init__(self, ccwfn, cclambda, onlyone=False):
@@ -109,8 +108,8 @@ class ccdensity(object):
 
         o = self.ccwfn.o
         v = self.ccwfn.v
-        F = self.ccwfn.F
-        ERI = self.ccwfn.ERI
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
 
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
