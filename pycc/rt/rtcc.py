@@ -29,7 +29,14 @@ class rtcc(object):
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
     m: list of NumPy arrays
-        the magnetic dipole integrals for each Cartesian direction (only if dipole = True)
+        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True)
+
+    Parameters
+    ----------
+    magnetic: bool
+        optionally store magnetic dipole integrals (default = False)
+    kick: bool or str
+        optionally isolate 'x', 'y', or 'z' electric field kick (default = False)
 
     Methods
     -------
@@ -46,7 +53,7 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
@@ -59,13 +66,18 @@ class rtcc(object):
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
-        self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
+        if kick:
+            s_to_i = {"x":0, "y":1, "z":2}
+            self.mu_tot = self.mu[s_to_i[kick.lower()]]
+        else:
+            self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
         if magnetic:
             m_ints = mints.ao_angular_momentum()
             self.m = []
             for axis in range(3):
-                self.m.append(C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
+                m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
+                self.m.append(m*1.0j)
 
     def f(self, t, y):
         """
