@@ -47,7 +47,7 @@ class cchbar(object):
         """
         Parameters
         ----------
-        ccwfn : PyCC ccenergy object
+        ccwfn : PyCC ccwfn object
             amplitudes instantiated to defaults or converged
 
         Returns

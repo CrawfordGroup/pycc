@@ -53,7 +53,7 @@ class ccdensity(object):
         """
         Parameters
         ----------
-        ccwfn : PyCC ccenergy object
+        ccwfn : PyCC ccwfn object
             contains the necessary T-amplitudes (either instantiated to defaults or converged)
         cclambda : PyCC cclambda object
             Contains the necessary Lambda-amplitudes (instantiated to defaults or converged)

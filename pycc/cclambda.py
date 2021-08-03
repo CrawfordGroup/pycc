@@ -22,7 +22,7 @@ class cclambda(object):
 
     Attributes
     ----------
-    ccwfn : PyCC ccenergy object
+    ccwfn : PyCC ccwfn object
         the coupled cluster T amplitudes and supporting data structures
     hbar : PyCC cchbar object
         the coupled cluster similarity-transformed Hamiltonian
@@ -42,7 +42,7 @@ class cclambda(object):
         """
         Parameters
         ----------
-        ccwfn : PyCC ccenergy object
+        ccwfn : PyCC ccwfn object
             the coupled cluster T amplitudes and supporting data structures
         hbar : PyCC cchbar object
             the coupled cluster similarity-transformed Hamiltonian
@@ -121,7 +121,7 @@ class cclambda(object):
             r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
             r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
-            if self.ccwfn.local is not False:
+            if self.ccwfn.local is not None:
                 inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
                 self.l1 += inc1
                 self.l2 += inc2

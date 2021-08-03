@@ -16,7 +16,7 @@ class rtcc(object):
 
     Attributes
     -----------
-    ccwfn: PyCC ccenergy object
+    ccwfn: PyCC ccwfn object
         the coupled cluster T amplitudes and supporting data structures
     cclambda : PyCC cclambda object
         the coupled cluster Lambda amplitudes and supporting data structures
@@ -55,7 +55,7 @@ class rtcc(object):
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
         dipole_ints = mints.ao_dipole()
-        C = np.asarray(self.ccwfn.H.C)  # May be localized MOs, so we take them from H
+        C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
@@ -91,13 +91,13 @@ class rtcc(object):
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
         rt2 = rt2 * (-1.0j)
-        if self.ccwfn.local is not False:
+        if self.ccwfn.local is not None:
             rt1, rt2 = self.ccwfn.Local.filter_res(rt1, rt2)
 
         rl1, rl2 = self.cclambda.residuals(F, t1, t2, l1, l2)
         rl1 = rl1 * (+1.0j)
         rl2 = rl2 * (+1.0j)
-        if self.ccwfn.local is not False:
+        if self.ccwfn.local is not None:
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
         # Pack up the residuals

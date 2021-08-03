@@ -1,11 +1,12 @@
 """
-ccenergy.py: CC T-amplitude Solver
+ccwfn.py: CC T-amplitude Solver
 """
 
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 
+import psi4
 import time
 import numpy as np
 from opt_einsum import contract
@@ -17,7 +18,7 @@ from .hamiltonian import Hamiltonian
 from .local import Local
 
 
-class ccenergy(object):
+class ccwfn(object):
     """
     An RHF-CC wave function and energy object.
 
@@ -60,7 +61,7 @@ class ccenergy(object):
         Computes the T-amplitude residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, model='CCSD', local=False, lpno_cutoff=1e-5):
+    def __init__(self, scf_wfn, **kwargs):
         """
         Parameters
         ----------
@@ -73,8 +74,26 @@ class ccenergy(object):
         """
 
         time_init = time.time()
+        print(kwargs)
 
+        valid_cc_models = ['CC2', 'CCSD', 'CCSD(T)', 'CC3']
+        model = kwargs.pop('model','CCSD')
+        if model not in valid_cc_models:
+            raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
+
+        valid_local_models = [None, 'LPNO']
+        local = kwargs.pop('local', None)
+        if local not in valid_local_models:
+            raise Exception("%s is not an allowed local-CC model." % (local))
+        self.local = local
+        self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+
+        valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
+        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
+        if local_MOs not in valid_local_MOs:
+            raise Exception("%s is not an allowed MO localization method." % (local_MOs))
+        self.local_MOs = local_MOs
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
@@ -90,11 +109,25 @@ class ccenergy(object):
         o = self.o
         v = self.v
 
-        self.H = Hamiltonian(self.ref, local=local)
+        # Get MOs
+        C = self.ref.Ca_subset("AO", "ACTIVE")
+        npC = np.asarray(C)  # as numpy array
+        self.C = C
 
-        self.local = local
-        if local is not False:
-            self.Local = Local(self.no, self.nv, self.H, lpno_cutoff)
+        # Localize occupied MOs if requested
+        if (local is not None):
+            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
+            LMOS = psi4.core.Localizer.build(self.local_MOs, self.ref.basisset(), C_occ)
+            LMOS.localize()
+            npL = np.asarray(LMOS.L)
+            npC[:,:self.no] = npL
+            C = psi4.core.Matrix.from_array(npC)
+            self.C = C
+
+        self.H = Hamiltonian(self.ref, self.C)
+
+        if local is not None:
+            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
@@ -104,7 +137,7 @@ class ccenergy(object):
 
         # first-order amplitudes
         self.t1 = np.zeros((self.no, self.nv))
-        if local is not False:
+        if local is not None:
             self.t1, self.t2 = self.Local.filter_amps(self.t1, self.H.ERI[o,o,v,v])
         else:
             self.t1 = np.zeros((self.no, self.nv))
@@ -154,7 +187,7 @@ class ccenergy(object):
 
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
-            if self.local is not False:
+            if self.local is not None:
                 inc1, inc2 = self.Local.filter_amps(r1, r2)
                 self.t1 += inc1
                 self.t2 += inc2

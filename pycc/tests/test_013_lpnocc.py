@@ -30,9 +30,7 @@ def test_lpno_ccsd():
     r_conv = 1e-12
     max_diis = 8
 
-    local = True
-    local_cutoff = 1e-5
-    ccsd = pycc.ccenergy(rhf_wfn, local, local_cutoff)
+    ccsd = pycc.ccwfn(rhf_wfn, local='LPNO', local_cutoff=1e-5)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)

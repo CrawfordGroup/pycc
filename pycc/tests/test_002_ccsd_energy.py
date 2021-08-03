@@ -26,7 +26,7 @@ def test_ccsd_h2o():
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    ccsd = pycc.ccenergy(rhf_wfn)
+    ccsd = pycc.ccwfn(rhf_wfn, model='CCSD')
     eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
     epsi4 = -0.070616830152761  
     assert (abs(epsi4 - eccsd) < 1e-11)
@@ -34,7 +34,7 @@ def test_ccsd_h2o():
     # cc-pVDZ basis set
     psi4.set_options({'basis': 'cc-pVDZ'})
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    ccsd = pycc.ccenergy(rhf_wfn)
+    ccsd = pycc.ccwfn(rhf_wfn)
     eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
     epsi4 = -0.222029814166783
     assert (abs(epsi4 - eccsd) < 1e-11)
