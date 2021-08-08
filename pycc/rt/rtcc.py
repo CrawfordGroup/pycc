@@ -4,9 +4,6 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 
 import psi4
 import numpy as np
-from pycc.cc_eqs import build_tau
-from pycc.density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
-from pycc.density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 
 
@@ -222,12 +219,12 @@ class rtcc(object):
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
-        Doooo = build_Doooo(t1, t2, l2)
-        Dvvvv = build_Dvvvv(t1, t2, l2)
-        Dooov = build_Dooov(t1, t2, l1, l2)
-        Dvvvo = build_Dvvvo(t1, t2, l1, l2)
-        Dovov = build_Dovov(t1, t2, l1, l2)
-        Doovv = build_Doovv(t1, t2, l1, l2)
+        Doooo = self.ccdensity.build_Doooo(t1, t2, l2)
+        Dvvvv = self.ccdensity.build_Dvvvv(t1, t2, l2)
+        Dooov = self.ccdensity.build_Dooov(t1, t2, l1, l2)
+        Dvvvo = self.ccdensity.build_Dvvvo(t1, t2, l1, l2)
+        Dovov = self.ccdensity.build_Dovov(t1, t2, l1, l2)
+        Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
 
         F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 

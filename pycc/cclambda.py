@@ -10,10 +10,6 @@ import numpy as np
 import time
 from opt_einsum import contract
 from .utils import helper_diis
-from .lambda_eqs import r_L1, r_L2, build_Goo, build_Gvv, pseudoenergy
-from .hbar_eqs import build_Hov, build_Hvv, build_Hoo
-from .hbar_eqs import build_Hoooo, build_Hvvvv, build_Hvovv, build_Hooov
-from .hbar_eqs import build_Hovvo, build_Hovov, build_Hvvvo, build_Hovoo
 
 
 class cclambda(object):
@@ -103,7 +99,7 @@ class cclambda(object):
         Hvvvo = self.hbar.Hvvvo
         Hovoo = self.hbar.Hovoo
 
-        lecc = pseudoenergy(o, v, ERI, l2)
+        lecc = self.pseudoenergy(o, v, ERI, l2)
 
         print("\nLCCSD Iter %3d: LCCSD PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
@@ -116,10 +112,10 @@ class cclambda(object):
             l1 = self.l1
             l2 = self.l2
 
-            Goo = build_Goo(t2, l2)
-            Gvv = build_Gvv(t2, l2)
-            r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
-            r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+            Goo = self.build_Goo(t2, l2)
+            Gvv = self.build_Gvv(t2, l2)
+            r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+            r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
             if self.ccwfn.local is not None:
                 inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
@@ -135,7 +131,7 @@ class cclambda(object):
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
                 rms = np.sqrt(rms)
 
-            lecc = pseudoenergy(o, v, ERI, self.l2)
+            lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
             print("LCCSD Iter %3d: LCCSD PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
 
@@ -167,22 +163,70 @@ class cclambda(object):
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
+        hbar = self.hbar
 
-        Hov = build_Hov(o, v, F, L, t1)
-        Hvv = build_Hvv(o, v, F, L, t1, t2)
-        Hoo = build_Hoo(o, v, F, L, t1, t2)
-        Hoooo = build_Hoooo(o, v, ERI, t1, t2)
-        Hvvvv = build_Hvvvv(o, v, ERI, t1, t2)
-        Hvovv = build_Hvovv(o, v, ERI, t1)
-        Hooov = build_Hooov(o, v, ERI, t1)
-        Hovvo = build_Hovvo(o, v, ERI, L, t1, t2)
-        Hovov = build_Hovov(o, v, ERI, t1, t2)
-        Hvvvo = build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
-        Hovoo = build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
+        Hov = hbar.build_Hov(o, v, F, L, t1)
+        Hvv = hbar.build_Hvv(o, v, F, L, t1, t2)
+        Hoo = hbar.build_Hoo(o, v, F, L, t1, t2)
+        Hoooo = hbar.build_Hoooo(o, v, ERI, t1, t2)
+        Hvvvv = hbar.build_Hvvvv(o, v, ERI, t1, t2)
+        Hvovv = hbar.build_Hvovv(o, v, ERI, t1)
+        Hooov = hbar.build_Hooov(o, v, ERI, t1)
+        Hovvo = hbar.build_Hovvo(o, v, ERI, L, t1, t2)
+        Hovov = hbar.build_Hovov(o, v, ERI, t1, t2)
+        Hvvvo = hbar.build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
+        Hovoo = hbar.build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
 
-        Goo = build_Goo(t2, l2)
-        Gvv = build_Gvv(t2, l2)
-        r1 = r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
-        r2 = r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+        Goo = self.build_Goo(t2, l2)
+        Gvv = self.build_Gvv(t2, l2)
+        r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+        r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
         return r1, r2
+
+
+    def build_Goo(self, t2, l2):
+        return contract('mjab,ijab->mi', t2, l2)
+
+
+    def build_Gvv(self, t2, l2):
+        return -1.0 * contract('ijeb,ijab->ae', t2, l2)
+
+
+    def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        r_l1 = 2.0 * Hov.copy()
+        r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
+        r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
+        r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+        r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
+        r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
+        r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
+        r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
+        r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
+        r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
+        return r_l1
+
+
+    def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        r_l2 = L[o,o,v,v].copy()
+        r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
+        r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
+        r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
+        r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
+        r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+        r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+        r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
+        r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
+        r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
+        r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
+        r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+        r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
+        r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
+        r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+        r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+        r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
+        return r_l2
+
+
+    def pseudoenergy(self, o, v, ERI, l2):
+        return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
