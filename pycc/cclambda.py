@@ -72,7 +72,7 @@ class cclambda(object):
         Returns
         -------
         lecc : float
-            CCSD pseudoenergy
+            CC pseudoenergy
 
         """
         lambda_tstart = time.time()
@@ -101,7 +101,7 @@ class cclambda(object):
 
         lecc = self.pseudoenergy(o, v, ERI, l2)
 
-        print("\nLCCSD Iter %3d: LCCSD PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
+        print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
         diis = helper_diis(l1, l2, max_diis)
 
@@ -133,10 +133,10 @@ class cclambda(object):
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
-            print("LCCSD Iter %3d: LCCSD PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
+            print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
 
             if ((abs(ediff) < e_conv) and rms < r_conv):
-                print("\nLambda-CCSD has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
                 return lecc
 
             diis.add_error_vector(self.l1, self.l2)

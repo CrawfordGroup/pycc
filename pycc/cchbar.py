@@ -13,7 +13,7 @@ from opt_einsum import contract
 
 class cchbar(object):
     """
-    An RHF-CCSD Similarity-Transformed Hamiltonian object.
+    An RHF-CC Similarity-Transformed Hamiltonian object.
 
     Attributes
     ----------

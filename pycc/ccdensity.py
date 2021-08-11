@@ -13,7 +13,7 @@ from opt_einsum import contract
 
 class ccdensity(object):
     """
-    An RHF-CCSD Density object.
+    An RHF-CC Density object.
 
     Attributes
     ----------
@@ -100,7 +100,7 @@ class ccdensity(object):
         Returns
         -------
         ecc | float
-            CCSD correlation energy computed using the one- and two-electron densities
+            CC correlation energy computed using the one- and two-electron densities
         """
 
         o = self.ccwfn.o
@@ -111,7 +111,7 @@ class ccdensity(object):
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
         eone = oo_energy + vv_energy
-        print("One-electron CCSD energy = %20.15f" % eone)
+        print("One-electron CC energy = %20.15f" % eone)
 
         if self.onlyone is True:
             print("Only one-electron density available.")
@@ -131,10 +131,10 @@ class ccdensity(object):
             print("VVVO Energy = %20.15f" % vvvo_energy)
             print("OVOV Energy = %20.15f" % ovov_energy)
             print("OOVV Energy = %20.15f" % oovv_energy)
-            print("Two-electron CCSD energy = %20.15f" % etwo)
+            print("Two-electron CC energy = %20.15f" % etwo)
             ecc = eone + etwo
 
-        print("CCSD Correlation Energy  = %20.15f" % ecc)
+        print("CC Correlation Energy  = %20.15f" % ecc)
 
         self.ecc = ecc
 

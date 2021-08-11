@@ -81,6 +81,9 @@ class ccwfn(object):
         # models requiring singles
         self.need_singles = ['CCSD', 'CCSD(T)']
 
+        # models requiring T1-transformed integrals
+        self.need_t1_transform = ['CC2', 'CC3']
+
         valid_local_models = [None, 'LPNO']
         local = kwargs.pop('local', None)
         if local not in valid_local_models:
@@ -99,11 +102,14 @@ class ccwfn(object):
         self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
         self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
         self.nmo = self.ref.nmo()                       # all MOs/AOs
-        self.nv = self.nmo - self.no - self.nfzc   # active virt
+        self.nv = self.nmo - self.no - self.nfzc        # active virt
+        self.nact = self.no + self.nv                   # all active MOs
+
+        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
         # orbital subspaces
         self.o = slice(0, self.no)
-        self.v = slice(self.no, self.nmo)
+        self.v = slice(self.no, self.nact)
 
         o = self.o
         v = self.v
@@ -141,9 +147,6 @@ class ccwfn(object):
         else:
             self.t1 = np.zeros((self.no, self.nv))
             self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
-
-        print(np.amax(abs(self.t1)))
-        print(np.amax(abs(self.t2)))
 
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
 
@@ -187,6 +190,12 @@ class ccwfn(object):
 
             ecc_last = ecc
 
+            if self.model in self.need_t1_transform:
+                T1 = np.zeros((self.nact, self.nact))
+                T1[v,o] = t1.T
+                print(t1.T)
+                print(T1[v,o])
+
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
             if self.local is not None:
@@ -213,7 +222,7 @@ class ccwfn(object):
             if ((abs(ediff) < e_conv) and rms < r_conv):
                 print("\nCC has converged in %.3f seconds.\n" % (time.time() - cc_tstart))
                 print("E(REF)  = %20.15f" % self.eref)
-                print("E(CCSD) = %20.15f" % ecc)
+                print("E(%s) = %20.15f" % (self.model, ecc))
                 print("E(TOT)  = %20.15f" % (ecc + self.eref))
                 self.ecc = ecc
                 return ecc
