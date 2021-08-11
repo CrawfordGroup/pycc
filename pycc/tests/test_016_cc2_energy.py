@@ -12,7 +12,7 @@ def test_cc2():
     # Psi4 Setup
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
+    psi4.set_options({'basis': 'STO-3G',
                       'scf_type': 'pk',
                       'mp2_type': 'conv',
                       'freeze_core': 'true',
@@ -28,5 +28,6 @@ def test_cc2():
     r_conv = 1e-12
     ccsd = pycc.ccwfn(rhf_wfn, model='CC2')
     eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
-    epsi4 = -0.222559319034  # Checked against CFOUR
+    epsi4 = psi4.energy('CC2')
+    ejnk = psi4.energy('CCSD')
     assert (abs(epsi4 - eccsd) < 1e-11)

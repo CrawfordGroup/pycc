@@ -129,7 +129,7 @@ class ccwfn(object):
             C = psi4.core.Matrix.from_array(npC)
             self.C = C
 
-        self.H = Hamiltonian(self.ref, self.C)
+        self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
             self.Local = Local(self.no, self.nv, self.H, self.local_cutoff)
@@ -176,25 +176,31 @@ class ccwfn(object):
         v = self.v
         F = self.H.F
         L = self.H.L
-        t1 = self.t1
-        t2 = self.t2
         Dia = self.Dia
         Dijab = self.Dijab
 
-        ecc = self.cc_energy(o, v, F, L, t1, t2)
+        ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
-        diis = helper_diis(t1, t2, max_diis)
+        diis = helper_diis(self.t1, self.t2, max_diis)
+
+        if self.model in self.need_t1_transform:
+            T1 = np.zeros((self.nact, self.nact))
 
         for niter in range(1, maxiter+1):
 
             ecc_last = ecc
 
             if self.model in self.need_t1_transform:
-                T1 = np.zeros((self.nact, self.nact))
-                T1[v,o] = t1.T
-                print(t1.T)
-                print(T1[v,o])
+                T1[v,o] = self.t1.T
+                npC = np.asarray(self.C)
+                X = npC @ (np.identity(self.nact) - T1.T)
+                Y = npC @ (np.identity(self.nact) + T1)
+                X = psi4.core.Matrix.from_array(X)
+                Y = psi4.core.Matrix.from_array(Y)
+                self.H = Hamiltonian(self.ref, X, Y, X, Y)
+                F = self.H.F
+                L = self.H.L
 
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
@@ -202,14 +208,14 @@ class ccwfn(object):
                 inc1, inc2 = self.Local.filter_amps(r1, r2)
                 self.t2 += inc2
                 rms = contract('ijab,ijab->', inc2, inc2)
-                if self.model in self.need_singles:
+                if self.model in self.need_singles or self.need_t1_transform:
                     self.t1 += inc1
                     rms += contract('ia,ia->', inc1, inc1)
                 rms = np.sqrt(rms)
             else:
                 self.t2 += r2/Dijab
                 rms = contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                if self.model in self.need_singles:
+                if self.model in self.need_singles or self.need_t1_transform:
                     self.t1 += r1/Dia
                     rms += contract('ia,ia->', r1/Dia, r1/Dia)
                 rms = np.sqrt(rms)
@@ -279,7 +285,8 @@ class ccwfn(object):
         if self.model in self.need_singles:
             Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
             Fae = Fae + contract('mf,mafe->ae', t1, L[o,v,v,v])
-        Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+        if self.model != 'CC2':
+            Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
         return Fae
 
 
@@ -288,7 +295,8 @@ class ccwfn(object):
         if self.model in self.need_singles:
             Fmi = Fmi + 0.5 * contract('ie,me->mi', t1, F[o,v])
             Fmi = Fmi + contract('ne,mnie->mi', t1, L[o,o,o,v])
-        Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+        if self.model != 'CC2':
+            Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
         return Fmi
 
 
@@ -345,6 +353,7 @@ class ccwfn(object):
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         r_T2 = 0.5 * ERI[o,o,v,v].copy()
+
         if self.model in self.need_singles:
             tmp = contract('mb,me->be', t1, Fme)
             r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
@@ -356,13 +365,16 @@ class ccwfn(object):
             r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+
         r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
         r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
-        r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
-        r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
-        r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
-        r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
-        r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+
+        if self.model != 'CC2':
+            r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
+            r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
+            r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
+            r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
+            r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
         r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
         return r_T2
 

@@ -8,16 +8,19 @@ import numpy as np
 
 class Hamiltonian(object):
 
-    def __init__(self, ref, C):
+    def __init__(self, ref, Cp, Cr, Cq, Cs):
 
-        npC = np.asarray(C)
+        npCp = np.asarray(Cp)
+        npCr = np.asarray(Cr)
+        npCq = np.asarray(Cq)
+        npCs = np.asarray(Cs)
 
         # Generate MO Fock matrix
         self.F = np.asarray(ref.Fa())
-        self.F = npC.T @ self.F @ npC
+        self.F = npCp.T @ self.F @ npCr
 
         # Get MO two-electron integrals in Dirac notation
         mints = psi4.core.MintsHelper(ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
+        self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))     # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
