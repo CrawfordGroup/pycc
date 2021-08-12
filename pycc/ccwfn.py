@@ -199,7 +199,6 @@ class ccwfn(object):
                 X = psi4.core.Matrix.from_array(X)
                 Y = psi4.core.Matrix.from_array(Y)
                 self.H = Hamiltonian(self.ref, X, Y, X, Y)
-                F = self.H.F
                 L = self.H.L
 
             r1, r2 = self.residuals(F, self.t1, self.t2)
@@ -269,6 +268,11 @@ class ccwfn(object):
 
         r1 = self.r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
         r2 = self.r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+
+        print("Norm of r1:")
+        print(np.linalg.norm(r1))
+        print("Norm of r2:")
+        print(np.linalg.norm(r2))
 
         return r1, r2
 
@@ -353,6 +357,8 @@ class ccwfn(object):
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         r_T2 = 0.5 * ERI[o,o,v,v].copy()
+        r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
+        r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
 
         if self.model in self.need_singles:
             tmp = contract('mb,me->be', t1, Fme)
@@ -366,16 +372,19 @@ class ccwfn(object):
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
 
-        r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
-        r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
-
         if self.model != 'CC2':
             r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
             r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
             r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
             r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
             r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+
+        print("Norm of r_T2 before symm:")
+        print(np.linalg.norm(r_T2))
         r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
+        print("Norm of r_T2:")
+        print(np.linalg.norm(r_T2))
+
         return r_T2
 
 

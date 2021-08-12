@@ -19,7 +19,7 @@ def test_cc2():
                       'e_convergence': 1e-12,
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
-                      'diis': 1})
+                      'diis': 0})
     mol = psi4.geometry(moldict["H2O"])
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
@@ -27,7 +27,7 @@ def test_cc2():
     e_conv = 1e-12
     r_conv = 1e-12
     ccsd = pycc.ccwfn(rhf_wfn, model='CC2')
-    eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
+    eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter, max_diis=0)
     epsi4 = psi4.energy('CC2')
     ejnk = psi4.energy('CCSD')
     assert (abs(epsi4 - eccsd) < 1e-11)
