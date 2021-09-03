@@ -65,7 +65,11 @@ class Local(object):
 
             # Compute PNOs and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
-            dim[ij] = (occ[ij] > cutoff).sum()
+            if (occ[ij] < 0).any(): # Check for negative occupation numbers
+                neg = occ[ij][(occ[ij]<0)].min()
+                print("Warning! Negative occupation numbers up to {} detected. \
+                        Using absolute values - please check if your input is correct.".format(neg))
+            dim[ij] = (np.abs(occ[ij]) > cutoff).sum()
             Q.append(Q_full[ij, :, (nv-dim[ij]):])
 
             # Compute semicanonical virtual space
