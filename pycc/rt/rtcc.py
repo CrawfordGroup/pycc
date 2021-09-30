@@ -4,10 +4,12 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 
 import psi4
 import numpy as np
+import pickle as pk
 from pycc.cc_eqs import build_tau
 from pycc.density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
 from pycc.density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
+from os.path import exists
 
 
 class rtcc(object):
@@ -28,6 +30,8 @@ class rtcc(object):
         the dipole integrals for each Cartesian direction
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
+    magnetic: bool
+        whether or not to compute the magnetic dipole integrals and value (default = False)
     m: list of NumPy arrays
         the magnetic dipole integrals for each Cartesian direction (only if magnetic = True)
 
@@ -73,6 +77,7 @@ class rtcc(object):
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
 
         if magnetic:
+            self.magnetic = True
             m_ints = mints.ao_angular_momentum()
             self.m = []
             for axis in range(3):
@@ -244,3 +249,95 @@ class rtcc(object):
         oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], Doovv)
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
         return eref + eone + etwo
+
+    def step(self,ODE,t,h,ref=False):
+        y = ODE.integrate(ODE.t+h)
+        t = ODE.t
+
+        ret = {}
+        t1, t2, l1, l2 = self.extract_amps(y)
+        ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
+        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
+        ret['mu_x'] = mu_x
+        ret['mu_y'] = mu_y
+        ret['mu_z'] = mu_z
+        if self.magnetic:
+            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=True)
+            ret['m_x'] = m_x
+            ret['m_y'] = m_y
+            ret['m_z'] = m_z
+        return ODE,y,ret
+
+    
+    def propagate(self, yi, tf, h, ODE, ti=0, ref=False, chk=False, tchk=False):
+        """
+        propagate yi to time tf (from time ti)
+
+        TODO: for checkpointing, is the rtcc object pickle-able?
+        or at least the cc and cclambda objects?
+
+        maybe optionally take a string for the ODE (like a default vode etc)
+        """
+        # setup
+        ODE.set_initial_value(yi,ti)
+        key = str(np.round(ti,2))
+        if chk and exists('output.pk'):
+            with open('output.pk','rb') as of:
+                ret = pk.load(of)
+        else:
+            ret = {key: {}}
+        if type(tchk) == int:
+            save_t = True
+            if chk and exists('t_out.pk'):
+                with open('t_out.pk','rb') as ampf:
+                    ret_t = pk.load(ampf)
+            else:
+                ret_t = {key: None}
+            t1,t2,l1,l2 = self.extract_amps(yi)
+            ret_t[key] = {"t1":t1,
+                    "t2":t2,
+                    "l1":l1,
+                    "l2":l2}
+
+        # initial properties
+        t1, t2, l1, l2 = self.extract_amps(yi)
+        ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
+        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
+        ret[key]['mu_x'] = mu_x
+        ret[key]['mu_y'] = mu_y
+        ret[key]['mu_z'] = mu_z
+        if self.magnetic:
+            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=True)
+            ret[key]['m_x'] = m_x
+            ret[key]['m_y'] = m_y
+            ret[key]['m_z'] = m_z
+
+        # propagate
+        t = ti
+        while ODE.successful() and (ODE.t < tf):
+            ODE,y,props = self.step(ODE,t,h,ref)
+            t = ODE.t
+            key = str(np.round(t,2))
+            ret[key] = props
+
+            # checkpoint if asked
+            if chk:
+                with open('output.pk','wb') as of:
+                    pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
+                with open('chk.pk','wb') as cf:
+                    pk.dump((y,t),cf,pk.HIGHEST_PROTOCOL)
+            
+            # save amplitudes if asked and correct timestep
+            if save_t and (np.round(t,2)%tchk<0.001):
+                t1,t2,l1,l2 = self.extract_amps(y)
+                ret_t[key] = {"t1":t1,
+                        "t2":t2,
+                        "l1":l1,
+                        "l2":l2}
+                with open('t_out.pk','wb') as ampf:
+                    pk.dump(ret_t,ampf,pk.HIGHEST_PROTOCOL)
+
+        if save_t:
+            return ret, ret_t
+        else:
+            return ret
