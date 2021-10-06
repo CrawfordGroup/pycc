@@ -250,10 +250,32 @@ class rtcc(object):
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
         return eref + eone + etwo
 
-    def step(self,ODE,t,h,ref=False):
-        y = ODE.integrate(ODE.t+h)
-        t = ODE.t
+    def step(self,ODE,yi,t,ref=False):
+        """
+        A single step in the propagation
 
+        Parameters
+        ----------
+        ODE : integrators object
+            callable integrator with timestep attribute
+        yi : NumPy array
+            flattened array of initial cluster amplitudes or residuals
+        t : float
+            current timestep
+        ref : bool
+            include reference contribution to properties (optional, default = False)
+
+        Returns
+        -------
+        y : NumPy array
+            flatten array of cluster amplitudes or residuals at time t + ODE.h
+        ret: dict
+            dict of properties at time t + ODE.h
+        """
+        # step
+        y = ODE(y,self.f,t)
+
+        # calculate properties
         ret = {}
         t1, t2, l1, l2 = self.extract_amps(y)
         ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
@@ -266,27 +288,49 @@ class rtcc(object):
             ret['m_x'] = m_x
             ret['m_y'] = m_y
             ret['m_z'] = m_z
-        return ODE,y,ret
+        return y,ret
 
-    
-    def propagate(self, yi, tf, h, ODE, ti=0, ref=False, chk=False, tchk=False):
+    def propagate(self, ODE, yi, tf, ti=0, ref=False, chk=False, tchk=False):
         """
-        propagate yi to time tf (from time ti)
+        Propagate the function yi from time ti to time tf
 
-        TODO: for checkpointing, is the rtcc object pickle-able?
-        or at least the cc and cclambda objects?
+        Parameters
+        ----------
+        ODE : integrators object
+            callable integrator with timestep attribute
+        yi : NumPy array
+            flattened array of initial cluster amplitudes or residuals
+        tf : float
+            final timestep
+        ti : float
+            initial timestep (optional, default = 0)
+        ref : bool
+            include reference contribution to properties (optional, default = False)
+        chk : bool
+            save (y,t) to file every step
+        tchk : bool or int
+            save {t1,t2,l1,l2} to file every tchk steps (optional, default = False)
 
-        maybe optionally take a string for the ODE (like a default vode etc)
+        Returns
+        -------
+        ret : dict
+            dict of properties for all timesteps
+        ret_t : dict
+            dict of {t1,t2,l1,l2} for every tchk steps (iff type(tchk)==int)
         """
         # setup
-        ODE.set_initial_value(yi,ti)
+        point = 0
         key = str(np.round(ti,2))
+
+        # pull previous properties?
         if chk and exists('output.pk'):
             with open('output.pk','rb') as of:
                 ret = pk.load(of)
         else:
             ret = {key: {}}
-        if type(tchk) == int:
+
+        # pull previous amplitudes?
+        if tchk != False:
             save_t = True
             if chk and exists('t_out.pk'):
                 with open('t_out.pk','rb') as ampf:
@@ -298,6 +342,8 @@ class rtcc(object):
                     "t2":t2,
                     "l1":l1,
                     "l2":l2}
+        else:
+            save_t = False
 
         # initial properties
         t1, t2, l1, l2 = self.extract_amps(yi)
@@ -314,11 +360,13 @@ class rtcc(object):
 
         # propagate
         t = ti
-        while ODE.successful() and (ODE.t < tf):
-            ODE,y,props = self.step(ODE,t,h,ref)
-            t = ODE.t
+        while t < tf:
+            point += 1
+            y,props = self.step(ODE,yi,t,ref)
+            t += ODE.h
             key = str(np.round(t,2))
             ret[key] = props
+            yi = y
 
             # checkpoint if asked
             if chk:
@@ -328,7 +376,7 @@ class rtcc(object):
                     pk.dump((y,t),cf,pk.HIGHEST_PROTOCOL)
             
             # save amplitudes if asked and correct timestep
-            if save_t and (np.round(t,2)%tchk<0.001):
+            if save_t and (point%tchk<0.0001):
                 t1,t2,l1,l2 = self.extract_amps(y)
                 ret_t[key] = {"t1":t1,
                         "t2":t2,
