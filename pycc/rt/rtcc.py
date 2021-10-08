@@ -290,7 +290,8 @@ class rtcc(object):
             ret['m_z'] = m_z
         return y,ret
 
-    def propagate(self, ODE, yi, tf, ti=0, ref=False, chk=False, tchk=False):
+    def propagate(self, ODE, yi, tf, ti=0, ref=False, chk=False, tchk=False,
+                  ofile="output.pk",tfile="t_out.pk",cfile="chk.pk"):
         """
         Propagate the function yi from time ti to time tf
 
@@ -310,6 +311,12 @@ class rtcc(object):
             save (y,t) to file every step
         tchk : bool or int
             save {t1,t2,l1,l2} to file every tchk steps (optional, default = False)
+        ofile : str
+            name of output file (optional, default='output.pk')
+        tfile : str
+            name of amplitude output file (optional, default='t_out.pk')
+        cfile : str
+            name of checkpoint file (optional, default='chk.pk')
 
         Returns
         -------
@@ -323,8 +330,8 @@ class rtcc(object):
         key = str(np.round(ti,2))
 
         # pull previous properties?
-        if chk and exists('output.pk'):
-            with open('output.pk','rb') as of:
+        if chk and exists(ofile):
+            with open(ofile,'rb') as of:
                 ret = pk.load(of)
         else:
             ret = {key: {}}
@@ -332,8 +339,8 @@ class rtcc(object):
         # pull previous amplitudes?
         if tchk != False:
             save_t = True
-            if chk and exists('t_out.pk'):
-                with open('t_out.pk','rb') as ampf:
+            if chk and exists(tf):
+                with open(tf,'rb') as ampf:
                     ret_t = pk.load(ampf)
             else:
                 ret_t = {key: None}
@@ -370,9 +377,9 @@ class rtcc(object):
 
             # checkpoint if asked
             if chk:
-                with open('output.pk','wb') as of:
+                with open(ofile,'wb') as of:
                     pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
-                with open('chk.pk','wb') as cf:
+                with open(cfile,'wb') as cf:
                     pk.dump((y,t),cf,pk.HIGHEST_PROTOCOL)
             
             # save amplitudes if asked and correct timestep
@@ -382,7 +389,7 @@ class rtcc(object):
                         "t2":t2,
                         "l1":l1,
                         "l2":l2}
-                with open('t_out.pk','wb') as ampf:
+                with open(tfile,'wb') as ampf:
                     pk.dump(ret_t,ampf,pk.HIGHEST_PROTOCOL)
 
         if save_t:
