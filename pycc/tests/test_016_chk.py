@@ -49,11 +49,31 @@ def test_chk(datadir):
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
     e_conv = 1e-8
     r_conv = 1e-8
+
+    # pull chk file for 0-5.1au
+    chk_file = datadir.join(f"chk.pk")
+    with open(chk_file,'rb') as cf:
+        chk = pk.load(cf)
+    # to ensure same orbitals, replace: 
+    # H.C, H.F, H.L, H.ERI, t1, and t2 in ccwfn
+    # l1 and l2 in cclambda
+    # mu_ints, mu_tot, and m in rtcc
+
     cc = pycc.ccenergy(rhf_wfn)
     ecc = cc.solve_ccsd(e_conv, r_conv)
+    cc.H.C = chk['C']
+    cc.H.F = chk['F']
+    cc.H.L = chk['L']
+    cc.H.ERI = chk['ERI']
+    cc.t1 = chk['t1_0']
+    cc.t2 = chk['t2_0']
+
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
     lecc = cclambda.solve_lambda(e_conv, r_conv)
+    cclambda.l1 = chk['l1_0']
+    cclambda.l2 = chk['l2_0']
+
     ccdensity = pycc.ccdensity(cc, cclambda)
 
     # narrow Gaussian pulse
@@ -62,19 +82,19 @@ def test_chk(datadir):
     center = 0.05
     V = gaussian_laser(F_str, 0, sigma, center=center)
 
-    # RTCC setuo
+    # RTCC setup
     h = 0.1
     tf = 10
     rtcc = pycc.rtcc(cc,cclambda,ccdensity,V,magnetic=True,kick='z')
-    ODE = rk2(h)
+    rtcc.mu = chk['mu_ints']
+    rtcc.mu_tot = chk['mu_tot']
+    rtcc.m = chk['m_ints']
 
-    # pull chk file for 0-5.1au
-    chk_file = datadir.join(f"chk.pk")
-    with open(chk_file,'rb') as cf:
-        chk = pk.load(cf)
-    y0,ti = chk
 
     # propagate to 10au
+    ODE = rk2(h)
+    y0 = chk['y']
+    ti = chk['time']
     ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, tchk=1)
 
     # reference is "full" propagation (0-10au)

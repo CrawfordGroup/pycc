@@ -45,18 +45,18 @@ V = gaussian_laser(F_str, 0, sigma, center=center)
 # use tf = 5 to generate checkpoint file
 h = 0.1
 ti = 0
-#tf = 5
-tf = 10
+tf = 5
+#tf = 10
 rtcc = pycc.rtcc(cc,cclambda,ccdensity,V,magnetic=True,kick='z')
 y0 = rtcc.collect_amps(cc.t1,cc.t2,cclambda.l1,cclambda.l2).astype('complex128')
 ODE = rk2(h)
 
 # use first option to only generate checkpoint file
-#ret = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True)
-ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=False, tchk=1)
+ret = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True)
+#ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=False, tchk=1)
 
 # comment these out when only saving the checkpoint file
-with open('output.pk','wb') as of:
-    pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
-with open('t_out.pk','wb') as ampf:
-    pk.dump(ret_t,ampf,pk.HIGHEST_PROTOCOL)
+#with open('output.pk','wb') as of:
+#    pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
+#with open('t_out.pk','wb') as ampf:
+#    pk.dump(ret_t,ampf,pk.HIGHEST_PROTOCOL)
