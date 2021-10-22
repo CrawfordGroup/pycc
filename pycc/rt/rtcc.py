@@ -308,7 +308,7 @@ class rtcc(object):
         ref : bool
             include reference contribution to properties (optional, default = False)
         chk : bool
-            save (y,t) to file every step
+            save wfn information to file every step
         tchk : bool or int
             save {t1,t2,l1,l2} to file every tchk steps (optional, default = False)
         ofile : str
@@ -329,10 +329,31 @@ class rtcc(object):
         point = 0
         key = str(np.round(ti,2))
 
-        # pull previous properties?
-        if chk and exists(ofile):
-            with open(ofile,'rb') as of:
-                ret = pk.load(of)
+        # pull previous chkpt or properties?
+        if chk:
+            if exists(cfile):
+                with open(cfile,'rb') as cf:
+                    chkp = pk.load(cf)
+            else:
+                chkp = {
+                        'C': self.ccwfn.H.C.to_array(),
+                        'F': self.ccwfn.H.F,
+                        'L': self.ccwfn.H.L,
+                        'ERI': self.ccwfn.H.ERI,
+                        'mu_ints':self.mu,
+                        'mu_tot':self.mu_tot,
+                        't1_0':self.ccwfn.t1,
+                        't2_0':self.ccwfn.t2,
+                        'l1_0':self.cclambda.l1,
+                        'l2_0':self.cclambda.l2
+                        }
+                if self.magnetic:
+                    chkp['m_ints'] = self.m
+            if exists(ofile):
+                with open(ofile,'rb') as of:
+                    ret = pk.load(of)
+            else:
+                ret = {key: {}}
         else:
             ret = {key: {}}
 
@@ -375,12 +396,14 @@ class rtcc(object):
             ret[key] = props
             yi = y
 
-            # checkpoint if asked
+            # update checkpoint if asked
             if chk:
+                chkp['y'] = y
+                chkp['time'] = t
                 with open(ofile,'wb') as of:
                     pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
                 with open(cfile,'wb') as cf:
-                    pk.dump((y,t),cf,pk.HIGHEST_PROTOCOL)
+                    pk.dump(chkp,cf,pk.HIGHEST_PROTOCOL)
             
             # save amplitudes if asked and correct timestep
             if save_t and (point%tchk<0.0001):
