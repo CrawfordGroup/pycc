@@ -273,7 +273,7 @@ class rtcc(object):
             dict of properties at time t + ODE.h
         """
         # step
-        y = ODE(y,self.f,t)
+        y = ODE(self.f,t,yi)
 
         # calculate properties
         ret = {}
