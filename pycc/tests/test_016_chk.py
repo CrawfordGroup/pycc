@@ -46,34 +46,18 @@ def test_chk(datadir):
                       'r_convergence': 1e-8,
                       'diis': 8})
     mol = psi4.geometry(moldict["H2"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+
+    # pull ref wfn, psi4 is picky about strings 
+    rhf_dir = str(datadir.join(f"ref_wfn.npy"))
+    rhf_wfn = psi4.core.Wavefunction.from_file(rhf_dir)
+
     e_conv = 1e-8
     r_conv = 1e-8
-
-    # pull chk file for 0-5.1au
-    chk_file = datadir.join(f"chk.pk")
-    with open(chk_file,'rb') as cf:
-        chk = pk.load(cf)
-    # to ensure same orbitals, replace: 
-    # H.C, H.F, H.L, H.ERI, t1, and t2 in ccwfn
-    # l1 and l2 in cclambda
-    # mu_ints, mu_tot, and m in rtcc
-
     cc = pycc.ccenergy(rhf_wfn)
     ecc = cc.solve_ccsd(e_conv, r_conv)
-    cc.H.C = chk['C']
-    cc.H.F = chk['F']
-    cc.H.L = chk['L']
-    cc.H.ERI = chk['ERI']
-    cc.t1 = chk['t1_0']
-    cc.t2 = chk['t2_0']
-
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
     lecc = cclambda.solve_lambda(e_conv, r_conv)
-    cclambda.l1 = chk['l1_0']
-    cclambda.l2 = chk['l2_0']
-
     ccdensity = pycc.ccdensity(cc, cclambda)
 
     # narrow Gaussian pulse
@@ -86,33 +70,37 @@ def test_chk(datadir):
     h = 0.1
     tf = 10
     rtcc = pycc.rtcc(cc,cclambda,ccdensity,V,magnetic=True,kick='z')
-    rtcc.mu = chk['mu_ints']
-    rtcc.mu_tot = chk['mu_tot']
-    rtcc.m = chk['m_ints']
 
+    # pull chk files for 0-5.1au
+    chk_file = datadir.join(f"chk_5.pk")
+    with open(chk_file,'rb') as cf:
+        chk = pk.load(cf)
 
     # propagate to 10au
     ODE = rk2(h)
     y0 = chk['y']
     ti = chk['time']
-    ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, tchk=1)
+    ofile = datadir.join(f"output.pk")
+    tfile = datadir.join(f"t_out.pk")
+    ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True, tchk=1,
+            ofile=ofile, tfile=tfile)
 
     # reference is "full" propagation (0-10au)
-    refp_file = datadir.join(f"output.pk")
+    refp_file = datadir.join(f"output_full.pk")
     with open(refp_file,'rb') as pf:
         ref_p = pk.load(pf)
-    reft_file = datadir.join(f"t_out.pk")
+    reft_file = datadir.join(f"t_out_full.pk")
     with open(reft_file,'rb') as ampf:
         ref_t = pk.load(ampf)
 
     # check properties
     pchk = ['ecc','mu_x','mu_y','mu_z','m_x','m_y','m_z']
-    for k in ret.keys():
+    for k in ref_p.keys():
         for p in pchk:
             assert np.allclose(ret[k][p],ref_p[k][p])
 
     # check amplitudes
     tchk = ['t1','t2','l1','l2']
-    for k in ret_t.keys():
+    for k in ref_t.keys():
         for t in tchk:
             assert np.allclose(ret_t[k][t],ref_t[k][t])

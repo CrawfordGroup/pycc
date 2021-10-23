@@ -308,9 +308,9 @@ class rtcc(object):
         ref : bool
             include reference contribution to properties (optional, default = False)
         chk : bool
-            save wfn information to file every step
+            save results and final y,t to file every step, plus ref wfn
         tchk : bool or int
-            save {t1,t2,l1,l2} to file every tchk steps (optional, default = False)
+            return and save {t1,t2,l1,l2} to file every tchk steps (optional, default = False)
         ofile : str
             name of output file (optional, default='output.pk')
         tfile : str
@@ -335,33 +335,19 @@ class rtcc(object):
                 with open(cfile,'rb') as cf:
                     chkp = pk.load(cf)
             else:
-                chkp = {
-                        'C': self.ccwfn.H.C.to_array(),
-                        'F': self.ccwfn.H.F,
-                        'L': self.ccwfn.H.L,
-                        'ERI': self.ccwfn.H.ERI,
-                        'mu_ints':self.mu,
-                        'mu_tot':self.mu_tot,
-                        't1_0':self.ccwfn.t1,
-                        't2_0':self.ccwfn.t2,
-                        'l1_0':self.cclambda.l1,
-                        'l2_0':self.cclambda.l2
-                        }
-                if self.magnetic:
-                    chkp['m_ints'] = self.m
-            if exists(ofile):
-                with open(ofile,'rb') as of:
-                    ret = pk.load(of)
-            else:
-                ret = {key: {}}
+                chkp = {}
+                self.ccwfn.ref.to_file('ref_wfn')
+        if chk and exists(ofile):
+            with open(ofile,'rb') as of:
+                ret = pk.load(of)
         else:
             ret = {key: {}}
 
         # pull previous amplitudes?
         if tchk != False:
             save_t = True
-            if chk and exists(tf):
-                with open(tf,'rb') as ampf:
+            if chk and exists(tfile):
+                with open(tfile,'rb') as ampf:
                     ret_t = pk.load(ampf)
             else:
                 ret_t = {key: None}

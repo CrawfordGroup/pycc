@@ -45,6 +45,8 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+pycc/tests/chk.pk
+pycc/tests/ref_wfn.npy
 .hypothesis/
 
 # Translations
