@@ -91,6 +91,9 @@ class ccwfn(object):
         self.local = local
         self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
 
+        extent = kwargs.pop('extent', False)
+        self.extent = extent
+
         valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
         local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
         if local_MOs not in valid_local_MOs:
@@ -133,7 +136,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff)
+            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff, extent)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
@@ -180,6 +183,8 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
+        if self.Local:
+            print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
