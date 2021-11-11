@@ -83,6 +83,8 @@ class rtcc(object):
             for axis in range(3):
                 m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
                 self.m.append(m*1.0j)
+        else:
+            self.magnetic = False
 
     def f(self, t, y):
         """

@@ -154,6 +154,7 @@ class ccenergy(object):
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
             if self.local is not False:
+                print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
                 inc1, inc2 = self.Local.filter_amps(r1, r2)
                 self.t1 += inc1
                 self.t2 += inc2
