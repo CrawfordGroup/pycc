@@ -102,7 +102,7 @@ class cclambda(object):
         lecc = self.pseudoenergy(o, v, ERI, l2)
 
         if self.ccwfn.local is not False:
-            print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
+            print("Filtering amplitudes with {} PNOs".format(self.ccwfn.Local.dim))
 
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
