@@ -60,7 +60,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, local=False, lpno_cutoff=1e-5):
+    def __init__(self, scf_wfn, local=False, lpno_cutoff=1e-5, extent=False):
         """
         Parameters
         ----------
@@ -93,7 +93,7 @@ class ccenergy(object):
 
         self.local = local
         if local is not False:
-            self.Local = Local(self.no, self.nv, self.H, lpno_cutoff)
+            self.Local = Local(self.no, self.nv, self.H, lpno_cutoff, extent=extent)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
@@ -143,6 +143,8 @@ class ccenergy(object):
         Dijab = self.Dijab
 
         ecc = ccsd_energy(o, v, F, L, t1, t2)
+        if self.local is not False:
+            print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
         print("CCSD Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
         diis = helper_diis(t1, t2, max_diis)
@@ -154,7 +156,6 @@ class ccenergy(object):
             r1, r2 = self.residuals(F, self.t1, self.t2)
 
             if self.local is not False:
-                print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
                 inc1, inc2 = self.Local.filter_amps(r1, r2)
                 self.t1 += inc1
                 self.t2 += inc2
