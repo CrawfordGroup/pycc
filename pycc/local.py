@@ -60,13 +60,16 @@ class Local(object):
         if extent:
             # determine orbital extent
             mints = psi4.core.MintsHelper(H.ref.basisset())
+
             # AO-basis quadrupole integrals (XX + YY + ZZ)
+            # stored as upper triangle[[0,1,2],[.,3,4],[.,.,5]]
             C = H.C.to_array()
             ao_r2 = mints.ao_quadrupole()[0].to_array()
             ao_r2 += mints.ao_quadrupole()[3].to_array()
             ao_r2 += mints.ao_quadrupole()[5].to_array()
+
             # to (localized-occ) MO basis
-            mo_r2 = contract('ki,kl,lj->ij',C.T,ao_r2,C)
+            mo_r2 = contract('ki,kl,lj->ij',C,ao_r2,C)
 
         for ij in range(no*no):
             i = ij // no
@@ -78,42 +81,60 @@ class Local(object):
 
             # Compute PNOs and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
+            print("Q:\n{}".format(Q_full[ij]))
+            print("OCC N:\n{}".format(occ[ij]))
 
             if extent:
                 # orb extents to PNO basis
-                # using Ruhee's CQ, tho I don't understand it yet
-                CQ = C[:,no:].copy()
-                CQ = np.dot(CQ, Q_full[ij])
-                r2 = contract('Aa,ab,bB->AB',CQ.T,mo_r2,CQ)
-    #            r2 = contract('Aa,ab,bB->AB',Q_full[ij].T,mo_r2[no:,no:],Q_full[ij])
-                # orb extents
+                r2 = contract('Aa,ab,bB->AB',Q_full[ij].T,mo_r2[no:,no:],Q_full[ij])
+
                 print("Orbital extents:")
                 print(r2.diagonal())
+
                 # now zip these against the orbitals, pull a few w/ the highest extent,
                 # then truncate from the remaining set by occ number and combine the two
+                # transpose of Q is needed to sort by columns instead of rows
                 zipped = zip(np.abs(r2.diagonal()),occ[ij],list(Q_full[ij].T))
                 by_r2 = sorted(zipped)
                 tups = zip(*by_r2)
                 sorted_r2, sorted_occ, sorted_q = [list(tup) for tup in tups]
-                # take the 3 highest orbital extent.. orbitals
+
+                print("sorted_Q:\n{}".format(sorted_q))
+                print("sorted_occ:\n{}".format(sorted_occ))
+                print("sorted_r2:\n{}".format(sorted_r2))
+
+                # take the _n orbitals with the highest spatial extent
                 # transpose to get "rows" (inner index of 2d list) back to columns
-                ext_space = np.asarray(sorted_q[-3:]).T
-                int_space = np.asarray(sorted_q[:-3]).T
-                int_occ = np.asarray(sorted_occ[:-3]).T
+                # TODO: replace _n with int `extent` (if != 0)
+                _n = 3
+                if _n:
+                    ext_space = np.asarray(sorted_q[-_n:]).T
+                    int_space = np.asarray(sorted_q[:-_n]).T
+                    int_occ = np.asarray(sorted_occ[:-_n]).T
+                else: # a[-_n:] gives the entire space, which would reserve ALL orbitals
+                    ext_space = np.asarray([])
+                    int_space = np.asarray(sorted_q).T
+                    int_occ = np.asarray(sorted_occ).T
+
+                print("external space:\n{}".format(ext_space))
+                print("internal space:\n{}".format(int_space))
+                print("internal occ:\n{}".format(int_occ))
     
                 # get PNOs as normal from the internal space
                 checks = np.abs(int_occ)>cutoff
                 dim_int = checks.sum()
                 cuts = [i for i, x in enumerate(checks) if not x]
-                print("Extent of a priori saved (int) orbitals:")
-                print(sorted_r2[-3:])
+                print("PNO CUTS:\n{}".format(cuts))
                 int_space = np.delete(int_space,cuts,axis=1)
-                print("size of int_space and (cut) ext_space:")
-                print(int_space.shape,ext_space.shape)
-                Q.append(np.append(int_space,ext_space,axis=1))
-                dim[ij] = dim_int + 3
-                print("dim: {}".format(dim[ij]))
-                print("Q shape: {}".format(Q[ij].shape))
+                if _n:
+                    Q.append(np.append(int_space,ext_space,axis=1))
+                else:
+                    Q.append(int_space)
+                dim[ij] = dim_int + _n 
+
+                print("Final space:\n{}".format(Q[-1]))
+                test = Q[-1].T @ Q[-1]
+                print("Should be 1's:\n{}".format(sum(test>1e-15)))
 
             else:
                 if (occ[ij] < 0).any(): # Check for negative occupation numbers
@@ -122,6 +143,12 @@ class Local(object):
                             Using absolute values - please check if your input is correct.".format(neg))
                 dim[ij] = (np.abs(occ[ij]) > cutoff).sum()
                 Q.append(Q_full[ij, :, (nv-dim[ij]):])
+
+                # check if the PNO-cutoff method above works in the regular case (it does)
+#                checks = np.abs(occ[ij])>cutoff
+#                dim[ij] = checks.sum()
+#                cuts = [i for i, x in enumerate(checks) if not x]
+#                Q.append(np.delete(Q_full[ij],cuts,axis=1))
 
             # Compute semicanonical virtual space
             F = Q[ij].T @ H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
