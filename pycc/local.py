@@ -124,11 +124,11 @@ class Local(object):
                 cuts = [i for i, x in enumerate(checks) if not x]
                 print("PNO CUTS:\n{}".format(cuts))
                 int_space = np.delete(int_space,cuts,axis=1)
-                if _n:
-                    Q.append(np.append(int_space,ext_space,axis=1))
-                else:
-                    Q.append(int_space)
-                dim[ij] = dim_int + _n 
+                Q.append(np.append(int_space,ext_space,axis=1))
+                # below for if extent=0, but (if extent) keeps this case from happening now
+                #else:
+                #    Q.append(int_space)
+                dim[ij] = dim_int + extent 
 
                 print("Final space:\n{}".format(Q[-1]))
                 test = Q[-1].T @ Q[-1]
