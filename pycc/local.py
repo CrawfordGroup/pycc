@@ -105,16 +105,14 @@ class Local(object):
 
                 # take the _n orbitals with the highest spatial extent
                 # transpose to get "rows" (inner index of 2d list) back to columns
-                # TODO: replace _n with int `extent` (if != 0)
-                _n = 3
-                if _n:
-                    ext_space = np.asarray(sorted_q[-_n:]).T
-                    int_space = np.asarray(sorted_q[:-_n]).T
-                    int_occ = np.asarray(sorted_occ[:-_n]).T
-                else: # a[-_n:] gives the entire space, which would reserve ALL orbitals
-                    ext_space = np.asarray([])
-                    int_space = np.asarray(sorted_q).T
-                    int_occ = np.asarray(sorted_occ).T
+                ext_space = np.asarray(sorted_q[-extent:]).T
+                int_space = np.asarray(sorted_q[:-extent]).T
+                int_occ = np.asarray(sorted_occ[:-extent]).T
+                # below for if extent=0, but (if extent) keeps this case from happening now
+                #else: # a[-_n:] gives the entire space, which would reserve ALL orbitals
+                #    ext_space = np.asarray([])
+                #    int_space = np.asarray(sorted_q).T
+                #    int_occ = np.asarray(sorted_occ).T
 
                 print("external space:\n{}".format(ext_space))
                 print("internal space:\n{}".format(int_space))
