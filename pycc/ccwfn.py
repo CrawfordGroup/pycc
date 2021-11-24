@@ -6,13 +6,11 @@ if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 
+import psi4
 import time
 import numpy as np
 from opt_einsum import contract
 from .utils import helper_diis
-from .cc_eqs import build_Fae, build_Fmi, build_Fme
-from .cc_eqs import build_Wmnij, build_Wmbej, build_Wmbje, build_Zmbij
-from .cc_eqs import r_T1, r_T2, ccsd_energy
 from .hamiltonian import Hamiltonian
 from .local import Local
 
@@ -60,7 +58,7 @@ class ccenergy(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, local=False, lpno_cutoff=1e-5):
+    def __init__(self, scf_wfn, **kwargs):
         """
         Parameters
         ----------
@@ -74,12 +72,40 @@ class ccenergy(object):
 
         time_init = time.time()
 
+        valid_cc_models = ['CCD', 'CC2', 'CCSD', 'CCSD(T)', 'CC3']
+        model = kwargs.pop('model','CCSD')
+        if model not in valid_cc_models:
+            raise Exception("%s is not an allowed CC model." % (model))
+        self.model = model
+
+        # models requiring singles
+        self.need_singles = ['CCSD', 'CCSD(T)']
+
+        # models requiring T1-transformed integrals
+        self.need_t1_transform = ['CC2', 'CC3']
+
+        valid_local_models = [None, 'LPNO']
+        local = kwargs.pop('local', None)
+        if local not in valid_local_models:
+            raise Exception("%s is not an allowed local-CC model." % (local))
+        self.local = local
+        self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+
+        valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
+        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
+        if local_MOs not in valid_local_MOs:
+            raise Exception("%s is not an allowed MO localization method." % (local_MOs))
+        self.local_MOs = local_MOs
+
         self.ref = scf_wfn
         self.eref = self.ref.energy()
         self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
         self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
         self.nmo = self.ref.nmo()                       # all MOs/AOs
-        self.nv = self.nmo - self.no - self.nfzc   # active virt
+        self.nv = self.nmo - self.no - self.nfzc        # active virt
+        self.nact = self.no + self.nv                   # all active MOs
+
+        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
         # orbital subspaces
         self.o = slice(0, self.no)
