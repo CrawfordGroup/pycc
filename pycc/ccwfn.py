@@ -180,7 +180,7 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
-        ecc = cc_energy(o, v, F, L, self.t1, self.t2)
+        ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CCSD Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
         diis = helper_diis(self.t1, self.t2, max_diis)
@@ -205,7 +205,7 @@ class ccwfn(object):
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
                 rms = np.sqrt(rms)
 
-            ecc = cc_energy(o, v, F, L, self.t1, self.t2)
+            ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
             print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
@@ -265,7 +265,7 @@ class ccwfn(object):
         Fae = F[v,v].copy()
         Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
         Fae = Fae + contract('mf,mafe->ae', t1, L[o,v,v,v])
-        Fae = Fae - contract('mnaf,mnef->ae', build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+        Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
         return Fae
 
 
@@ -273,7 +273,7 @@ class ccwfn(object):
         Fmi = F[o,o].copy()
         Fmi = Fmi + 0.5 * contract('ie,me->mi', t1, F[o,v])
         Fmi = Fmi + contract('ne,mnie->mi', t1, L[o,o,o,v])
-        Fmi = Fmi + contract('inef,mnef->mi', build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+        Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
         return Fmi
 
 
@@ -287,7 +287,7 @@ class ccwfn(object):
         Wmnij = ERI[o,o,o,o].copy()
         Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
         Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
-        Wmnij = Wmnij + contract('ijef,mnef->mnij', build_tau(t1, t2), ERI[o,o,v,v])
+        Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
         return Wmnij
 
 
@@ -295,7 +295,7 @@ class ccwfn(object):
         Wmbej = ERI[o,v,v,o].copy()
         Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
         Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
-        Wmbej = Wmbej - contract('jnfb,mnef->mbej', build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+        Wmbej = Wmbej - contract('jnfb,mnef->mbej', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
         Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
         return Wmbej
 
@@ -304,12 +304,12 @@ class ccwfn(object):
         Wmbje = -1.0 * ERI[o,v,o,v].copy()
         Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
         Wmbje = Wmbje + contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
-        Wmbje = Wmbje + contract('jnfb,mnfe->mbje', build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+        Wmbje = Wmbje + contract('jnfb,mnfe->mbje', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
         return Wmbje
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
-        return contract('mbef,ijef->mbij', ERI[o,v,v,v], build_tau(t1, t2))
+        return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
@@ -331,8 +331,8 @@ class ccwfn(object):
         r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
         tmp = contract('je,me->jm', t1, Fme)
         r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
-        r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', build_tau(t1, t2), Wmnij)
-        r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', build_tau(t1, t2), ERI[v,v,v,v])
+        r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
+        r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
         r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
         r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
         r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
@@ -348,5 +348,5 @@ class ccwfn(object):
 
     def cc_energy(self, o, v, F, L, t1, t2):
         ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
-        ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
+        ecc = ecc + contract('ijab,ijab->', self.build_tau(t1, t2), L[o,o,v,v])
         return ecc

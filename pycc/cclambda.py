@@ -163,18 +163,19 @@ class cclambda(object):
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
+        hbar = self.hbar
 
-        Hov = self.build_Hov(o, v, F, L, t1)
-        Hvv = self.build_Hvv(o, v, F, L, t1, t2)
-        Hoo = self.build_Hoo(o, v, F, L, t1, t2)
-        Hoooo = self.build_Hoooo(o, v, ERI, t1, t2)
-        Hvvvv = self.build_Hvvvv(o, v, ERI, t1, t2)
-        Hvovv = self.build_Hvovv(o, v, ERI, t1)
-        Hooov = self.build_Hooov(o, v, ERI, t1)
-        Hovvo = self.build_Hovvo(o, v, ERI, L, t1, t2)
-        Hovov = self.build_Hovov(o, v, ERI, t1, t2)
-        Hvvvo = self.build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
-        Hovoo = self.build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
+        Hov = hbar.build_Hov(o, v, F, L, t1)
+        Hvv = hbar.build_Hvv(o, v, F, L, t1, t2)
+        Hoo = hbar.build_Hoo(o, v, F, L, t1, t2)
+        Hoooo = hbar.build_Hoooo(o, v, ERI, t1, t2)
+        Hvvvv = hbar.build_Hvvvv(o, v, ERI, t1, t2)
+        Hvovv = hbar.build_Hvovv(o, v, ERI, t1)
+        Hooov = hbar.build_Hooov(o, v, ERI, t1)
+        Hovvo = hbar.build_Hovvo(o, v, ERI, L, t1, t2)
+        Hovov = hbar.build_Hovov(o, v, ERI, t1, t2)
+        Hvvvo = hbar.build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
+        Hovoo = hbar.build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
 
         Goo = self.build_Goo(t2, l2)
         Gvv = self.build_Gvv(t2, l2)

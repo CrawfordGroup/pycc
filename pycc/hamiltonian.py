@@ -8,32 +8,19 @@ import numpy as np
 
 class Hamiltonian(object):
 
-    def __init__(self, ref, local=False):
-        self.ref = ref
+    def __init__(self, ref, Cp, Cr, Cq, Cs):
 
-        # Get MOs
-        C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C)  # as numpy array
-        self.C = C
-
-        # Localize occupied MOs if requested
-        if (local is not False):
-            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
-            no = self.ref.doccpi()[0] - self.ref.frzcpi()[0]  # assumes symmetry c1
-            Local = psi4.core.Localizer.build("PIPEK_MEZEY", ref.basisset(), C_occ)
-            Local.localize()
-            npL = np.asarray(Local.L)
-            npC[:,:no] = npL
-            C = psi4.core.Matrix.from_array(npC)
-            self.C = C
+        npCp = np.asarray(Cp)
+        npCr = np.asarray(Cr)
+        npCq = np.asarray(Cq)
+        npCs = np.asarray(Cs)
 
         # Generate MO Fock matrix
-        self.F = np.asarray(self.ref.Fa())
-        # self.F = np.einsum('uj,vi,uv', npC, npC, self.F)
-        self.F = npC.T @ self.F @ npC
+        self.F = np.asarray(ref.Fa())
+        self.F = npCp.T @ self.F @ npCr
 
         # Get MO two-electron integrals in Dirac notation
-        mints = psi4.core.MintsHelper(self.ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(C, C, C, C))     # (pr|qs)
+        mints = psi4.core.MintsHelper(ref.basisset())
+        self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))     # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
