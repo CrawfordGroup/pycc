@@ -5,20 +5,17 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 import psi4
 import numpy as np
 import pickle as pk
-from pycc.cc_eqs import build_tau
-from pycc.density_eqs import build_Doooo, build_Dvvvv, build_Dooov, build_Dvvvo
-from pycc.density_eqs import build_Dovov, build_Doovv
 from opt_einsum import contract
 from os.path import exists
 
 
 class rtcc(object):
     """
-    A Real-time CCSD object for ODE propagation.
+    A Real-time CC object for ODE propagation.
 
     Attributes
     -----------
-    ccwfn: PyCC ccenergy object
+    ccwfn: PyCC ccwfn object
         the coupled cluster T amplitudes and supporting data structures
     cclambda : PyCC cclambda object
         the coupled cluster Lambda amplitudes and supporting data structures
@@ -66,7 +63,7 @@ class rtcc(object):
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
         dipole_ints = mints.ao_dipole()
-        C = np.asarray(self.ccwfn.H.C)  # May be localized MOs, so we take them from H
+        C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
         self.mu = []
         for axis in range(3):
             self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
@@ -108,13 +105,13 @@ class rtcc(object):
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
         rt2 = rt2 * (-1.0j)
-        if self.ccwfn.local is not False:
+        if self.ccwfn.local is not None:
             rt1, rt2 = self.ccwfn.Local.filter_res(rt1, rt2)
 
         rl1, rl2 = self.cclambda.residuals(F, t1, t2, l1, l2)
         rl1 = rl1 * (+1.0j)
         rl2 = rl2 * (+1.0j)
-        if self.ccwfn.local is not False:
+        if self.ccwfn.local is not None:
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
         # Pack up the residuals
@@ -227,12 +224,12 @@ class rtcc(object):
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
-        Doooo = build_Doooo(t1, t2, l2)
-        Dvvvv = build_Dvvvv(t1, t2, l2)
-        Dooov = build_Dooov(t1, t2, l1, l2)
-        Dvvvo = build_Dvvvo(t1, t2, l1, l2)
-        Dovov = build_Dovov(t1, t2, l1, l2)
-        Doovv = build_Doovv(t1, t2, l1, l2)
+        Doooo = self.ccdensity.build_Doooo(t1, t2, l2)
+        Dvvvv = self.ccdensity.build_Dvvvv(t1, t2, l2)
+        Dooov = self.ccdensity.build_Dooov(t1, t2, l1, l2)
+        Dvvvo = self.ccdensity.build_Dvvvo(t1, t2, l1, l2)
+        Dovov = self.ccdensity.build_Dovov(t1, t2, l1, l2)
+        Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
 
         F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 

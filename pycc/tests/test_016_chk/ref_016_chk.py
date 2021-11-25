@@ -34,8 +34,8 @@ else:
     rhf_wfn = psi4.core.Wavefunction.from_file('ref_wfn')
 e_conv = 1e-8
 r_conv = 1e-8
-cc = pycc.ccenergy(rhf_wfn)
-ecc = cc.solve_ccsd(e_conv, r_conv)
+cc = pycc.ccwfn(rhf_wfn)
+ecc = cc.solve_cc(e_conv, r_conv)
 hbar = pycc.cchbar(cc)
 cclambda = pycc.cclambda(cc, hbar)
 lecc = cclambda.solve_lambda(e_conv, r_conv)
