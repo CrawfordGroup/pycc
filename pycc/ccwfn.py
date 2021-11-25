@@ -1,5 +1,5 @@
 """
-ccenergy.py: CC T-amplitude Solver
+ccwfn.py: CC T-amplitude Solver
 """
 
 if __name__ == "__main__":
