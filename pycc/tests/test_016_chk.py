@@ -92,6 +92,13 @@ def test_chk(datadir):
     reft_file = datadir.join(f"t_out_full.pk")
     with open(reft_file,'rb') as ampf:
         ref_t = pk.load(ampf)
+        
+    # TEST: print all dict keys
+    print(ret.keys())
+    print(ref_p.keys())
+    
+    print(ret_t.keys())
+    print(ref_t.keys())
 
     # check properties
     pchk = ['ecc','mu_x','mu_y','mu_z','m_x','m_y','m_z']
