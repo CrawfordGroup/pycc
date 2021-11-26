@@ -26,7 +26,13 @@ def test_ccd_h2o():
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    ccsd = pycc.ccwfn(rhf_wfn, model='CCD')
-    eccsd = ccsd.solve_cc(e_conv,r_conv,maxiter)
+    cc = pycc.ccwfn(rhf_wfn, model='CCD')
+    ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     epsi4 = -0.222559319034  # Checked against CFOUR
-    assert (abs(epsi4 - eccsd) < 1e-11)
+    assert (abs(epsi4 - ecc) < 1e-11)
+
+    hbar = pycc.cchbar(cc)
+    cclambda = pycc.cclambda(cc, hbar)
+    lcc = cclambda.solve_lambda(e_conv, r_conv)
+    ccdensity = pycc.ccdensity(cc, cclambda)
+    ecc = ccdensity.compute_energy()
