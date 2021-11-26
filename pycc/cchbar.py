@@ -85,7 +85,7 @@ class cchbar(object):
         print("\nHBAR constructed in %.3f seconds.\n" % (time.time() - time_init))
 
     def build_Hov(self, o, v, F, L, t1):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hov = F[o,v].copy()
         else:
             Hov = F[o,v].copy()
@@ -94,7 +94,7 @@ class cchbar(object):
 
 
     def build_Hvv(self, o, v, F, L, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hvv = F[v,v].copy()
             Hvv = Hvv - contract('mnfa,mnfe->ae', t2, L[o,o,v,v])
         else:
@@ -106,7 +106,7 @@ class cchbar(object):
 
 
     def build_Hoo(self, o, v, F, L, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hoo = F[o,o].copy()
             Hoo = Hoo + contract('inef,mnef->mi', t2, L[o,o,v,v])
         else:
@@ -118,7 +118,7 @@ class cchbar(object):
 
 
     def build_Hoooo(self, o, v, ERI, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hoooo = ERI[o,o,o,o].copy()
             Hoooo = Hoooo + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
         else:
@@ -130,7 +130,7 @@ class cchbar(object):
 
 
     def build_Hvvvv(self, o, v, ERI, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hvvvv = ERI[v,v,v,v].copy()
             Hvvvv = Hvvvv + contract('mnab,mnef->abef', t2, ERI[o,o,v,v])
         else:
@@ -142,7 +142,7 @@ class cchbar(object):
 
 
     def build_Hvovv(self, o, v, ERI, t1):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hvovv = ERI[v,o,v,v].copy()
         else:
             Hvovv = ERI[v,o,v,v].copy()
@@ -151,7 +151,7 @@ class cchbar(object):
 
 
     def build_Hooov(self, o, v, ERI, t1):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hooov = ERI[o,o,o,v].copy()
         else:
             Hooov = ERI[o,o,o,v].copy()
@@ -160,9 +160,9 @@ class cchbar(object):
 
 
     def build_Hovvo(self, o, v, ERI, L, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hovvo = ERI[o,v,v,o].copy()
-            # clean this up
+            # clean th== up
             Hovvo = Hovvo - contract('jnfb,mnef->mbej', t2, ERI[o,o,v,v])
             Hovvo = Hovvo + contract('njfb,mnef->mbej', t2, L[o,o,v,v])
         else:
@@ -175,7 +175,7 @@ class cchbar(object):
 
 
     def build_Hovov(self, o, v, ERI, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hovov = ERI[o,v,o,v].copy()
             Hovov = Hovov - contract('jnfb,nmef->mbje', t2, ERI[o,o,v,v])
         else:
@@ -187,7 +187,7 @@ class cchbar(object):
 
 
     def build_Hvvvo(self, o, v, ERI, L, Hov, Hvvvv, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hvvvo = ERI[v,v,v,o].copy()
             Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
@@ -213,7 +213,7 @@ class cchbar(object):
 
 
     def build_Hovoo(self, o, v, ERI, L, Hov, Hoooo, t1, t2):
-        if self.ccwfn.model is 'CCD':
+        if self.ccwfn.model == 'CCD':
             Hovoo = ERI[o,v,o,o].copy()
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
             Hovoo = Hovoo + contract('ijef,mbef->mbij', t2, ERI[o,v,v,v])

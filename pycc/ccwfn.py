@@ -262,7 +262,7 @@ class ccwfn(object):
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             Fae = F[v,v].copy()
             Fae = Fae - contract('mnaf,mnef->ae', t2, L[o,o,v,v])
         else:
@@ -274,7 +274,7 @@ class ccwfn(object):
 
 
     def build_Fmi(self, o, v, F, L, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             Fmi = F[o,o].copy()
             Fmi = Fmi + contract('inef,mnef->mi', t2, L[o,o,v,v])
         else:
@@ -286,7 +286,7 @@ class ccwfn(object):
 
 
     def build_Fme(self, o, v, F, L, t1):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             return
         else:
             Fme = F[o,v].copy()
@@ -295,7 +295,7 @@ class ccwfn(object):
 
 
     def build_Wmnij(self, o, v, ERI, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
         else:
@@ -307,7 +307,7 @@ class ccwfn(object):
 
 
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej - contract('jnfb,mnef->mbej', 0.5*t2, ERI[o,o,v,v])
             Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
@@ -321,7 +321,7 @@ class ccwfn(object):
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje + contract('jnfb,mnfe->mbje', 0.5*t2, ERI[o,o,v,v])
         else:
@@ -333,14 +333,14 @@ class ccwfn(object):
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             return
         else:
             return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             r_T1 = np.zeros_like(t1)
         else:
             r_T1 = F[o,v].copy()
@@ -354,7 +354,7 @@ class ccwfn(object):
 
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
             r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
@@ -388,7 +388,7 @@ class ccwfn(object):
 
 
     def cc_energy(self, o, v, F, L, t1, t2):
-        if self.model is 'CCD':
+        if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
         else:
             ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
