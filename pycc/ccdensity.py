@@ -297,6 +297,28 @@ class ccdensity(object):
 
         if self.ccwfn.model == 'CCD':
             Doovv = 2.0 * tau_spinad + l2
+
+            Doovv += 4.0 * contract('imae,mjeb->ijab', t2, l2)
+            Doovv -= 2.0 * contract('mjbe,imae->ijab', tau, l2)
+
+            tmp_oooo = contract('ijef,mnef->ijmn', t2, l2)
+            Doovv += contract('ijmn,mnab->ijab', tmp_oooo, t2)
+            tmp1 = contract('njbf,mnef->jbme', t2, l2)
+            Doovv += contract('jbme,miae->ijab', tmp1, t2)
+            tmp1 = contract('imfb,mnef->ibne', t2, l2)
+            Doovv += contract('ibne,njae->ijab', tmp1, t2)
+            Gvv = self.cclambda.build_Gvv(t2, l2)
+            Doovv += 4.0 * contract('eb,ijae->ijab', Gvv, tau)
+            Doovv -= 2.0 * contract('ea,ijbe->ijab', Gvv, tau)
+            Goo = self.cclambda.build_Goo(t2, l2)
+            Doovv -= 4.0 * contract('jm,imab->ijab', Goo, tau)  # use tau_spinad?
+            Doovv += 2.0 * contract('jm,imba->ijab', Goo, tau)
+            tmp1 = contract('inaf,mnef->iame', t2, l2)
+            Doovv -= 4.0 * contract('iame,mjbe->ijab', tmp1, tau)
+            Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
+            Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
+            Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
+
         else:
             Doovv = 4.0 * contract('ia,jb->ijab', t1, l1)
             Doovv += 2.0 * tau_spinad

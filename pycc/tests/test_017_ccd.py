@@ -34,5 +34,9 @@ def test_ccd_h2o():
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
     lcc = cclambda.solve_lambda(e_conv, r_conv)
+    lcc_cfour = -0.218758826700
+    assert (abs(lcc - lcc_cfour) < 1e-11)
+
     ccdensity = pycc.ccdensity(cc, cclambda)
     ecc = ccdensity.compute_energy()
+    assert (abs(epsi4 - ecc) < 1e-11)
