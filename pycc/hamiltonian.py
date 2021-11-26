@@ -12,8 +12,6 @@ class Hamiltonian(object):
 
         npCp = np.asarray(Cp)
         npCr = np.asarray(Cr)
-        npCq = np.asarray(Cq)
-        npCs = np.asarray(Cs)
 
         # Generate MO Fock matrix
         self.F = np.asarray(ref.Fa())
@@ -21,6 +19,6 @@ class Hamiltonian(object):
 
         # Get MO two-electron integrals in Dirac notation
         mints = psi4.core.MintsHelper(ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))     # (pr|qs)
-        self.ERI = self.ERI.swapaxes(1,2)                   # <pq|rs>
-        self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)    # 2 <pq|rs> - <pq|sr>
+        self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))  # (pr|qs)
+        self.ERI = self.ERI.swapaxes(1,2)                    # <pq|rs>
+        self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)     # 2 <pq|rs> - <pq|sr>
