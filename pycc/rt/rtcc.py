@@ -288,7 +288,7 @@ class rtcc(object):
         return y,ret
 
     def propagate(self, ODE, yi, tf, ti=0, ref=False, chk=False, tchk=False,
-                  ofile="output.pk",tfile="t_out.pk",cfile="chk.pk"):
+                  ofile="output.pk",tfile="t_out.pk",cfile="chk.pk",k=2):
         """
         Propagate the function yi from time ti to time tf
 
@@ -314,6 +314,8 @@ class rtcc(object):
             name of amplitude output file (optional, default='t_out.pk')
         cfile : str
             name of checkpoint file (optional, default='chk.pk')
+        k : int
+            number of decimals to include in str keys for return dict
 
         Returns
         -------
@@ -324,7 +326,7 @@ class rtcc(object):
         """
         # setup
         point = 0
-        key = str(np.round(ti,2))
+        key = '%.*f' % (k,ti) 
 
         # pull previous chkpt or properties?
         if chk:
@@ -375,7 +377,7 @@ class rtcc(object):
             point += 1
             y,props = self.step(ODE,yi,t,ref)
             t += ODE.h
-            key = str(np.round(t,2))
+            key = '%.*f' % (k,t) 
             ret[key] = props
             yi = y
 

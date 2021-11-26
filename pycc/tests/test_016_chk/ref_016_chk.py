@@ -62,7 +62,7 @@ ODE = rk2(h)
 # if full: run entire propagation, save amps / props / rhf wfn
 if full:
     ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True, tchk=1,
-            cfile="chk_full.pk", ofile="output_full.pk",tfile="t_out_full.pk")
+            cfile="chk_full.pk", ofile="output_full.pk",tfile="t_out_full.pk",k=2)
 else:
     ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True, tchk=1,
-            cfile="chk_5.pk")
+            cfile="chk_5.pk",k=2)
