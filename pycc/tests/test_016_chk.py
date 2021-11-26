@@ -83,7 +83,7 @@ def test_chk(datadir):
     ofile = datadir.join(f"output.pk")
     tfile = datadir.join(f"t_out.pk")
     ret, ret_t = rtcc.propagate(ODE, y0, tf, ti=ti, ref=False, chk=True, tchk=1,
-            ofile=ofile, tfile=tfile)
+            ofile=ofile, tfile=tfile, k=2)
 
     # reference is "full" propagation (0-10au)
     refp_file = datadir.join(f"output_full.pk")
@@ -92,7 +92,7 @@ def test_chk(datadir):
     reft_file = datadir.join(f"t_out_full.pk")
     with open(reft_file,'rb') as ampf:
         ref_t = pk.load(ampf)
-
+        
     # check properties
     pchk = ['ecc','mu_x','mu_y','mu_z','m_x','m_y','m_z']
     for k in ref_p.keys():
