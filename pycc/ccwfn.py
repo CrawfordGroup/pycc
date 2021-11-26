@@ -287,7 +287,7 @@ class ccwfn(object):
 
     def build_Fme(self, o, v, F, L, t1):
         if self.model == 'CCD':
-            return
+            Fme = F[o,v].copy()
         else:
             Fme = F[o,v].copy()
             Fme = Fme + contract('nf,mnef->me', t1, L[o,o,v,v])
@@ -298,6 +298,11 @@ class ccwfn(object):
         if self.model == 'CCD':
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
+        elif self.model == 'CC2':
+            Wmnij = ERI[o,o,o,o].copy()
+            Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+            Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
+            Wmnij = Wmnij + contract('ie,jf,mnef->mnij', t1, t1, ERI[o,o,v,v])
         else:
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
@@ -332,6 +337,12 @@ class ccwfn(object):
         return Wmbje
 
 
+    def build_Wmbij(self, o, v, ERI, t1):
+        if self.model == 'CC2':
+            Wmbij = ERI[o,v,o,o].copy()
+        return Wmbij
+
+
     def build_Zmbij(self, o, v, ERI, t1, t2):
         if self.model == 'CCD':
             return
@@ -363,6 +374,11 @@ class ccwfn(object):
             r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
             r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
             r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+        elif self.model == 'CC2':
+            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+            r_T2 = r_T2 + contract('ijae,be->ijab', t2, F[v,v])
+            r_T2 = r_T2 - contract('imab,mj->ijab', t2, F[o,o])
+            r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', t2, Wmnij)
         else:
             r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
