@@ -389,7 +389,7 @@ class rtcc(object):
                     pk.dump(ret,of,pk.HIGHEST_PROTOCOL)
                 with open(cfile,'wb') as cf:
                     pk.dump(chkp,cf,pk.HIGHEST_PROTOCOL)
-            
+
             # save amplitudes if asked and correct timestep
             if save_t and (point%tchk<0.0001):
                 t1,t2,l1,l2 = self.extract_amps(y)
