@@ -337,9 +337,13 @@ class ccwfn(object):
         return Wmbje
 
 
-    def build_Wmbij(self, o, v, ERI, t1):
+    def build_Wmbij(self, o, v, ERI, Wmnij, t1):
         if self.model == 'CC2':
             Wmbij = ERI[o,v,o,o].copy()
+            Wmbij -= 0.5 * contract('mnij,nb->mbij', Wmnij, t1)
+            # CHECK
+            Wmbij += contract('mbej,ie->mbij', ERI[o,v,v,o], t1)
+            Wmbij += contract('mjeb,ie->mbij', ERI[o,o,v,v], t1)
         return Wmbij
 
 
