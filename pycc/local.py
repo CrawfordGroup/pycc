@@ -1,11 +1,12 @@
 import psi4
+import copy
 import numpy as np
 from opt_einsum import contract
 
 
 class Local(object):
 
-    def __init__(self, no, nv, H, cutoff, extent=False):
+    def __init__(self, no, nv, H, C, cutoff, extent=False):
 
         o = slice(0, no)
         v = slice(no, no+nv)
@@ -52,18 +53,17 @@ class Local(object):
         D = np.zeros_like(T_ij)
         Q_full = np.zeros_like(T_ij)
         Q = []  # truncated LPNO list
-        occ = np.zeros((no*no, nv))
         dim = np.zeros((no*no), dtype=int)  # dimension of LPNO space for each pair
         L = []
         eps = []
 
         if extent:
             # determine orbital extent
-            mints = psi4.core.MintsHelper(H.ref.basisset())
+            mints = H.mints
 
             # AO-basis quadrupole integrals (XX + YY + ZZ)
             # stored as upper triangle[[0,1,2],[.,3,4],[.,.,5]]
-            C = H.C.to_array()
+            C = np.asarray(C)
             ao_r2 = mints.ao_quadrupole()[0].to_array()
             ao_r2 += mints.ao_quadrupole()[3].to_array()
             ao_r2 += mints.ao_quadrupole()[5].to_array()
@@ -79,74 +79,51 @@ class Local(object):
             D[ij] = contract('ab,bc->ac', T_ij[ij], Tt_ij[ij].T) + contract('ab,bc->ac', T_ij[ij].T, Tt_ij[ij])
             D[ij] *= 2.0/(1 + int(i == j))
 
-            # Compute PNOs and truncate
-            occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
+            # Compute PNOs and save a copy
+            occ, Q_full[ij] = np.linalg.eigh(D[ij])
+            ijvv = copy.deepcopy(Q_full[ij])
             print("Q:\n{}".format(Q_full[ij]))
-            print("OCC N:\n{}".format(occ[ij]))
+            print("OCC N:\n{}".format(occ))
 
             if extent:
                 # orb extents to PNO basis
                 r2 = contract('Aa,ab,bB->AB',Q_full[ij].T,mo_r2[no:,no:],Q_full[ij])
+                print("Orbital extents:\n{}".format(r2.diagonal()))
 
-                print("Orbital extents:")
-                print(r2.diagonal())
+                # determine orbitals to keep and create an empty array for them
+                ext_chk = np.abs(r2.diagonal()) >= extent
+                ext_space = np.empty((nv,0))
+                if not ext_chk.any():
+                    print("No pair orbital extent above the provided cutoff.")
+                else:
+                    keep = [i for i, x in enumerate(ext_chk) if x]
+                    for vir in keep:
+                        ext_space = np.column_stack([ext_space,Q_full[ij][:,vir]])
+                    ijvv = np.delete(ijvv,keep,axis=1)
+                    occ = np.delete(occ,keep)
 
-                # now zip these against the orbitals, pull a few w/ the highest extent,
-                # then truncate from the remaining set by occ number and combine the two
-                # transpose of Q is needed to sort by columns instead of rows
-                zipped = zip(np.abs(r2.diagonal()),occ[ij],list(Q_full[ij].T))
-                by_r2 = sorted(zipped)
-                tups = zip(*by_r2)
-                sorted_r2, sorted_occ, sorted_q = [list(tup) for tup in tups]
+            if (occ < 0).any(): # Check for negative occupation numbers
+                neg = occ[(occ<0)].min()
+                print("Warning! Negative occupation numbers up to {} detected. \
+                        Using absolute values - please check if your input is correct.".format(neg))
 
-                print("sorted_Q:\n{}".format(sorted_q))
-                print("sorted_occ:\n{}".format(sorted_occ))
-                print("sorted_r2:\n{}".format(sorted_r2))
+            print("occ: {}".format(occ))
+            print("cutoff: {}".format(cutoff))
+            pno_chk = np.abs(occ)>cutoff
+            dim[ij] = pno_chk.sum()
+            cuts = [i for i, x in enumerate(pno_chk) if not x]
+            print("cuts: {}".format(cuts))
+            ijvv = np.delete(ijvv,cuts,axis=1)
 
-                # take the _n orbitals with the highest spatial extent
-                # transpose to get "rows" (inner index of 2d list) back to columns
-                ext_space = np.asarray(sorted_q[-extent:]).T
-                int_space = np.asarray(sorted_q[:-extent]).T
-                int_occ = np.asarray(sorted_occ[:-extent]).T
-                # below for if extent=0, but (if extent) keeps this case from happening now
-                #else: # a[-_n:] gives the entire space, which would reserve ALL orbitals
-                #    ext_space = np.asarray([])
-                #    int_space = np.asarray(sorted_q).T
-                #    int_occ = np.asarray(sorted_occ).T
+            if extent:
+                ijvv = np.column_stack([ijvv,ext_space])
+                dim[ij] += ext_space.shape[1]
 
-                print("external space:\n{}".format(ext_space))
-                print("internal space:\n{}".format(int_space))
-                print("internal occ:\n{}".format(int_occ))
-    
-                # get PNOs as normal from the internal space
-                checks = np.abs(int_occ)>cutoff
-                dim_int = checks.sum()
-                cuts = [i for i, x in enumerate(checks) if not x]
-                print("PNO CUTS:\n{}".format(cuts))
-                int_space = np.delete(int_space,cuts,axis=1)
-                Q.append(np.append(int_space,ext_space,axis=1))
-                # below for if extent=0, but (if extent) keeps this case from happening now
-                #else:
-                #    Q.append(int_space)
-                dim[ij] = dim_int + extent 
+            Q.append(ijvv)
 
-                print("Final space:\n{}".format(Q[-1]))
-                test = Q[-1].T @ Q[-1]
-                print("Should be 1's:\n{}".format(sum(test>1e-15)))
-
-            else:
-                if (occ[ij] < 0).any(): # Check for negative occupation numbers
-                    neg = occ[ij][(occ[ij]<0)].min()
-                    print("Warning! Negative occupation numbers up to {} detected. \
-                            Using absolute values - please check if your input is correct.".format(neg))
-                dim[ij] = (np.abs(occ[ij]) > cutoff).sum()
-                Q.append(Q_full[ij, :, (nv-dim[ij]):])
-
-                # check if the PNO-cutoff method above works in the regular case (it does)
-#                checks = np.abs(occ[ij])>cutoff
-#                dim[ij] = checks.sum()
-#                cuts = [i for i, x in enumerate(checks) if not x]
-#                Q.append(np.delete(Q_full[ij],cuts,axis=1))
+            print("Final space:\n{}".format(Q[-1]))
+            test = Q[-1].T @ Q[-1]
+            print("Should be 1's:\n{}".format(sum(test>1e-15)))
 
             # Compute semicanonical virtual space
             F = Q[ij].T @ H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis

@@ -61,7 +61,7 @@ class rtcc(object):
         self.V = V
 
         # Prep the dipole integrals in MO basis
-        mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
+        mints = ccwfn.H.mints
         dipole_ints = mints.ao_dipole()
         C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
         self.mu = []

@@ -90,6 +90,9 @@ class ccwfn(object):
             raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+        # NOTE: I think the above should be:
+        # self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+        # since it could technically be a non_LPNO cutoff at some point
 
         extent = kwargs.pop('extent', False)
         self.extent = extent
@@ -136,7 +139,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff, extent)
+            self.Local = Local(self.no, self.nv, self.H, self.C, self.local_cutoff, extent)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
@@ -183,8 +186,6 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
-        if self.Local:
-            print("Filtering amplitudes with {} PNOs".format(self.Local.dim))
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
