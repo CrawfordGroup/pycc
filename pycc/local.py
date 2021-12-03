@@ -81,9 +81,11 @@ class Local(object):
 
             # Compute PNOs and save a copy
             occ, Q_full[ij] = np.linalg.eigh(D[ij])
-            ijvv = copy.deepcopy(Q_full[ij])
+#            ijvv = copy.deepcopy(Q_full[ij])
             print("Q:\n{}".format(Q_full[ij]))
             print("OCC N:\n{}".format(occ))
+#            indices = np.arange(0,nv,dtype=int)
+            indices = [i for i in range(0,nv)]
 
             if extent:
                 # orb extents to PNO basis
@@ -94,13 +96,18 @@ class Local(object):
                 ext_chk = np.abs(r2.diagonal()) >= extent
                 ext_space = np.empty((nv,0))
                 if not ext_chk.any():
+                    keep = None
                     print("No pair orbital extent above the provided cutoff.")
                 else:
                     keep = [i for i, x in enumerate(ext_chk) if x]
-                    for vir in keep:
-                        ext_space = np.column_stack([ext_space,Q_full[ij][:,vir]])
-                    ijvv = np.delete(ijvv,keep,axis=1)
+                    print("keep: {}".format(keep))
+#                    for vir in keep:
+#                        ext_space = np.column_stack([ext_space,Q_full[ij][:,vir]])
+#                    ijvv = np.delete(ijvv,keep,axis=1)
                     occ = np.delete(occ,keep)
+                    indices = np.delete(indices,keep)
+            else:
+                keep = None
 
             if (occ < 0).any(): # Check for negative occupation numbers
                 neg = occ[(occ<0)].min()
@@ -113,13 +120,26 @@ class Local(object):
             dim[ij] = pno_chk.sum()
             cuts = [i for i, x in enumerate(pno_chk) if not x]
             print("cuts: {}".format(cuts))
-            ijvv = np.delete(ijvv,cuts,axis=1)
+#            ijvv = np.delete(ijvv,cuts,axis=1)
+            indices = np.delete(indices,cuts)
 
-            if extent:
-                ijvv = np.column_stack([ijvv,ext_space])
-                dim[ij] += ext_space.shape[1]
+#            remain = []
+#            for i,x in enumerate(Q_full[ij].T):
+#                if x in ijvv.T:
+#                    remain.append(i)
+#            print("Remaining indices from original space:\n{}".format(remain))
 
-            Q.append(ijvv)
+            if keep:
+#                ijvv = np.column_stack([ijvv,ext_space])
+#                dim[ij] += ext_space.shape[1]
+#                indices = np.append(indices,keep)
+                indices = np.append(indices,keep)
+                dim[ij] += len(keep)
+            print("Remaining indices from original space:\n{}".format(indices))
+            removed = np.delete(np.arange(0,nv),indices)
+
+#            Q.append(ijvv)
+            Q.append(np.delete(Q_full[ij],removed,axis=1))
 
             print("Final space:\n{}".format(Q[-1]))
             test = Q[-1].T @ Q[-1]
@@ -135,6 +155,7 @@ class Local(object):
 
         print("Average PNO dimension: %d" % (np.average(dim)))
         print("Number of canonical VMOs: %d" % (nv))
+        print("Pair dim list: {}".format(dim))
 
         self.cutoff = cutoff
         self.no = no
