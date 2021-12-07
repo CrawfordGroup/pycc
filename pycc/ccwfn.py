@@ -133,7 +133,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff)
+            self.Local = Local(local, self.no, self.nv, self.H, self.local_cutoff)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
