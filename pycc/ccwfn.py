@@ -90,6 +90,12 @@ class ccwfn(object):
             raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+        # NOTE: I think the above should be:
+        # self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
+        # since it could technically be a non_LPNO cutoff at some point
+
+        extent = kwargs.pop('extent', False)
+        self.extent = extent
 
         valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
         local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
@@ -133,7 +139,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(self.no, self.nv, self.H, self.local_cutoff)
+            self.Local = Local(self.no, self.nv, self.H, self.C, self.local_cutoff, extent)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]

@@ -61,7 +61,7 @@ class rtcc(object):
         self.V = V
 
         # Prep the dipole integrals in MO basis
-        mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
+        mints = ccwfn.H.mints
         dipole_ints = mints.ao_dipole()
         C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
         self.mu = []
@@ -80,6 +80,8 @@ class rtcc(object):
             for axis in range(3):
                 m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
                 self.m.append(m*1.0j)
+        else:
+            self.magnetic = False
 
     def f(self, t, y):
         """

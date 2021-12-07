@@ -1,10 +1,12 @@
+import psi4
+import copy
 import numpy as np
 from opt_einsum import contract
 
 
 class Local(object):
 
-    def __init__(self, no, nv, H, cutoff):
+    def __init__(self, no, nv, H, C, cutoff, extent=False):
 
         o = slice(0, no)
         v = slice(no, no+nv)
@@ -28,6 +30,7 @@ class Local(object):
         niter = 0
 
         while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            niter += 1
             elast = emp2
 
             r2 = 0.5 * H.ERI[o,o,v,v].copy()
@@ -51,10 +54,24 @@ class Local(object):
         D = np.zeros_like(T_ij)
         Q_full = np.zeros_like(T_ij)
         Q = []  # truncated LPNO list
-        occ = np.zeros((no*no, nv))
         dim = np.zeros((no*no), dtype=int)  # dimension of LPNO space for each pair
         L = []
         eps = []
+
+        if extent:
+            # determine orbital extent
+            mints = H.mints
+
+            # AO-basis quadrupole integrals (XX + YY + ZZ)
+            # stored as upper triangle[[0,1,2],[.,3,4],[.,.,5]]
+            C = np.asarray(C)
+            ao_r2 = mints.ao_quadrupole()[0].to_array()
+            ao_r2 += mints.ao_quadrupole()[3].to_array()
+            ao_r2 += mints.ao_quadrupole()[5].to_array()
+
+            # to (localized-occ) MO basis
+            mo_r2 = contract('ki,kl,lj->ij',C,ao_r2,C)
+
         for ij in range(no*no):
             i = ij // no
             j = ij % no
@@ -63,14 +80,54 @@ class Local(object):
             D[ij] = contract('ab,bc->ac', T_ij[ij], Tt_ij[ij].T) + contract('ab,bc->ac', T_ij[ij].T, Tt_ij[ij])
             D[ij] *= 2.0/(1 + int(i == j))
 
-            # Compute PNOs and truncate
-            occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
-            if (occ[ij] < 0).any(): # Check for negative occupation numbers
-                neg = occ[ij][(occ[ij]<0)].min()
+            # Compute PNOs 
+            occ, Q_full[ij] = np.linalg.eigh(D[ij])
+            indices = [i for i in range(0,nv)]
+
+            # print space information
+            print("Q:\n{}".format(Q_full[ij]))
+            print("OCC N:\n{}".format(occ))
+
+            if extent:
+                # orb extents to PNO basis
+                r2 = contract('Aa,ab,bB->AB',Q_full[ij].T,mo_r2[no:,no:],Q_full[ij])
+                r2 = r2.diagonal()
+                print("Orbital extents:\n{}".format(r2))
+
+                # determine orbitals to keep
+                ext_chk = np.abs(r2) >= extent
+                if not ext_chk.any(): # all orbital indices remain on the chopping block
+                    keep = None
+                    print("No pair orbital extent above the provided cutoff.")
+                else:
+                    keep = [i for i, x in enumerate(ext_chk) if x]
+                    indices = np.delete(indices,keep) # remove large orbital indices from chopping block
+                    occ = np.delete(occ,keep) # only look at occ #s for orbitals on chopping block
+                    print("keep: {}".format(keep))
+                    print("remaining occ:\n{}".format(occ))
+            else:
+                keep = None
+
+            # at this point, `indices` contains the orbital indices that are still on 
+            # the "chopping block", and occ only has corresponding occ numbers
+            # this is true whether or not `extent` was passed
+
+            if (occ < 0).any(): # Check for negative occupation numbers
+                neg = occ[(occ<0)].min()
                 print("Warning! Negative occupation numbers up to {} detected. \
                         Using absolute values - please check if your input is correct.".format(neg))
-            dim[ij] = (np.abs(occ[ij]) > cutoff).sum()
-            Q.append(Q_full[ij, :, (nv-dim[ij]):])
+
+            pno_chk = np.abs(occ)>cutoff # indices from the chopping block
+            cuts = [indices[i] for i,x in enumerate(pno_chk) if not x] # indices from full space
+            print("cutoff: {}".format(cutoff))
+            print("cuts: {}".format(cuts))
+
+            Q.append(np.delete(Q_full[ij],cuts,axis=1))
+            dim[ij] = Q[-1].shape[1]
+
+            print("Final space:\n{}".format(Q[-1]))
+            test = Q[-1].T @ Q[-1]
+            print("Should be 1's:\n{}".format(sum(test>1e-15)))
 
             # Compute semicanonical virtual space
             F = Q[ij].T @ H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
@@ -82,6 +139,7 @@ class Local(object):
 
         print("Average PNO dimension: %d" % (np.average(dim)))
         print("Number of canonical VMOs: %d" % (nv))
+        print("Pair dim list: {}".format(dim))
 
         self.cutoff = cutoff
         self.no = no
