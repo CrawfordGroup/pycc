@@ -80,7 +80,7 @@ class Local(object):
             D[ij] = contract('ab,bc->ac', T_ij[ij], Tt_ij[ij].T) + contract('ab,bc->ac', T_ij[ij].T, Tt_ij[ij])
             D[ij] *= 2.0/(1 + int(i == j))
 
-            # Compute PNOs and save a copy
+            # Compute PNOs 
             occ, Q_full[ij] = np.linalg.eigh(D[ij])
             indices = [i for i in range(0,nv)]
 
