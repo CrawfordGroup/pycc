@@ -30,6 +30,7 @@ class Local(object):
         niter = 0
 
         while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            niter += 1
             elast = emp2
 
             r2 = 0.5 * H.ERI[o,o,v,v].copy()
@@ -81,65 +82,48 @@ class Local(object):
 
             # Compute PNOs and save a copy
             occ, Q_full[ij] = np.linalg.eigh(D[ij])
-#            ijvv = copy.deepcopy(Q_full[ij])
+            indices = [i for i in range(0,nv)]
+
+            # print space information
             print("Q:\n{}".format(Q_full[ij]))
             print("OCC N:\n{}".format(occ))
-#            indices = np.arange(0,nv,dtype=int)
-            indices = [i for i in range(0,nv)]
 
             if extent:
                 # orb extents to PNO basis
                 r2 = contract('Aa,ab,bB->AB',Q_full[ij].T,mo_r2[no:,no:],Q_full[ij])
-                print("Orbital extents:\n{}".format(r2.diagonal()))
+                r2 = r2.diagonal()
+                print("Orbital extents:\n{}".format(r2))
 
-                # determine orbitals to keep and create an empty array for them
-                ext_chk = np.abs(r2.diagonal()) >= extent
-                ext_space = np.empty((nv,0))
-                if not ext_chk.any():
+                # determine orbitals to keep
+                ext_chk = np.abs(r2) >= extent
+                if not ext_chk.any(): # all orbital indices remain on the chopping block
                     keep = None
                     print("No pair orbital extent above the provided cutoff.")
                 else:
                     keep = [i for i, x in enumerate(ext_chk) if x]
+                    indices = np.delete(indices,keep) # remove large orbital indices from chopping block
+                    occ = np.delete(occ,keep) # only look at occ #s for orbitals on chopping block
                     print("keep: {}".format(keep))
-#                    for vir in keep:
-#                        ext_space = np.column_stack([ext_space,Q_full[ij][:,vir]])
-#                    ijvv = np.delete(ijvv,keep,axis=1)
-                    occ = np.delete(occ,keep)
-                    indices = np.delete(indices,keep)
+                    print("remaining occ:\n{}".format(occ))
             else:
                 keep = None
+
+            # at this point, `indices` contains the orbital indices that are still on 
+            # the "chopping block", and occ only has corresponding occ numbers
+            # this is true whether or not `extent` was passed
 
             if (occ < 0).any(): # Check for negative occupation numbers
                 neg = occ[(occ<0)].min()
                 print("Warning! Negative occupation numbers up to {} detected. \
                         Using absolute values - please check if your input is correct.".format(neg))
 
-            print("occ: {}".format(occ))
+            pno_chk = np.abs(occ)>cutoff # indices from the chopping block
+            cuts = [indices[i] for i,x in enumerate(pno_chk) if not x] # indices from full space
             print("cutoff: {}".format(cutoff))
-            pno_chk = np.abs(occ)>cutoff
-            dim[ij] = pno_chk.sum()
-            cuts = [i for i, x in enumerate(pno_chk) if not x]
             print("cuts: {}".format(cuts))
-#            ijvv = np.delete(ijvv,cuts,axis=1)
-            indices = np.delete(indices,cuts)
 
-#            remain = []
-#            for i,x in enumerate(Q_full[ij].T):
-#                if x in ijvv.T:
-#                    remain.append(i)
-#            print("Remaining indices from original space:\n{}".format(remain))
-
-            if keep:
-#                ijvv = np.column_stack([ijvv,ext_space])
-#                dim[ij] += ext_space.shape[1]
-#                indices = np.append(indices,keep)
-                indices = np.append(indices,keep)
-                dim[ij] += len(keep)
-            print("Remaining indices from original space:\n{}".format(indices))
-            removed = np.delete(np.arange(0,nv),indices)
-
-#            Q.append(ijvv)
-            Q.append(np.delete(Q_full[ij],removed,axis=1))
+            Q.append(np.delete(Q_full[ij],cuts,axis=1))
+            dim[ij] = Q[-1].shape[1]
 
             print("Final space:\n{}".format(Q[-1]))
             test = Q[-1].T @ Q[-1]
