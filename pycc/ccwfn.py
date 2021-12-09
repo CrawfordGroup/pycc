@@ -84,9 +84,9 @@ class ccwfn(object):
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC2', 'CC3']
 
-        valid_local_models = [None, 'LPNO']
+        valid_local_models = [None, 'LPNO', 'PAO']
         local = kwargs.pop('local', None)
-        if local not in valid_local_models:
+        if local.upper() not in valid_local_models:
             raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)
@@ -133,7 +133,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(local, self.no, self.nv, self.H, self.local_cutoff)
+            self.Local = Local(local, C, self.no, self.nv, self.H, self.local_cutoff)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]

@@ -1,20 +1,22 @@
+import psi4
 import numpy as np
 from opt_einsum import contract
 
 
 class Local(object):
 
-    def __init__(self, local, no, nv, H, cutoff):
+    def __init__(self, local, C, no, nv, H, cutoff):
 
         self.cutoff = cutoff
         self.no = no
         self.nv = nv
         self.H = H
+        self.C = C.to_array()
 
         self._build(local)
     
     def _build(self,local):
-        if local.upper() in ["LPNO","PNO"]:
+        if local.upper() in ["LPNO"]:
             self._build_LPNO()
         elif local.upper() in ["PAO"]:
             self._build_PAO()
@@ -22,10 +24,77 @@ class Local(object):
             raise Exception("Not a valid local type!")
 
     def _build_PAO(self):
-        D = self.H.Cp[:,:self.no] @ self.H.Cp[:,:self.no].T
-        S = self.H.mints.ao_overlap().to_array()
+        bs = self.H.basisset
+        mints = psi4.core.MintsHelper(bs)
+        D = self.C[:,:self.no] @ self.C[:,:self.no].T # 1/2 OPDM
+        S = mints.ao_overlap().to_array() # overlap matrix
 
+        a2ao = {} # atom-to-ao dict
+        # forgive me Father, for this is the only way to get natom w/o the mol object
+        for i in range(bs.nshell()):
+            a2ao[str(bs.shell_to_center(i))] = []
+        natom = len(list(a2ao.keys()))
+        for i in range(bs.nshell()):
+            a2ao[str(bs.shell_to_center(i))].append(i)
+
+        # build total basis
         R = np.eye(D.shape[0]) - D @ S
+
+        # build up domain for each occ orb
+        domains = []
+
+        for i in range(0,self.no):
+            # population matrix for orbital i
+            Pi = np.einsum('p,r->pr',D[:,i],S[:,i])
+            dP = np.diag(Pi)
+
+            # get relative charge for each atom
+            charges = []
+            for n in range(0,natom):
+                nb = len(a2ao[str(n)])
+                charges.append(self.H.mol.Z(n) - sum(dP[:nb]))
+                dP = np.delete(dP,range(nb))
+            print("Charge analysis:")
+            print("Unsorted charges: {}".format(charges))
+
+            atoms = [i for i in range(natom)]
+            zipped = zip(charges,atoms)
+            sort = sorted(zipped, reverse=True)
+            tups = zip(*sort)
+            charges,atoms = [list(t) for t in tups] # sorted!
+            print(charges)
+            print(atoms)
+
+            # choose which atoms belong to the domain based on charge
+            domains.append([])
+            charge = 0
+            for n in range(0,natom):
+                domains[i].append(atoms.pop(n))
+                charge += charges.pop(n)
+                if charge>1.8:
+                    break
+            print("charge: {}".format(charge))
+            print("domain: {}".format(domains[i]))
+
+            # AOs associated with domain atoms
+            AOi = []
+            for n in domains[i]:
+                AOi += a2ao[str(n)]
+            print("domain basis functions: {}".format(AOi))
+
+#            # grab the PAOs associated with domain atoms
+#            Ri = R[:,domains[i]]
+#
+#            # form approximate MO i by solving SRi'=SRi==Z
+#            Z = np.einsum('mr,ri->mi',S,Ri)
+#            print(S[AOi][AOi].shape)
+#            print(Z.shape)
+#            Rip = np.linalg.solve(S[AOi][AOi],Z)
+#
+#            # completeness check
+#            chk = 1 - np.einsum('mi,mn,ni->',Rip,S[AOi][:],Ri)
+#            print(chk)
+
         pass
 
     def _build_LPNO(self):

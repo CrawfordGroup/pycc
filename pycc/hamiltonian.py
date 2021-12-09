@@ -23,4 +23,5 @@ class Hamiltonian(object):
         self.ERI = self.ERI.swapaxes(1,2)                    # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)     # 2 <pq|rs> - <pq|sr>
 
-        self.mints = mints
+        self.mol = ref.molecule()
+        self.basisset = ref.basisset()
