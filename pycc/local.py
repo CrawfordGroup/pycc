@@ -30,7 +30,7 @@ class Local(object):
         S = mints.ao_overlap().to_array() # overlap matrix
 
         a2ao = {} # atom-to-ao dict
-        # forgive me Father, for this is the only way to get natom w/o the mol object
+        # currently the only way I know how to get natom w/o the mol object...
         for i in range(bs.nshell()):
             a2ao[str(bs.shell_to_center(i))] = []
         natom = len(list(a2ao.keys()))
@@ -54,47 +54,68 @@ class Local(object):
                 nb = len(a2ao[str(n)])
                 charges.append(self.H.mol.Z(n) - sum(dP[:nb]))
                 dP = np.delete(dP,range(nb))
-            print("Charge analysis:")
-            print("Unsorted charges: {}".format(charges))
+
+            print("Charge analysis for occupied orbital %3d:" % i)
+            print(charges)
 
             atoms = [i for i in range(natom)]
             zipped = zip(charges,atoms)
             sort = sorted(zipped, reverse=True)
             tups = zip(*sort)
             charges,atoms = [list(t) for t in tups] # sorted!
-            print(charges)
-            print(atoms)
 
             # choose which atoms belong to the domain based on charge
             domains.append([])
+            print("domains so far: {}".format(domains))
             charge = 0
             for n in range(0,natom):
-                domains[i].append(atoms.pop(n))
-                charge += charges.pop(n)
+                domains[i].append(atoms.pop(0))
+                charge += charges.pop(0)
                 if charge>1.8:
                     break
-            print("charge: {}".format(charge))
-            print("domain: {}".format(domains[i]))
+            print("PAO atomic domain %3d:" % i)
+            print(domains[i])
 
             # AOs associated with domain atoms
             AOi = []
             for n in domains[i]:
                 AOi += a2ao[str(n)]
-            print("domain basis functions: {}".format(AOi))
+            print("PAO orbital domain %3d:" % i)
+            print(AOi)
+            
+            chk = 0
+            while chk < 0.98:
+                # form and solve ARp = B
+                A = np.zeros((len(AOi),len(AOi)))
+                SB = np.zeros((len(AOi),mints.nbf()))
+                for x,a in enumerate(AOi):
+                    for y,b in enumerate(AOi):
+                        A[x,y] = S[a,b]
+                for x,a in enumerate(AOi):
+                    for y,b in enumerate(range(mints.nbf())):
+                        SB[x,y] = S[a,b]
+                B = np.einsum('mp,p->m',SB,R[:,i])
+                Rp = np.linalg.solve(A,B)
+                print("Shape of Rp: {}".format(Rp.shape))
+    
+                # completeness check
+                chk = 1 - np.einsum('m,mn,n->',Rp,SB,R[:,i])
+                print("BP completeness check: %.3f" % chk)
 
-#            # grab the PAOs associated with domain atoms
-#            Ri = R[:,domains[i]]
-#
-#            # form approximate MO i by solving SRi'=SRi==Z
-#            Z = np.einsum('mr,ri->mi',S,Ri)
-#            print(S[AOi][AOi].shape)
-#            print(Z.shape)
-#            Rip = np.linalg.solve(S[AOi][AOi],Z)
-#
-#            # completeness check
-#            chk = 1 - np.einsum('mi,mn,ni->',Rip,S[AOi][:],Ri)
-#            print(chk)
-
+                if chk < 0.98:
+                    try:
+                        n = atoms.pop(0)
+                        domains[i].append(n)
+                        AOi += a2ao[str(n)]
+                        print("PAO atomic domain %3d:" % i)
+                        print(domains[i])
+                        print("PAO orbital domain %3d:" % i)
+                        print(AOi)
+                    except IndexError:
+                        print("Ran out of atoms.")
+                        break
+                else:
+                    break
         pass
 
     def _build_LPNO(self):
