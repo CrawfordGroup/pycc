@@ -86,7 +86,8 @@ class ccwfn(object):
 
         valid_local_models = [None, 'LPNO', 'PAO']
         local = kwargs.pop('local', None)
-        if local.upper() not in valid_local_models:
+        # TODO: case-protect this kwarg
+        if local not in valid_local_models:
             raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('lpno_cutoff', 1e-5)

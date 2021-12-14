@@ -25,3 +25,4 @@ class Hamiltonian(object):
 
         self.mol = ref.molecule()
         self.basisset = ref.basisset()
+        self.Fao = np.asarray(ref.Fa())

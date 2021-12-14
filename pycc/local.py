@@ -42,14 +42,12 @@ class Local(object):
         for i in range(natom): # store basis indices for each atom
             bsi = [b+sum(a2nao[:i]) for b in range(a2nao[i])]
             a2ao[str(i)] = bsi
-
-        # build total basis
-#        R = np.eye(D.shape[0]) - D @ S
+        # now, a2ao is a dict (keys str(0-natom)) w/ vals as indices
+        # of AOs on each atom
 
         # SINGLES DOMAINS
         atom_domains = [] # atom indices
         AO_domains = []   # AO basis function indices
-        Q_i = []          # 
         for i in range(0,self.no):
             # population matrix for orbital i
             Pi = np.einsum('p,r->pr',D[:,i],S[:,i])
@@ -91,7 +89,9 @@ class Local(object):
                     % (i,len(AOi),self.no+self.nv))
             
             chk = 1
-            while chk > 0.02:
+#            cutoff = 0.02
+            cutoff = 0.0001
+            while chk > cutoff:
                 # form and solve ARp = B
                 A = np.zeros((len(AOi),len(AOi)))
                 SB = np.zeros((len(AOi),mints.nbf()))
@@ -107,7 +107,7 @@ class Local(object):
                 chk = 1 - np.einsum('m,mn,n->',Rp,SB,self.C[:,i])
                 print("BP completeness check: %.3f" % chk)
 
-                if chk > 0.02:
+                if chk > cutoff:
                     try:
                         n = atoms.pop(0)
                         atom_domains[i].append(n)
@@ -119,108 +119,82 @@ class Local(object):
                         print("Ran out of atoms. How did that happen?")
                         raise IndexError
                 else:
-                    chk = 0
                     print("Completeness threshold fulfilled.")
             AO_domains.append(AOi)
-            Q_i.append(Rp)
-            print("Rp shape: {}".format(Rp.shape))
 
         # at this point, atom_domains contains the indices for each atom in the 
         # PAO space for each occupied orbital
         # and AO_domains contains the (sorted low->high) indices of the
         # AOs which make up the PAO space for each occupied orbital
-        # I might not actually need AO_domains...
 
-        atom_pair_domains = []
-        for ij in range(self.no**2):
-            atom_pair_domains.append([])
-            i = ij // self.no
-            j = ij % self.no
-
-            ## TWO OPTIONS TO COMPUTE PAIR DOMAINS:
-            # 1) form and solve ARp = B with [i] + [j] AOs
-#            ij_domain = list(set(AO_domains[i]+AO_domains[j]))
-#
-#            A = np.zeros((len(ij_domain),len(ij_domain)))
-#            SB = np.zeros((len(ij_domain),mints.nbf()))
-#            for x,a in enumerate(ij_domain):
-#                for y,b in enumerate(ij_domain):
-#                    A[x,y] = S[a,b]
-#                for y,b in enumerate(range(mints.nbf())):
-#                    SB[x,y] = S[a,b]
-#
-#            v = slice(self.no,self.no+self.nv)
-#            B = np.einsum('mp,pr->mr',SB,self.C[:,v])
-#
-#            Rp = np.linalg.solve(A,B)
-#            Q_ij.append(Rp)
-
-            # 2) take the union of [i] + [j] PAOs and orthogonalize
-#            print(Q_i[i].shape)
-#            Rp = np.hstack((Q_i[i],Q_i[j]))
-#            print(Rp.shape)
-#            print(S.shape)
-#            Sij = Rp.T @ S @ Rp
-#            chk = np.diag(Sij) < 1E-10
-#            cuts = [a for a,x in enumerate(chk)]
-#            if len(cuts) > 0:
-#                Rp = np.delete(Rp,cuts,axis=1)
-#                print("{} linearly dependent orbitals removed.".format(len(cuts)))
-#            Q_ij.append(Rp)
-
-            # 3) find the atomic pair domains, then project the virtual space
-            for n in range(natom):
-                if (n in atom_domain[i]) or (n in atom_domain[j]):
-                    atom_pair_domain[ij].append(n)
-
-        # total virtual-space projector
+        # total virtual-space projector Eq 3
         Rt_full = 1 - np.einsum('ik,kj->ik',D,S)
 
-        # R^+.S for virtual space?
-        RS = C[:,self.no:] @ S[:,self.no:]
+        # R^+.S for virtual space, we will use this to compute the LMO->PAO 
+        # transformation matrix
+        RS = self.C[:,self.no:].T @ S
 
-        # "W" (MO->PAO?) transform and "virtual metric"(?)
+        Q = []  # MOij->PAOij
+        L = []  # PAOij->PAOij(semi-canonical)
+        eps = [] # semi-canonical orbital energies
+        dim = [] # dimension of final PAO pair spaces
         nao = self.no + self.nv
-        for ij in range(self.no**2)
+        for ij in range(self.no**2):
             i = ij // self.no
             j = ij % self.no
             ij_domain = list(set(AO_domains[i]+AO_domains[j]))
 
-            # vir-space projector for pair ij
-            Rt = np.zeros((nao,len(ij_domain[ij])))
-            for x,a in enumerate(ij_domain[ij]):
-                Rt[x,:] = Rt_full[a,:]
+            print("Pair domain (%1d,%1d) contains %3d/%3d orbitals." 
+                                % (i,j,len(ij_domain),nao))
+
+            Rt = np.zeros((nao,len(ij_domain)))
+            for x,a in enumerate(ij_domain):
+                Rt[x,:] = Rt_full[a,:] # virtual-space projector for pair ij
 
             # MO -> PAO (redundant)
             # called the "Local residual vector" in psi3
-            V = RS @ Rt
+            # U in Eq 73, used to transform the LMO-basis residual matrix
+            # into the projected local basis
+            V = np.einsum('ap,pq->aq',RS,Rt)
+            Q.append(V)
 
-            # check for linear dependencies
-            St = np.einsum('pq,pr,rs->qs',Rt,S,Rt)
+            # now we work on the PAO -> semicanonical PAO transformation...
+            # check for linear dependencies 
+            St = np.einsum('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
             evals,evecs = np.linalg.eigh(St)
-            toss = np.abs(evals) < 1e-10
+            toss = np.abs(evals) < 1e-6 # crazy threshold, but matches Psi3 and paper
+            # TESTED: doesn't effect energy until 1e-18!
 
-            # nonredundant transform
+            # normalized nonredundant transform (still not semi-canonical)
+            # Hampel/Werner Eq 53
             Xt = np.delete(evecs,toss,axis=1)
-            # TODO: normalize as in Psi3/../local.cc#L877
-            # also as in Hampel/Werner Eq 53
+            evals = np.delete(evals,toss)
+            for c in range(Xt.shape[1]):
+                Xt[:,c] = Xt[:,c] / evals[c]**0.5
+            dim.append(Xt.shape[1])
 
-            # Compute semicanonical virtual space
-            # Crawdad starts from the AO Fock matrix, but I think we have
-            # the MO-basis Fock stored...
+            # redundant PAO Fock 
             # Hampel/Werner Eq 51
-            F = ao_Fock
+            F = self.H.Fao
             Ft = np.einsum('pq,pr,rs->qs',Rt,F,Rt)
-            evals,evecs = np.linalg.eigh(Ft)
 
-            # form W, which rotates the PAO-basis amplitudes into the
-            # orthogonal (semi-canonical) basis
+            # non-redundant PAO Fock
+            # Hampel/Werner Eq 54
+            # diagonalize to get semi-canonical space
+            Fbar = np.einsum('pq,pr,rs->qs',Xt,Ft,Xt)
+            evals,evecs = np.linalg.eigh(Fbar)
+
+            # form W, which rotates the redundant PAO-basis amplitudes 
+            # directly into the into the non-redundant, semi-canonical basis
             W = np.einsum('pq,qs->ps',Xt,evecs)
 
             eps.append(evals)
             L.append(W)
 
-        pass
+        self.Q = Q  # transform between canonical VMO and PAO spaces
+        self.eps = eps  # semicananonical PAO energies
+        self.L = L  # transform between PAO and semicanonical PAO spaces
+        self.dim = dim  # dimension of PAO space
 
     def _build_LPNO(self):
 
