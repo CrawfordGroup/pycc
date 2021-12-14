@@ -42,6 +42,7 @@ class Local(object):
         for i in range(natom): # store basis indices for each atom
             bsi = [b+sum(a2nao[:i]) for b in range(a2nao[i])]
             a2ao[str(i)] = bsi
+
         # now, a2ao is a dict (keys str(0-natom)) w/ vals as indices
         # of AOs on each atom
 
@@ -153,8 +154,9 @@ class Local(object):
 
             # MO -> PAO (redundant)
             # called the "Local residual vector" in psi3
-            # U in Eq 73, used to transform the LMO-basis residual matrix
-            # into the projected local basis
+            # U in Hampel/Werner Eq 73 
+            # used to transform the LMO-basis residual matrix into the
+            # projected (redundant, non-canonical) PAO basis
             V = np.einsum('ap,pq->aq',RS,Rt)
             Q.append(V)
 
@@ -183,6 +185,7 @@ class Local(object):
             # diagonalize to get semi-canonical space
             Fbar = np.einsum('pq,pr,rs->qs',Xt,Ft,Xt)
             evals,evecs = np.linalg.eigh(Fbar)
+            # TESTED: evecs does, in fact, diagonalize Fbar
 
             # form W, which rotates the redundant PAO-basis amplitudes 
             # directly into the into the non-redundant, semi-canonical basis
@@ -191,10 +194,16 @@ class Local(object):
             eps.append(evals)
             L.append(W)
 
+            print('Pair domain (%1d,%1d) contains %3d/%3d orbitals\n'
+                    'after semi-canonicalization.' % (i,j,dim[-1],nao))
+
+        print("Average PAO dimension: %d" % (np.average(dim)))
+        print("Number of canonical VMOs: %d" % (self.nv))
+
         self.Q = Q  # transform between canonical VMO and PAO spaces
-        self.eps = eps  # semicananonical PAO energies
         self.L = L  # transform between PAO and semicanonical PAO spaces
         self.dim = dim  # dimension of PAO space
+        self.eps = eps  # semicananonical PAO energies
 
     def _build_LPNO(self):
 
