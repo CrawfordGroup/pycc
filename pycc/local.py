@@ -26,13 +26,17 @@ class Local(object):
 
     def _build_PAO(self):
         # TODO:
+        # choose initial domains by charge (instead of just 1)?
         # remove PAOs by norm
         # print domain atoms (not just # of functions)
+        # simplify a2ao map generation
+        # notation / eq number pass
+        # docs
 
         # NOTES ON FRZC:
-        # I believe D should include the sum over the inactive occ orbs 
+        # D includes the sum over the inactive occ orbs (C_{pk}@C_{qk}^T) 
         # because we still need to project frzn core out of the virtual space
-        # then everywhere else, use only active occ
+        # everywhere else, use only active occ space C
         # (this matches the Psi3 implementation, if norm-cutting is removed)
 
         # SETUP
@@ -40,10 +44,9 @@ class Local(object):
         mints = psi4.core.MintsHelper(bs)
         no_all = self.no + self.nfzc
         D = self.H.C_all[:,:no_all] @ self.H.C_all[:,:no_all].T
-        S = mints.ao_overlap().to_array() # overlap matrix
+        S = mints.ao_overlap().to_array() 
         nao = self.no + self.nv + self.nfzc
 
-        # TODO: there should be a simpler way of doing this...
         # map the number of atoms, basis functions per atom, and their indices
         a2ao = {} # atom-to-nao dict
         for i in range(bs.nshell()): # initialize for every atom
@@ -67,7 +70,7 @@ class Local(object):
             charges = [0]*natom
             for j in range(natom):
                 for k in a2ao[str(j)]:
-                    SC = np.einsum('l,l->',S[k,:],self.C[:,i])
+                    SC = contract('l,l->',S[k,:],self.C[:,i])
                     charges[j] += (SC*self.C[k,i])
 
             print("Charge analysis for occupied orbital %3d:" % i)
@@ -102,17 +105,17 @@ class Local(object):
                 # let A == S, B == SR
                 # form and solve ARp = B
                 A = np.zeros((len(AOi),len(AOi)))
-                SB = np.zeros((len(AOi),mints.nbf()))
+                SB = np.zeros((len(AOi),nao))
                 for x,a in enumerate(AOi):
                     for y,b in enumerate(AOi):
                         A[x,y] = S[a,b]
-                    for y,b in enumerate(range(mints.nbf())):
+                    for y,b in enumerate(range(nao)):
                         SB[x,y] = S[a,b]
-                B = np.einsum('mp,p->m',SB,self.C[:,i])
+                B = contract('mp,p->m',SB,self.C[:,i])
                 Rp = np.linalg.solve(A,B)
     
                 # completeness check
-                chk = 1 - np.einsum('m,mn,n->',Rp,SB,self.C[:,i])
+                chk = 1 - contract('m,mn,n->',Rp,SB,self.C[:,i])
                 print("BP completeness check: %.3f" % chk)
 
                 if chk > self.cutoff:
@@ -136,7 +139,7 @@ class Local(object):
         # AOs which make up the PAO space for each occupied orbital
 
         # total virtual-space projector Eq 3
-        Rt_full = np.eye(S.shape[0]) - np.einsum('ik,kj->ij',D,S)
+        Rt_full = np.eye(S.shape[0]) - contract('ik,kj->ij',D,S)
 
         # R^+.S for virtual space, we will use this to compute the LMO->PAO 
         # transformation matrix
@@ -161,12 +164,12 @@ class Local(object):
             # equivalent to Q in PNO code
             # used to transform the LMO-basis residual matrix into the
             # projected (redundant, non-canonical) PAO basis
-            V = np.einsum('ap,pq->aq',RS,Rt)
+            V = contract('ap,pq->aq',RS,Rt)
             Q.append(V)
 
             # now we work on the PAO -> semicanonical PAO transformation...
             # check for linear dependencies 
-            St = np.einsum('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
+            St = contract('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
             evals,evecs = np.linalg.eigh(St)
             toss = np.abs(evals) < 1e-6 
 
@@ -180,17 +183,17 @@ class Local(object):
 
             # redundant PAO Fock 
             # Hampel/Werner Eq 51
-            Ft = np.einsum('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
+            Ft = contract('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
 
             # non-redundant PAO Fock
             # Hampel/Werner Eq 54
             # diagonalize to get semi-canonical space
-            Fbar = np.einsum('pq,pr,rs->qs',Xt,Ft,Xt)
+            Fbar = contract('pq,pr,rs->qs',Xt,Ft,Xt)
             evals,evecs = np.linalg.eigh(Fbar)
 
             # form W, which rotates the redundant PAO-basis amplitudes 
             # directly into the into the non-redundant, semi-canonical basis
-            W = np.einsum('pq,qs->ps',Xt,evecs)
+            W = contract('pq,qs->ps',Xt,evecs)
 
             eps.append(evals)
             L.append(W)
