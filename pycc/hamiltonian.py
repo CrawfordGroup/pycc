@@ -25,4 +25,5 @@ class Hamiltonian(object):
 
         self.mol = ref.molecule()
         self.basisset = ref.basisset()
-        self.Fao = np.asarray(ref.Fa())
+        self.C_all = ref.Ca().to_array() # includes frozen core
+        self.F_ao = ref.Fa().to_array()

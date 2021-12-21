@@ -5,9 +5,10 @@ from opt_einsum import contract
 
 class Local(object):
 
-    def __init__(self, local, C, no, nv, H, cutoff):
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff):
 
         self.cutoff = cutoff
+        self.nfzc = nfzc
         self.no = no
         self.nv = nv
         self.H = H
@@ -24,11 +25,23 @@ class Local(object):
             raise Exception("Not a valid local type!")
 
     def _build_PAO(self):
+        # TODO:
+        # remove PAOs by norm
+        # print domain atoms (not just # of functions)
+
+        # NOTES ON FRZC:
+        # I believe D should include the sum over the inactive occ orbs 
+        # because we still need to project frzn core out of the virtual space
+        # then everywhere else, use only active occ
+        # (this matches the Psi3 implementation, if norm-cutting is removed)
+
         # SETUP
         bs = self.H.basisset
         mints = psi4.core.MintsHelper(bs)
-        D = self.C[:,:self.no] @ self.C[:,:self.no].T # 1/2 OPDM
+        no_all = self.no + self.nfzc
+        D = self.H.C_all[:,:no_all] @ self.H.C_all[:,:no_all].T
         S = mints.ao_overlap().to_array() # overlap matrix
+        nao = self.no + self.nv + self.nfzc
 
         # TODO: there should be a simpler way of doing this...
         # map the number of atoms, basis functions per atom, and their indices
@@ -51,15 +64,11 @@ class Local(object):
         AO_domains = []   # AO basis function indices
         for i in range(0,self.no):
             # population matrix for orbital i
-            Pi = np.einsum('p,r->pr',D[:,i],S[:,i])
-            dP = np.diag(Pi)
-
-            # get relative charge for each atom
-            charges = []
-            for n in range(0,natom):
-                nb = len(a2ao[str(n)])
-                charges.append(self.H.mol.Z(n) - sum(dP[:nb]))
-                dP = np.delete(dP,range(nb))
+            charges = [0]*natom
+            for j in range(natom):
+                for k in a2ao[str(j)]:
+                    SC = np.einsum('l,l->',S[k,:],self.C[:,i])
+                    charges[j] += (SC*self.C[k,i])
 
             print("Charge analysis for occupied orbital %3d:" % i)
             print(np.round(charges,2))
@@ -72,12 +81,13 @@ class Local(object):
 
             # choose which atoms belong to the domain based on charge
             atom_domains.append([])
-            charge = 0
-            for n in range(0,natom):
-                atom_domains[i].append(atoms.pop(0))
-                charge += charges.pop(0)
-                if charge>1.8:
-                    break
+#            charge = 0
+#            for n in range(0,natom):
+#                atom_domains[i].append(atoms.pop(0))
+#                charge += charges.pop(0)
+#                if charge>1.8:
+#                    break
+            atom_domains[i].append(atoms.pop(0))
 
             # AOs associated with domain atoms
             AOi = []
@@ -86,13 +96,10 @@ class Local(object):
             AOi = sorted(AOi) # set low-high ordering so two spaces with 
                               # the same orbitals will have them in the same order
 
-            print("PAO domain %3d contains %3d/%3d orbitals." 
-                    % (i,len(AOi),self.no+self.nv))
-            
             chk = 1
-#            cutoff = 0.02
-            cutoff = 0.0001
-            while chk > cutoff:
+            while chk > self.cutoff:
+                # SRp = SR
+                # let A == S, B == SR
                 # form and solve ARp = B
                 A = np.zeros((len(AOi),len(AOi)))
                 SB = np.zeros((len(AOi),mints.nbf()))
@@ -108,19 +115,19 @@ class Local(object):
                 chk = 1 - np.einsum('m,mn,n->',Rp,SB,self.C[:,i])
                 print("BP completeness check: %.3f" % chk)
 
-                if chk > cutoff:
+                if chk > self.cutoff:
                     try:
                         n = atoms.pop(0)
                         atom_domains[i].append(n)
                         AOi += a2ao[str(n)]
                         AOi = sorted(AOi) 
-                        print("PAO domain %3d contains %3d/%3d orbitals." 
-                                % (i,len(AOi),self.no+self.nv))
                     except IndexError:
                         print("Ran out of atoms. How did that happen?")
                         raise IndexError
                 else:
                     print("Completeness threshold fulfilled.")
+                    print("PAO domain %3d contains %3d/%3d orbitals." 
+                            % (i,len(AOi),self.no+self.nv))
             AO_domains.append(AOi)
 
         # at this point, atom_domains contains the indices for each atom in the 
@@ -129,7 +136,7 @@ class Local(object):
         # AOs which make up the PAO space for each occupied orbital
 
         # total virtual-space projector Eq 3
-        Rt_full = 1 - np.einsum('ik,kj->ik',D,S)
+        Rt_full = np.eye(S.shape[0]) - np.einsum('ik,kj->ij',D,S)
 
         # R^+.S for virtual space, we will use this to compute the LMO->PAO 
         # transformation matrix
@@ -139,22 +146,19 @@ class Local(object):
         L = []  # PAOij->PAOij(semi-canonical)
         eps = [] # semi-canonical orbital energies
         dim = [] # dimension of final PAO pair spaces
-        nao = self.no + self.nv
         for ij in range(self.no**2):
             i = ij // self.no
             j = ij % self.no
             ij_domain = list(set(AO_domains[i]+AO_domains[j]))
 
-            print("Pair domain (%1d,%1d) contains %3d/%3d orbitals." 
-                                % (i,j,len(ij_domain),nao))
-
             Rt = np.zeros((nao,len(ij_domain)))
             for x,a in enumerate(ij_domain):
-                Rt[x,:] = Rt_full[a,:] # virtual-space projector for pair ij
+                Rt[:,x] = Rt_full[:,a] # virtual-space projector for pair ij
 
             # MO -> PAO (redundant)
             # called the "Local residual vector" in psi3
             # U in Hampel/Werner Eq 73 
+            # equivalent to Q in PNO code
             # used to transform the LMO-basis residual matrix into the
             # projected (redundant, non-canonical) PAO basis
             V = np.einsum('ap,pq->aq',RS,Rt)
@@ -164,8 +168,7 @@ class Local(object):
             # check for linear dependencies 
             St = np.einsum('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
             evals,evecs = np.linalg.eigh(St)
-            toss = np.abs(evals) < 1e-6 # crazy threshold, but matches Psi3 and paper
-            # TESTED: doesn't effect energy until 1e-18!
+            toss = np.abs(evals) < 1e-6 
 
             # normalized nonredundant transform (still not semi-canonical)
             # Hampel/Werner Eq 53
@@ -177,15 +180,13 @@ class Local(object):
 
             # redundant PAO Fock 
             # Hampel/Werner Eq 51
-            F = self.H.Fao
-            Ft = np.einsum('pq,pr,rs->qs',Rt,F,Rt)
+            Ft = np.einsum('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
 
             # non-redundant PAO Fock
             # Hampel/Werner Eq 54
             # diagonalize to get semi-canonical space
             Fbar = np.einsum('pq,pr,rs->qs',Xt,Ft,Xt)
             evals,evecs = np.linalg.eigh(Fbar)
-            # TESTED: evecs does, in fact, diagonalize Fbar
 
             # form W, which rotates the redundant PAO-basis amplitudes 
             # directly into the into the non-redundant, semi-canonical basis
@@ -194,8 +195,8 @@ class Local(object):
             eps.append(evals)
             L.append(W)
 
-            print('Pair domain (%1d,%1d) contains %3d/%3d orbitals\n'
-                    'after semi-canonicalization.' % (i,j,dim[-1],nao))
+            print("Pair domain (%1d,%1d) contains %3d/%3d orbitals." 
+                                % (i,j,len(ij_domain),nao))
 
         print("Average PAO dimension: %d" % (np.average(dim)))
         print("Number of canonical VMOs: %d" % (self.nv))
