@@ -4,6 +4,43 @@ from opt_einsum import contract
 
 
 class Local(object):
+    """
+    A Local object for simulating different (virtual-space) localization schemes.
+
+    Attributes
+    ----------
+    C: Psi4.core.Matrix object
+        localized active orbital coefficients
+    nfzc: int
+        number of frozen core orbitals
+    no: int
+        number of (active) occupied orbitals
+    nv: int
+        number of virtual orbitals
+    H: PyCC Hamiltonian object
+        Hamiltonian object with integrals, Fock matrices, and orbital coefficients
+    cutoff: double
+        main cutoff parameter for virtual space localizer
+    core_cut: double (optional)
+        used in PAO calculations for determining the norm-cutoff of the virtual space
+    lindep_cut: double (optional)
+        used in PAO calculations for determining linear dependence threshold
+
+    Parameters
+    ----------
+    local: string
+        type of local calculation ("PAO", "LPNO", etc.)
+
+    Methods
+    -------
+    filter_amps(): Returns t1 and t2 amplitude numpy arrays
+        rotates amps to local vir space, applies CC step, and back-transforms
+    filter_res(): Returns t1 and t2 amplitude numpy arrays
+        applies forward and reverse localized-virtual transforms (no CC step)
+    _build(): runs requested local build
+    _build_PAO(): build PAO orbital rotation tensors
+    _build_LPNO(): build LPNO orbital rotation tensors
+    """
 
     def __init__(self, local, C, nfzc, no, nv, H, cutoff,
             core_cut=5E-2,
@@ -29,20 +66,28 @@ class Local(object):
             raise Exception("Not a valid local type!")
 
     def _build_PAO(self):
-        # TODO:
-        # choose initial domains by charge (instead of just 1)?
-        # remove PAOs by norm
-        # print domain atoms (not just # of functions)
-        # simplify a2ao map generation
-        # notation / eq number pass
-        # docs
+        """
+        Attributes
+        ----------
+        Q: transform between canonical VMO and PAO spaces
+        L: transform between PAO and semicanonical PAO spaces
+        dim: dimension of PAO space
+        eps: semicananonical PAO energies
 
-        # NOTES ON FRZC:
-        # D includes the sum over the inactive occ orbs (C_{pk}@C_{qk}^T) 
-        # because we still need to project frzn core out of the virtual space
-        # everywhere else, use only active occ space C
-        # (this matches the Psi3 implementation, if norm-cutting is removed)
+        Notes
+        -----
+        - Equation numbers from Hampel & Werner 1996 [10.1063/1.471289]
+        - D includes the sum over the inactive occ orbs (C_{pk}@C_{qk}^T) 
+          because we still need to project frzn core out of the virtual space.
+          everywhere else, use only active occ space C
+          (this matches the Psi3 implementation, if norm-cutting is removed)
 
+        TODO
+        ----
+        - choose initial domains by charge (instead of just the first atom)
+        - print domain atoms (not just # of functions)
+        - simplify a2ao map generation
+        """
         # SETUP
         bs = self.H.basisset
         mints = psi4.core.MintsHelper(bs)
@@ -105,7 +150,7 @@ class Local(object):
 
             chk = 1
             while chk > self.cutoff:
-                # SRp = SR
+                # Eq 8, SRp = SR
                 # let A == S, B == SR
                 # form and solve ARp = B
                 A = np.zeros((len(AOi),len(AOi)))
@@ -118,7 +163,7 @@ class Local(object):
                 B = contract('mp,p->m',SB,self.C[:,i])
                 Rp = np.linalg.solve(A,B)
     
-                # completeness check
+                # Eq 9, completeness check
                 chk = 1 - contract('m,mn,n->',Rp,SB,self.C[:,i])
                 print("BP completeness check: %.3f" % chk)
 
@@ -142,7 +187,7 @@ class Local(object):
         # and AO_domains contains the (sorted low->high) indices of the
         # AOs which make up the PAO space for each occupied orbital
 
-        # total virtual-space projector Eq 3
+        # Eq 3, total virtual-space projector
         Rt_full = np.eye(S.shape[0]) - contract('ik,kj->ij',D,S)
 
         # remove PAOs with negligible norms
@@ -153,6 +198,7 @@ class Local(object):
                 print("Norm of orbital %4d = %20.12f... deleting" % (i,norm))
                 Rt_full[:,i] = 0
 
+        # Eq 5, first two terms RHS
         # R^+.S for virtual space, we will use this to compute the LMO->PAO 
         # transformation matrix
         RS = self.C[:,self.no:].T @ S
@@ -166,44 +212,43 @@ class Local(object):
             j = ij % self.no
             ij_domain = list(set(AO_domains[i]+AO_domains[j]))
 
+            # Eq 5, last term RHS for a given pair
             Rt = np.zeros((nao,len(ij_domain)))
             for x,a in enumerate(ij_domain):
                 Rt[:,x] = Rt_full[:,a] # virtual-space projector for pair ij
 
-            # MO -> PAO (redundant)
+            # Eq 73, MO -> PAO (redundant)
             # called the "Local residual vector" in psi3
-            # U in Hampel/Werner Eq 73 
             # equivalent to Q in PNO code
             # used to transform the LMO-basis residual matrix into the
             # projected (redundant, non-canonical) PAO basis
             V = contract('ap,pq->aq',RS,Rt)
             Q.append(V)
 
-            # now we work on the PAO -> semicanonical PAO transformation...
+            # Eq 5, PAO -> semicanonical PAO
             # check for linear dependencies 
-            St = contract('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
+            St = contract('pq,pr,rs->qs',Rt,S,Rt) 
             evals,evecs = np.linalg.eigh(St)
             toss = np.abs(evals) < self.lindep_cut 
 
-            # normalized nonredundant transform (still not semi-canonical)
-            # Hampel/Werner Eq 53
+            # Eq 53, normalized nonredundant transform 
+            # (still not semi-canonical)
             Xt = np.delete(evecs,toss,axis=1)
             evals = np.delete(evals,toss)
             for c in range(Xt.shape[1]):
                 Xt[:,c] = Xt[:,c] / evals[c]**0.5
             dim.append(Xt.shape[1])
 
-            # redundant PAO Fock 
-            # Hampel/Werner Eq 51
+            # just below Eq 51, redundant PAO Fock 
             Ft = contract('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
 
-            # non-redundant PAO Fock
-            # Hampel/Werner Eq 54
+            # Eq 54, non-redundant PAO Fock
             # diagonalize to get semi-canonical space
             Fbar = contract('pq,pr,rs->qs',Xt,Ft,Xt)
             evals,evecs = np.linalg.eigh(Fbar)
 
-            # form W, which rotates the redundant PAO-basis amplitudes 
+            # Eq 51, W 
+            # rotates the redundant PAO-basis amplitudes 
             # directly into the into the non-redundant, semi-canonical basis
             W = contract('pq,qs->ps',Xt,evecs)
 
@@ -222,6 +267,14 @@ class Local(object):
         self.eps = eps  # semicananonical PAO energies
 
     def _build_LPNO(self):
+        """
+        Attributes
+        ----------
+        Q: transform between canonical VMO and LPNO spaces
+        L: transform between LPNO and semicanonical LPNO spaces
+        dim: dimension of LPNO space
+        eps: semicananonical LPNO energies
+        """
 
         o = slice(0, self.no)
         v = slice(self.no, self.no+self.nv)
