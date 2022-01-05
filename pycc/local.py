@@ -193,7 +193,6 @@ class Local(object):
         # remove PAOs with negligible norms
         for i in range(nao):
             norm = np.linalg.norm(Rt_full[:,i]) # column-norm
-            print("NORM {} = {}".format(i,norm))
             if norm < self.core_cut:
                 print("Norm of orbital %4d = %20.12f... deleting" % (i,norm))
                 Rt_full[:,i] = 0
