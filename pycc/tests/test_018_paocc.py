@@ -42,7 +42,7 @@ def test_pao_H4():
 
     assert (abs(psi3_ref - eccsd) < 1e-7)
 
-def test_pao_metox():
+def test_pao_h2o():
     """PAO-CCSD Test 2"""
     # Psi4 Setup
     psi4.set_memory('1 GB')
@@ -73,7 +73,7 @@ def test_pao_metox():
     psi3_ref = -0.149361947815815
     assert (abs(psi3_ref - eccsd) < 1e-7)
 
-def test_pao_metox_frzc():
+def test_pao_h2o_frzc():
     """PAO-CCSD Frozen Core Test"""
     # Psi4 Setup
     psi4.set_memory('1 GB')
