@@ -5,7 +5,9 @@ from opt_einsum import contract
 
 class Local(object):
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff):
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff,
+            core_cut=5E-2,
+            lindep_cut=1E-6):
 
         self.cutoff = cutoff
         self.nfzc = nfzc
@@ -13,6 +15,8 @@ class Local(object):
         self.nv = nv
         self.H = H
         self.C = C.to_array()
+        self.core_cut = core_cut
+        self.lindep_cut = lindep_cut
 
         self._build(local)
     
@@ -141,6 +145,14 @@ class Local(object):
         # total virtual-space projector Eq 3
         Rt_full = np.eye(S.shape[0]) - contract('ik,kj->ij',D,S)
 
+        # remove PAOs with negligible norms
+        for i in range(nao):
+            norm = np.linalg.norm(Rt_full[:,i]) # column-norm
+            print("NORM {} = {}".format(i,norm))
+            if norm < self.core_cut:
+                print("Norm of orbital %4d = %20.12f... deleting" % (i,norm))
+                Rt_full[:,i] = 0
+
         # R^+.S for virtual space, we will use this to compute the LMO->PAO 
         # transformation matrix
         RS = self.C[:,self.no:].T @ S
@@ -171,7 +183,7 @@ class Local(object):
             # check for linear dependencies 
             St = contract('pq,pr,rs->qs',Rt,S,Rt) # Eq. 5
             evals,evecs = np.linalg.eigh(St)
-            toss = np.abs(evals) < 1e-6 
+            toss = np.abs(evals) < self.lindep_cut 
 
             # normalized nonredundant transform (still not semi-canonical)
             # Hampel/Werner Eq 53
