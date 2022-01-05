@@ -297,6 +297,7 @@ class Local(object):
         niter = 0
 
         while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            niter += 1
             elast = emp2
 
             r2 = 0.5 * self.H.ERI[o,o,v,v].copy()
