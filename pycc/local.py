@@ -265,7 +265,7 @@ class Local(object):
             print("Pair domain (%1d,%1d) contains %3d/%3d orbitals." 
                                 % (i,j,dim[-1],nao))
 
-        print("Average PAO dimension: %d" % (np.average(dim)))
+        print("Average PAO dimension: %.2f" % (np.average(dim)))
         print("Number of canonical VMOs: %d" % (self.nv))
 
         self.Q = Q  # transform between canonical VMO and PAO spaces
