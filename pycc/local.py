@@ -263,7 +263,7 @@ class Local(object):
             L.append(W)
 
             print("Pair domain (%1d,%1d) contains %3d/%3d orbitals." 
-                                % (i,j,len(ij_domain),nao))
+                                % (i,j,dim[-1],nao))
 
         print("Average PAO dimension: %d" % (np.average(dim)))
         print("Number of canonical VMOs: %d" % (self.nv))
