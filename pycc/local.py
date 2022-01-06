@@ -165,7 +165,6 @@ class Local(object):
     
                 # Eq 9, completeness check
                 chk = 1 - contract('m,mn,n->',Rp,SB,self.C[:,i])
-                print("BP completeness check: %.3f" % chk)
 
                 if chk > self.cutoff:
                     try:
@@ -175,9 +174,16 @@ class Local(object):
                         AOi = sorted(AOi) 
                     except IndexError:
                         print("Ran out of atoms. How did that happen?")
-                        raise IndexError
+                        if self.cutoff == 0:
+                            print("Current BP value: {}".format(chk))
+                            print("Cutoff = 0 ... continuing with full space")
+                            chk = 0
+                            continue
+                        else:
+                            raise IndexError
                 else:
                     print("Completeness threshold fulfilled.")
+                    print("BP completeness check: %.3f" % chk)
                     print("PAO domain %3d contains %3d/%3d orbitals." 
                             % (i,len(AOi),self.no+self.nv))
             AO_domains.append(AOi)
@@ -229,6 +235,8 @@ class Local(object):
             St = contract('pq,pr,rs->qs',Rt,S,Rt) 
             evals,evecs = np.linalg.eigh(St)
             toss = np.abs(evals) < self.lindep_cut 
+            if sum(toss) > 0:
+                print("%1d linearly dependent orbitals removed." % (sum(toss)))
 
             # Eq 53, normalized nonredundant transform 
             # (still not semi-canonical)
