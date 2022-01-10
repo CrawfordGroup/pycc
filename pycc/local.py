@@ -126,10 +126,10 @@ class Local(object):
             print(np.round(charges,2))
 
             atoms = [i for i in range(natom)]
-            zipped = zip(charges,atoms)
+            zipped = zip(np.abs(np.array(charges)),atoms)
             sort = sorted(zipped, reverse=True)
             tups = zip(*sort)
-            charges,atoms = [list(t) for t in tups] # sorted!
+            charges,atoms = [list(t) for t in tups] # sorted by abs(charge)
 
             # choose which atoms belong to the domain based on charge
             atom_domains.append([])
@@ -232,7 +232,7 @@ class Local(object):
 
             # Eq 5, PAO -> semicanonical PAO
             # check for linear dependencies 
-            St = contract('pq,pr,rs->qs',Rt,S,Rt) 
+            St = contract('pq,pr,rs->qs',Rt,S,Rt)
             evals,evecs = np.linalg.eigh(St)
             toss = np.abs(evals) < self.lindep_cut 
             if sum(toss) > 0:
