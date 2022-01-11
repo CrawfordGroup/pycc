@@ -22,3 +22,8 @@ class Hamiltonian(object):
         self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))  # (pr|qs)
         self.ERI = self.ERI.swapaxes(1,2)                    # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2,3)     # 2 <pq|rs> - <pq|sr>
+
+        self.mol = ref.molecule()
+        self.basisset = ref.basisset()
+        self.C_all = ref.Ca().to_array() # includes frozen core
+        self.F_ao = ref.Fa().to_array()
