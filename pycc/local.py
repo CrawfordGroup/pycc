@@ -392,9 +392,9 @@ class Local(object):
             r2 -= contract('imab,mj->ijab', t2, F[o,o])
             r2 = r2 + r2.swapaxes(0,1).swapaxes(2,3)
 
-            t2 += r2/D
+            t2 += r2/Dijab
 
-            rmsd = np.sqrt(contract('ijab,ijab->', r2/D, r2/D))
+            rmsd = np.sqrt(contract('ijab,ijab->', r2/Dijab, r2/Dijab))
 
             emp2 = contract('ijab,ijab->', t2, L[o,o,v,v])
             ediff = emp2 - elast
