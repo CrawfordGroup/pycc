@@ -6,7 +6,7 @@ from opt_einsum import contract
 class Local(object):
     """
     A Local object for simulating different (virtual-space) localization schemes.
-
+	
     Attributes
     ----------
     C: Psi4.core.Matrix object
@@ -346,7 +346,7 @@ class Local(object):
         self.dim = dim  # dimension of LPNO space
         self.eps = eps  # semicananonical LPNO energies
         self.L = L  # transform between LPNO and semicanonical LPNO spaces
-
+ 
     def _MP2_loop(self,t2,F,ERI,L,Dijab):
         '''
         Perform the MP2 loop by minimization of the Hylleraas functional
@@ -479,6 +479,94 @@ class Local(object):
             ediff = emp2 - elast
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
+    
+        def local_MP2_loop(self):
+        """
+        Performs the MP2 loop in the transformed local basis (PAO, PNO)
+
+        Attributes
+        ----------
+        Q: transform between canonical VMO and local spaces
+        L: transform between local and semicanonical local spaces
+        eps: semicananonical local energies
+
+        Notes
+        -----
+
+        """
+
+        o = slice(0,self.no)
+        v = slice(self.no, self, self.no + self.nv)
+
+        # initial guess amplitude in the approximated MO basis
+        eps_occ = np.diag(self.H.F)[o]
+        eps_vir = np.diag(self.H.F)[v]
+        Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
+        t2 = self.H.ERI[o,o,v,v]/Dijab
+
+        # Transformation basis for the virtual-virtual blocks of the Fock matrix, ERI tensor,
+        # T2 tensor, L(2g_ijab - gijba) tensor, and overlap matrix to PAO/PNO basis for each pair
+
+        # Transformed virtual-virtual block of the overlap matrix to the PAO/PNO
+        if self.local.upper() in ["LPAO"]:
+            S = self.L.T @ self.Q.T @ self.S[v,v] @ self.Q @ self.L
+        if self.local.upper() in ["LPNO"]:
+            S = np.eye(self.S[v,v].shape[0])
+
+        # Transformed virtual-virtual block of the Fock matrix to the PAO/PNO
+        F = self.L.T @ self.Q.T @ self.F[v,v] @ self.Q @ self.L
+
+        # Initialized the pair ERI and L
+        ERI_ij = np.zeros_like(self.H.ERI)
+        L_ij = np.zeros_like(self.L.ERI)
+
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+
+            # Transformed virtual-virtual block of the t2 amplitude to the PAO/PNO
+            X = self.Q[ij].T @ t2[i,j] @ self.Q[ij]
+            t2[i,j] = self.L[ij].T @ X @self.L[ij]
+
+            # Transformed virtual-virtual block of the ERI to the PAO/PNO
+            ERI_ij[i,j] = self.L[ij].T @ self.Q[ij].T @ self.H.ERI[i,j] @ self.Q[ij] @ self.L[ij]
+
+            # Transformed virtual-virtual block of the L to the PAO/PNO
+            L_ij[i,j] = self.L[ij].T @ self.Q[ij].T @ self.H.ERI[i,j] @ self.Q[ij] @ self.L[ij]
+
+        e_conv = 1e-7
+        r_conv = 1e-7
+        maxiter = 100
+        ediff = emp2
+        rmsd = 0.0
+        niter = 0
+
+        while ((abs(ediif) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            niter += 1
+            elast = emp2
+            emp2 = 0
+
+            # MP2 pair loop in the local basis
+            for ij in range(self.no*self.no):
+                r2 = np.zeros_like(t2)
+                i = ij // self.no
+                j = ij % self.no
+
+                r2[i,j] = ERI_ij
+                r2[i,j] += contract('ijcd,ad,cb->ijab', t2[i,j], self.eps[ij], S[ij])
+                r2[i,j] += contract('ijcd,ac,db->ijab', t2[i,j], self.eps[ij], S[ij])
+                r2[i,j] -= contract('klcd,il,ac,bd->ijab', t2[i,j], self.H.F[o,o], S[ij], S[ij])
+                r2[i,j] -= contract('kjcd,ik,ac,bd->ijab', t2[i,j], self.H.F[o,o], S[ij], S[ij])
+
+            t2 += r2/Dijab
+
+            emp2 = contract('ijab,ijab->', t2, L[o,o,v,v])
+
+            rmsd = np.sqrt(contract(contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+
+            ediff = emp2 - elast
+
+            print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
 
     def filter_amps(self, r1, r2):
         no = self.no
