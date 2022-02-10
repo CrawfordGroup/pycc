@@ -410,6 +410,8 @@ class Local(object):
             ii = i * no + i
 
             X = self.Q[ii].T @ r1[i]
+            Y = self.L[ii].T @ X
+            X = self.L[ii] @ Y
             t1[i] = self.Q[ii] @ X
 
         t2 = np.zeros((no,no,nv,nv)).astype('complex128')
@@ -418,6 +420,8 @@ class Local(object):
             j = ij % no
 
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
+            Y = self.L[ij].T @ X @ self.L[ij]
+            X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
         return t1, t2
