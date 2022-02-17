@@ -24,7 +24,6 @@ def test_rtpno():
                       'diis': 1})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    print("RHF E: {}".format(rhf_e))
 
     maxiter = 75
     e_conv = 1e-13
@@ -62,7 +61,7 @@ def test_rtpno():
            'mu_y': (-5.001589447624008e-05-1.745448527533844e-12j), 
            'mu_z': (-0.0690541268164736-9.326709120050262e-12j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10)
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-7) # default MP2 convergence
 
 def test_rtpao():
     """H2O RT-PAO"""
@@ -78,7 +77,6 @@ def test_rtpao():
                       'diis': 1})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    print("RHF E: {}".format(rhf_e))
 
     maxiter = 75
     e_conv = 1e-13
@@ -116,4 +114,4 @@ def test_rtpao():
            'mu_y': (-4.7078165633852864e-05-1.5660803671268446e-11j), 
            'mu_z': (-0.07830379603787618-1.168083714554914e-11j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10)
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-7) # default MP2 convergence
