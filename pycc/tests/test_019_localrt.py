@@ -24,6 +24,7 @@ def test_rtpno():
                       'diis': 1})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    print("RHF E: {}".format(rhf_e))
 
     maxiter = 75
     e_conv = 1e-13
@@ -77,6 +78,7 @@ def test_rtpao():
                       'diis': 1})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    print("RHF E: {}".format(rhf_e))
 
     maxiter = 75
     e_conv = 1e-13
