@@ -61,7 +61,7 @@ def test_rtpno():
            'mu_y': (-5.001589447624008e-05-1.745448527533844e-12j), 
            'mu_z': (-0.0690541268164736-9.326709120050262e-12j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-7) # default MP2 convergence
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
 
 def test_rtpao():
     """H2O RT-PAO"""
@@ -112,6 +112,6 @@ def test_rtpao():
     ref = {'ecc': (-84.21540972042284+2.958619248565777e-16j), 
            'mu_x': (-4.9877171488058465e-05-2.5885461834321234e-12j), 
            'mu_y': (-4.7078165633852864e-05-1.5660803671268446e-11j), 
-           'mu_z': (-0.07830379603787618-1.168083714554914e-11j)}
+        3787618-1.168083714554914e-11j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-7) # default MP2 convergence
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
