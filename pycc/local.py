@@ -305,7 +305,7 @@ class Local(object):
         emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
         print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E" % (0, emp2, -emp2))
 
-        maxiter = 100
+        maxiter = 150
         ediff = emp2
         rmsd = 0.0
         niter = 0

@@ -21,7 +21,8 @@ def test_rtpno():
                       'e_convergence': 1e-13,
                       'd_convergence': 1e-13,
                       'r_convergence': 1e-13,
-                      'diis': 1})
+                      'diis': 1,
+                      'local_convergence': 1.e-13})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
@@ -56,10 +57,10 @@ def test_rtpno():
     ret = rtcc.propagate(ODE, y0, tf, ti=t0, ref=False)
 
     # check
-    ref = {'ecc': (-84.21331867964982+5.150113844027836e-17j), 
-           'mu_x': (-5.106207675194608e-05+3.641896201488591e-12j), 
-           'mu_y': (-5.001589647321558e-05-1.7454256152926208e-12j), 
-           'mu_z': (-0.06905411136458055-9.326692043866045e-12j)}
+    ref = {'ecc': (-84.21331867940133+4.925945912792495e-17j), 
+           'mu_x': (-5.106207671158796e-05+3.641896436116718e-12j), 
+           'mu_y': (-5.001503722097678e-05-1.7436592314191415e-12j), 
+           'mu_z': (-0.06905411053873889-9.328439713393588e-12j)}
     for prop in ret['0.50']:
         assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
 
@@ -74,7 +75,8 @@ def test_rtpao():
                       'e_convergence': 1e-13,
                       'd_convergence': 1e-13,
                       'r_convergence': 1e-13,
-                      'diis': 1})
+                      'diis': 1,
+                      'local_convergence': 1.e-13})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
@@ -109,9 +111,9 @@ def test_rtpao():
     ret = rtcc.propagate(ODE, y0, tf, ti=t0, ref=False)
 
     # check
-    ref = {'ecc': (-84.21540972042284+2.958562073841837e-16j), 
-           'mu_x': (-4.9877171488058465e-05-2.5885461834321234e-12j), 
-           'mu_y': (-4.707816563388062e-05-1.566080244561177e-11j), 
-           'mu_z': (-0.07830379603787624-1.1680833071320664e-11j)}
+    ref = {'ecc': (-84.21540972040579+2.9584453421137937e-16j), 
+           'mu_x': (-4.987717148832141e-05-2.5885460555301484e-12j), 
+           'mu_y': (-4.707786986481166e-05-1.5660290548026362e-11j), 
+           'mu_z': (-0.0783037960868978-1.168135844689433e-11j)}
     for prop in ret['0.50']:
         assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
