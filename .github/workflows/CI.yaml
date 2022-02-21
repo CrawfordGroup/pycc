@@ -19,6 +19,7 @@ jobs:
     name: PyCC Test ${{ matrix.os }}, Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [macOS-latest, ubuntu-latest]
         python-version: [3.7, 3.8, 3.9]
