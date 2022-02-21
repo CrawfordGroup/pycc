@@ -6,11 +6,32 @@ Test RT-CCSD with local correlation simulation.
 import psi4
 import pycc
 import pytest
+import os
 from pycc.rt.lasers import gaussian_laser
 from pycc.rt.integrators import rk4
 from ..data.molecules import *
+from pytest import fixture
+from distutils import dir_util
 
-def test_rtpno():
+@fixture
+def datadir(tmpdir, request):
+    '''
+    from: https://stackoverflow.com/a/29631801
+    Fixture responsible for searching a folder with the same name of test
+    module and, if available, moving all contents to a temporary directory so
+    tests can use them freely.
+    '''
+    filename = request.module.__file__
+    test_dir, _ = os.path.splitext(filename)
+
+    if os.path.isdir(test_dir):
+        dir_util.copy_tree(test_dir, str(tmpdir))
+    else:
+        raise FileNotFoundError("Test folder not found.")
+
+    return tmpdir
+
+def test_rtpno(datadir):
     """H2O RT-LPNO"""
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
@@ -24,7 +45,8 @@ def test_rtpno():
                       'diis': 1,
                       'local_convergence': 1.e-13})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    ref_dir = str(datadir.join(f"wfn.npy"))
+    rhf_wfn = psi4.core.Wavefunction.from_file(ref_dir)
 
     maxiter = 75
     e_conv = 1e-13
@@ -64,7 +86,7 @@ def test_rtpno():
     for prop in ret['0.50']:
         assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
 
-def test_rtpao():
+def test_rtpao(datadir):
     """H2O RT-PAO"""
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
@@ -78,7 +100,8 @@ def test_rtpao():
                       'diis': 1,
                       'local_convergence': 1.e-13})
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    ref_dir = str(datadir.join(f"wfn.npy"))
+    rhf_wfn = psi4.core.Wavefunction.from_file(ref_dir)
 
     maxiter = 75
     e_conv = 1e-13
