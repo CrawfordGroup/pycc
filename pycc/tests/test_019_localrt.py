@@ -84,7 +84,7 @@ def test_rtpno(datadir):
            'mu_y': (-5.001503722097678e-05-1.7436592314191415e-12j), 
            'mu_z': (-0.06905411053873889-9.328439713393588e-12j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-8) 
 
 def test_rtpao(datadir):
     """H2O RT-PAO"""
@@ -139,4 +139,4 @@ def test_rtpao(datadir):
            'mu_y': (-4.707786986481166e-05-1.5660290548026362e-11j), 
            'mu_z': (-0.0783037960868978-1.168135844689433e-11j)}
     for prop in ret['0.50']:
-        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-10) 
+        assert (abs(ret['0.50'][prop] - ref[prop]) < 1e-8) 
