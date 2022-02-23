@@ -26,9 +26,9 @@ class Local(object):
     lindep_cut: double (optional)
         used in PAO calculations for determining linear dependence threshold
     e_conv : float
-        convergence condition for MP2 correlation energy (default if 1e-7)
+        convergence condition for MP2 correlation energy (default is 1e-12)
     r_conv : float
-        convergence condition for MP2 residual rmsd (default if 1e-7)
+        convergence condition for MP2 residual rmsd (default is 1e-12)
 
     Parameters
     ----------
