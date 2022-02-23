@@ -25,6 +25,10 @@ class Local(object):
         used in PAO calculations for determining the norm-cutoff of the virtual space
     lindep_cut: double (optional)
         used in PAO calculations for determining linear dependence threshold
+    e_conv : float
+        convergence condition for MP2 correlation energy (default is 1e-12)
+    r_conv : float
+        convergence condition for MP2 residual rmsd (default is 1e-12)
 
     Parameters
     ----------
@@ -44,7 +48,9 @@ class Local(object):
 
     def __init__(self, local, C, nfzc, no, nv, H, cutoff,
             core_cut=5E-2,
-            lindep_cut=1E-6):
+            lindep_cut=1E-6,
+            e_conv=1e-12,
+            r_conv=1e-12):
 
         self.cutoff = cutoff
         self.nfzc = nfzc
@@ -54,6 +60,8 @@ class Local(object):
         self.C = C.to_array()
         self.core_cut = core_cut
         self.lindep_cut = lindep_cut
+        self.e_conv = e_conv
+        self.r_conv = r_conv
 
         self._build(local)
     
@@ -297,14 +305,12 @@ class Local(object):
         emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
         print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E" % (0, emp2, -emp2))
 
-        e_conv = 1e-7
-        r_conv = 1e-7
-        maxiter = 100
+        maxiter = 150
         ediff = emp2
         rmsd = 0.0
         niter = 0
 
-        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+        while ((abs(ediff) > self.e_conv) or (abs(rmsd) > self.r_conv)) and (niter <= maxiter):
             niter += 1
             elast = emp2
 
@@ -410,6 +416,8 @@ class Local(object):
             ii = i * no + i
 
             X = self.Q[ii].T @ r1[i]
+            Y = self.L[ii].T @ X
+            X = self.L[ii] @ Y
             t1[i] = self.Q[ii] @ X
 
         t2 = np.zeros((no,no,nv,nv)).astype('complex128')
@@ -418,6 +426,8 @@ class Local(object):
             j = ij % no
 
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
+            Y = self.L[ij].T @ X @ self.L[ij]
+            X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
         return t1, t2
