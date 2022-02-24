@@ -8,7 +8,7 @@ import pycc
 import pytest
 from ..data.molecules import *
 
-def test_ccd_h2o():
+def test_cc2_h2o():
     # Psi4 Setup
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
