@@ -299,16 +299,14 @@ class ccwfn(object):
         if self.model == 'CCD':
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
-        elif self.model == 'CC2':
-            Wmnij = ERI[o,o,o,o].copy()
-            Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
-            Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
-            Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2, fact1=0), ERI[o,o,v,v])
         else:
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
-            Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
+            if self.model == 'CC2':
+                Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2, fact1=0), ERI[o,o,v,v])
+            else:
+                Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
         return Wmnij
 
 
@@ -317,6 +315,8 @@ class ccwfn(object):
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej - contract('jnfb,mnef->mbej', 0.5*t2, ERI[o,o,v,v])
             Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
+        elif self.model == 'CC2':
+            return
         else:
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
@@ -330,6 +330,8 @@ class ccwfn(object):
         if self.model == 'CCD':
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje + contract('jnfb,mnfe->mbje', 0.5*t2, ERI[o,o,v,v])
+        elif self.model == 'CC2':
+            return
         else:
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
