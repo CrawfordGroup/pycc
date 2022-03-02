@@ -304,7 +304,7 @@ class ccwfn(object):
             Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
             if self.model == 'CC2':
-                Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2, fact1=0), ERI[o,o,v,v])
+                Wmnij = Wmnij + contract('jf, mnif->mnij', t1, contract('ie,mnef->mnif', t1, ERI[o,o,v,v]))
             else:
                 Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
         return Wmnij
@@ -344,7 +344,7 @@ class ccwfn(object):
         if self.model == 'CCD':
             return
         elif self.model == 'CC2':
-            return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2, fact1=0))
+            return contract('mbif,jf->mbij', contract('mbef,ie->mbif', ERI[o,v,v,v], t1), t1)
         else:
             return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
 
@@ -381,12 +381,11 @@ class ccwfn(object):
             r_T2 = r_T2 - contract('imab,mj->ijab', t2, (F[o,o] + 0.5 * contract('ie,me->mi', t1, F[o,v])))
             tmp = contract('je,me->jm', t1, F[o,v])
             r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
-            r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2, fact1=0), Wmnij)
-            r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2, fact1=0), ERI[v,v,v,v])
+            r_T2 = r_T2 + 0.5 * contract('ma,mbij->ijab', t1, contract('nb,mnij->mbij', t1, Wmnij))
+            r_T2 = r_T2 + 0.5 * contract('jf,abif->ijab', t1, contract('ie,abef->abif', t1, ERI[v,v,v,v]))
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
-            tmp = contract('ie,ma->imea', t1, t1)
-            r_T2 = r_T2 - contract('imea,mbej->ijab', tmp, ERI[o,v,v,o])
-            r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
+            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o])) 
+            r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
         else:
