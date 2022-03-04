@@ -344,8 +344,6 @@ class Local(object):
             # Compute semicanonical virtual space
             v = slice(self.no, self.no+self.nv)
             F = Q[ij].T @ self.H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
-            print('F_pno')
-            print(F)
             eval, evec = np.linalg.eigh(F)
             eps.append(eval)
             L.append(evec)
@@ -416,89 +414,6 @@ class Local(object):
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
 
-    def MP2_LPNO(self):
-        """
-        Form approximate PNOs, then perform MP2 loop 
-
-        Attributes
-        ----------
-        Q: transform between canonical VMO and LPNO spaces
-        L: transform between LPNO and semicanonical LPNO spaces
-        dim: dimension of LPNO space
-        eps: semicananonical LPNO energies
-        """
-
-        bs = self.H.basisset
-        mints = psi4.core.MintsHelper(bs)
-        o = slice(0, self.no)
-        v = slice(self.no, self.no+self.nv)
-
-        # Compute MP2 amplitudes in non-canonical MO basis
-        # print("Fock matrix: {}".format(self.F))
-        eps_occ = np.diag(self.H.F)[o]
-        eps_vir = np.diag(self.H.F)[v]
-        Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
-        print(eps_occ.reshape(-1,1,1,1))
-        print(eps_occ.reshape(-1,1,1))
-        print(eps_vir.reshape(-1,1))
-        print(eps_vir)
-        # initial guess amplitudes
-        t2 = self.H.ERI[o,o,v,v]/Dijab
-        
-        # build space
-        self._PNO_space(t2)
-
-        # transform ERIs
-        ERIij = np.zeros_like(self.H.ERI)
-        Lij = np.zeros_like(self.H.ERI)
-        for ij in range(self.no*self.no):
-            i = ij // self.no
-            j = ij % self.no
-            X = self.Q[ij].T @ t2[i,j] @ self.Q[ij]
-            t2[i,j] = self.L[ij].T @ X @ self.L[ij]
-
-            ERI_ij[i,j] = self.L[ij].T @ self.Q[ij].T @ self.H.ERI[i,j] @ self.Q[ij] @ self.L[ij]
-            print(ERI_ij[i,j])
-            L_ij[i,j] = self.L[ij].T @ self.Q[ij].T @ self.H.L[i,j] @ self.Q[ij] @ self.L[ij]
-
-        emp2 = contract('ijab,ijab->', t2, ERI_ij[o,o,v,v])
-        print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E" % (0, emp2, -emp2))
-
-        e_conv = 1e-7
-        r_conv = 1e-7
-        maxiter = 100
-        ediff = emp2
-        rmsd = 0.0
-        niter = 0
-
-        # TODO: edit mp2_loop function to optionally loop over pairs and do overlaps
-        # or write a separate mp2_pair_loop function
-        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
-            niter += 1
-            elast = emp2
-            emp2 = 0 
-
-            for ij in range(self.no*self.no):
-                r2 = np.zeros_like(t2)
-                i = ij // self.no
-                j = ij % self.no
-
-                r2[i,j] = 0.5 * ERI_ij
-                r2[i,j] += contract('ijae,be->ijab', t2[i,j], self.eps[ij])
-                r2[i,j] -= contract('imab,mj->ijab', t2[i,j], self.H.F[o,o])
-                r2[i,j] = r2_ij + r2_ij.swapaxes(0,1).swapaxes(2,3)
-    
-            # probably have to update D
-            t2 += r2/Dijab
-            emp2 = contract('ab,ab->', t2_ij, L_ij[o,o,v,v])
-
-            rmsd = np.sqrt(contract('ijab,ijab->', r2/Dijab, r2/Dijab))
-
-            emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
-            ediff = emp2 - elast
-
-            print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
-    
     def _local_MP2_loop(self,local,S):
         """
         Performs the MP2 loop in the transformed local basis (PAO, PNO)
@@ -511,125 +426,81 @@ class Local(object):
 
         Notes
         -----
-        - References: Hampel & Werner 1996 [10.1063/1.471289], Pinski & riplinger & Valeev [10.1063/1.4926879], 
-          and Zach's DLPNO-MP2 python code
 
         """
         Q = self.Q
         L = self.L
         o = slice(0,self.no)
         v = slice(self.no, self.no + self.nv)
-
+        
         # noting the occupied fock matrix
         F_occ = self.H.F[o,o]
-        
-        # initial guess amplitude in the local MO basis
+
+        # initial guess amplitude in the approximated MO basis, dont really need
         eps_occ = np.diag(self.H.F)[o]
         eps_vir = np.diag(self.H.F)[v]
         Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
-        t2 = self.H.ERI[o,o,v,v]/Dijab
+        t2 = self.H.ERI[o,o,v,v]/Dijab       
         
-        # Transformation basis for the virtual-virtual blocks of the Fock matrix, ERI tensor,
-        # T2 tensor, L tensor, and overlap matrix to PAO/PNO basis for each pair
-        
-        # removed the PAO code for now, similar code to PNO with the addition of overlap terms due to nonorthogonal 
-        # virtual basis
-
-        if local.upper() in ["LPNO"]:
-       
-        
-        # C_ij = ao by pno_o       
-        # ERI_ij = pno_o by pno_o
-        # t2_ij = pno_o by pno_o 
-
-            C_ij = []  
-            ERI_ij = []
-            t2_ij = []
+        # ERI_ij = local_semi by local_semi
+        # t2_ij = local_semi by local_semi
+  
+        ERI_ij = []
+        t2_ij = []
    
-            # Transformed virtual-virtual block of the overlap, Fock, ERI, t2 in pair domains through modification 
-            # of the atomic orbital coefficients
-            # All the transformation leads to the semicanonical pno basis 
-            
-            for ij in range(self.no*self.no):
-                i = ij // self.no
-                j = ij % self.no
-            
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+                
+            ERI_ij.append(L[ij].T @ Q[ij].T @ self.H.ERI[i,j,v,v] @ Q[ij] @ L[ij])
  
-                # C_ij = ao by pno_n
-                # C = ao by lmo
-                # Q = lmo by pno_r
-                
-                C_ij.append(self.C[:,v] @ Q[ij])
-
-                # C_ij = ao by pno_o
-                # L = pno_r by pno_o
-                
-                C_ij[ij] = C_ij[ij] @ L[ij]
-                
-                # S_ij = lmo by pno_o
-                # S = ao by ao 
-                S_ij = self.C.T @ S @ C_ij[ij]                  
-
-                # ERI_ij folds in the overlap terms and transformed into semicanonical pno basis  
-
-                # ERI_ij = pno_o by pno_o 
-                ERI_ij.append(S_ij.T @ self.H.ERI[i,j] @ S_ij)
-
-                # Construction of the t2 amplitude using the transformed ERI and semicanonicalized orbital energies obtained from the 
-                # diagonalizing the pno fock matrix ... an alternative way is to obtain the initial t2 ampltiude and transform
-      
-                # t2_ij = pno_o by pno_o  
-                t2_ij.append( -1.0 * ERI_ij[ij] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j]))
-
-        #Note that the t_ij is specific to each pair so when you are doing the emp2 energy calculation
-        #either calculate it in the pair loop or revert back to the MO t2 and MO L
-   
+            t2_ij.append( -1.0 * ERI_ij[ij] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j]))
+ 
         # parameters for the MP2 loop
-        e_conv = 1e-7
-        r_conv = 1e-7
+        e_conv = 1e-12
+        r_conv = 1e-12
         maxiter = 100
                 
-        emp2 = contract('ijab,ijab->', t2,self.H.L[o,o,v,v])
-        #print(emp2)
+        emp2 = contract('ijab,ijab->',t2,self.H.L[o,o,v,v])
         ediff = emp2
-        rmsd = 0.0
         niter = 0
 
-        if local.upper() in ["LPNO"]:
-            while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
-                niter += 1
-                elast = emp2
-                emp2 = 0
-               
-                #zach's version
-                for ij in range(self.no*self.no):  
-                    i = ij // self.no 
-                    j = ij % self.no
-                    
-                    # self.eps[ij] contains the semicanonical orbital energies obtain through the diagonalization of the pno fock matrix                    
-                    r2_ij = ERI_ij[ij] + (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])* t2_ij[ij]
-                    
-                    for k in range(self.no):
-                        if i != k: 
-                            kj = self.no * k + j 
-                            S_ijkj = C_ij[ij].T @ S @ C_ij[kj]
-                            r2_ij -= F_occ[i,k] * contract('rs,ra,sb->ab',t2_ij[kj],S_ijkj,S_ijkj)
-                        if j != k:
-                            ik = self.no * i + k 
-                            S_ijik = C_ij[ij].T @ S @ C_ij[ik]
-                            r2_ij -= F_occ[k,j] * contract('rs,ra,sb->ab',t2_ij[ik],S_ijik,S_ijik)
+        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+            niter += 1
+            elast = emp2
+            emp2 = 0
+            rmsd = 0
 
-                    t2_ij[ij] -= r2_ij / (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])
+           #modification to zach's dlpno-mp2 python code 
+            for ij in range(self.no*self.no):  
+                i = ij // self.no 
+                j = ij % self.no
+                    
+           # self.eps[ij] contains the semicanonical orbital energies obtain through the diagonalization of the local fock matrix                    
+                r2_ij = ERI_ij[ij] + (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])* t2_ij[ij]
 
-                    rmsd += np.sqrt(contract('ab,ab->', r2_ij, r2_ij))
+           # The slight deviation between the canonical spin adapted MP2 energy and the local MP2 energy is within the k loop                        
+                for k in range(self.no):
+                    if i != k: 
+                        kj = self.no * k + j 
+                        S_ijkj = L[ij].T @ Q[ij].T @ Q[kj] @ L[kj]
+                        r2_ij -= F_occ[i,k] * contract('rs,ar,bs->ab',t2_ij[kj],S_ijkj,S_ijkj)
+                    if j != k:
+                        ik = self.no * i + k 
+                        S_ijik = L[ij].T @ Q[ij].T @ Q[ik] @ L[ik]
+                        r2_ij -= F_occ[k,j] * contract('rs,ar,bs->ab',t2_ij[ik],S_ijik,S_ijik)
+
+                t2_ij[ij] -= r2_ij / (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])
+
+                rmsd += np.sqrt(contract('ab,ab->', r2_ij, r2_ij))
                 
-                    t2[i,j] = Q[ij] @ L[ij] @ t2_ij[ij] @ L[ij].T @ Q[ij].T
+                t2[i,j] = Q[ij] @ L[ij] @ t2_ij[ij] @ L[ij].T @ Q[ij].T 
 
-                emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
+            emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
                        
-                ediff = emp2 - elast
+            ediff = emp2 - elast
 
-                print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
+            print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
 
     def filter_amps(self, r1, r2):
         no = self.no
