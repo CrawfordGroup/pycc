@@ -79,10 +79,10 @@ class ccwfn(object):
         self.model = model
 
         # models requiring singles
-        self.need_singles = ['CCSD', 'CCSD(T)']
+        self.need_singles = ['CCSD', 'CCSD(T)', 'CC2']
 
         # models requiring T1-transformed integrals
-        self.need_t1_transform = ['CC2', 'CC3']
+        self.need_t1_transform = ['CC3']
 
         valid_local_models = [None, 'LPNO', 'PAO']
         local = kwargs.pop('local', None)
@@ -303,7 +303,10 @@ class ccwfn(object):
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
-            Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
+            if self.model == 'CC2':
+                Wmnij = Wmnij + contract('jf, mnif->mnij', t1, contract('ie,mnef->mnif', t1, ERI[o,o,v,v]))
+            else:
+                Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
         return Wmnij
 
 
@@ -312,6 +315,8 @@ class ccwfn(object):
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej - contract('jnfb,mnef->mbej', 0.5*t2, ERI[o,o,v,v])
             Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
+        elif self.model == 'CC2':
+            return
         else:
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
@@ -325,6 +330,8 @@ class ccwfn(object):
         if self.model == 'CCD':
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje + contract('jnfb,mnfe->mbje', 0.5*t2, ERI[o,o,v,v])
+        elif self.model == 'CC2':
+            return
         else:
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
@@ -336,6 +343,8 @@ class ccwfn(object):
     def build_Zmbij(self, o, v, ERI, t1, t2):
         if self.model == 'CCD':
             return
+        elif self.model == 'CC2':
+            return contract('mbif,jf->mbij', contract('mbef,ie->mbif', ERI[o,v,v,v], t1), t1)
         else:
             return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
 
@@ -364,6 +373,21 @@ class ccwfn(object):
             r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
             r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
             r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+        elif self.model == 'CC2':
+            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+            r_T2 = r_T2 + contract('ijae,be->ijab', t2, (F[v,v] - 0.5 * contract('me,ma->ae', F[o,v], t1)))
+            tmp = contract('mb,me->be', t1, F[o,v])
+            r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
+            r_T2 = r_T2 - contract('imab,mj->ijab', t2, (F[o,o] + 0.5 * contract('ie,me->mi', t1, F[o,v])))
+            tmp = contract('je,me->jm', t1, F[o,v])
+            r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
+            r_T2 = r_T2 + 0.5 * contract('ma,mbij->ijab', t1, contract('nb,mnij->mbij', t1, Wmnij))
+            r_T2 = r_T2 + 0.5 * contract('jf,abif->ijab', t1, contract('ie,abef->abif', t1, ERI[v,v,v,v]))
+            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
+            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o])) 
+            r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
+            r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
+            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
         else:
             r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
