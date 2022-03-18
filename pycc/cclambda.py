@@ -221,6 +221,16 @@ class cclambda(object):
             r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
             r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+        elif self.ccwfn.model == 'CC2':
+            r_l2 = L[o,o,v,v].copy()
+            r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
+            r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
+            r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
+            r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
+            r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
+            r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
+            r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
+            r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
         else:
             r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
