@@ -3,7 +3,6 @@ Test CC2 equation solution using various molecule test cases.
 """
 
 # Import package, test suite, and other packages as needed
-from calendar import c
 import psi4
 import pycc
 import pytest
