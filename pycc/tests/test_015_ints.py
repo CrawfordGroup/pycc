@@ -51,7 +51,7 @@ def test_rk3():
 
 def test_rk2():
     """Test 2nd-order Runge-Kutta"""
-    rk2 = chk_ode(ints.rk2)
+    rk2 = chk_ode(ints.Ralston)
     ref = np.array([2,2.7643999999999997,4.066743395,6.396857224546359,10.804576512405294])
 
     assert np.allclose(rk2,ref)

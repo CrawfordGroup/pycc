@@ -2,7 +2,8 @@
 integrators.py: various ordinary differential equation solvers for time-domain propagation
 """
 
-__all__ = ['rk2', 'rk3', 'rk38', 'rk4', 'gl6']
+__all__ = ['Euler', 'Midpoint', 'Heun', 'Ralston', 'rk3', 'rk38', 'rk4', 'HE', 'Fehlberg', 'BS', 'CK', 'dopri5',
+           'Euler_I', 'Midpoint_I', 'Radau_IA3', 'Radau_IIA3', 'Radau_IA5', 'Radau_IIA5', 'SDIRK5', 'gl4', 'gl6']
 
 import numpy as np
 
@@ -19,7 +20,7 @@ Runge-Kutta family of integrators for ODE propagaton.
 
 2. Adaptive (embeded) integrators:
    1st-order: Heun-Euler;
-   2nd-order: Felhberg;
+   2nd-order: Fehlberg;
    3rd-order: Bogacki-Shampine;
    4th-order: Cash-Karp;
    5th-order: Dormand-Prince;
@@ -369,7 +370,7 @@ class Radau_IIA3(object):
         c = [1/3,1]
         pass
 
-class Raudau_IA5(object):
+class Radau_IA5(object):
     """
     Integrator object for Raudau IA 5th-order ODE propagation.
     """
@@ -387,7 +388,7 @@ class Raudau_IA5(object):
         c = [0,3/5-a/10,3/5+a/10]
         pass
 
-class Raudau_IIA5(object):
+class Radau_IIA5(object):
     """
     Integrator object for Raudau IIA 5th-order ODE propagation.
     """
@@ -417,7 +418,7 @@ class gl4(object):
         s = 2
 
         # input coefficients
-        A = np.array([[1 / 4 , 1 / 4 + np.sqrt(3) / 6], [1 / 4, 1 / 4 - np.sqrt(3) / 6])
+        A = np.array([[1 / 4 , 1 / 4 + np.sqrt(3) / 6], [1 / 4, 1 / 4 - np.sqrt(3) / 6]])
         B = np.array([1 / 2, 1 / 2])
         C = np.array([1 / 2 - np.sqrt(3) / 6, 1 / 2 + np.sqrt(3) / 6])
         # check the coeffecients
