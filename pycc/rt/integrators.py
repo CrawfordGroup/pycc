@@ -250,12 +250,18 @@ class CK(object):
          
             # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
             err = np.linalg.norm(y_new1 - y_new2)
-            h_new = 0.84 * h * pow((self.yconv / err), 0.25)
+
             if (err < self.yconv):
+                # Return the amplitudes at time point (t+h) and h_new for the next step.
+                h_new = 0.84 * h * pow((self.yconv / err), 0.2)
                 return (y_new1, h, h_new)
+
             if (i == self.maxiter - 1):
                 print("y did not converge with in %d iterations \n" % maxiter)
                 return (y_new1, h, h_new)
+            
+            # Update h for the next iteration.
+            h_new = 0.84 * h * pow((self.yconv / err), 0.25)
             h = h_new
 
 class dopri5(object):
