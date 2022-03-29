@@ -2,7 +2,7 @@
 integrators.py: various ordinary differential equation solvers for time-domain propagation
 """
 
-__all__ = ['Euler', 'Midpoint', 'Heun', 'Ralston', 'rk3', 'rk38', 'rk4', 'HE', 'Fehlberg', 'BS', 'CK', 'dopri5',
+__all__ = ['Euler', 'Midpoint', 'Heun', 'rk2', 'rk3', 'rk38', 'rk4', 'HE', 'Fehlberg', 'BS', 'CK', 'dopri5',
            'Euler_I', 'Midpoint_I', 'Radau_IA3', 'Radau_IIA3', 'Radau_IA5', 'Radau_IIA5', 'SDIRK5', 'gl4', 'gl6']
 
 import numpy as np
@@ -14,9 +14,9 @@ Runge-Kutta family of integrators for ODE propagaton.
 """
 1. Explicit integrtors:
    1st-order: Euler;
-   2nd-order: Midpoint, Heun, Ralston;
-   3rd-order: RK3;
-   4th-order: RK4, RK38;
+   2nd-order: Midpoint, Heun, rk2(Ralston);
+   3rd-order: rk3;
+   4th-order: rk4, rk38;
 
 2. Adaptive (embeded) integrators:
    1st-order: Heun-Euler;
@@ -87,9 +87,9 @@ class Heun(object):
 
         return y_new
 
-class Ralston(object):
+class rk2(object):
     """
-    Integrator object for Ralston ODE propagation.
+    Integrator object for rk2 (Ralston) ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
