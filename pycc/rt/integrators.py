@@ -126,7 +126,7 @@ class rk4(object):
     """
     Integrator object for 4th-order Runge-Kutta ODE propagation.
     """
-    def __init__(self,h):
+    def __init__(self, h):
         self.h = float(h)
 
     def __call__(self, f, t, y):
@@ -236,7 +236,7 @@ class CK(object):
     def __call__(self, f, t, y, h0):
         h = float(h0)
         k1 = f(t, y)
-        for i in range(maxiter):
+        for i in range(self.maxiter):
             k2 = f(t + 0.2 * h, y + h * 0.2 * k1)
             k3 = f(t + 0.3 * h, y + h * (3 * k1 + 9 * k2) / 40)
             k4 = f(t + 0.6 * h, y + h * (3 * k1 - 9 * k2 + 12 * k3) / 10)
@@ -250,10 +250,10 @@ class CK(object):
          
             # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
             err = np.linalg.norm(y_new1 - y_new2)
-            h_new = 0.84 * h * pow((yconv / err), 0.25)
-            if (err < conv):
+            h_new = 0.84 * h * pow((self.yconv / err), 0.25)
+            if (err < self.yconv):
                 return (y_new1, h, h_new)
-            if (i == maxiter - 1):
+            if (i == self.maxiter - 1):
                 print("y did not converge with in %d iterations \n" % maxiter)
                 return (y_new1, h, h_new)
             h = h_new
