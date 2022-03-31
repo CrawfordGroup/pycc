@@ -48,6 +48,8 @@ def test_rtcc_water_cc_pvdz():
     sigma = 0.0001
     center = 0.0005
     V = gaussian_laser(F_str, omega, sigma, center)
+    # Cutoff for the field to decide which step size is used
+    e_field = 1e-7
 
     # RT-CC Setup
     t0 = 0
@@ -79,8 +81,8 @@ def test_rtcc_water_cc_pvdz():
     """
     
     while t < tf:
-        # When the field is on
-        if t <= 0.0008: 
+        # When the field is on 
+        if V(t) > e_field:
             y = ODE1(rtcc.f, t, y)
             h_i = h_small
         # When the field is off 
