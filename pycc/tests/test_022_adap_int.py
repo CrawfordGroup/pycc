@@ -7,7 +7,7 @@ import psi4
 import numpy as np
 import pycc
 import pytest
-from pycc.rt.integrators import CK 
+from pycc.rt.integrators import ck 
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
 
@@ -58,7 +58,7 @@ def test_rtcc_water_cc_pvdz():
     # Setting for the adaptive integrator
     maxiter = 10
     yconv = 1e-7
-    ODE = CK(maxiter, yconv)
+    ODE = ck(maxiter, yconv)
     t1, t2, l1, l2 = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)

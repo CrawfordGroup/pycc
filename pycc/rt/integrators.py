@@ -2,8 +2,8 @@
 integrators.py: various ordinary differential equation solvers for time-domain propagation
 """
 
-__all__ = ['Euler', 'Midpoint', 'Heun', 'rk2', 'rk3', 'rk38', 'rk4', 'HE', 'Fehlberg', 'BS', 'CK', 'dopri5',
-           'Euler_I', 'Midpoint_I', 'Radau_IA3', 'Radau_IIA3', 'Radau_IA5', 'Radau_IIA5', 'SDIRK5', 'gl4', 'gl6']
+__all__ = ['euler', 'midpoint', 'heun', 'rk2', 'rk3', 'rk38', 'rk4', 'hr', 'fehlberg', 'bs', 'ck', 'DOPRI5',
+           'euler_I', 'midpoint_I', 'radau_IA3', 'radau_IIA3', 'radau_IA5', 'radau_IIA5', 'SDIRK5', 'gl4', 'gl6']
 
 import numpy as np
 
@@ -14,9 +14,10 @@ Runge-Kutta family of integrators for ODE propagaton.
 """
 1. Explicit integrtors:
    1st-order: Euler;
-   2nd-order: Midpoint, Heun, rk2(Ralston);
-   3rd-order: rk3;
-   4th-order: rk4, rk38;
+   2nd-order: Midpoint, Heun, Runge-Kutta 2nd order(Ralston);
+   3rd-order: Runge-Kutta 3rd order;
+   4th-order: Runge-Kutta 4th order, 
+              Runge-Kutta 4th order with 3/8 rule;
 
 2. Adaptive (embeded) integrators:
    1st-order: Heun-Euler;
@@ -25,20 +26,38 @@ Runge-Kutta family of integrators for ODE propagaton.
    4th-order: Cash-Karp;
    5th-order: Dormand-Prince;
 
-3. implicit integrators:
+3. Implicit integrators:
    1st-order: Euler_I (diagoally implicit method);
    2nd-order: Midpoint_I (diagonally implicit method);
    3rd-order: Radau_IA3, Radau_IIA3;
    4th-order: SDIRK5 (singly diagonally implicit method),
-              Gauss-legendre 4th-order method;
+              Gauss-Legendre 4th order method;
    5th-order: Radau_IA5, Radau_IIA5;
-   6th-order: Gauss-legendre 6th-order method.     
+   6th-order: Gauss-Legendre 6th order method.     
+"""
+
+"""
+Note:
+1. All the explicit integrators were coded up to be compatible
+   with PyCC, while not all of them will give a stable real-time
+   simulation. The Runge-Kutta 4th order integrator (rk4) is 
+   tested to be the default option.
+2. All the adaptive integrators are compatible with PyCC. The 
+   parameters for the error evaluation step may be customized.The 
+   Cash-Karp integrator is the default adaptive integrator for
+   real-time simulation and tested to be valid. 
+3. For the implicit integrators, the explicit implementation are 
+   not incluted with their Buther tableau in this file. Choices
+   of the algorithms for iteratively solving the results at each 
+   time step may be manually added for the case of interest 
+   if needed.
+--Zhe
 """
 
 """
 Explicit integrators
 """
-class Euler(object):
+class euler(object):
     """
     Integrator object for Euler ODE propagaton.
     """
@@ -54,7 +73,7 @@ class Euler(object):
 
         return y_new
 
-class Midpoint(object):
+class midpoint(object):
     """
     Integrator object for Midpoint ODE propagation
     """
@@ -70,7 +89,7 @@ class Midpoint(object):
         
         return y_new
 
-class Heun(object):
+class heun(object):
     """
     Integrator object for Heun ODE propagation.
     """
@@ -89,7 +108,7 @@ class Heun(object):
 
 class rk2(object):
     """
-    Integrator object for rk2 (Ralston) ODE propagation.
+    Integrator object for Runge-Kutta 2nd order (Ralston) ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -106,7 +125,7 @@ class rk2(object):
 
 class rk3(object):
     """
-    Integrator object for 3rd-order Runge-Kutta ODE propagation.
+    Integrator object for Runge-Kutta 3rd order Runge-Kutta ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -124,7 +143,7 @@ class rk3(object):
 
 class rk4(object):
     """
-    Integrator object for 4th-order Runge-Kutta ODE propagation.
+    Integrator object for Runge-Kutta 4th-order Runge-Kutta ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -143,7 +162,7 @@ class rk4(object):
 
 class rk38(object):
     """
-    Integrator object for "corrected" 4th-order Runge-Kutta ODE propagation.
+    Integrator object for "corrected" Runge-Kutta 4th order (3/8 rule) ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -163,10 +182,10 @@ class rk38(object):
 """
 Adaptive integrators
 """
-class HE(object):
+class hr(object):
     """
     Integrator object for Heun-Ruler ODE propagation.
-    1st-order Runge-Kutta method with 2 stages.
+    Runge-Kutta method in 1st order with 2 stages.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -180,12 +199,26 @@ class HE(object):
         # 2nd-order solution for adjusting the step-size
         y_new2 = y + self.h * (k1 + k2) / 2
 
-        pass
+        # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
+        err = np.linalg.norm(y_new1 - y_new2)
 
-class Fehlberg(object):
+        if (err < self.yconv):
+            # Return the amplitudes at time point (t+h) and h_new for the next step.
+            h_new = 0.84 * h * pow((self.yconv / err), 0.2)
+            return (y_new1, h, h_new)
+
+        if (i == self.maxiter - 1):
+            print("y did not converge with in %d iterations \n" % maxiter)
+            return (y_new1, h, h_new)
+            
+        # Update h for the next iteration.
+        h_new = 0.84 * h * pow((self.yconv / err), 0.25)
+        h = h_new
+
+class fehlberg(object):
     """
     Integrator object for Fehlberg ODE propagation.
-    2nd-order integrators with 3 stages.
+    Runge-Kutta in 2nd order with 3 stages.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -201,12 +234,26 @@ class Fehlberg(object):
         # 3rd-order solution for adjusting the step-size
         y_new2 = y + self.h * (k1 + 510 * k2 + k3) / 512
         
-        pass
+        # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
+        err = np.linalg.norm(y_new1 - y_new2)
 
-class BS(object):
+        if (err < self.yconv):
+            # Return the amplitudes at time point (t+h) and h_new for the next step.
+            h_new = 0.84 * h * pow((self.yconv / err), 0.2)
+            return (y_new1, h, h_new)
+
+        if (i == self.maxiter - 1):
+            print("y did not converge with in %d iterations \n" % maxiter)
+            return (y_new1, h, h_new)
+            
+        # Update h for the next iteration.
+        h_new = 0.84 * h * pow((self.yconv / err), 0.25)
+        h = h_new
+
+class bs(object):
     """
     Integrator object for Bogacki-Shampine ODE propagation.
-    3rd-order Runge-Kutta integrator with 4 stages.
+    Runge-Kutta integrator in 3rd order with 4 stages.
     """
     def __init__(self, h):
         self.h = float(h)
@@ -222,12 +269,28 @@ class BS(object):
         # 4th-order solution for adjusting the step-size
         y_new2 = y + self.h * (7 * k1 + 6 * k2 + 8 * k3 + 3 * k4) / 24.0
      
-        pass
+        # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
+        err = np.linalg.norm(y_new1 - y_new2)
 
-class CK(object):
+        if (err < self.yconv):
+            # Return the amplitudes at time point (t+h) and h_new for the next step.
+            h_new = 0.84 * h * pow((self.yconv / err), 0.2)
+            return (y_new1, h, h_new)
+
+        if (i == self.maxiter - 1):
+            print("y did not converge with in %d iterations \n" % maxiter)
+            return (y_new1, h, h_new)
+            
+        # Update h for the next iteration.
+        h_new = 0.84 * h * pow((self.yconv / err), 0.25)
+        h = h_new
+
+
+
+class ck(object):
     """
     Integrator oject for Cash-Karp ODE propagation
-    4th-order Runge-Kutta integrator with 6 stages
+    Runge-Kutta integrator in 4th order with 6 stages
     """
     def __init__(self, maxiter=10, yconv=1e-7):
         self.maxiter = int(maxiter)
@@ -264,10 +327,10 @@ class CK(object):
             h_new = 0.84 * h * pow((self.yconv / err), 0.25)
             h = h_new
 
-class dopri5(object):
+class DOPRI5(object):
     """
     Integrator object for Dormand-Prince ODE propagation
-    5th-order Runge-kutta integrator with 7 stages
+    Runge-kutta integrator in 5th order with 7 stages
     """
     def __init__(self, maxiter, y_conv):
         self.maxiter = int(maxiter)
@@ -290,19 +353,26 @@ class dopri5(object):
             # Sixth-order solution
             y_new2 = y + h * (5179 / 57600 * k1 + 7571 / 16695 * k3 + 393 / 640 * k4 - 92097 / 339200 * k5 + 187 / 2100 * k6 + k7 / 40)
 
-            err = np.linalg.norm(y_new1 - y_new2)       
-            h_new = 0.84 * pow((yconv / err), 0.25) * h
-            if (err < yconv):      
-                return (y_new1, h_new)
-            if (i == maxiter - 1):
-                print("y did not converge with in %d iterations \n" % maxiter) 
-                return (y_new1, h_new)
+            # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
+            err = np.linalg.norm(y_new1 - y_new2)
+
+            if (err < self.yconv):
+                # Return the amplitudes at time point (t+h) and h_new for the next step.
+                h_new = 0.84 * h * pow((self.yconv / err), 0.2)
+                return (y_new1, h, h_new)
+
+            if (i == self.maxiter - 1):
+                print("y did not converge with in %d iterations \n" % maxiter)
+                return (y_new1, h, h_new)
+            
+            # Update h for the next iteration.
+            h_new = 0.84 * h * pow((self.yconv / err), 0.25)
             h = h_new
 
 """
 Implicit integrators
 """     
-class Euler_I(object):
+class euler_I(object):
     """
     Integrator object for Euler implicit ODE propagation.
     """
@@ -316,7 +386,7 @@ class Euler_I(object):
         c = [1] 
         pass
 
-class Midpoint_I(object):
+class midpoint_I(object):
     """
     Integrator object for Midpoint implicit ODE propagation.
     """
@@ -348,7 +418,7 @@ class SDIRK5(object):
         c = [1/4,3/4,11/20,1/2,1] 
         pass  
 
-class Radau_IA3(object):
+class radau_IA3(object):
     """
     Integrator object for Radau IA 3rd-order ODE propagation.
     """
@@ -362,7 +432,7 @@ class Radau_IA3(object):
         c = [0,2/3]
         pass
 
-class Radau_IIA3(object):
+class radau_IIA3(object):
     """
     Integrator object for Raudau IIA 3rd-order ODE propagation.
     """
@@ -376,7 +446,7 @@ class Radau_IIA3(object):
         c = [1/3,1]
         pass
 
-class Radau_IA5(object):
+class radau_IA5(object):
     """
     Integrator object for Raudau IA 5th-order ODE propagation.
     """
@@ -394,7 +464,7 @@ class Radau_IA5(object):
         c = [0,3/5-a/10,3/5+a/10]
         pass
 
-class Radau_IIA5(object):
+class radau_IIA5(object):
     """
     Integrator object for Raudau IIA 5th-order ODE propagation.
     """
