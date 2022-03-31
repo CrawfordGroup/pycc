@@ -202,7 +202,7 @@ class cclambda(object):
             r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
             r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
             r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
-            if self.ccwfn.model == 'CCSD':
+            if self.ccwfn.model != 'CC2':
                 r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
                 r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
                 r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
