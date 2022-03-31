@@ -12,7 +12,7 @@ Runge-Kutta family of integrators for ODE propagaton.
 """
 
 """
-1. Explicit integrtors:
+1. Explicit integrators:
    1st-order: Euler;
    2nd-order: Midpoint, Heun, Runge-Kutta 2nd order(Ralston);
    3rd-order: Runge-Kutta 3rd order;
