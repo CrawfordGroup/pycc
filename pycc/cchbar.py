@@ -131,7 +131,10 @@ class cchbar(object):
             Hoooo = ERI[o,o,o,o].copy()
             tmp = contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Hoooo = Hoooo + (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
-            Hoooo = Hoooo + contract('ijef,mnef->mnij', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
+            if self.ccwfn.model == 'CC2':
+                Hoooo = Hoooo + contract('jf,mnif->mnij', t1, contract('ie,mnef->mnif', t1, ERI[o,o,v,v]))
+            else:
+                Hoooo = Hoooo + contract('ijef,mnef->mnij', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v]) 
         return Hoooo
 
 
@@ -144,7 +147,10 @@ class cchbar(object):
             Hvvvv = ERI[v,v,v,v].copy()
             tmp = contract('mb,amef->abef', t1, ERI[v,o,v,v])
             Hvvvv = Hvvvv - (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
-            Hvvvv = Hvvvv + contract('mnab,mnef->abef', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
+            if self.ccwfn.model == 'CC2':
+                Hvvvv = Hvvvv + contract('nb,anef->abef', t1, contract('ma,mnef->anef', t1, ERI[o,o,v,v]))
+            else:
+                Hvvvv = Hvvvv + contract('mnab,mnef->abef', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
         return Hvvvv
 
 
@@ -206,6 +212,13 @@ class cchbar(object):
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo - contract('imfb,amef->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])
+        elif self.ccwfn.model == 'CC2':
+            Hvvvo = ERI[v,v,v,o].copy()
+            Hvvvo = Hvvvo - contract('me,miab->abei', self.ccwfn.H.F[o,v], t2)
+            Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
+            Hvvvo = Hvvvo + contract('nb,anei->abei', t1, contract('ma,mnei->anei', t1, ERI[o,o,v,o]))
+            Hvvvo = Hvvvo - contract('mb,amei->abei', t1, ERI[v,o,v,o])
+            Hvvvo = Hvvvo - contract('ma,bmie->abei', t1, ERI[v,o,o,v])
         else:
             Hvvvo = ERI[v,v,v,o].copy()
             Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
@@ -213,7 +226,7 @@ class cchbar(object):
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo - contract('imfb,amef->abei', t2, ERI[v,o,v,v])
-            Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])
+            Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])    
             tmp = ERI[v,o,v,o].copy()
             tmp = tmp - contract('infa,mnfe->amei', t2, ERI[o,o,v,v])
             Hvvvo = Hvvvo - contract('mb,amei->abei', t1, tmp)
@@ -233,6 +246,13 @@ class cchbar(object):
             Hovoo = Hovoo - contract('ineb,nmje->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo - contract('jneb,mnie->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo + contract('njeb,mnie->mbij', t2, L[o,o,o,v])
+        elif self.ccwfn.model == 'CC2':
+            Hovoo = ERI[o,v,o,o].copy()
+            Hovoo = Hovoo + contract('me,ijeb->mbij', self.ccwfn.H.F[o,v], t2)
+            Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
+            Hovoo = Hovoo + contract('jf,mbif->mbij', t1, contract('ie,mbef->mbif', t1, ERI[o,v,v,v]))
+            Hovoo = Hovoo + contract('je,mbie->mbij', t1, ERI[o,v,o,v])
+            Hovoo = Hovoo + contract('ie,bmje->mbij', t1, ERI[v,o,o,v])       
         else:
             Hovoo = ERI[o,v,o,o].copy()
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
