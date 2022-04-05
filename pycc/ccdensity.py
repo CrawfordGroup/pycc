@@ -8,8 +8,6 @@ if __name__ == "__main__":
 
 import time
 import numpy as np
-from opt_einsum import contract
-
 
 class ccdensity(object):
     """
@@ -46,7 +44,7 @@ class ccdensity(object):
     compute_onepdm() :
         Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
-    def __init__(self, ccwfn, cclambda, onlyone=False):
+    def __init__(self, ccwfn, cclambda, cc_contract, onlyone=False):
         """
         Parameters
         ----------
@@ -66,6 +64,7 @@ class ccdensity(object):
 
         self.ccwfn = ccwfn
         self.cclambda = cclambda
+        self.contract = cc_contract
 
         t1 = ccwfn.t1
         t2 = ccwfn.t2
@@ -86,7 +85,7 @@ class ccdensity(object):
             self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
             self.Dovov = self.build_Dovov(t1, t2, l1, l2)
             self.Doovv = self.build_Doovv(t1, t2, l1, l2)
-
+        
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
     def compute_energy(self):
@@ -107,6 +106,8 @@ class ccdensity(object):
         v = self.ccwfn.v
         F = self.ccwfn.H.F
         ERI = self.ccwfn.H.ERI
+             
+        contract = self.contract 
 
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
@@ -171,6 +172,7 @@ class ccdensity(object):
         return opdm
 
     def build_Doo(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Doo = -contract('imef,jmef->ij', t2, l2)
         else:
@@ -180,6 +182,7 @@ class ccdensity(object):
 
 
     def build_Dvv(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dvv = contract('mnbe,mnae->ab', t2, l2)
         else:
@@ -193,6 +196,7 @@ class ccdensity(object):
 
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dov = np.zeros_like(t1)
         else:
@@ -207,6 +211,7 @@ class ccdensity(object):
 
 
     def build_Doooo(self, t1, t2, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('ijef,klef->ijkl', t2, l2)
         else:
@@ -214,6 +219,7 @@ class ccdensity(object):
 
 
     def build_Dvvvv(self, t1, t2, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('mnab,mncd->abcd', t2, l2)
         else:
@@ -221,6 +227,7 @@ class ccdensity(object):
 
 
     def build_Dooov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
@@ -251,6 +258,7 @@ class ccdensity(object):
 
 
     def build_Dvvvo(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
@@ -281,6 +289,7 @@ class ccdensity(object):
 
 
     def build_Dovov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dovov = -contract('mibe,jmea->iajb', t2, l2)
             Dovov -= contract('imbe,mjea->iajb', t2, l2)
@@ -292,6 +301,7 @@ class ccdensity(object):
 
 
     def build_Doovv(self, t1, t2, l1, l2):
+        contract = self.contract
         tau = self.ccwfn.build_tau(t1, t2)
         tau_spinad = 2.0 * tau - tau.swapaxes(2,3)
 

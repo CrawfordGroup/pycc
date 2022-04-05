@@ -5,7 +5,6 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 import psi4
 import numpy as np
 import pickle as pk
-from opt_einsum import contract
 from os.path import exists
 
 
@@ -54,10 +53,11 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
+    def __init__(self, ccwfn, cclambda, ccdensity, cc_contract, V, magnetic = False, kick = None):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
+        self.contract = cc_contract
         self.V = V
 
         # Prep the dipole integrals in MO basis
@@ -203,6 +203,9 @@ class rtcc(object):
         o = self.ccwfn.o
         v = self.ccwfn.v
         F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+        
+        contract = self.contract 
+
         ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
         L = self.ccwfn.H.L
         ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
@@ -239,6 +242,8 @@ class rtcc(object):
         eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
 
         eone = F.flatten().dot(opdm.flatten())
+ 
+        contract = self.contract
 
         oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
         vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)

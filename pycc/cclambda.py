@@ -34,7 +34,7 @@ class cclambda(object):
     residuals()
         Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
-    def __init__(self, ccwfn, hbar):
+    def __init__(self, ccwfn, hbar, cc_contract):
         """
         Parameters
         ----------
@@ -50,6 +50,7 @@ class cclambda(object):
 
         self.ccwfn = ccwfn
         self.hbar = hbar
+        self.contract = cc_contract 
 
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
@@ -104,6 +105,8 @@ class cclambda(object):
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
         diis = helper_diis(l1, l2, max_diis)
+ 
+        contract = self.contract
 
         for niter in range(1, maxiter+1):
 
@@ -185,14 +188,17 @@ class cclambda(object):
         return r1, r2
 
     def build_Goo(self, t2, l2):
+        contract = self.contract
         return contract('mjab,ijab->mi', t2, l2)
 
 
     def build_Gvv(self, t2, l2):
+        contract = self.contract 
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
     def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        contract = self.contract 
         if self.ccwfn.model == 'CCD':
             r_l1 = np.zeros_like(l1)
         else:
@@ -211,6 +217,7 @@ class cclambda(object):
 
 
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        contract = self.contract 
         if self.ccwfn.model == 'CCD':
             r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
@@ -249,4 +256,5 @@ class cclambda(object):
 
 
     def pseudoenergy(self, o, v, ERI, l2):
+        contract = self.contract 
         return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
