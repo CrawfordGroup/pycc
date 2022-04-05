@@ -1,5 +1,6 @@
 import numpy as np
-
+import torch
+import opt_einsum
 
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis):
@@ -70,3 +71,38 @@ class helper_diis(object):
         self.oldt2 = t2.copy()
 
         return t1, t2
+
+class cc_contract(object):
+    def __init__(self, device):
+        self.device = device
+        
+    def __call__(self, subscript, A, B):        
+        if self.device == 'CPU':
+            return opt_einsum.contract(subscript, A, B)
+        elif self.device == 'GPU':
+            # Check the type and allocation of A, B
+            # Transfer the copy from CPU to GPU if needed (for ERI)
+            if (A.is_cuda) and (B.is_cuda):
+                # A and B are both on GPU
+                return opt.einsum.contract(subscript, A, B)
+            elif (not A.is_cuda) and (B.is_cuda):
+                # A is on CPU and needs to be transfered to GPU
+                tmpA = A.to(device_gpu)
+                C = opt_einsum.contract(subscript, tmpA, B)
+                del tmpA
+                return C
+            elif (A.is_cuda) and (not B.is_cuda):
+                # B is on CPU and needs to be transfered to GPU
+                tmpB = B.to(device_gpu)
+                C = opt_einsum.contract(subscript, A, tmpB)
+                del tmpB
+                return C
+            else:
+                # A and B are both on CPU and need to be transfered to CPU
+                tmpA = A.to(device_gpu)
+                tmpB = B.to(device_gpu)
+                C = opt_einsum.contract(subscript, tmpA, tmpB)
+                del tmpA
+                del tmpB
+                return C            
+    

@@ -9,7 +9,7 @@ if __name__ == "__main__":
 import psi4
 import time
 import numpy as np
-from opt_einsum import contract
+import torch
 from .utils import helper_diis
 from .hamiltonian import Hamiltonian
 from .local import Local
@@ -52,31 +52,44 @@ class ccwfn(object):
 
     Methods
     -------
+    cc_contract()
+        Wraps up the contraction operating on CPU/GPU. 
     solve_cc()
         Solves the CC T amplitude equations
     residuals()
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, **kwargs):
+    def __init__(self, scf_wfn, device, cc_contract, **kwargs):
         """
         Parameters
         ----------
         scf_wfn : Psi4 Wavefunction Object
             computed by Psi4 energy() method
-
+        device: The device that the calculation will be operated on.
+                Option: 'CPU', 'GPU' 
         Returns
         -------
         None
         """
 
         time_init = time.time()
+       
+        self.contract = cc_contract
 
         valid_cc_models = ['CCD', 'CC2', 'CCSD', 'CCSD(T)', 'CC3']
         model = kwargs.pop('model','CCSD')
         if model not in valid_cc_models:
             raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
+        
+        valid_device = ['CPU', 'GPU']
+        if device not in valid_device:
+            raise Exception("%s is not an allowed device." % (device))
+        self.device = device
+        if device == 'GPU':
+            self.device_gpu = torch.device('cuda:0' if torch.cuda.is_avalible() else 'cpu')
+            self.device_cpu = torch.device('cpu')
 
         # models requiring singles
         self.need_singles = ['CCSD', 'CCSD(T)', 'CC2']
@@ -149,9 +162,22 @@ class ccwfn(object):
         else:
             self.t1 = np.zeros((self.no, self.nv))
             self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
+       
+        # Convert the arrays to torch.Tensors if the calculation is on GPU.
+        # Send the copy of F, t1, t2 to GPU.
+        # ERI will be kept on GPU
+        self.device = device
+        if self.device == 'GPU':
+            # Storing on GPU
+            self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=device_gpu)
+            self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=device_gpu)
+            self.t2 = torch.tendor(self.t2, dtype=torch.complex128, device=device_gpu)
+            # Storing on CPU
+            self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=device_cpu)
+            self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=device_cpu)
 
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
-
+             
     def solve_cc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
         """
         Parameters
@@ -180,6 +206,8 @@ class ccwfn(object):
         L = self.H.L
         Dia = self.Dia
         Dijab = self.Dijab
+        
+        contract = self.contract
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
@@ -198,12 +226,16 @@ class ccwfn(object):
                 self.t2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
+                if self.device == 'GPU':
+                    rms = torch.sqrt(rms)
                 rms = np.sqrt(rms)
             else:
                 self.t1 += r1/Dia
                 self.t2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                if self.device == 'GPU':
+                    rms = torch.sqrt(rms)                
                 rms = np.sqrt(rms)
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
@@ -259,10 +291,12 @@ class ccwfn(object):
         return r1, r2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
+        contract = self.contract
         return fact1 * t2 + fact2 * contract('ia,jb->ijab', t1, t1)
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             Fae = F[v,v].copy()
             Fae = Fae - contract('mnaf,mnef->ae', t2, L[o,o,v,v])
@@ -275,6 +309,7 @@ class ccwfn(object):
 
 
     def build_Fmi(self, o, v, F, L, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             Fmi = F[o,o].copy()
             Fmi = Fmi + contract('inef,mnef->mi', t2, L[o,o,v,v])
@@ -287,6 +322,7 @@ class ccwfn(object):
 
 
     def build_Fme(self, o, v, F, L, t1):
+        contract = self.contract
         if self.model == 'CCD':
             return
         else:
@@ -296,6 +332,7 @@ class ccwfn(object):
 
 
     def build_Wmnij(self, o, v, ERI, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
@@ -311,6 +348,7 @@ class ccwfn(object):
 
 
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej - contract('jnfb,mnef->mbej', 0.5*t2, ERI[o,o,v,v])
@@ -327,6 +365,7 @@ class ccwfn(object):
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje + contract('jnfb,mnfe->mbje', 0.5*t2, ERI[o,o,v,v])
@@ -341,6 +380,7 @@ class ccwfn(object):
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             return
         elif self.model == 'CC2':
@@ -350,7 +390,10 @@ class ccwfn(object):
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
+        contract = self.contract
         if self.model == 'CCD':
+            if self.device == 'GPU':
+                r_T1 = torch.zero_like(t1) 
             r_T1 = np.zeros_like(t1)
         else:
             r_T1 = F[o,v].copy()
@@ -364,6 +407,7 @@ class ccwfn(object):
 
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
+        contract = self.contract
         if self.model == 'CCD':
             r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
@@ -413,6 +457,7 @@ class ccwfn(object):
 
 
     def cc_energy(self, o, v, F, L, t1, t2):
+        contract = self.contract
         if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
         else:
