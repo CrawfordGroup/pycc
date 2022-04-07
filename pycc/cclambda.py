@@ -34,7 +34,7 @@ class cclambda(object):
     residuals()
         Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
-    def __init__(self, ccwfn, hbar, cc_contract):
+    def __init__(self, ccwfn, hbar):
         """
         Parameters
         ----------
@@ -50,7 +50,7 @@ class cclambda(object):
 
         self.ccwfn = ccwfn
         self.hbar = hbar
-        self.contract = cc_contract 
+        self.contract = self.ccwfn.contract 
 
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))

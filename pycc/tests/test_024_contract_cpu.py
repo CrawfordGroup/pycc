@@ -35,15 +35,15 @@ def test_rtcc_water_cc_pvdz():
     device = 'CPU'
     
     cc_contract = pycc.utils.cc_contract(device)
-    cc = pycc.ccwfn(rhf_wfn, device, cc_contract)
+    cc = pycc.ccwfn(rhf_wfn, cc_contract)
     ecc = cc.solve_cc(e_conv, r_conv)
     
-    hbar = pycc.cchbar(cc, cc_contract)
+    hbar = pycc.cchbar(cc)
 
-    cclambda = pycc.cclambda(cc, hbar, cc_contract)
+    cclambda = pycc.cclambda(cc, hbar)
     lecc = cclambda.solve_lambda(e_conv, r_conv)
 
-    ccdensity = pycc.ccdensity(cc, cclambda, cc_contract)
+    ccdensity = pycc.ccdensity(cc, cclambda)
 
     # Gaussian pulse (a.u.)
     F_str = 0.01
@@ -57,7 +57,7 @@ def test_rtcc_water_cc_pvdz():
     tf = 0.1
     h = 0.01
     t = t0
-    rtcc = pycc.rtcc(cc, cclambda, ccdensity, cc_contract, V)
+    rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
     y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
     y = y0
     ODE = rk4(h)
