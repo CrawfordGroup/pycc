@@ -6,9 +6,9 @@ import numpy as np
 
 class cctriples(object):
 
-    def __init__(self, ccwfn, cc_contract):
+    def __init__(self, ccwfn):
         self.ccwfn = ccwfn
-        self.contract = cc_contract
+        self.contract = self.ccwfn.contract
 
     # Vikings' formulation
     def t_vikings(self):

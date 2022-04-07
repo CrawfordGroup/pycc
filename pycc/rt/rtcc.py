@@ -53,11 +53,11 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, cc_contract, V, magnetic = False, kick = None):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
-        self.contract = cc_contract
+        self.contract = self.ccwfn.contract
         self.V = V
 
         # Prep the dipole integrals in MO basis

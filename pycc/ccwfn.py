@@ -60,7 +60,7 @@ class ccwfn(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, device, cc_contract, **kwargs):
+    def __init__(self, scf_wfn, cc_contract, **kwargs):
         """
         Parameters
         ----------
@@ -82,12 +82,13 @@ class ccwfn(object):
         if model not in valid_cc_models:
             raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
+    
+        self.device = self.contract.device
         
         valid_device = ['CPU', 'GPU']
-        if device not in valid_device:
+        if self.device not in valid_device:
             raise Exception("%s is not an allowed device." % (device))
-        self.device = device
-        if device == 'GPU':
+        if self.device == 'GPU':
             self.device_gpu = torch.device('cuda:0' if torch.cuda.is_avalible() else 'cpu')
             self.device_cpu = torch.device('cpu')
 
@@ -166,7 +167,6 @@ class ccwfn(object):
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
         # ERI will be kept on GPU
-        self.device = device
         if self.device == 'GPU':
             # Storing on GPU
             self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=device_gpu)
