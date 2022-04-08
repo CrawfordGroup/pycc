@@ -147,7 +147,7 @@ class cclambda(object):
             ediff = lecc - lecc_last
             print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
 
-            if ((abs(ediff) < e_conv) and rms < r_conv):
+            if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
                 print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
                 return lecc
 

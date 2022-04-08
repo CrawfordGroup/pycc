@@ -170,7 +170,9 @@ class ccwfn(object):
             # Storing on GPU
             self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=device1)
             self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=device1)
-            self.t2 = torch.tendor(self.t2, dtype=torch.complex128, device=device1)
+            self.t2 = torch.tensor(self.t2, dtype=torch.complex128, device=device1)
+            self.Dia = torch.tensor(self.Dia, dtype=torch.complex128, device=device1)
+            self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex128, device=device1)
             # Storing on CPU
             self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=device0)
             self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=device0)
@@ -244,7 +246,7 @@ class ccwfn(object):
             print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
             # check for convergence
-            if ((abs(ediff) < e_conv) and rms < r_conv):
+            if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
                 print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                 print("E(REF)  = %20.15f" % self.eref)
                 print("E(%s) = %20.15f" % (self.model, ecc))
