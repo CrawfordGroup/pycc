@@ -4,29 +4,45 @@ import opt_einsum
 
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis):
+        if isinstance(t1, torch.Tensor):
+            self.oldt1 = t1.clone()
+            self.oldt2 = t2.clone()
+            self.diis_vals_t1 = [t1.clone()]
+            self.diis_vals_t2 = [t2.clone()]
+        else:
+            self.oldt1 = t1.copy()
+            self.oldt2 = t2.copy()
+            self.diis_vals_t1 = [t1.copy()]
+            self.diis_vals_t2 = [t2.copy()]
 
-        self.oldt1 = t1.copy()
-        self.oldt2 = t2.copy()
-        self.diis_vals_t1 = [t1.copy()]
-        self.diis_vals_t2 = [t2.copy()]
         self.diis_errors = []
         self.diis_size = 0
         self.max_diis = max_diis
 
     def add_error_vector(self, t1, t2):
-
-        # Add DIIS vectors
-        self.diis_vals_t1.append(t1.copy())
-        self.diis_vals_t2.append(t2.copy())
-        # Add new error vectors
-        error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
-        error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
-        self.diis_errors.append(np.concatenate((error_t1, error_t2)))
-        self.oldt1 = t1.copy()
-        self.oldt2 = t2.copy()
+        if isinstance(t1, torch.Tensor):
+            # Add DIIS vectors
+            self.diis_vals_t1.append(t1.clone())
+            self.diis_vals_t2.append(t2.clone())
+            # Add new error vectors
+            error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
+            error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
+            self.diis_errors.append(torch.cat((error_t1, error_t2)))
+            self.oldt1 = t1.clone()
+            self.oldt2 = t2.clone()
+        else:
+            # Add DIIS vectors
+            self.diis_vals_t1.append(t1.copy())
+            self.diis_vals_t2.append(t2.copy())
+            # Add new error vectors
+            error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
+            error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
+            self.diis_errors.append(np.concatenate((error_t1, error_t2)))
+            self.oldt1 = t1.copy()
+            self.oldt2 = t2.copy()
 
     def extrapolate(self, t1, t2):
-
+        
         if (self.max_diis == 0):
             return t1, t2
 
@@ -37,38 +53,72 @@ class helper_diis(object):
             del self.diis_errors[0]
 
         self.diis_size = len(self.diis_errors)
+        
+        if isinstance(t1, torch.Tensor):
+            # Build error matrix B
+            B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=device1) * -1
+            B[-1, -1] = 0
 
-        # Build error matrix B
-        B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
-        B[-1, -1] = 0
+            for n1, e1 in enumerate(self.diis_errors):
+                B[n1, n1] = torch.dot(e1, e1)
+                for n2, e2 in enumerate(self.diis_errors):
+                    if n1 >= n2:
+                        continue
+                    B[n1, n2] = torch.dot(e1, e2)
+                    B[n2, n1] = B[n1, n2]
 
-        for n1, e1 in enumerate(self.diis_errors):
-            B[n1, n1] = np.dot(e1, e1)
-            for n2, e2 in enumerate(self.diis_errors):
-                if n1 >= n2:
-                    continue
-                B[n1, n2] = np.dot(e1, e2)
-                B[n2, n1] = B[n1, n2]
+            B[:-1, :-1] /= torch.abs(B[:-1, :-1]).max()
 
-        B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+            # Build residual vector
+            resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=device1)
+            resid[-1] = -1
 
-        # Build residual vector
-        resid = np.zeros(self.diis_size + 1)
-        resid[-1] = -1
+            # Solve pulay equations
+            ci = torch.linalg.solve(B, resid)
 
-        # Solve pulay equations
-        ci = np.linalg.solve(B, resid)
+            # Calculate new amplitudes
+            t1 = np.zeros_like(self.oldt1)
+            t2 = np.zeros_like(self.oldt2)
+            for num in range(self.diis_size):
+                t1 += torch.real(ci[num] * self.diis_vals_t1[num + 1])
+                t2 += torch.real(ci[num] * self.diis_vals_t2[num + 1])
 
-        # Calculate new amplitudes
-        t1 = np.zeros_like(self.oldt1)
-        t2 = np.zeros_like(self.oldt2)
-        for num in range(self.diis_size):
-            t1 += np.real(ci[num] * self.diis_vals_t1[num + 1])
-            t2 += np.real(ci[num] * self.diis_vals_t2[num + 1])
+            # Save extrapolated amplitudes to old_t amplitudes
+            self.oldt1 = t1.clone()
+            self.oldt2 = t2.clone()
 
-        # Save extrapolated amplitudes to old_t amplitudes
-        self.oldt1 = t1.copy()
-        self.oldt2 = t2.copy()
+        else:
+            # Build error matrix B
+            B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
+            B[-1, -1] = 0
+
+            for n1, e1 in enumerate(self.diis_errors):
+                B[n1, n1] = np.dot(e1, e1)
+                for n2, e2 in enumerate(self.diis_errors):
+                    if n1 >= n2:
+                        continue
+                    B[n1, n2] = np.dot(e1, e2)
+                    B[n2, n1] = B[n1, n2]
+
+            B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+
+            # Build residual vector
+            resid = np.zeros(self.diis_size + 1)
+            resid[-1] = -1
+
+            # Solve pulay equations
+            ci = np.linalg.solve(B, resid)
+
+            # Calculate new amplitudes
+            t1 = np.zeros_like(self.oldt1)
+            t2 = np.zeros_like(self.oldt2)
+            for num in range(self.diis_size):
+                t1 += np.real(ci[num] * self.diis_vals_t1[num + 1])
+                t2 += np.real(ci[num] * self.diis_vals_t2[num + 1])
+
+            # Save extrapolated amplitudes to old_t amplitudes
+            self.oldt1 = t1.copy()
+            self.oldt2 = t2.copy()
 
         return t1, t2
 
