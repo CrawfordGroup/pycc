@@ -4,9 +4,15 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 
 import psi4
 import numpy as np
+import torch
 import pickle as pk
 from os.path import exists
 
+# Will be removed after generalize cc_contract
+import opt_einsum
+
+device0 = torch.device('cpu')
+device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class rtcc(object):
     """
@@ -53,13 +59,13 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None, device = 'CPU'):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
         self.contract = self.ccwfn.contract
         self.V = V
-
+         
         # Prep the dipole integrals in MO basis
         mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
         dipole_ints = mints.ao_dipole()
@@ -72,6 +78,10 @@ class rtcc(object):
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
         else:
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
+  
+        if device == 'GPU':
+            self.mu = torch.Tensor(self.mu, dtype=torch.complex128, device=device1)
+            self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:
             self.magnetic = True
@@ -101,8 +111,10 @@ class rtcc(object):
         t1, t2, l1, l2 = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
-        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
-
+        if isinstance(t1, torch.Tensor):
+            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
+        else:
+            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
@@ -133,7 +145,11 @@ class rtcc(object):
         NumPy array
             amplitudes or residuals as a vector (flattened array)
         """
-        return np.concatenate((t1, t2, l1, l2), axis=None)
+        if isinstance(t1, torch.Tensor):
+            return torch.cat((t1, t2, l1, l2), axis=None)
+        else:
+            return np.concatenate((t1, t2, l1, l2), axis=None)
+
 
     def extract_amps(self, y):
         """
@@ -153,10 +169,16 @@ class rtcc(object):
         # Extract the amplitudes
         len1 = no*nv
         len2 = no*no*nv*nv
-        t1 = np.reshape(y[:len1], (no, nv))
-        t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
-        l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-        l2 = np.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+        if isinstance(y, torch.Tensor):
+            t1 = torch.reshape(y[:len1], (no, nv))
+            t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
+            l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
+            l2 = torch.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+        else:
+            t1 = np.reshape(y[:len1], (no, nv))
+            t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
+            l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
+            l2 = np.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
 
         return t1, t2, l1, l2
 
@@ -202,7 +224,10 @@ class rtcc(object):
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
-        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+        if isinstance(t1, torch.Tensor):
+            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
+        else:
+            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
         
         contract = self.contract 
 
@@ -235,15 +260,25 @@ class rtcc(object):
         Dvvvo = self.ccdensity.build_Dvvvo(t1, t2, l1, l2)
         Dovov = self.ccdensity.build_Dovov(t1, t2, l1, l2)
         Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
+        contract = self.contract
+        
+        if isinstance(t1, torch.Tensor):
+            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
+    
+            eref = 2.0 * torch.trace(F[o,o])
+            # torch.trace doesn't have "axis" argument
+            #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
+            tmp = self.ccwfn.H.L[o,o,o,o].to(device1)
+            eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
+            del tmp
 
-        F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+        else:
+            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 
-        eref = 2.0 * np.trace(F[o,o])
-        eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
+            eref = 2.0 * np.trace(F[o,o])
+            eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
 
         eone = F.flatten().dot(opdm.flatten())
- 
-        contract = self.contract
 
         oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
         vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)

@@ -1,8 +1,12 @@
 # Triples class for (T) corrections, CC3, etc.
 
-import numpy as np
-#from opt_einsum import contract
+# Unfinished (Zhe, 0407)
 
+import numpy as np
+import torch
+
+device0 = torch.device('cpu')
+device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class cctriples(object):
 
@@ -21,8 +25,12 @@ class cctriples(object):
         L = self.ccwfn.H.L
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
-        X1 = np.zeros_like(self.ccwfn.t1)
-        X2 = np.zeros_like(self.ccwfn.t2)
+        if isinstance(t1, torch.Tensor):
+            X1 = torch.zeros_like(self.ccwfn.t1)
+            X2 = torch.zeros_like(self.ccwfn.t2)
+        else:
+            X1 = np.zeros_like(self.ccwfn.t1)
+            X2 = np.zeros_like(self.ccwfn.t2)
 
         for i in range(no):
             for j in range(no):

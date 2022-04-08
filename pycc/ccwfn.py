@@ -14,6 +14,8 @@ from .utils import helper_diis
 from .hamiltonian import Hamiltonian
 from .local import Local
 
+device0 = torch.device('cpu')
+device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class ccwfn(object):
     """
@@ -83,14 +85,11 @@ class ccwfn(object):
             raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
     
-        self.device = self.contract.device
+        device = self.contract.device
         
         valid_device = ['CPU', 'GPU']
-        if self.device not in valid_device:
+        if device not in valid_device:
             raise Exception("%s is not an allowed device." % (device))
-        if self.device == 'GPU':
-            self.device_gpu = torch.device('cuda:0' if torch.cuda.is_avalible() else 'cpu')
-            self.device_cpu = torch.device('cpu')
 
         # models requiring singles
         self.need_singles = ['CCSD', 'CCSD(T)', 'CC2']
@@ -167,14 +166,14 @@ class ccwfn(object):
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
         # ERI will be kept on GPU
-        if self.device == 'GPU':
+        if device == 'GPU':
             # Storing on GPU
-            self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=device_gpu)
-            self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=device_gpu)
-            self.t2 = torch.tendor(self.t2, dtype=torch.complex128, device=device_gpu)
+            self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=device1)
+            self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=device1)
+            self.t2 = torch.tendor(self.t2, dtype=torch.complex128, device=device1)
             # Storing on CPU
-            self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=device_cpu)
-            self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=device_cpu)
+            self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=device0)
+            self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=device0)
 
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
              
@@ -226,17 +225,19 @@ class ccwfn(object):
                 self.t2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                if self.device == 'GPU':
+                if isinstance(r1, torch.Tensor):
                     rms = torch.sqrt(rms)
-                rms = np.sqrt(rms)
+                else:
+                    rms = np.sqrt(rms)
             else:
                 self.t1 += r1/Dia
                 self.t2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                if self.device == 'GPU':
-                    rms = torch.sqrt(rms)                
-                rms = np.sqrt(rms)
+                if isinstance(r1, torch.Tensor):
+                    rms = torch.sqrt(rms) 
+                else:               
+                    rms = np.sqrt(rms)
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
@@ -287,6 +288,9 @@ class ccwfn(object):
 
         r1 = self.r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
         r2 = self.r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+       
+        if isinstance(Fae, torch.Tensor):
+            del Fae, Fmi, Fme, Wmnij, Wmbej, Wmbje, Zmbij 
 
         return r1, r2
 
@@ -298,10 +302,16 @@ class ccwfn(object):
     def build_Fae(self, o, v, F, L, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
-            Fae = F[v,v].copy()
+            if isinstance(t1, torch.Tensor):
+                Fae = F[v,v].clone()
+            else:
+                Fae = F[v,v].copy()
             Fae = Fae - contract('mnaf,mnef->ae', t2, L[o,o,v,v])
         else:
-            Fae = F[v,v].copy()
+            if isinstance(t1, torch.Tensor):
+                Fae = F[v,v].clone()
+            else:
+                Fae = F[v,v].copy()
             Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
             Fae = Fae + contract('mf,mafe->ae', t1, L[o,v,v,v])
             Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
@@ -311,10 +321,16 @@ class ccwfn(object):
     def build_Fmi(self, o, v, F, L, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
-            Fmi = F[o,o].copy()
+            if isinstance(t1, torch.Tensor):
+                Fmi = F[o,o].clone()
+            else:
+                Fmi = F[o,o].copy()
             Fmi = Fmi + contract('inef,mnef->mi', t2, L[o,o,v,v])
         else:
-            Fmi = F[o,o].copy()
+            if isinstance(t1, torch.Tensor):
+                Fmi = F[o,o].clone()
+            else:
+                Fmi = F[o,o].copy()
             Fmi = Fmi + 0.5 * contract('ie,me->mi', t1, F[o,v])
             Fmi = Fmi + contract('ne,mnie->mi', t1, L[o,o,o,v])
             Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
@@ -326,7 +342,10 @@ class ccwfn(object):
         if self.model == 'CCD':
             return
         else:
-            Fme = F[o,v].copy()
+            if isinstance(t1, torch.Tensor):
+                Fme = F[o,v].clone()
+            else:
+                Fme = F[o,v].copy()
             Fme = Fme + contract('nf,mnef->me', t1, L[o,o,v,v])
         return Fme
 
@@ -334,10 +353,16 @@ class ccwfn(object):
     def build_Wmnij(self, o, v, ERI, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
-            Wmnij = ERI[o,o,o,o].copy()
+            if isinstance(t1, torch.Tensor):
+                Wmnij = ERI[o,o,o,o].clone().to(device1)
+            else:
+                Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
         else:
-            Wmnij = ERI[o,o,o,o].copy()
+            if isinstance(t1, torch.Tensor):
+                Wmnij = ERI[o,o,o,o].clone().to(device1)
+            else:
+                Wmnij = ERI[o,o,o,o].copy()
             Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
             if self.model == 'CC2':
@@ -350,32 +375,44 @@ class ccwfn(object):
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
-            Wmbej = ERI[o,v,v,o].copy()
+            if isinstance(t1, torch.Tensor):
+                Wmbej = ERI[o,v,v,o].clone().to(device1)
+            else:
+                Wmbej = ERI[o,v,v,o].copy()
             Wmbej = Wmbej - contract('jnfb,mnef->mbej', 0.5*t2, ERI[o,o,v,v])
             Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
         elif self.model == 'CC2':
             return
         else:
-            Wmbej = ERI[o,v,v,o].copy()
-            Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
-            Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
-            Wmbej = Wmbej - contract('jnfb,mnef->mbej', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
-            Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
+           if isinstance(t1, torch.Tensor):
+                Wmbej = ERI[o,v,v,o].clone().to(device1)
+           else:
+                Wmbej = ERI[o,v,v,o].copy()
+           Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+           Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+           Wmbej = Wmbej - contract('jnfb,mnef->mbej', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+           Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
         return Wmbej
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
-            Wmbje = -1.0 * ERI[o,v,o,v].copy()
+            if isinstance(t1, torch.Tensor):
+                Wmbje = -1.0 * ERI[o,v,o,v].clone().to(device1)
+            else:
+                Wmbje = -1.0 * ERI[o,v,o,v].copy()
             Wmbje = Wmbje + contract('jnfb,mnfe->mbje', 0.5*t2, ERI[o,o,v,v])
         elif self.model == 'CC2':
             return
         else:
-            Wmbje = -1.0 * ERI[o,v,o,v].copy()
-            Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
-            Wmbje = Wmbje + contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
-            Wmbje = Wmbje + contract('jnfb,mnfe->mbje', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+           if isinstance(t1, torch.Tensor):
+                Wmbje = -1.0 * ERI[o,v,o,v].clone().to(device1)
+           else:
+                Wmbje = -1.0 * ERI[o,v,o,v].copy()
+           Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
+           Wmbje = Wmbje + contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
+           Wmbje = Wmbje + contract('jnfb,mnfe->mbje', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
         return Wmbje
 
 
@@ -392,11 +429,15 @@ class ccwfn(object):
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
         contract = self.contract
         if self.model == 'CCD':
-            if self.device == 'GPU':
-                r_T1 = torch.zero_like(t1) 
-            r_T1 = np.zeros_like(t1)
+            if isinstance(t1, torch.Tensor):
+                r_T1 = torch.zero_like(t1)
+            else: 
+                r_T1 = np.zeros_like(t1)
         else:
-            r_T1 = F[o,v].copy()
+            if isinstance(t1, torch.Tensor):
+                r_T1 = F[o,v].clone()
+            else:
+                r_T1 = F[o,v].copy()
             r_T1 = r_T1 + contract('ie,ae->ia', t1, Fae)
             r_T1 = r_T1 - contract('ma,mi->ia', t1, Fmi)
             r_T1 = r_T1 + contract('imae,me->ia', (2.0*t2 - t2.swapaxes(2,3)), Fme)
@@ -409,7 +450,10 @@ class ccwfn(object):
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         contract = self.contract
         if self.model == 'CCD':
-            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+            if isinstance(t1, torch.Tensor):
+                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(device1)
+            else:
+                r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
             r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
             r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', t2, Wmnij)
@@ -418,7 +462,10 @@ class ccwfn(object):
             r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
             r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
         elif self.model == 'CC2':
-            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+            if isintance(t1, torch.Tensor):
+                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(device1)
+            else:
+                r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, (F[v,v] - 0.5 * contract('me,ma->ae', F[o,v], t1)))
             tmp = contract('mb,me->be', t1, F[o,v])
             r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
@@ -432,8 +479,13 @@ class ccwfn(object):
             r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+            if isinstance(tmp, torch.Tnesor):
+                del tmp
         else:
-            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+            if isinstance(t1, torch.Tensor):
+                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(device1)
+            else:
+                r_T2 = 0.5 * ERI[o,o,v,v].copy()
             r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
             tmp = contract('mb,me->be', t1, Fme)
             r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
@@ -451,6 +503,9 @@ class ccwfn(object):
             r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+            
+            if isinstance(tmp, torch.Tensor):
+                del tmp
 
         r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
         return r_T2
