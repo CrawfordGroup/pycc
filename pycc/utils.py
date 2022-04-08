@@ -73,7 +73,7 @@ class helper_diis(object):
         return t1, t2
 
 class cc_contract(object):
-    def __init__(self, device):
+    def __init__(self, device='CPU'):
         self.device = device
         
     def __call__(self, subscript, A, B):        
@@ -98,7 +98,7 @@ class cc_contract(object):
                 del tmpB
                 return C
             else:
-                # A and B are both on CPU and need to be transfered to CPU
+                # A and B are both on CPU and need to be transfered to GPU
                 tmpA = A.to(device_gpu)
                 tmpB = B.to(device_gpu)
                 C = opt_einsum.contract(subscript, tmpA, tmpB)

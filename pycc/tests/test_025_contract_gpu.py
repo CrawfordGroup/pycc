@@ -1,5 +1,5 @@
 """
-Test RT-CCSD propagation with RK4 integrator on water molecule.
+Test RT-CCSD propagation with RK4 integrator on water molecule on GPU.
 """
 
 # Import package, test suite, and other packages as needed
@@ -33,7 +33,7 @@ def test_rtcc_water_cc_pvdz():
     # Specify the device for the calculation (CPU/GPU)
     # Option: 'CPU', 'GPU'
     # Default value is 'CPU'
-    #device = 'CPU'
+    device = 'GPU'
     
     cc_contract = pycc.utils.cc_contract()
     cc = pycc.ccwfn(rhf_wfn, cc_contract)

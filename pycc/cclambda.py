@@ -10,7 +10,10 @@ import numpy as np
 import time
 from opt_einsum import contract
 from .utils import helper_diis
+import torch
 
+device0 = torch.device('cpu')
+device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class cclambda(object):
     """
@@ -126,13 +129,19 @@ class cclambda(object):
                 self.l2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                rms = np.sqrt(rms)
+                if isintance(l1, torch.Tensor):
+                    rms = torch.sqrt(rms)
+                else: 
+                    rms = np.sqrt(rms)
             else:
                 self.l1 += r1/Dia
                 self.l2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                rms = np.sqrt(rms)
+                if isinstance(l1, torch.Tensor):
+                    rms = torch.sqrt(rms)
+                else:
+                    rms = np.sqrt(rms)
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
@@ -146,6 +155,10 @@ class cclambda(object):
             if niter >= start_diis:
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
 
+        if isinstance(r1, torch.Tensor):
+            del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
+
+           
     def residuals(self, F, t1, t2, l1, l2):
         """
         Parameters
@@ -185,6 +198,9 @@ class cclambda(object):
         r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
         r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
+        if isinstance(r1, torch.Tensor):
+            del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
+
         return r1, r2
 
     def build_Goo(self, t2, l2):
@@ -200,9 +216,16 @@ class cclambda(object):
     def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            r_l1 = np.zeros_like(l1)
+            if isinstance(l1, torch.Tensor):
+                r_l1 = torch.zeros_like(l1)
+            else:
+                r_l1 = np.zeros_like(l1)
         else:
-            r_l1 = 2.0 * Hov.copy()
+            if isinstance(l1, torch.Tensor):
+                r_l1 = 2.0 * Hov.clone()
+            else: 
+                r_l1 = 2.0 * Hov.copy()
+
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
             r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
             r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
@@ -219,7 +242,10 @@ class cclambda(object):
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            r_l2 = L[o,o,v,v].copy()
+            if isinstance(l1, torch.Tensor):
+                r_l2 = L[o,o,v,v].clone().to(device1)
+            else:
+                r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
             r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
             r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
@@ -230,7 +256,10 @@ class cclambda(object):
             r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
-            r_l2 = L[o,o,v,v].copy()
+            if isinstance(l1, torch.Tensor):
+                r_l2 = L[o,o,v,v].clone().to(device1)
+            else:
+                r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
             r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
             r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
