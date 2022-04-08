@@ -2,6 +2,9 @@ import numpy as np
 import torch
 import opt_einsum
 
+device0 = torch.device('cpu')
+device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis):
         if isinstance(t1, torch.Tensor):
@@ -77,8 +80,8 @@ class helper_diis(object):
             ci = torch.linalg.solve(B, resid)
 
             # Calculate new amplitudes
-            t1 = np.zeros_like(self.oldt1)
-            t2 = np.zeros_like(self.oldt2)
+            t1 = torch.zeros_like(self.oldt1)
+            t2 = torch.zeros_like(self.oldt2)
             for num in range(self.diis_size):
                 t1 += torch.real(ci[num] * self.diis_vals_t1[num + 1])
                 t2 += torch.real(ci[num] * self.diis_vals_t2[num + 1])
@@ -134,23 +137,23 @@ class cc_contract(object):
             # Transfer the copy from CPU to GPU if needed (for ERI)
             if (A.is_cuda) and (B.is_cuda):
                 # A and B are both on GPU
-                return opt.einsum.contract(subscript, A, B)
+                return opt_einsum.contract(subscript, A, B)
             elif (not A.is_cuda) and (B.is_cuda):
                 # A is on CPU and needs to be transfered to GPU
-                tmpA = A.to(device_gpu)
+                tmpA = A.to(device1)
                 C = opt_einsum.contract(subscript, tmpA, B)
                 del tmpA
                 return C
             elif (A.is_cuda) and (not B.is_cuda):
                 # B is on CPU and needs to be transfered to GPU
-                tmpB = B.to(device_gpu)
+                tmpB = B.to(device1)
                 C = opt_einsum.contract(subscript, A, tmpB)
                 del tmpB
                 return C
             else:
                 # A and B are both on CPU and need to be transfered to GPU
-                tmpA = A.to(device_gpu)
-                tmpB = B.to(device_gpu)
+                tmpA = A.to(device1)
+                tmpB = B.to(device1)
                 C = opt_einsum.contract(subscript, tmpA, tmpB)
                 del tmpA
                 del tmpB

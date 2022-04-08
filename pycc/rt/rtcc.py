@@ -59,7 +59,7 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None, device = 'CPU'):
+    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
@@ -79,8 +79,8 @@ class rtcc(object):
         else:
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
   
-        if device == 'GPU':
-            self.mu = torch.Tensor(self.mu, dtype=torch.complex128, device=device1)
+        if isinstance(self.ccwfn.t1, torch.Tensor):
+            self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=device1)
             self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:
@@ -146,9 +146,13 @@ class rtcc(object):
             amplitudes or residuals as a vector (flattened array)
         """
         if isinstance(t1, torch.Tensor):
-            return torch.cat((t1, t2, l1, l2), axis=None)
+            t1 = torch.flatten(t1)
+            t2 = torch.flatten(t2)
+            l1 = torch.flatten(l1)
+            l2 = torch.flatten(l2)
+            return torch.cat((t1, t2, l1, l2)).type(torch.complex128)
         else:
-            return np.concatenate((t1, t2, l1, l2), axis=None)
+            return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex128')
 
 
     def extract_amps(self, y):
@@ -203,6 +207,7 @@ class rtcc(object):
             ints = self.m
         else:
             ints = self.mu
+
         x = ints[0].flatten().dot(opdm.flatten())
         y = ints[1].flatten().dot(opdm.flatten())
         z = ints[2].flatten().dot(opdm.flatten())

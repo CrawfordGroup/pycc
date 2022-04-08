@@ -165,13 +165,13 @@ class ccdensity(object):
         nt = no + nv
  
         if isinstance(t1, torch.Tensor):        
-            opdm = torch.zeros((nt, nt), dtype='complex128', device=device1)
+            opdm = torch.zeros((nt, nt), dtype=torch.complex128, device=device1)
         else:
             opdm = np.zeros((nt, nt), dtype='complex128')
         opdm[o,o] = self.build_Doo(t1, t2, l1, l2)
         if withref is True:
             if isinstance(t1, torch.Tensor):
-                opdm[o,o] += 2.0 * torch.eye(no, dtype='complex128', device=device1)  # Reference contribution
+                opdm[o,o] += 2.0 * torch.eye(no, dtype=torch.complex128, device=device1)  # Reference contribution
             else:
                 opdm[o,o] += 2.0 * np.eye(no)  # Reference contribution
 
@@ -255,7 +255,7 @@ class ccdensity(object):
             no = self.ccwfn.no
             nv = self.ccwfn.nv
             if isinstance(t1, torch.Tensor):
-                Dooov = torch.zeros((no,no,no,nv), dtype='comple128', device=device1)
+                Dooov = torch.zeros((no,no,no,nv), dtype=torch.comple128, device=device1)
             else:
                 Dooov = np.zeros((no,no,no,nv))
         else:
@@ -294,7 +294,7 @@ class ccdensity(object):
             no = self.ccwfn.no
             nv = self.ccwfn.nv
             if isinstance(t1, torch.Tensor):
-                Dvvvo = torch.zeros((nv,nv,nv,no), dtype='complex128', device=device1)
+                Dvvvo = torch.zeros((nv,nv,nv,no), dtype=torch.complex128, device=device1)
             else:
                 Dvvvo = np.zeros((nv,nv,nv,no))
         else: 
