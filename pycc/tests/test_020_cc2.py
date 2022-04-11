@@ -36,3 +36,7 @@ def test_cc2_h2o():
     lcc = cclambda.solve_lambda(e_conv, r_conv)
     lcc_psi4 = -0.215765740373555
     assert(abs(lcc - lcc_psi4) < 1e-11)
+
+    ccdensity = pycc.ccdensity(cc, cclambda)
+    ecc = ccdensity.compute_energy()
+    assert (abs(epsi4 - ecc) < 1e-11)
