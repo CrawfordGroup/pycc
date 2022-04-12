@@ -246,13 +246,22 @@ class ccwfn(object):
             print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
             # check for convergence
-            if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
-                print("E(REF)  = %20.15f" % self.eref)
-                print("E(%s) = %20.15f" % (self.model, ecc))
-                print("E(TOT)  = %20.15f" % (ecc + self.eref))
-                self.ecc = ecc
-                return ecc
+            if isinstance(self.t1, torch.Tensor):
+                if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
+                    print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                    print("E(REF)  = %20.15f" % self.eref)
+                    print("E(%s) = %20.15f" % (self.model, ecc))
+                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
+                    self.ecc = ecc
+                    return ecc
+            else:
+                if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
+                    print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                    print("E(REF)  = %20.15f" % self.eref)
+                    print("E(%s) = %20.15f" % (self.model, ecc))
+                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
+                    self.ecc = ecc
+                    return ecc
 
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
