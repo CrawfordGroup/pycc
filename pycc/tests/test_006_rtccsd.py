@@ -28,7 +28,8 @@ def test_rtcc_he_cc_pvdz():
     e_conv = 1e-13
     r_conv = 1e-13
 
-    cc = pycc.ccwfn(rhf_wfn)
+    cc_contract = pycc.utils.cc_contract()
+    cc = pycc.ccwfn(rhf_wfn, cc_contract)
     ecc = cc.solve_cc(e_conv, r_conv)
 
     hbar = pycc.cchbar(cc)

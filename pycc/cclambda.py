@@ -146,10 +146,15 @@ class cclambda(object):
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
             print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
-
-            if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
-                return lecc
+            
+            if isinstance(self.l1, torch.Tensor):
+                if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
+                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    return lecc
+            else:
+                if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
+                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    return lecc
 
             diis.add_error_vector(self.l1, self.l2)
             if niter >= start_diis:
