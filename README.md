@@ -31,6 +31,7 @@ This package requires the following:
   - [numpy](https://numpy.org/)
   - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
   - [scipy](https://www.scipy.org/)
+  - [pytorch](https://pytorch.org/)
 
 ### Copyright
 
