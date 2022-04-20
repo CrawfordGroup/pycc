@@ -209,6 +209,8 @@ class ccdensity(object):
     def build_Doooo(self, t1, t2, l2):  # complete
         if self.ccwfn.model == 'CCD':
             return contract('ijef,klef->ijkl', t2, l2)
+        elif self.ccwfn.model == 'CC2':
+            return contract('jf, klif->ijkl', t1, contract('ie, klef->klif', t1, l2))
         else:
             return contract('ijef,klef->ijkl', self.ccwfn.build_tau(t1, t2), l2)
 
@@ -216,6 +218,8 @@ class ccdensity(object):
     def build_Dvvvv(self, t1, t2, l2):  # complete
         if self.ccwfn.model == 'CCD':
             return contract('mnab,mncd->abcd', t2, l2)
+        elif self.ccwfn.model == 'CC2':
+            return contract('nb,ancd->abcd', t1, contract('ma,mncd->ancd', t1, l2))
         else:
             return contract('mnab,mncd->abcd', self.ccwfn.build_tau(t1, t2), l2)
 
@@ -230,19 +234,21 @@ class ccdensity(object):
             Dooov = -1.0 * contract('ke,ijea->ijka', l1, tmp)
             Dooov -= contract('ie,jkae->ijka', t1, l2)
 
-            Goo = self.cclambda.build_Goo(t2, l2)
-            Dooov -= 2.0 * contract('ik,ja->ijka', Goo, t1)
-            Dooov += contract('jk,ia->ijka', Goo, t1)
-            tmp = contract('jmaf,kmef->jake', t2, l2)
-            Dooov -= 2.0 * contract('jake,ie->ijka', tmp, t1)
-            Dooov += contract('iake,je->ijka', tmp, t1)
+            if self.ccwfn.model != 'CC2':
 
-            tmp = contract('ijef,kmef->ijkm', t2, l2)
-            Dooov += contract('ijkm,ma->ijka', tmp, t1)
-            tmp = contract('mjaf,kmef->jake', t2, l2)
-            Dooov += contract('jake,ie->ijka', tmp, t1)
-            tmp = contract('imea,kmef->iakf', t2, l2)
-            Dooov += contract('iakf,jf->ijka', tmp, t1)
+                Goo = self.cclambda.build_Goo(t2, l2)
+                Dooov -= 2.0 * contract('ik,ja->ijka', Goo, t1)
+                Dooov += contract('jk,ia->ijka', Goo, t1)
+                tmp = contract('jmaf,kmef->jake', t2, l2)
+                Dooov -= 2.0 * contract('jake,ie->ijka', tmp, t1)
+                Dooov += contract('iake,je->ijka', tmp, t1)
+
+                tmp = contract('ijef,kmef->ijkm', t2, l2)
+                Dooov += contract('ijkm,ma->ijka', tmp, t1)
+                tmp = contract('mjaf,kmef->jake', t2, l2)
+                Dooov += contract('jake,ie->ijka', tmp, t1)
+                tmp = contract('imea,kmef->iakf', t2, l2)
+                Dooov += contract('iakf,jf->ijka', tmp, t1)
 
             tmp = contract('kmef,jf->kmej', l2, t1)
             tmp = contract('kmej,ie->kmij', tmp, t1)
@@ -260,19 +266,21 @@ class ccdensity(object):
             Dvvvo = contract('mc,miab->abci', l1, tmp)
             Dvvvo += contract('ma,imbc->abci', t1, l2)
 
-            Gvv = self.cclambda.build_Gvv(t2, l2)
-            Dvvvo -= 2.0 * contract('ca,ib->abci', Gvv, t1)
-            Dvvvo += contract('cb,ia->abci', Gvv, t1)
-            tmp = contract('imbe,nmce->ibnc', t2, l2)
-            Dvvvo += 2.0 * contract('ibnc,na->abci', tmp, t1)
-            Dvvvo -= contract('ianc,nb->abci', tmp, t1)
+            if self.ccwfn.model != 'CC2':
+                
+                Gvv = self.cclambda.build_Gvv(t2, l2)
+                Dvvvo -= 2.0 * contract('ca,ib->abci', Gvv, t1)
+                Dvvvo += contract('cb,ia->abci', Gvv, t1)
+                tmp = contract('imbe,nmce->ibnc', t2, l2)
+                Dvvvo += 2.0 * contract('ibnc,na->abci', tmp, t1)
+                Dvvvo -= contract('ianc,nb->abci', tmp, t1)
 
-            tmp = contract('nmab,nmce->abce', t2, l2)
-            Dvvvo -= contract('abce,ie->abci', tmp, t1)
-            tmp = contract('niae,nmce->iamc', t2, l2)
-            Dvvvo -= contract('iamc,mb->abci', tmp, t1)
-            tmp = contract('mibe,nmce->ibnc', t2, l2)
-            Dvvvo -= contract('ibnc,na->abci', tmp, t1)
+                tmp = contract('nmab,nmce->abce', t2, l2)
+                Dvvvo -= contract('abce,ie->abci', tmp, t1)
+                tmp = contract('niae,nmce->iamc', t2, l2)
+                Dvvvo -= contract('iamc,mb->abci', tmp, t1)
+                tmp = contract('mibe,nmce->ibnc', t2, l2)
+                Dvvvo -= contract('ibnc,na->abci', tmp, t1)
 
             tmp = contract('nmce,ie->nmci', l2, t1)
             tmp = contract('nmci,na->amci', tmp, t1)
@@ -286,8 +294,11 @@ class ccdensity(object):
             Dovov -= contract('imbe,mjea->iajb', t2, l2)
         else:
             Dovov = -1.0 * contract('ia,jb->iajb', t1, l1)
-            Dovov -= contract('mibe,jmea->iajb', self.ccwfn.build_tau(t1, t2), l2)
-            Dovov -= contract('imbe,mjea->iajb', t2, l2)
+            if self.ccwfn.model == 'CC2':
+                Dovov -= contract('mb,jmia->iajb', t1, contract('ie,jmea->jmia', t1, l2))
+            else:
+                Dovov -= contract('mibe,jmea->iajb', self.ccwfn.build_tau(t1, t2), l2)
+                Dovov -= contract('imbe,mjea->iajb', t2, l2)
         return Dovov
 
 
@@ -333,45 +344,48 @@ class ccdensity(object):
             tmp2 = 2.0 * contract('jmba,me->jeba', tau_spinad, l1)
             Doovv -= contract('jeba,ie->ijab', tmp2, t1)
 
-            Doovv += 4.0 * contract('imae,mjeb->ijab', t2, l2)
-            Doovv -= 2.0 * contract('mjbe,imae->ijab', tau, l2)
+            if self.ccwfn.model == 'CC2':
+                Doovv -= 2.0 * contract('mb,imaj->ijab', t1, contract('je,imae->imaj', t1, l2))
+            else:
+                Doovv += 4.0 * contract('imae,mjeb->ijab', t2, l2)
+                Doovv -= 2.0 * contract('mjbe,imae->ijab', tau, l2)
 
-            tmp_oooo = contract('ijef,mnef->ijmn', t2, l2)
-            Doovv += contract('ijmn,mnab->ijab', tmp_oooo, t2)
-            tmp1 = contract('njbf,mnef->jbme', t2, l2)
-            Doovv += contract('jbme,miae->ijab', tmp1, t2)
-            tmp1 = contract('imfb,mnef->ibne', t2, l2)
-            Doovv += contract('ibne,njae->ijab', tmp1, t2)
-            Gvv = self.cclambda.build_Gvv(t2, l2)
-            Doovv += 4.0 * contract('eb,ijae->ijab', Gvv, tau)
-            Doovv -= 2.0 * contract('ea,ijbe->ijab', Gvv, tau)
-            Goo = self.cclambda.build_Goo(t2, l2)
-            Doovv -= 4.0 * contract('jm,imab->ijab', Goo, tau)  # use tau_spinad?
-            Doovv += 2.0 * contract('jm,imba->ijab', Goo, tau)
-            tmp1 = contract('inaf,mnef->iame', t2, l2)
-            Doovv -= 4.0 * contract('iame,mjbe->ijab', tmp1, tau)
-            Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
-            Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
-            Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
+                tmp_oooo = contract('ijef,mnef->ijmn', t2, l2)
+                Doovv += contract('ijmn,mnab->ijab', tmp_oooo, t2)
+                tmp1 = contract('njbf,mnef->jbme', t2, l2)
+                Doovv += contract('jbme,miae->ijab', tmp1, t2)
+                tmp1 = contract('imfb,mnef->ibne', t2, l2)
+                Doovv += contract('ibne,njae->ijab', tmp1, t2)
+                Gvv = self.cclambda.build_Gvv(t2, l2)
+                Doovv += 4.0 * contract('eb,ijae->ijab', Gvv, tau)
+                Doovv -= 2.0 * contract('ea,ijbe->ijab', Gvv, tau)
+                Goo = self.cclambda.build_Goo(t2, l2)
+                Doovv -= 4.0 * contract('jm,imab->ijab', Goo, tau)  # use tau_spinad?
+                Doovv += 2.0 * contract('jm,imba->ijab', Goo, tau)
+                tmp1 = contract('inaf,mnef->iame', t2, l2)
+                Doovv -= 4.0 * contract('iame,mjbe->ijab', tmp1, tau)
+                Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
+                Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
+                Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
 
-            # this can definitely be optimized better
-            tmp = contract('nb,ijmn->ijmb', t1, tmp_oooo)
-            Doovv += contract('ma,ijmb->ijab', t1, tmp)
-            tmp = contract('ie,mnef->mnif', t1, l2)
-            tmp = contract('jf,mnif->mnij', t1, tmp)
-            Doovv += contract('mnij,mnab->ijab', tmp, t2)
-            tmp = contract('ie,mnef->mnif', t1, l2)
-            tmp = contract('mnif,njbf->mijb', tmp, t2)
-            Doovv += contract('ma,mijb->ijab', t1, tmp)
-            tmp = contract('jf,mnef->mnej', t1, l2)
-            tmp = contract('mnej,miae->njia', tmp, t2)
-            Doovv += contract('nb,njia->ijab', t1, tmp)
-            tmp = contract('je,mnef->mnjf', t1, l2)
-            tmp = contract('mnjf,imfb->njib', tmp, t2)
-            Doovv += contract('na,njib->ijab', t1, tmp)
-            tmp = contract('if,mnef->mnei', t1, l2)
-            tmp = contract('mnei,njae->mija', tmp, t2)
-            Doovv += contract('mb,mija->ijab', t1, tmp)
+                # this can definitely be optimized better
+                tmp = contract('nb,ijmn->ijmb', t1, tmp_oooo)
+                Doovv += contract('ma,ijmb->ijab', t1, tmp)
+                tmp = contract('ie,mnef->mnif', t1, l2)
+                tmp = contract('jf,mnif->mnij', t1, tmp)
+                Doovv += contract('mnij,mnab->ijab', tmp, t2)
+                tmp = contract('ie,mnef->mnif', t1, l2)
+                tmp = contract('mnif,njbf->mijb', tmp, t2)
+                Doovv += contract('ma,mijb->ijab', t1, tmp)
+                tmp = contract('jf,mnef->mnej', t1, l2)
+                tmp = contract('mnej,miae->njia', tmp, t2)
+                Doovv += contract('nb,njia->ijab', t1, tmp)
+                tmp = contract('je,mnef->mnjf', t1, l2)
+                tmp = contract('mnjf,imfb->njib', tmp, t2)
+                Doovv += contract('na,njib->ijab', t1, tmp)
+                tmp = contract('if,mnef->mnei', t1, l2)
+                tmp = contract('mnei,njae->mija', tmp, t2)
+                Doovv += contract('mb,mija->ijab', t1, tmp)
 
             tmp = contract('jf,mnef->mnej', t1, l2)
             tmp = contract('ie,mnej->mnij', t1, tmp)
