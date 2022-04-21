@@ -175,8 +175,6 @@ class cchbar(object):
             Hovvo = ERI[o,v,v,o].copy()
             Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
             Hovvo = Hovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
-            #Hovvo = Hovvo - contract('jf,mbef->mbej', self.ccwfn.t1, contract('nb,mnef->mbef', self.ccwfn.t1, ERI[o,o,v,v]))
-            #Hovvo = Hovvo - contract('jnfb,mnef->mbej', self.ccwfn.build_tau(t1, t2, fact2=0), ERI[o,o,v,v])
             if self.ccwfn.model != 'CC2':
                 Hovvo = Hovvo - contract('jnfb,mnef->mbej', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
                 Hovvo = Hovvo + contract('njfb,mnef->mbej', t2, L[o,o,v,v])
@@ -191,7 +189,6 @@ class cchbar(object):
             Hovov = ERI[o,v,o,v].copy()
             Hovov = Hovov + contract('jf,bmef->mbje', t1, ERI[v,o,v,v])
             Hovov = Hovov - contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
-            #Hovov = Hovov - contract('jnfb,nmef->mbje', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
             if self.ccwfn.model != 'CC2':
                 Hovov = Hovov - contract('jnfb,nmef->mbje', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
         return Hovov
