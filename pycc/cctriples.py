@@ -5,8 +5,6 @@
 import numpy as np
 import torch
 
-device0 = torch.device('cpu')
-device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class cctriples(object):
 

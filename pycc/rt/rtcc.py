@@ -11,8 +11,6 @@ from os.path import exists
 # Will be removed after generalize cc_contract
 import opt_einsum
 
-device0 = torch.device('cpu')
-device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class rtcc(object):
     """
@@ -80,7 +78,7 @@ class rtcc(object):
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
   
         if isinstance(self.ccwfn.t1, torch.Tensor):
-            self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=device1)
+            self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
             self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:
@@ -273,7 +271,7 @@ class rtcc(object):
             eref = 2.0 * torch.trace(F[o,o])
             # torch.trace doesn't have "axis" argument
             #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
-            tmp = self.ccwfn.H.L[o,o,o,o].to(device1)
+            tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
             eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
             del tmp
 

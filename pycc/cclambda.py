@@ -12,8 +12,6 @@ from opt_einsum import contract
 from .utils import helper_diis
 import torch
 
-device0 = torch.device('cpu')
-device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class cclambda(object):
     """
@@ -248,7 +246,7 @@ class cclambda(object):
         contract = self.contract 
         if self.ccwfn.model == 'CCD':
             if isinstance(l1, torch.Tensor):
-                r_l2 = L[o,o,v,v].clone().to(device1)
+                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
@@ -262,7 +260,7 @@ class cclambda(object):
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
             if isinstance(l1, torch.Tensor):
-                r_l2 = L[o,o,v,v].clone().to(device1)
+                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
