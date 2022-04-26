@@ -30,13 +30,10 @@ def test_rtcc_water_cc_pvdz():
     e_conv = 1e-13
     r_conv = 1e-13
     
-    # Specify the device for the calculation (CPU/GPU)
+    # The device for the calculation (CPU/GPU) can be specified.
     # Option: 'CPU', 'GPU'
-    # Default value is 'CPU'
-    device = 'GPU'
-    
-    cc_contract = pycc.utils.cc_contract()
-    cc = pycc.ccwfn(rhf_wfn, cc_contract)
+    # Default: 'CPU'
+    cc = pycc.ccwfn(rhf_wfn, device='GPU')
     ecc = cc.solve_cc(e_conv, r_conv)
     
     hbar = pycc.cchbar(cc)

@@ -29,8 +29,7 @@ def test_lambda_ccsd_h2o():
     e_conv = 1e-12
     r_conv = 1e-12
     
-    cc_contract = pycc.utils.cc_contract()
-    ccsd = pycc.ccwfn(rhf_wfn, cc_contract)
+    ccsd = pycc.ccwfn(rhf_wfn)
     eccsd = ccsd.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(ccsd)
     cclambda = pycc.cclambda(ccsd, hbar)

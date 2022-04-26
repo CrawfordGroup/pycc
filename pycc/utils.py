@@ -2,12 +2,12 @@ import numpy as np
 import torch
 import opt_einsum
 
-device0 = torch.device('cpu')
-device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis):
         if isinstance(t1, torch.Tensor):
+            self.device0 = torch.device('cpu')
+            self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
             self.oldt1 = t1.clone()
             self.oldt2 = t2.clone()
             self.diis_vals_t1 = [t1.clone()]
@@ -59,7 +59,7 @@ class helper_diis(object):
         
         if isinstance(t1, torch.Tensor):
             # Build error matrix B
-            B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=device1) * -1
+            B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=self.device1) * -1
             B[-1, -1] = 0
 
             for n1, e1 in enumerate(self.diis_errors):
@@ -73,7 +73,7 @@ class helper_diis(object):
             B[:-1, :-1] /= torch.abs(B[:-1, :-1]).max()
 
             # Build residual vector
-            resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=device1)
+            resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=self.device1)
             resid[-1] = -1
 
             # Solve pulay equations
@@ -128,6 +128,9 @@ class helper_diis(object):
 class cc_contract(object):
     def __init__(self, device='CPU'):
         self.device = device
+        if self.device == 'GPU':
+            self.device0 = torch.device('cpu')
+            self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
     def __call__(self, subscript, A, B):        
         if self.device == 'CPU':
@@ -140,20 +143,20 @@ class cc_contract(object):
                 return opt_einsum.contract(subscript, A, B)
             elif (not A.is_cuda) and (B.is_cuda):
                 # A is on CPU and needs to be transfered to GPU
-                tmpA = A.to(device1)
+                tmpA = A.to(self.device1)
                 C = opt_einsum.contract(subscript, tmpA, B)
                 del tmpA
                 return C
             elif (A.is_cuda) and (not B.is_cuda):
                 # B is on CPU and needs to be transfered to GPU
-                tmpB = B.to(device1)
+                tmpB = B.to(self.device1)
                 C = opt_einsum.contract(subscript, A, tmpB)
                 del tmpB
                 return C
             else:
                 # A and B are both on CPU and need to be transfered to GPU
-                tmpA = A.to(device1)
-                tmpB = B.to(device1)
+                tmpA = A.to(self.device1)
+                tmpB = B.to(self.device1)
                 C = opt_einsum.contract(subscript, tmpA, tmpB)
                 del tmpA
                 del tmpB
