@@ -127,7 +127,7 @@ class cclambda(object):
                 self.l2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                if isintance(l1, torch.Tensor):
+                if isinstance(l1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else: 
                     rms = np.sqrt(rms)
