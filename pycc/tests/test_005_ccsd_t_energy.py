@@ -41,7 +41,7 @@ def test_ccsd_t_h2o():
 
     psi4.set_options({'basis': 'cc-pVDZ'})
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    cc = pycc.ccwfn(rhf_wfn, cc_contract)
+    cc = pycc.ccwfn(rhf_wfn)
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
     tcorr = pycc.cctriples(cc)
     et_vik_ijk = tcorr.t_vikings()

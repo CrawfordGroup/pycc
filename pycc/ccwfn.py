@@ -152,9 +152,9 @@ class ccwfn(object):
          
         valid_device = ['CPU', 'GPU']
         device = kwargs.pop('device', 'CPU')
-        if device not in valid_device:
+        if device.upper() not in valid_device:
             raise Exception("%s is not an allowed device." % (device))
-        self.device = device
+        self.device = device.upper()
         
         # Initiate the object for a generalized contraction function 
         # for GPU or CPU.  
@@ -472,7 +472,7 @@ class ccwfn(object):
             r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
             r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
         elif self.model == 'CC2':
-            if isintance(t1, torch.Tensor):
+            if isinstance(t1, torch.Tensor):
                 r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
             else:
                 r_T2 = 0.5 * ERI[o,o,v,v].copy()
@@ -489,7 +489,7 @@ class ccwfn(object):
             r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
-            if isinstance(tmp, torch.Tnesor):
+            if isinstance(tmp, torch.Tensor):
                 del tmp
         else:
             if isinstance(t1, torch.Tensor):
