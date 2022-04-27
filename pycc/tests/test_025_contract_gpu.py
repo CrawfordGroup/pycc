@@ -10,8 +10,9 @@ import pytest
 from pycc.rt.integrators import rk4 
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
+import torch 
 
-
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="tests for GPU only")
 def test_rtcc_water_cc_pvdz():
     """H2O cc-pVDZ"""
     psi4.set_memory('2 GiB')
@@ -56,7 +57,7 @@ def test_rtcc_water_cc_pvdz():
     h = 0.01
     t = t0
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).type(torch.complex128)
     y = y0
     ODE = rk4(h)
     t1, t2, l1, l2 = rtcc.extract_amps(y0)
