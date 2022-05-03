@@ -5,10 +5,9 @@ ccdensity.py: Builds the CC density.
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
-
 import time
 import numpy as np
-from opt_einsum import contract
+import torch
 
 
 class ccdensity(object):
@@ -66,6 +65,7 @@ class ccdensity(object):
 
         self.ccwfn = ccwfn
         self.cclambda = cclambda
+        self.contract = self.ccwfn.contract
 
         t1 = ccwfn.t1
         t2 = ccwfn.t2
@@ -86,7 +86,7 @@ class ccdensity(object):
             self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
             self.Dovov = self.build_Dovov(t1, t2, l1, l2)
             self.Doovv = self.build_Doovv(t1, t2, l1, l2)
-
+        
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
     def compute_energy(self):
@@ -107,6 +107,8 @@ class ccdensity(object):
         v = self.ccwfn.v
         F = self.ccwfn.H.F
         ERI = self.ccwfn.H.ERI
+             
+        contract = self.contract 
 
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
         vv_energy = contract('ab,ab->', F[v,v], self.Dvv)
@@ -159,11 +161,18 @@ class ccdensity(object):
         no = self.ccwfn.no
         nv = self.ccwfn.nv
         nt = no + nv
-
-        opdm = np.zeros((nt, nt), dtype='complex128')
+ 
+        if isinstance(t1, torch.Tensor):        
+            opdm = torch.zeros((nt, nt), dtype=torch.complex128, device=self.ccwfn.device1)
+        else:
+            opdm = np.zeros((nt, nt), dtype='complex128')
         opdm[o,o] = self.build_Doo(t1, t2, l1, l2)
         if withref is True:
-            opdm[o,o] += 2.0 * np.eye(no)  # Reference contribution
+            if isinstance(t1, torch.Tensor):
+                opdm[o,o] += 2.0 * torch.eye(no, dtype=torch.complex128, device=self.ccwfn.device1)  # Reference contribution
+            else:
+                opdm[o,o] += 2.0 * np.eye(no)  # Reference contribution
+
         opdm[v,v] = self.build_Dvv(t1, t2, l1, l2)
         opdm[o,v] = self.build_Dov(t1, t2, l1, l2)
         opdm[v,o] = self.build_Dvo(l1)
@@ -171,42 +180,61 @@ class ccdensity(object):
         return opdm
 
     def build_Doo(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Doo = -contract('imef,jmef->ij', t2, l2)
         else:
             Doo = -1.0 * contract('ie,je->ij', t1, l1)
             Doo -= contract('imef,jmef->ij', t2, l2)
+
         return Doo
 
 
     def build_Dvv(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dvv = contract('mnbe,mnae->ab', t2, l2)
         else:
             Dvv = contract('mb,ma->ab', t1, l1)
             Dvv += contract('mnbe,mnae->ab', t2, l2)
+
         return Dvv
 
 
     def build_Dvo(self, l1):  # complete
-        return l1.T.copy()
-
+        if isinstance(l1, torch.Tensor):
+            return l1.T.clone()
+        else:
+            return l1.T.copy()
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
-            Dov = np.zeros_like(t1)
+            if isinstance(t1, torch.Tensor):
+                Dov = torch.zeros_like(t1)
+            else:
+                Dov = np.zeros_like(t1)
         else:
-            Dov = 2.0 * t1.copy()
+            if isinstance(t1, torch.Tensor):
+                Dov = 2.0 * t1.clone()
+            else:
+                Dov = 2.0 * t1.copy()
+
             Dov += 2.0 * contract('me,imae->ia', l1, t2)
             Dov -= contract('me,miae->ia', l1, self.ccwfn.build_tau(t1, t2))
             tmp = contract('mnef,inef->mi', l2, t2)
             Dov -= contract('mi,ma->ia', tmp, t1)
             tmp = contract('mnef,mnaf->ea', l2, t2)
             Dov -= contract('ea,ie->ia', tmp, t1)
+
+            if isinstance(tmp, torch.Tensor):
+                del tmp
+
         return Dov
 
 
     def build_Doooo(self, t1, t2, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('ijef,klef->ijkl', t2, l2)
         elif self.ccwfn.model == 'CC2':
@@ -214,8 +242,8 @@ class ccdensity(object):
         else:
             return contract('ijef,klef->ijkl', self.ccwfn.build_tau(t1, t2), l2)
 
-
     def build_Dvvvv(self, t1, t2, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('mnab,mncd->abcd', t2, l2)
         elif self.ccwfn.model == 'CC2':
@@ -223,12 +251,15 @@ class ccdensity(object):
         else:
             return contract('mnab,mncd->abcd', self.ccwfn.build_tau(t1, t2), l2)
 
-
     def build_Dooov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            Dooov = np.zeros((no,no,no,nv))
+            if isinstance(t1, torch.Tensor):
+                Dooov = torch.zeros((no,no,no,nv), dtype=torch.comple128, device=self.ccwfn.device1)
+            else:
+                Dooov = np.zeros((no,no,no,nv))
         else:
             tmp = 2.0 * self.ccwfn.build_tau(t1, t2) - self.ccwfn.build_tau(t1, t2).swapaxes(2, 3)
             Dooov = -1.0 * contract('ke,ijea->ijka', l1, tmp)
@@ -253,15 +284,24 @@ class ccdensity(object):
             tmp = contract('kmef,jf->kmej', l2, t1)
             tmp = contract('kmej,ie->kmij', tmp, t1)
             Dooov += contract('kmij,ma->ijka', tmp, t1)
+            
+            if isinstance(tmp, torch.Tensor):
+                del tmp
+                del Goo
+
         return Dooov
 
 
     def build_Dvvvo(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            Dvvvo = np.zeros((nv,nv,nv,no))
-        else:
+            if isinstance(t1, torch.Tensor):
+                Dvvvo = torch.zeros((nv,nv,nv,no), dtype=torch.complex128, device=self.ccwfn.device1)
+            else:
+                Dvvvo = np.zeros((nv,nv,nv,no))
+        else: 
             tmp = 2.0 * self.ccwfn.build_tau(t1, t2) - self.ccwfn.build_tau(t1, t2).swapaxes(2, 3)
             Dvvvo = contract('mc,miab->abci', l1, tmp)
             Dvvvo += contract('ma,imbc->abci', t1, l2)
@@ -285,10 +325,16 @@ class ccdensity(object):
             tmp = contract('nmce,ie->nmci', l2, t1)
             tmp = contract('nmci,na->amci', tmp, t1)
             Dvvvo -= contract('amci,mb->abci', tmp, t1)
+ 
+            if isinstance(tmp, torch.Tensor):
+                del tmp
+                del Gvv
+
         return Dvvvo
 
 
     def build_Dovov(self, t1, t2, l1, l2):  # complete
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dovov = -contract('mibe,jmea->iajb', t2, l2)
             Dovov -= contract('imbe,mjea->iajb', t2, l2)
@@ -303,6 +349,7 @@ class ccdensity(object):
 
 
     def build_Doovv(self, t1, t2, l1, l2):
+        contract = self.contract
         tau = self.ccwfn.build_tau(t1, t2)
         tau_spinad = 2.0 * tau - tau.swapaxes(2,3)
 
@@ -329,6 +376,9 @@ class ccdensity(object):
             Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
             Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
             Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
+            
+            if isinstance(tmp1, torch.Tensor):
+                del tmp_oooo, tmp1, Gvv, Goo
 
         else:
             Doovv = 4.0 * contract('ia,jb->ijab', t1, l1)
@@ -391,5 +441,8 @@ class ccdensity(object):
             tmp = contract('ie,mnej->mnij', t1, tmp)
             tmp = contract('nb,mnij->mbij', t1, tmp)
             Doovv += contract('ma,mbij->ijab', t1, tmp)
+ 
+            if isinstance(tmp, torch.Tensor):
+                del tmp, tmp1, tmp2, Goo, Gvv
 
         return Doovv

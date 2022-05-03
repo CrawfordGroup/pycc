@@ -27,6 +27,7 @@ def test_ccsd_t_h2o():
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
+
     cc = pycc.ccwfn(rhf_wfn)
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
     tcorr = pycc.cctriples(cc)

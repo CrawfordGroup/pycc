@@ -1,16 +1,20 @@
 # Triples class for (T) corrections, CC3, etc.
 
+# Unfinished (Zhe, 0407)
+
 import numpy as np
-from opt_einsum import contract
+import torch
 
 
 class cctriples(object):
 
     def __init__(self, ccwfn):
         self.ccwfn = ccwfn
+        self.contract = self.ccwfn.contract
 
     # Vikings' formulation
     def t_vikings(self):
+        contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
@@ -19,8 +23,12 @@ class cctriples(object):
         L = self.ccwfn.H.L
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
-        X1 = np.zeros_like(self.ccwfn.t1)
-        X2 = np.zeros_like(self.ccwfn.t2)
+        if isinstance(t1, torch.Tensor):
+            X1 = torch.zeros_like(self.ccwfn.t1)
+            X2 = torch.zeros_like(self.ccwfn.t2)
+        else:
+            X1 = np.zeros_like(self.ccwfn.t1)
+            X2 = np.zeros_like(self.ccwfn.t2)
 
         for i in range(no):
             for j in range(no):
@@ -39,7 +47,7 @@ class cctriples(object):
 
     # Vikings' formulation – inverted algorithm
     def t_vikings_inverted(self):
-
+        contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
@@ -118,7 +126,7 @@ class cctriples(object):
     # Various triples formulations; useful for (T) corrections and CC3
 
     def t3c_ijk(self, o, v, i, j, k, t2, ERI, F, WithDenom=True):
-
+        contract = self.contract 
         t3 = contract('eab,ce->abc', ERI[i,v,v,v], t2[k,j])
         t3 += contract('eac,be->abc', ERI[i,v,v,v], t2[j,k])
         t3 += contract('eca,be->abc', ERI[k,v,v,v], t2[j,i])
@@ -144,6 +152,7 @@ class cctriples(object):
 
 
     def t3c_abc(self, o, v, a, b, c, t2, ERI, F, WithDenom=True):
+        contract = self.contract
         no = o.stop
 
         t3 = contract('ie,kje->ijk', ERI[o,v,a+no,b+no], t2[o,o,c])
@@ -171,6 +180,7 @@ class cctriples(object):
 
 
     def t3d_ijk(self, o, v, i, j, k, t1, t2, ERI, F, WithDenom=True):
+        contract = self.contract
         t3 = contract('ab,c->abc', ERI[i,j,v,v], t1[k])
         t3 += contract('ac,b->abc', ERI[i,k,v,v], t1[j])
         t3 += contract('bc,a->abc', ERI[j,k,v,v], t1[i])
