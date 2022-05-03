@@ -198,17 +198,22 @@ class cclambda(object):
         else:
             r_l1 = 2.0 * Hov.copy()
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
-            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
             r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
             r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
-            if self.ccwfn.model != 'CC2':
+            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            if self.ccwfn.model == 'CC2':
+                tmp = contract('me,nmfe->nf', l1, self.ccwfn.t2)
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.L[o,o,v,v]))
+                tmp = contract('me,mnfe->nf', l1, self.ccwfn.build_tau(self.ccwfn.t1, self.ccwfn.t2))
+                r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
+            else:
                 r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
                 r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
                 r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
                 r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
         return r_l1
-
 
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         if self.ccwfn.model == 'CCD':
