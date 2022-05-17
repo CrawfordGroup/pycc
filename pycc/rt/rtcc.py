@@ -70,7 +70,11 @@ class rtcc(object):
         C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
         self.mu = []
         for axis in range(3):
-            self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
+            if self.ccwfn.precision == 'DP':
+                self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
+            elif self.ccwfn.precision == 'SP':
+                self.mu.append(np.complex64(C.T @ np.asarray(dipole_ints[axis]) @ C))
+            
         if kick:
             s_to_i = {"x":0, "y":1, "z":2}
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
@@ -78,7 +82,10 @@ class rtcc(object):
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
   
         if isinstance(self.ccwfn.t1, torch.Tensor):
-            self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
+            if self.ccwfn.precision == 'DP':
+                self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
+            elif self.ccwfn.precision == 'SP':
+                self.mu = torch.tensor(self.mu, dtype=torch.complex64, device=self.ccwfn.device1)
             self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:

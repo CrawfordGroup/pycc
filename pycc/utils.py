@@ -4,7 +4,7 @@ import opt_einsum
 
 
 class helper_diis(object):
-    def __init__(self, t1, t2, max_diis):
+    def __init__(self, t1, t2, max_diis, precision):
         if isinstance(t1, torch.Tensor):
             self.device0 = torch.device('cpu')
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -21,6 +21,7 @@ class helper_diis(object):
         self.diis_errors = []
         self.diis_size = 0
         self.max_diis = max_diis
+        self.precision = precision
 
     def add_error_vector(self, t1, t2):
         if isinstance(t1, torch.Tensor):
@@ -59,7 +60,10 @@ class helper_diis(object):
         
         if isinstance(t1, torch.Tensor):
             # Build error matrix B
-            B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=self.device1) * -1
+            if self.precision == 'DP':
+                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=self.device1) * -1
+            elif self.precision == 'SP':
+                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex64, device=self.device1) * -1
             B[-1, -1] = 0
 
             for n1, e1 in enumerate(self.diis_errors):
@@ -73,7 +77,10 @@ class helper_diis(object):
             B[:-1, :-1] /= torch.abs(B[:-1, :-1]).max()
 
             # Build residual vector
-            resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=self.device1)
+            if self.precision == 'DP':
+                resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=self.device1)
+            elif self.precision == 'SP':
+                resid = torch.zeros((self.diis_size + 1), dtype=torch.complex64, device=self.device1)
             resid[-1] = -1
 
             # Solve pulay equations
@@ -92,7 +99,10 @@ class helper_diis(object):
 
         else:
             # Build error matrix B
-            B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
+            if self.precision == 'DP':
+                B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
+            elif self.precision == 'SP':
+                B = np.ones((self.diis_size + 1, self.diis_size + 1), dtype=np.complex64) * -1
             B[-1, -1] = 0
 
             for n1, e1 in enumerate(self.diis_errors):
@@ -106,7 +116,10 @@ class helper_diis(object):
             B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
 
             # Build residual vector
-            resid = np.zeros(self.diis_size + 1)
+            if self.precision == 'DP':
+                resid = np.zeros(self.diis_size + 1)
+            elif self.precision == 'SP':
+                resid = np.zeros((self.diis_size + 1), dtype=np.complex64)
             resid[-1] = -1
 
             # Solve pulay equations

@@ -105,7 +105,7 @@ class cclambda(object):
 
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
-        diis = helper_diis(l1, l2, max_diis)
+        diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
  
         contract = self.contract
 
