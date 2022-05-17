@@ -155,10 +155,15 @@ class rtcc(object):
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
-            return torch.cat((t1, t2, l1, l2)).type(torch.complex128)
+            if self.ccwfn.precision == 'DP':
+                return torch.cat((t1, t2, l1, l2)).type(torch.complex128)
+            if self.ccwfn.precision == 'SP':
+                return torch.cat((t1, t2, l1, l2)).type(torch.complex64)
         else:
-            return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex128')
-
+            if self.ccwfn.precision == 'DP':
+                return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex128')
+            if self.ccwfn.precision == 'SP':
+                return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex64')
 
     def extract_amps(self, y):
         """
