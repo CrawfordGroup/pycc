@@ -173,7 +173,7 @@ class rtcc(object):
         nv = self.ccwfn.nv
 
         # Extract the phase
-        phase = y[[0]]
+        phase = y[0]
 
         # Extract the amplitudes
         len1 = no*nv
