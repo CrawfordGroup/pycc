@@ -106,7 +106,7 @@ class rtcc(object):
             flattened array of cluster residuals
         """
         # Extract amplitude tensors
-        t1, t2, l1, l2 = self.extract_amps(y)
+        phase, t1, t2, l1, l2 = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
         if isinstance(t1, torch.Tensor):
@@ -127,30 +127,32 @@ class rtcc(object):
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
         # Pack up the residuals
-        y = self.collect_amps(rt1, rt2, rl1, rl2)
+        y = self.collect_amps(phase, rt1, rt2, rl1, rl2)
 
         return y
 
-    def collect_amps(self, t1, t2, l1, l2):
+    def collect_amps(self, phase, t1, t2, l1, l2):
         """
         Parameters
         ----------
+        phase : complex128
+            current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
 
         Returns
         -------
         NumPy array
-            amplitudes or residuals as a vector (flattened array)
+            phase and amplitudes or residuals as a vector (flattened array)
         """
         if isinstance(t1, torch.Tensor):
             t1 = torch.flatten(t1)
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
-            return torch.cat((t1, t2, l1, l2)).type(torch.complex128)
+            return torch.cat((phase, t1, t2, l1, l2)).type(torch.complex128)
         else:
-            return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex128')
+            return np.concatenate((phase, t1, t2, l1, l2), axis=None).astype('complex128')
 
 
     def extract_amps(self, y):
@@ -158,15 +160,20 @@ class rtcc(object):
         Parameters
         ----------
         y : NumPy array
-            flattened array of cluster amplitudes or residuals
+            flattened array of wave function phase plus cluster amplitudes or residuals
 
         Returns
         -------
+        phase : complex128
+            current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
         """
         no = self.ccwfn.no
         nv = self.ccwfn.nv
+
+        # Extract the phase
+        phase = y[[0]]
 
         # Extract the amplitudes
         len1 = no*nv
