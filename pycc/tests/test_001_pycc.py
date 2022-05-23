@@ -1,5 +1,5 @@
 """
-Unit and regression test for the pycc package.
+Import test for the pycc package.
 """
 
 # Import package, test suite, and other packages as needed

@@ -10,6 +10,7 @@ import numpy as np
 import time
 from opt_einsum import contract
 from .utils import helper_diis
+import torch
 
 
 class cclambda(object):
@@ -50,6 +51,7 @@ class cclambda(object):
 
         self.ccwfn = ccwfn
         self.hbar = hbar
+        self.contract = self.ccwfn.contract 
 
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
@@ -104,6 +106,8 @@ class cclambda(object):
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
         diis = helper_diis(l1, l2, max_diis)
+ 
+        contract = self.contract
 
         for niter in range(1, maxiter+1):
 
@@ -123,26 +127,41 @@ class cclambda(object):
                 self.l2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                rms = np.sqrt(rms)
+                if isinstance(l1, torch.Tensor):
+                    rms = torch.sqrt(rms)
+                else: 
+                    rms = np.sqrt(rms)
             else:
                 self.l1 += r1/Dia
                 self.l2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                rms = np.sqrt(rms)
+                if isinstance(l1, torch.Tensor):
+                    rms = torch.sqrt(rms)
+                else:
+                    rms = np.sqrt(rms)
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
             print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
-
-            if ((abs(ediff) < e_conv) and rms < r_conv):
-                print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
-                return lecc
+            
+            if isinstance(self.l1, torch.Tensor):
+                if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
+                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    return lecc
+            else:
+                if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
+                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    return lecc
 
             diis.add_error_vector(self.l1, self.l2)
             if niter >= start_diis:
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
 
+        if isinstance(r1, torch.Tensor):
+            del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
+
+           
     def residuals(self, F, t1, t2, l1, l2):
         """
         Parameters
@@ -182,36 +201,59 @@ class cclambda(object):
         r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
         r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
+        if isinstance(r1, torch.Tensor):
+            del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
+
         return r1, r2
 
     def build_Goo(self, t2, l2):
+        contract = self.contract
         return contract('mjab,ijab->mi', t2, l2)
 
 
     def build_Gvv(self, t2, l2):
+        contract = self.contract 
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
     def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            r_l1 = np.zeros_like(l1)
+            if isinstance(l1, torch.Tensor):
+                r_l1 = torch.zeros_like(l1)
+            else:
+                r_l1 = np.zeros_like(l1)
         else:
-            r_l1 = 2.0 * Hov.copy()
+            if isinstance(l1, torch.Tensor):
+                r_l1 = 2.0 * Hov.clone()
+            else: 
+                r_l1 = 2.0 * Hov.copy()
+
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
-            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
             r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
             r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
-            r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
-            r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
-            r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
-            r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
+            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            if self.ccwfn.model == 'CC2':
+                tmp = contract('me,nmfe->nf', l1, self.ccwfn.t2)
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.L[o,o,v,v]))
+                tmp = contract('me,mnfe->nf', l1, self.ccwfn.build_tau(self.ccwfn.t1, self.ccwfn.t2))
+                r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
+            else:
+                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
+                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
+                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
+                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
         return r_l1
 
-
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            r_l2 = L[o,o,v,v].copy()
+            if isinstance(l1, torch.Tensor):
+                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
+            else:
+                r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
             r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
             r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
@@ -222,26 +264,34 @@ class cclambda(object):
             r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
-            r_l2 = L[o,o,v,v].copy()
+            if isinstance(l1, torch.Tensor):
+                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
+            else:
+                r_l2 = L[o,o,v,v].copy()
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
             r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
-            r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
-            r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
-            r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-            r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
             r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
             r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
             r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
             r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
-            r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
-            r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
-            r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
-            r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
-            r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+            if self.ccwfn.model == 'CC2':
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
+            else:
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
+                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
+                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
+                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
 
         r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
         return r_l2
 
 
     def pseudoenergy(self, o, v, ERI, l2):
+        contract = self.contract 
         return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
