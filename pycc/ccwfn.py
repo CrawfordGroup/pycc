@@ -84,7 +84,7 @@ class ccwfn(object):
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC2', 'CC3']
 
-        valid_local_models = [None, 'LPNO', 'PAO']
+        valid_local_models = [None, 'LPNO', 'PAO','LPNOpp']
         local = kwargs.pop('local', None)
         # TODO: case-protect this kwarg
         if local not in valid_local_models:
