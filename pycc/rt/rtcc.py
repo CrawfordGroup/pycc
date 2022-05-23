@@ -406,7 +406,8 @@ class rtcc(object):
             ret_t[key] = {"t1":t1,
                     "t2":t2,
                     "l1":l1,
-                    "l2":l2}
+                    "l2":l2,
+                    "phase":phase}
         else:
             save_t = False
 

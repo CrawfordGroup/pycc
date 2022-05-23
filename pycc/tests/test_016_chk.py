@@ -67,6 +67,7 @@ def test_chk(datadir):
     V = gaussian_laser(F_str, 0, sigma, center=center)
 
     # RTCC setup
+    phase = ecc
     h = 0.1
     tf = 10
     rtcc = pycc.rtcc(cc,cclambda,ccdensity,V,magnetic=True,kick='z')
@@ -79,6 +80,7 @@ def test_chk(datadir):
     # propagate to 10au
     ODE = rk2(h)
     y0 = chk['y']
+    y0 = np.append(y0, phase)
     ti = chk['time']
     ofile = datadir.join(f"output.pk")
     tfile = datadir.join(f"t_out.pk")
