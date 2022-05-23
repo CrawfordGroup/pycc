@@ -38,8 +38,8 @@ def test_dipole_h2_2_cc_pvdz():
 
     # no laser
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, None, magnetic = True)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
-    t1, t2, l1, l2 = rtcc.extract_amps(y0)
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, ecc).astype('complex128')
+    t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
 
     ref = [0, 0, 0.005371586416860086] # au
     mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)

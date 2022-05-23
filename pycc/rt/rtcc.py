@@ -47,9 +47,9 @@ class rtcc(object):
     f(): Returns a flattened NumPy array of cluster residuals
         The ODE defining function (the right-hand-side of a Runge-Kutta solver)
     collect_amps():
-        Collect the cluster amplitudes into a single vector
+        Collect the cluster amplitudes and phase into a single vector
     extract_amps():
-        Separate a flattened array of cluster amplitudes into the t1, t2, l1, and l2 components
+        Separate a flattened array of amplitudes (and phase) into the t1, t2, l1, and l2 components
     dipole()
         Compute the electronic or magnetic dipole moment for a given time t
     energy()
@@ -110,16 +110,17 @@ class rtcc(object):
         Returns
         -------
         f(t, y): NumPy array
-            flattened array of cluster residuals
+            flattened array of cluster residuals and phase
         """
         # Extract amplitude tensors
-        t1, t2, l1, l2 = self.extract_amps(y)
+        t1, t2, l1, l2, phase = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
         if isinstance(t1, torch.Tensor):
             F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
         else:
             F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
@@ -133,22 +134,27 @@ class rtcc(object):
         if self.ccwfn.local is not None:
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
+        # Phase contribution = exp(-phase(t))
+        phase = self.phase(F, t1, t2)
+
         # Pack up the residuals
-        y = self.collect_amps(rt1, rt2, rl1, rl2)
+        y = self.collect_amps(rt1, rt2, rl1, rl2, phase)
 
         return y
 
-    def collect_amps(self, t1, t2, l1, l2):
+    def collect_amps(self, t1, t2, l1, l2, phase):
         """
         Parameters
         ----------
+        phase : scalar
+            current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
 
         Returns
         -------
         NumPy array
-            amplitudes or residuals as a vector (flattened array)
+            amplitudes or residuals and phase as a vector (flattened array)
         """
         if isinstance(t1, torch.Tensor):
             t1 = torch.flatten(t1)
@@ -156,24 +162,26 @@ class rtcc(object):
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
             if self.ccwfn.precision == 'DP':
-                return torch.cat((t1, t2, l1, l2)).type(torch.complex128)
+                return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex128)
             if self.ccwfn.precision == 'SP':
-                return torch.cat((t1, t2, l1, l2)).type(torch.complex64)
+                return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex64)
         else:
             if self.ccwfn.precision == 'DP':
-                return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex128')
+                return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
             if self.ccwfn.precision == 'SP':
-                return np.concatenate((t1, t2, l1, l2), axis=None).astype('complex64')
+                return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex64')
 
     def extract_amps(self, y):
         """
         Parameters
         ----------
         y : NumPy array
-            flattened array of cluster amplitudes or residuals
+            amplitudes or residuals and phase as a vector (flattened array)
 
         Returns
         -------
+        phase : scalar
+            current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
         """
@@ -187,14 +195,17 @@ class rtcc(object):
             t1 = torch.reshape(y[:len1], (no, nv))
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = torch.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+            l2 = torch.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
         else:
             t1 = np.reshape(y[:len1], (no, nv))
             t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = np.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+            l2 = np.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
 
-        return t1, t2, l1, l2
+        # Extract the phase
+        phase = y[-1]
+
+        return t1, t2, l1, l2, phase
 
     def dipole(self, t1, t2, l1, l2, withref = True, magnetic = False):
         """
@@ -209,7 +220,7 @@ class rtcc(object):
 
         Returns
         -------
-        x, y, z : complex128
+        x, y, z : scalars
             Cartesian components of the dipole moment
         """
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
@@ -223,34 +234,6 @@ class rtcc(object):
         z = ints[2].flatten().dot(opdm.flatten())
         return x, y, z
 
-    def energy(self, t, t1, t2, l1, l2):
-        """
-        Parameters
-        ----------
-        t : float
-            current time step in external ODE solver
-        t1, t2, l1, l2 : NumPy arrays
-            current cluster amplitudes
-
-        Returns
-        -------
-        ecc : complex128
-            CC correlation energy
-        """
-        o = self.ccwfn.o
-        v = self.ccwfn.v
-        if isinstance(t1, torch.Tensor):
-            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
-        else:
-            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
-        
-        contract = self.contract 
-
-        ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
-        L = self.ccwfn.H.L
-        ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
-        return ecc
-
     def lagrangian(self, t, t1, t2, l1, l2):
         """
         Parameters
@@ -262,7 +245,7 @@ class rtcc(object):
 
         Returns
         -------
-        ecc : complex128
+        ecc : scalars
             CC Lagrangian energy (including reference contribution, but excluding nuclear repulsion)
         """
         o = self.ccwfn.o
@@ -304,6 +287,78 @@ class rtcc(object):
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
         return eref + eone + etwo
 
+    def phase(self, F, t1, t2):
+        """
+        Parameters
+        ----------
+        F : NumPy array
+            current (field-dependent Fock operator
+        t1, t2: NumPy arrays
+            current cluster amplitudes
+
+        Returns
+        -------
+        phase: scalar
+            wave function quasienergy/phase-factor with contribution defined as = exp(-phase(t))
+        """
+        contract = self.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        L = self.ccwfn.H.L
+
+        if isinstance(t1, torch.Tensor):
+            eref = 2.0 * torch.trace(F[o,o])
+            tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
+            eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
+            del tmp
+
+        else:
+            eref = 2.0 * np.trace(F[o,o])
+            eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
+
+        if self.ccwfn.model == 'CCD':
+            ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
+        else:
+            ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
+            ecc += contract('ijab,ijab->', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
+
+        return (eref + ecc) * (-1.0j)
+
+    def autocorrelation(self, y_left, y_right):
+        """
+        Parameters
+        ----------
+        y_left, y_right : Numpy arrays
+            amplitudes or residuals and phase as a vector (flattened array) for two different time steps
+
+        Returns
+        -------
+        float
+            the autocorrelation function, A(t1, t2) as defined in Eq. (18) of J. Chem. Phys. 150, 144106 (2019)
+        """
+        contract = opt_einsum.contract
+
+        t1_l, t2_l, l1_l, l2_l, phase_l = self.extract_amps(y_left)
+        t1_r, t2_r, l1_r, l2_r, phase_r = self.extract_amps(y_right)
+
+        A = 1
+        A += contract("ia,ia->", l1_l, (t1_r - t1_l))
+        A += 0.5*contract("ijab,ijab->", l2_l, (t2_r - t2_l))
+        A += 0.5*contract("ijab,ia,jb->", l2_l, t1_l, t1_l)
+        A += 0.5*contract("ijab,ia,jb->", l2_l, t1_r, t1_r)
+        A -= contract("ijab,ia,jb->", l2_l, t1_l, t1_r)
+        A *= np.exp(-phase_l) * np.exp(phase_r)
+
+        B = 1
+        B -= contract("ia,ia->", l1_r, (t1_r - t1_l))
+        B -= 0.5*contract("ijab,ijab->", l2_r, (t2_r - t2_l))
+        B += 0.5*contract("ijab,ia,jb->", l2_r, t1_r, t1_r)
+        B += 0.5*contract("ijab,ia,jb->", l2_r, t1_l, t1_l)
+        B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
+        B *= np.exp(-phase_r) * np.exp(phase_l)
+
+        return 0.5*A + 0.5*np.conj(B)
+
     def step(self,ODE,yi,t,ref=False):
         """
         A single step in the propagation
@@ -331,7 +386,7 @@ class rtcc(object):
 
         # calculate properties
         ret = {}
-        t1, t2, l1, l2 = self.extract_amps(y)
+        t1, t2, l1, l2, phase = self.extract_amps(y)
         ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
         ret['mu_x'] = mu_x
@@ -354,7 +409,7 @@ class rtcc(object):
         ODE : integrators object
             callable integrator with timestep attribute
         yi : NumPy array
-            flattened array of initial cluster amplitudes or residuals
+            flattened array of initial cluster amplitudes or residuals and phase
         tf : float
             final timestep
         ti : float
@@ -407,16 +462,17 @@ class rtcc(object):
                     ret_t = pk.load(ampf)
             else:
                 ret_t = {key: None}
-            t1,t2,l1,l2 = self.extract_amps(yi)
+            t1,t2,l1,l2,phase = self.extract_amps(yi)
             ret_t[key] = {"t1":t1,
                     "t2":t2,
                     "l1":l1,
-                    "l2":l2}
+                    "l2":l2,
+                    "phase":phase}
         else:
             save_t = False
 
         # initial properties
-        t1, t2, l1, l2 = self.extract_amps(yi)
+        t1, t2, l1, l2, phase = self.extract_amps(yi)
         ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
         ret[key]['mu_x'] = mu_x
@@ -449,7 +505,7 @@ class rtcc(object):
 
             # save amplitudes if asked and correct timestep
             if save_t and (point%tchk<0.0001):
-                t1,t2,l1,l2 = self.extract_amps(y)
+                t1,t2,l1,l2,phase = self.extract_amps(y)
                 ret_t[key] = {"t1":t1,
                         "t2":t2,
                         "l1":l1,
