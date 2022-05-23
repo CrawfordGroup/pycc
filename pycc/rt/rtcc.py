@@ -164,7 +164,7 @@ class rtcc(object):
         Parameters
         ----------
         y : NumPy array
-            flattened array of wave function phase and cluster amplitudes or residuals
+            amplitudes or residuals and phase as a vector (flattened array)
 
         Returns
         -------
@@ -183,15 +183,15 @@ class rtcc(object):
             t1 = torch.reshape(y[:len1], (no, nv))
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = torch.reshape(y[(len1+len2+len1):(2*len1+2*len2)], (no, no, nv, nv))
+            l2 = torch.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
         else:
             t1 = np.reshape(y[:len1], (no, nv))
             t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = np.reshape(y[(len1+len2+len1):(2*len1+2*len2)], (no, no, nv, nv))
+            l2 = np.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
 
         # Extract the phase
-        phase = y[y.size-1]
+        phase = y[-1]
 
         return t1, t2, l1, l2, phase
 
@@ -313,6 +313,17 @@ class rtcc(object):
         return (eref + ecc) * (-1.0j)
 
     def autocorrelation(self, y_left, y_right):
+        """
+        Parameters
+        ----------
+        y_left, y_right : Numpy arrays
+            amplitudes or residuals and phase as a vector (flattened array) for two different time steps
+
+        Returns
+        -------
+        float
+            the autocorrelation function, A(t1, t2) as defined in Eq. (18) of J. Chem. Phys. 150, 144106 (2019)
+        """
         contract = opt_einsum.contract
 
         t1_l, t2_l, l1_l, l2_l, phase_l = self.extract_amps(y_left)
