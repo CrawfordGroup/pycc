@@ -52,17 +52,18 @@ def test_rtcc_water_cc_pvdz():
     e_field = 1e-7
 
     # RT-CC Setup
+    phase = ecc
     t0 = 0
     tf = 0.1
     h_small = 1e-5
     h = 0.01
     t = t0
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).astype('complex128')
     y = y0
     ODE1 = rk4(h_small)
     ODE2 = rk4(h)
-    t1, t2, l1, l2 = rtcc.extract_amps(y0)
+    t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
 
@@ -90,7 +91,7 @@ def test_rtcc_water_cc_pvdz():
             y = ODE2(rtcc.f, t, y) 
             h_i = h
         t += h_i
-        t1, t2, l1, l2 = rtcc.extract_amps(y)
+        t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
         """

@@ -47,9 +47,9 @@ class rtcc(object):
     f(): Returns a flattened NumPy array of cluster residuals
         The ODE defining function (the right-hand-side of a Runge-Kutta solver)
     collect_amps():
-        Collect the cluster amplitudes into a single vector
+        Collect the cluster amplitudes and phase into a single vector
     extract_amps():
-        Separate a flattened array of cluster amplitudes into the t1, t2, l1, and l2 components
+        Separate a flattened array of amplitudes (and phase) into the t1, t2, l1, and l2 components
     dipole()
         Compute the electronic or magnetic dipole moment for a given time t
     energy()
@@ -103,10 +103,10 @@ class rtcc(object):
         Returns
         -------
         f(t, y): NumPy array
-            flattened array of cluster residuals
+            flattened array of cluster residuals and phase
         """
         # Extract amplitude tensors
-        phase, t1, t2, l1, l2 = self.extract_amps(y)
+        t1, t2, l1, l2, phase = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
         if isinstance(t1, torch.Tensor):
@@ -127,15 +127,15 @@ class rtcc(object):
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
         # Pack up the residuals
-        y = self.collect_amps(phase, rt1, rt2, rl1, rl2)
+        y = self.collect_amps(rt1, rt2, rl1, rl2, phase)
 
         return y
 
-    def collect_amps(self, phase, t1, t2, l1, l2):
+    def collect_amps(self, t1, t2, l1, l2, phase):
         """
         Parameters
         ----------
-        phase : complex128
+        phase : scalar
             current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
@@ -143,16 +143,16 @@ class rtcc(object):
         Returns
         -------
         NumPy array
-            phase and amplitudes or residuals as a vector (flattened array)
+            amplitudes or residuals and phase as a vector (flattened array)
         """
         if isinstance(t1, torch.Tensor):
             t1 = torch.flatten(t1)
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
-            return torch.cat((phase, t1, t2, l1, l2)).type(torch.complex128)
+            return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex128)
         else:
-            return np.concatenate((phase, t1, t2, l1, l2), axis=None).astype('complex128')
+            return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
 
 
     def extract_amps(self, y):
@@ -160,20 +160,17 @@ class rtcc(object):
         Parameters
         ----------
         y : NumPy array
-            flattened array of wave function phase plus cluster amplitudes or residuals
+            flattened array of wave function phase and cluster amplitudes or residuals
 
         Returns
         -------
-        phase : complex128
+        phase : scalar
             current wave function phase
         t1, t2, l2, l2 : NumPy arrays
             current cluster amplitudes or residuals
         """
         no = self.ccwfn.no
         nv = self.ccwfn.nv
-
-        # Extract the phase
-        phase = y[0]
 
         # Extract the amplitudes
         len1 = no*nv
@@ -182,14 +179,17 @@ class rtcc(object):
             t1 = torch.reshape(y[:len1], (no, nv))
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = torch.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+            l2 = torch.reshape(y[(len1+len2+len1):(2*len1+2*len2)], (no, no, nv, nv))
         else:
             t1 = np.reshape(y[:len1], (no, nv))
             t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = np.reshape(y[(len1+len2+len1):], (no, no, nv, nv))
+            l2 = np.reshape(y[(len1+len2+len1):(2*len1+2*len2)], (no, no, nv, nv))
 
-        return t1, t2, l1, l2
+        # Extract the phase
+        phase = y[y.size-1]
+
+        return t1, t2, l1, l2, phase
 
     def dipole(self, t1, t2, l1, l2, withref = True, magnetic = False):
         """
@@ -326,7 +326,7 @@ class rtcc(object):
 
         # calculate properties
         ret = {}
-        t1, t2, l1, l2 = self.extract_amps(y)
+        t1, t2, l1, l2, phase = self.extract_amps(y)
         ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
         ret['mu_x'] = mu_x
@@ -349,7 +349,7 @@ class rtcc(object):
         ODE : integrators object
             callable integrator with timestep attribute
         yi : NumPy array
-            flattened array of initial cluster amplitudes or residuals
+            flattened array of initial cluster amplitudes or residuals and phase
         tf : float
             final timestep
         ti : float
@@ -402,7 +402,7 @@ class rtcc(object):
                     ret_t = pk.load(ampf)
             else:
                 ret_t = {key: None}
-            t1,t2,l1,l2 = self.extract_amps(yi)
+            t1,t2,l1,l2,phase = self.extract_amps(yi)
             ret_t[key] = {"t1":t1,
                     "t2":t2,
                     "l1":l1,
@@ -411,7 +411,7 @@ class rtcc(object):
             save_t = False
 
         # initial properties
-        t1, t2, l1, l2 = self.extract_amps(yi)
+        t1, t2, l1, l2, phase = self.extract_amps(yi)
         ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
         ret[key]['mu_x'] = mu_x
@@ -444,7 +444,7 @@ class rtcc(object):
 
             # save amplitudes if asked and correct timestep
             if save_t and (point%tchk<0.0001):
-                t1,t2,l1,l2 = self.extract_amps(y)
+                t1,t2,l1,l2,phase = self.extract_amps(y)
                 ret_t[key] = {"t1":t1,
                         "t2":t2,
                         "l1":l1,

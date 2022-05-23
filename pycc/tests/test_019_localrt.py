@@ -68,11 +68,12 @@ def test_rtpno(datadir):
     V = gaussian_laser(F_str, omega, sigma, center=center)
 
     # RT-CC Setup
+    phase = ecc
     t0 = 0
     tf = 0.5
     h = 0.02
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).astype('complex128')
     ODE = rk4(h)
     
     # Propagate
@@ -123,11 +124,12 @@ def test_rtpao(datadir):
     V = gaussian_laser(F_str, omega, sigma, center=center)
 
     # RT-CC Setup
+    phase = ecc
     t0 = 0
     tf = 0.5
     h = 0.02
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).astype('complex128')
     ODE = rk4(h)
     
     # Propagate
