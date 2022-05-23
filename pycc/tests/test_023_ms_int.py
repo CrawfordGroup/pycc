@@ -52,7 +52,7 @@ def test_rtcc_water_cc_pvdz():
     e_field = 1e-7
 
     # RT-CC Setup
-    phase = ecc
+    phase = 0
     t0 = 0
     tf = 0.1
     h_small = 1e-5

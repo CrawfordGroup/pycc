@@ -67,7 +67,7 @@ def test_chk(datadir):
     V = gaussian_laser(F_str, 0, sigma, center=center)
 
     # RTCC setup
-    phase = ecc
+    phase = 0
     h = 0.1
     tf = 10
     rtcc = pycc.rtcc(cc,cclambda,ccdensity,V,magnetic=True,kick='z')

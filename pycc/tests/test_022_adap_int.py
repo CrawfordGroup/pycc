@@ -48,7 +48,7 @@ def test_rtcc_water_cc_pvdz():
     V = gaussian_laser(F_str, omega, sigma, center)
 
     # RT-CC Setup
-    phase = ecc
+    phase = 0
     t0 = 0
     tf = 1
     h = 0.01

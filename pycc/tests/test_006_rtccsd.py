@@ -45,7 +45,7 @@ def test_rtcc_he_cc_pvdz():
     V = sine_square_laser(F_str, omega, tprime)
 
     # RT-CC Setup
-    phase = ecc
+    phase = 0
     t0 = 0
     tf = 1.0
     h = 0.01

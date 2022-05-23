@@ -68,7 +68,7 @@ def test_rtpno(datadir):
     V = gaussian_laser(F_str, omega, sigma, center=center)
 
     # RT-CC Setup
-    phase = ecc
+    phase = 0
     t0 = 0
     tf = 0.5
     h = 0.02
