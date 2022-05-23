@@ -113,6 +113,7 @@ class rtcc(object):
             F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
         else:
             F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
         rt1 = rt1 * (-1.0j)
@@ -125,6 +126,8 @@ class rtcc(object):
         rl2 = rl2 * (+1.0j)
         if self.ccwfn.local is not None:
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
+
+        phase = self.phase(F, t1, t2)
 
         # Pack up the residuals
         y = self.collect_amps(rt1, rt2, rl1, rl2, phase)
@@ -218,34 +221,6 @@ class rtcc(object):
         z = ints[2].flatten().dot(opdm.flatten())
         return x, y, z
 
-    def energy(self, t, t1, t2, l1, l2):
-        """
-        Parameters
-        ----------
-        t : float
-            current time step in external ODE solver
-        t1, t2, l1, l2 : NumPy arrays
-            current cluster amplitudes
-
-        Returns
-        -------
-        ecc : complex128
-            CC correlation energy
-        """
-        o = self.ccwfn.o
-        v = self.ccwfn.v
-        if isinstance(t1, torch.Tensor):
-            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
-        else:
-            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
-        
-        contract = self.contract 
-
-        ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
-        L = self.ccwfn.H.L
-        ecc = ecc + contract('ijab,ijab->', build_tau(t1, t2), L[o,o,v,v])
-        return ecc
-
     def lagrangian(self, t, t1, t2, l1, l2):
         """
         Parameters
@@ -298,6 +273,32 @@ class rtcc(object):
         oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], Doovv)
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
         return eref + eone + etwo
+
+    def phase(self, F, t1, t2):
+        contract = self.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        L = self.ccwfn.H.L
+
+        if isinstance(t1, torch.Tensor):
+            eref = 2.0 * torch.trace(F[o,o])
+            # torch.trace doesn't have "axis" argument
+            #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
+            tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
+            eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
+            del tmp
+
+        else:
+            eref = 2.0 * np.trace(F[o,o])
+            eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
+
+        if self.ccwfn.model == 'CCD':
+            ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
+        else:
+            ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
+            ecc += contract('ijab,ijab->', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
+
+        return (eref + ecc) * (-1.0j)
 
     def step(self,ODE,yi,t,ref=False):
         """
