@@ -127,6 +127,7 @@ class rtcc(object):
         if self.ccwfn.local is not None:
             rl1, rl2 = self.ccwfn.Local.filter_res(rl1, rl2)
 
+        # Phase contribution = exp(-phase(t))
         phase = self.phase(F, t1, t2)
 
         # Pack up the residuals
@@ -207,7 +208,7 @@ class rtcc(object):
 
         Returns
         -------
-        x, y, z : complex128
+        x, y, z : scalars
             Cartesian components of the dipole moment
         """
         opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
@@ -232,7 +233,7 @@ class rtcc(object):
 
         Returns
         -------
-        ecc : complex128
+        ecc : scalars
             CC Lagrangian energy (including reference contribution, but excluding nuclear repulsion)
         """
         o = self.ccwfn.o
@@ -275,6 +276,19 @@ class rtcc(object):
         return eref + eone + etwo
 
     def phase(self, F, t1, t2):
+        """
+        Parameters
+        ----------
+        F : NumPy array
+            current (field-dependent Fock operator
+        t1, t2: NumPy arrays
+            current cluster amplitudes
+
+        Returns
+        -------
+        phase: scalar
+            wave function quasienergy/phase-factor with contribution defined as = exp(-phase(t))
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -282,8 +296,6 @@ class rtcc(object):
 
         if isinstance(t1, torch.Tensor):
             eref = 2.0 * torch.trace(F[o,o])
-            # torch.trace doesn't have "axis" argument
-            #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
             tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
             eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
             del tmp
@@ -299,6 +311,30 @@ class rtcc(object):
             ecc += contract('ijab,ijab->', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
 
         return (eref + ecc) * (-1.0j)
+
+    def autocorrelation(self, y_left, y_right):
+        contract = opt_einsum.contract
+
+        t1_l, t2_l, l1_l, l2_l, phase_l = self.extract_amps(y_left)
+        t1_r, t2_r, l1_r, l2_r, phase_r = self.extract_amps(y_right)
+
+        A = 1
+        A += contract("ia,ia->", l1_l, (t1_r - t1_l))
+        A += 0.5*contract("ijab,ijab->", l2_l, (t2_r - t2_l))
+        A += 0.5*contract("ijab,ia,jb->", l2_l, t1_l, t1_l)
+        A += 0.5*contract("ijab,ia,jb->", l2_l, t1_r, t1_r)
+        A -= contract("ijab,ia,jb->", l2_l, t1_l, t1_r)
+        A *= np.exp(-phase_l) * np.exp(phase_r)
+
+        B = 1
+        B -= contract("ia,ia->", l1_r, (t1_r - t1_l))
+        B -= 0.5*contract("ijab,ijab->", l2_r, (t2_r - t2_l))
+        B += 0.5*contract("ijab,ia,jb->", l2_r, t1_r, t1_r)
+        B += 0.5*contract("ijab,ia,jb->", l2_r, t1_l, t1_l)
+        B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
+        B *= np.exp(-phase_r) * np.exp(phase_l)
+
+        return 0.5*A + 0.5*np.conj(B)
 
     def step(self,ODE,yi,t,ref=False):
         """
