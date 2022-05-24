@@ -29,7 +29,7 @@ class Local(object):
     Parameters
     ----------
     local: string
-        type of local calculation ("PAO", "LPNO", etc.)
+        type of local calculation ("PAO", "PNO", etc.)
 
     Methods
     -------
@@ -41,8 +41,8 @@ class Local(object):
         rotates t2 amps to local vir space, applies CC step, and back-transforms
     _build(): runs requested local build
     _build_PAO(): build PAO orbital rotation tensors
-    _build_LPNO(): build LPNO orbital rotation tensors
-    _build_LNPOpp(): build LPNO++ orbital rotation tensors    
+    _build_PNO(): build PNO orbital rotation tensors   
+    _build_PNOpp(): build PNO++ orbital rotation tensors
     
     Notes
     -----
@@ -51,7 +51,7 @@ class Local(object):
      to run local MP2, uncomment the necessary lines within the _build_"local" functions which are at the end 
     """
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff,
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff, init_t2,
             core_cut=5E-2,
             lindep_cut=1E-6):
 
@@ -61,18 +61,21 @@ class Local(object):
         self.nv = nv
         self.H = H
         self.C = C.to_array()
+        self.local = local
+        self.init_t2 = init_t2
         self.core_cut = core_cut
         self.lindep_cut = lindep_cut
 
-        self._build(local)
-  
-    def _build(self,local):
-        if local.upper() in ["LPNO"]:
-            self._build_LPNO()
-        elif local.upper() in ["PAO"]:
+        
+        self._build()
+ 
+    def _build(self):
+        if self.local.upper() in ["PNO"]:
+            self._build_PNO()
+        elif self.local.upper() in ["PAO"]:
             self._build_PAO()
-        elif local.upper() in ["LPNOPP"]:
-            self._build_LPNOpp()
+        elif self.local.upper() in ["PNO++"]:
+            self._build_PNOpp()
         else:
             raise Exception("Not a valid local type!")
 
@@ -98,8 +101,7 @@ class Local(object):
         - print domain atoms (not just # of functions)
         - simplify a2ao map generation
         """
-        # SETUP
-        
+        # SETUP 
         bs = self.H.basisset
         mints = psi4.core.MintsHelper(bs)
         no_all = self.no + self.nfzc
@@ -288,9 +290,10 @@ class Local(object):
         #self._local_MP2_loop()
         #self._sim_MP2_loop()
  
-    def _build_LPNO(self):
+    def _build_PNO(self):
         """
-        Perform MP2 loop in non-canonical MO basis, then build MP2-level PNOs
+        Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
+        then build MP2-level PNOs 
 
         Attributes
         ----------
@@ -311,84 +314,45 @@ class Local(object):
         # initial guess amplitudes
         t2 = self.H.ERI[o,o,v,v]/Dijab
         
-        print("mp2_energy right before local")
+        print("Initial MP2 energy:")
         print(contract('ijab,ijab->', t2, self.H.L[o,o,v,v]))
 
         # MP2 loop (optional)
-        self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
+        if self.init_t2 is not None:
+            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
+         
+        print("Computing PNOs.  Canonical VMO dim: %d" % (self.nv))
         
-        # build MP2-level space
-        self._PNO_space(t2)
+        #Constructing the PNO density
+        D = self.MP2_density(t2) 
+
+        # Now obtain the Q and L
+        Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)
         
-        #print("Now doing LPNO_mp2")
+        self.Q = Q  # transform between canonical VMO and local spaces
+        self.dim = dim  # dimension of local space
+        self.eps = eps  # semicananonical local energies
+        self.L = L  # transform between local and semicanonical local spaces           
+
+        #print("Now doing PNO mp2")
         #self._local_MP2_loop()
         #self._sim_MP2_loop()
-
-    def _PNO_space(self, t2):
-        # Build LPNOs and store transformation matrices
-        print("Computing PNOs.  Canonical VMO dim: %d" % (self.nv))
-        T_ij = t2.copy().reshape((self.no*self.no, self.nv, self.nv))
-        Tt_ij = 2.0 * T_ij - T_ij.swapaxes(1,2)
-        D = np.zeros_like(T_ij)
-        Q_full = np.zeros_like(T_ij)
-        Q = []  # truncated LPNO list
-        occ = np.zeros((self.no*self.no, self.nv))
-        dim = np.zeros((self.no*self.no), dtype=int)  # dimension of LPNO space for each pair
-        L = []
-        eps = []
-        T2_full = 0
-        T2_PNO = 0
-        for ij in range(self.no*self.no):
-            i = ij // self.no
-            j = ij % self.no
-    
-            # Compute pair density
-            D[ij] = contract('ab,bc->ac', T_ij[ij], Tt_ij[ij].T) + contract('ab,bc->ac', T_ij[ij].T, Tt_ij[ij])
-            D[ij] *= 2.0/(1 + int(i == j))
-    
-            # Compute PNOs and truncate
-            occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
-            if (occ[ij] < 0).any(): # Check for negative occupation numbers
-                neg = occ[ij][(occ[ij]<0)].min()
-                print("Warning! Negative occupation numbers up to {} detected. \
-                        Using absolute values - please check if your input is correct.".format(neg))
-            dim[ij] = (np.abs(occ[ij]) > self.cutoff).sum()
-            Q.append(Q_full[ij, :, (self.nv-dim[ij]):])
-    
-            # Compute semicanonical virtual space
-            v = slice(self.no, self.no+self.nv)
-            F = Q[ij].T @ self.H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
-            eval, evec = np.linalg.eigh(F)
-            eps.append(eval)
-            L.append(evec)
-            T2_PNO += dim[ij] * dim[ij]
-            print("PNO dimension of pair %d = %d" % (ij, dim[ij]))
-
-        print("Average PNO dimension: %d" % (np.average(dim)))
-        print("Number of canonical VMOs: %d" % (self.nv))
-        print("T2 PNO: %d" % (T2_PNO))
-        T2_full = (self.no*self.no)*(self.nv*self.nv)
-        print("T2 full: %d" % (T2_full))
-        print("T2 Ratio: %3.12f" % (T2_PNO/T2_full))
-        self.Q = Q  # transform between canonical VMO and LPNO spaces
-        self.dim = dim  # dimension of LPNO space
-        self.eps = eps  # semicananonical LPNO energies
-        self.L = L  # transform between LPNO and semicanonical LPNO spaces
-
-    def _build_LPNOpp(self):
+         
+    def _build_PNOpp(self):
         """
-        Perform MP2 loop in non-canonical MO basis, then build MP2-level PNOpps
+        Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
+        then build MP2-level PNO
 
         Attributes
         ----------
-        Q: transform between canonical VMO and LPNO spaces
-        L: transform between LPNO and semicanonical LPNO spaces
-        dim: dimension of LPNO space
-        eps: semicananonical LPNO energies
+        Q: transform between canonical VMO and PNO++ spaces
+        L: transform between LPNO and semicanonical PNO++ spaces
+        dim: dimension of PNO++ space
+        eps: semicananonical PNO++ energies
 
         Notes
         -----
-        
+        Equations from D'Cunha & Crawford 2021 [10.1021/acs.jctc.0c01086]
         """
 
         o = slice(0, self.no)
@@ -402,17 +366,26 @@ class Local(object):
         # initial guess amplitudes
         t2 = self.H.ERI[o,o,v,v]/Dijab
         
-        # MP2 loop (optional) - 
-        self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
+        # MP2 loop (optional) 
+        if self.init_t2 is not None:
+            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
         
-        # build MP2-level space
-        self._PNOpp_space(t2)
+        # Construct the perturbed pair density, Eqn. 10  
+        D = self._PNOpp_pairdensity(t2)
 
-        #print("Now doing LPNOpp_mp2")
+        # Now obtain Q and L 
+        Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)       
+    
+        self.Q = Q  # transform between canonical VMO and local spaces
+        self.dim = dim  # dimension of local space
+        self.eps = eps  # semicananonical local energies
+        self.L = L  # transform between local and semicanonical local spaces          
+    
+        #print("Now doing PNO++ mp2")
         #self._local_MP2_loop()
         #self._sim_MP2_loop()
 
-    def _PNOpp_space(self,t2):
+    def _PNOpp_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
         
@@ -421,7 +394,6 @@ class Local(object):
         Modification of Ruhee's construction of the pno++ density 
         For now, not frequency dependent (No +omega in the energy denominators)
         pert = "mu" only
-
         '''
         o = slice(0, self.no)
         v = slice(self.no, self.no+self.nv)
@@ -452,16 +424,8 @@ class Local(object):
         A_list = {}
         X_guess = {}
         D = np.zeros((self.no * self.no, self.nv, self.nv))
-        Q_full = np.zeros_like(D)
-        Q = []
-        occ = np.zeros((self.no*self.no, self.nv))
-        dim = np.zeros((self.no*self.no), dtype=int)  # dimension of LPNO space for each pair
-        L = []
-        eps = []
-        T2_full = 0
-        T2_PNO = 0
+ 
         ## Here, perturbation is dipole moment
-        
         pert = "mu"    
         if pert == "mu":
             bs = self.H.basisset
@@ -484,43 +448,12 @@ class Local(object):
                 X_guess[drn] = Abar.copy()
                 X_guess[drn] /= denom_ijab
 
-                D += self.form_density(X_guess[drn])
+                D += self.MP2_density(X_guess[drn])
   
             D /= 3.0
-        #print('Average density: {}'.format(D))
-        # now obtain the Q and L 
-        for ij in range(self.no*self.no):
-            i = ij // self.no
-            j = ij % self.no 
+        return D
 
-            # Compute PNOs and truncate
-            occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
-            if (occ[ij] < 0).any(): # Check for negative occupation numbers
-                neg = occ[ij][(occ[ij]<0)].min()
-                print("Warning! Negative occupation numbers up to {} detected. \
-                      Using absolute values - please check if your input is correct.".format(neg))
-            dim[ij] = (np.abs(occ[ij]) > self.cutoff).sum()
-            Q.append(Q_full[ij, :, (self.nv-dim[ij]):])
-            
-            # Compute semicanonical virtual space
-            F = Q[ij].T @ self.H.F[v,v] @ Q[ij]  # Fock matrix in PNO basis
-            eval, evec = np.linalg.eigh(F)
-            eps.append(eval)
-            L.append(evec)
-            T2_PNO += dim[ij] * dim[ij]
-            print("PNO dimension of pair %d = %d" % (ij, dim[ij]))
-
-        print("Average PNO dimension: %2.3f" % (np.average(dim)))
-        print("T2 PNO: %d" % (T2_PNO))
-        T2_full = (self.no*self.no)*(self.nv*self.nv)
-        print("T2 full: %d" % (T2_full))
-        print("T2 Ratio: %3.12f" % (T2_PNO/T2_full))
-        self.Q = Q  # transform between canonical VMO and LPNO spaces
-        self.dim = dim  # dimension of LPNO space
-        self.eps = eps  # semicananonical LPNO energies
-        self.L = L  # transform between LPNO and semicanonical LPNO spaces
-
-    def form_density(self, t_ijab):
+    def MP2_density(self, t_ijab):
         # Create Tij and Ttij
         T_ij = t_ijab.copy().reshape((self.no * self.no, self.nv, self.nv))
         Tt_ij = 2.0 * T_ij.copy()
@@ -537,6 +470,44 @@ class Local(object):
             D[ij] *= 0.5
         return D
 
+    def QnL_tensors(self,v,local,t2,D):
+        # Create list for Q, L and eps
+        Q_full = np.zeros_like(t2.copy().reshape((self.no*self.no,self.nv,self.nv)))
+        Q = []  # truncated PNO list
+        occ = np.zeros((self.no*self.no, self.nv))
+        dim = np.zeros((self.no*self.no), dtype=int)  # dimension of local space for each pair
+        L = [] # semicanonical PNO list
+        eps = [] # approximated virtual orbital energies
+        T2_local = 0
+
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+
+            # Compute local and truncate
+            occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
+            if (occ[ij] < 0).any(): # Check for negative occupation numbers
+                neg = occ[ij][(occ[ij]<0)].min()
+                print("Warning! Negative occupation numbers up to {} detected. \
+                      Using absolute values - please check if your input is correct.".format(neg))
+            dim[ij] = (np.abs(occ[ij]) > self.cutoff).sum()
+            Q.append(Q_full[ij, :, (self.nv-dim[ij]):])
+
+            # Compute semicanonical virtual space
+            F = Q[ij].T @ self.H.F[v,v] @ Q[ij]  # Fock matrix in local basis
+            eval, evec = np.linalg.eigh(F)
+            eps.append(eval)
+            L.append(evec)
+            T2_local += dim[ij] * dim[ij]
+            print(local + " dimension of pair %d = %d" % (ij, dim[ij]))
+
+        print("Average " + local + " dimension: %2.3f" % (np.average(dim)))
+        print("T2 " +  local + ": %d" % (T2_local))
+        T2_full = (self.no*self.no)*(self.nv*self.nv)
+        print("T2 full: %d" % (T2_full))
+        print("T2 Ratio: %3.12f" % (T2_local/T2_full))
+        return Q, dim, eps, L 
+        
     def _MP2_loop(self,t2,F,ERI,L,Dijab):
         '''
         Perform the MP2 loop by minimization of the Hylleraas functional
@@ -588,8 +559,8 @@ class Local(object):
             emp2 = contract('ijab,ijab->', t2, L[o,o,v,v])
             ediff = emp2 - elast
 
-            print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))
-    
+            print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E  rmsd = % .5E" % (niter, emp2, ediff, rmsd))        
+
     def _sim_MP2_loop(self):
         print("Now doing a comparison against simulation code")
         Q = self.Q
@@ -664,7 +635,8 @@ class Local(object):
 
         Notes
         -----
-
+        Modification to Zach's dlpno-mp2 python code
+        Equations from Pinski, Riplinger, Valeev, et al 2015 [10.1063/1.4926879]         
         """
         Q = self.Q
         L = self.L
@@ -711,12 +683,12 @@ class Local(object):
             emp2 = 0
             rmsd = 0
            
-           #modification to zach's dlpno-mp2 python code 
+            #Eqn. 13
             for ij in range(self.no*self.no):  
                 i = ij // self.no 
                 j = ij % self.no
                     
-           # self.eps[ij] contains the semicanonical orbital energies obtain through the diagonalization of the local fock matrix                    
+                # self.eps[ij] contains the semicanonical orbital energies obtain through the diagonalization of the local fock matrix
                 r2_ij = ERI_ij[ij] + (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])* t2_ij[ij]
 
                 for k in range(self.no):
@@ -731,20 +703,13 @@ class Local(object):
                 
 
                 t2_ij[ij] -= r2_ij / (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j])
-                #if ij == 0:
-                        #print('inc from PNO')
-                        #print(r2_ij / (self.eps[ij].reshape(-1,1) + self.eps[ij].reshape(1,-1) - self.H.F[i,i] - self.H.F[j,j]))
-                          
+                       
                 rmsd += np.sqrt(contract('ab,ab->', r2_ij, r2_ij))
                 
                 L_ij = 2.0 * t2_ij[ij] - t2_ij[ij].T
                 e_ij_mp2 = np.sum(np.multiply(ERI_ij[ij], L_ij))
                 emp2 += e_ij_mp2
-   
-                #t2[i,j] = Q[ij] @ L[ij] @ t2_ij[ij] @ L[ij].T @ Q[ij].T 
-
-            #emp2 = contract('ijab,ijab->', t2, self.H.L[o,o,v,v])
-                       
+        
             ediff = emp2 - elast
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
@@ -758,11 +723,14 @@ class Local(object):
         for ij in range(no*no):
             i = ij // no
             j = ij % no
+
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
             Y = self.L[ij].T @ X @ self.L[ij]
+
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
                     Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
@@ -793,9 +761,11 @@ class Local(object):
    
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
             Y = self.L[ij].T @ X @ self.L[ij]
+
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
                     Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
