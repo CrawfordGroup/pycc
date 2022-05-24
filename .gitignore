@@ -112,3 +112,14 @@ output*.dat
 input*.dat
 timer.dat
 *.swp
+chk.pk
+ref_wfn.npy
+pycc/chk.pk
+pycc/ref_wfn.npy
+pycc/tests/L.pk
+pycc/tests/Q.pk
+pycc/tests/chk_QL.py
+pycc/tests/ref_t1.pk
+pycc/tests/ref_t2.pk
+pycc/tests/t1.pk
+pycc/tests/t2.pk

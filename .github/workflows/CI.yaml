@@ -19,9 +19,10 @@ jobs:
     name: PyCC Test ${{ matrix.os }}, Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: true
       matrix:
         os: [macOS-latest, ubuntu-latest]
-        python-version: [3.7, 3.8, 3.9]
+        python-version: ['3.8', '3.9', '3.10']
 
     steps:
     - uses: actions/checkout@v2
@@ -69,6 +70,7 @@ jobs:
         python -m pip install .
         python -m pip install opt_einsum
         python -m pip install scipy
+        python -m pip install torch
         conda list
 
     - name: PyTest
