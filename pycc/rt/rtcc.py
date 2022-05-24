@@ -27,13 +27,13 @@ class rtcc(object):
     V: the time-dependent laser field
         must accept only the current time as an argument, e.g., as defined in lasers.py
     mu: list of NumPy arrays
-        the dipole integrals for each Cartesian direction
+        the dipole integrals for each Cartesian direction (taken from Hamiltonian object)
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
     magnetic: bool
         whether or not to compute the magnetic dipole integrals and value (default = False)
     m: list of NumPy arrays
-        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True)
+        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True) (taken from Hamiltonian object)
 
     Parameters
     ----------
@@ -64,13 +64,8 @@ class rtcc(object):
         self.contract = self.ccwfn.contract
         self.V = V
          
-        # Prep the dipole integrals in MO basis
-        mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
-        dipole_ints = mints.ao_dipole()
-        C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
-        self.mu = []
-        for axis in range(3):
-            self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
+        # Grab the requested dipole integrals from the Hamiltonian
+        self.mu = self.ccwfn.H.mu
         if kick:
             s_to_i = {"x":0, "y":1, "z":2}
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
@@ -83,11 +78,7 @@ class rtcc(object):
 
         if magnetic:
             self.magnetic = True
-            m_ints = mints.ao_angular_momentum()
-            self.m = []
-            for axis in range(3):
-                m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
-                self.m.append(m*1.0j)
+            self.m = self.ccwfn.H.m
         else:
             self.magnetic = False
 

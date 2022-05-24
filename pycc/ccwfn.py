@@ -34,7 +34,7 @@ class ccwfn(object):
     nmo : int
         the number of active orbitals
     H : Hamiltonian object
-        the normal-ordered Hamiltonian, which includes the Fock matrix, the ERIs, and the spin-adapted ERIs (L)
+        the normal-ordered Hamiltonian, which includes the Fock matrix, the ERIs, the spin-adapted ERIs (L), and various property integrals
     o : NumPy slice
         occupied orbital subspace
     v : NumPy slice
