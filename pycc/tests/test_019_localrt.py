@@ -32,7 +32,7 @@ def datadir(tmpdir, request):
     return tmpdir
 
 def test_rtpno(datadir):
-    """H2O RT-LPNO"""
+    """H2O RT-PNO"""
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -47,13 +47,13 @@ def test_rtpno(datadir):
     mol = psi4.geometry(moldict["H2O"]+"\nnoreorient\nnocom")
     ref_dir = str(datadir.join(f"wfn.npy"))
     rhf_wfn = psi4.core.Wavefunction.from_file(ref_dir)
-
-    maxiter = 75
+    
+    maxiter = 200
     e_conv = 1e-13
     r_conv = 1e-13
     max_diis = 8
 
-    cc = pycc.ccwfn(rhf_wfn, local='LPNO', local_cutoff=1e-5)
+    cc = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, init_t2 = 'OPT')
     ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
