@@ -331,7 +331,7 @@ class Local(object):
         print("Computing PNOs.  Canonical VMO dim: %d" % (self.nv))
         
         #Constructing the PNO density
-        D = self.MP2_density(t2) 
+        D = self._pairdensity(t2) 
 
         # Now obtain the Q and L
         Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)
@@ -378,7 +378,7 @@ class Local(object):
             self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
         
         # Construct the perturbed pair density, Eqn. 10  
-        D = self._PNOpp_pairdensity(t2)
+        D = self._pert_pairdensity(t2)
 
         # Now obtain Q and L 
         Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)       
@@ -392,7 +392,7 @@ class Local(object):
         #self._local_MP2_loop()
         #self._sim_MP2_loop()
 
-    def _PNOpp_pairdensity(self,t2):
+    def _pert_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
         
@@ -455,12 +455,12 @@ class Local(object):
                 X_guess[drn] = Abar.copy()
                 X_guess[drn] /= denom_ijab
 
-                D += self.MP2_density(X_guess[drn])
+                D += self._pairdensity(X_guess[drn])
   
             D /= 3.0
         return D
 
-    def MP2_density(self, t_ijab):
+    def _pairdensity(self, t_ijab):
         # Create Tij and Ttij
         T_ij = t_ijab.copy().reshape((self.no * self.no, self.nv, self.nv))
         Tt_ij = 2.0 * T_ij.copy()
