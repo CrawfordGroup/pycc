@@ -34,7 +34,9 @@ class Local(object):
     ----------
     local: string
         type of local calculation ("PAO", "PNO", etc.)
-
+    it2_opt: bool 
+        Flag to optimize initial t2 amplitudes (default = True) 
+   
     Methods
     -------
     filter_amps(): Returns t1 and t2 amplitude numpy arrays
@@ -55,7 +57,7 @@ class Local(object):
      to run local MP2, uncomment the necessary lines within the _build_"local" functions which are at the end 
     """
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff, init_t2,
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt,
             core_cut=5E-2,
             lindep_cut=1E-6,
             e_conv=1e-12,
@@ -68,7 +70,7 @@ class Local(object):
         self.H = H
         self.C = C.to_array()
         self.local = local
-        self.init_t2 = init_t2
+        self.it2_opt = it2_opt
         self.core_cut = core_cut
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
@@ -325,7 +327,7 @@ class Local(object):
         print(contract('ijab,ijab->', t2, self.H.L[o,o,v,v]))
 
         # MP2 loop (optional)
-        if self.init_t2 is not None:
+        if self.it2_opt:
             self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
          
         print("Computing PNOs.  Canonical VMO dim: %d" % (self.nv))
@@ -334,12 +336,12 @@ class Local(object):
         D = self._pairdensity(t2) 
 
         # Now obtain the Q and L
-        Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)
+        Q, L, eps, dim = self.QL_tensors(v,self.local,t2,D)
         
         self.Q = Q  # transform between canonical VMO and local spaces
-        self.dim = dim  # dimension of local space
+        self.L = L  # transform between local and semicanonical local spaces      
         self.eps = eps  # semicananonical local energies
-        self.L = L  # transform between local and semicanonical local spaces           
+        self.dim = dim  # dimension of local space
 
         #print("Now doing PNO mp2")
         #self._local_MP2_loop()
@@ -374,19 +376,19 @@ class Local(object):
         t2 = self.H.ERI[o,o,v,v]/Dijab
         
         # MP2 loop (optional) 
-        if self.init_t2 is not None:
+        if self.it2_opt:
             self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
         
         # Construct the perturbed pair density, Eqn. 10  
         D = self._pert_pairdensity(t2)
 
         # Now obtain Q and L 
-        Q, dim, eps, L = self.QnL_tensors(v,self.local,t2,D)       
+        Q, L, eps, dim = self.QL_tensors(v,self.local,t2,D)       
     
         self.Q = Q  # transform between canonical VMO and local spaces
-        self.dim = dim  # dimension of local space
+        self.L = L  # transform between local and semicanonical local spaces 
         self.eps = eps  # semicananonical local energies
-        self.L = L  # transform between local and semicanonical local spaces          
+        self.dim = dim  # dimension of local space
     
         #print("Now doing PNO++ mp2")
         #self._local_MP2_loop()
@@ -477,7 +479,7 @@ class Local(object):
             D[ij] *= 0.5
         return D
 
-    def QnL_tensors(self,v,local,t2,D):
+    def QL_tensors(self,v,local,t2,D):
         # Create list for Q, L and eps
         Q_full = np.zeros_like(t2.copy().reshape((self.no*self.no,self.nv,self.nv)))
         Q = []  # truncated PNO list
@@ -513,7 +515,7 @@ class Local(object):
         T2_full = (self.no*self.no)*(self.nv*self.nv)
         print("T2 full: %d" % (T2_full))
         print("T2 Ratio: %3.12f" % (T2_local/T2_full))
-        return Q, dim, eps, L 
+        return Q, L, eps, dim
         
     def _MP2_loop(self,t2,F,ERI,L,Dijab):
         '''
@@ -544,14 +546,12 @@ class Local(object):
         emp2 = contract('ijab,ijab->', t2, L[o,o,v,v])
         print("MP2 Iter %3d: MP2 Ecorr = %.15f  dE = % .5E" % (0, emp2, -emp2))
         
-        e_conv = 1e-12
-        r_conv = 1e-12
         maxiter = 200
         ediff = emp2
         rmsd = 0.0
         niter = 0
 
-        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+        while ((abs(ediff) > self.e_conv) or (abs(rmsd) > self.r_conv)) and (niter <= maxiter):
             niter += 1
             elast = emp2
             r2 = 0.5 * ERI[o,o,v,v].copy()
@@ -674,8 +674,6 @@ class Local(object):
             t2_ij.append( -1.0 * ERI_ij[ij] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j]))
         
         # parameters for the MP2 loop
-        e_conv = 1e-7
-        r_conv = 1e-7
         maxiter = 100
                 
         emp2 = contract('ijab,ijab->', t2,self.H.L[o,o,v,v])
@@ -684,7 +682,7 @@ class Local(object):
         niter = 0
         maxiter = 100
 
-        while ((abs(ediff) > e_conv) or (abs(rmsd) > r_conv)) and (niter <= maxiter):
+        while ((abs(ediff) > self.e_conv) or (abs(rmsd) > self.r_conv)) and (niter <= maxiter):
             niter += 1
             elast = emp2
             emp2 = 0

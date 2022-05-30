@@ -98,12 +98,12 @@ class ccwfn(object):
             raise Exception("%s is not an allowed MO localization method." % (local_MOs))
         self.local_MOs = local_MOs
 
-        valid_init_t2 = [None,'OPT']
-        init_t2 = kwargs.pop('init_t2', None)
+        valid_it2_opt = [True,False]
+        it2_opt = kwargs.pop('it2_opt', True)
         # TODO: case-protect this kwarg
-        if init_t2 not in valid_init_t2:
-            raise Exception("%s is not an allowed initial t2 amplitudes." % (init_t2))
-        self.init_t2 = init_t2
+        if it2_opt not in valid_it2_opt:
+            raise Exception("%s is not an allowed initial t2 amplitudes." % (it2_opt))
+        self.it2_opt = it2_opt
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
@@ -141,7 +141,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.init_t2)
+            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]

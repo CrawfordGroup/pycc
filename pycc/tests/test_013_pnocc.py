@@ -8,7 +8,7 @@ import pycc
 import pytest
 from ..data.molecules import *
 
-def test_lpno_ccsd():
+def test_pno_ccsd():
     """H2O PNO-CCSD Test"""
     # Psi4 Setup
     psi4.set_memory('2 GB')
@@ -29,7 +29,7 @@ def test_lpno_ccsd():
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, it2_opt=False)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)
@@ -63,7 +63,7 @@ def test_pno_ccsd_opt():
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, init_t2='OPT')
+    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)
