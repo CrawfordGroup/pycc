@@ -145,7 +145,7 @@ class rtcc(object):
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
-            return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex128)
+            return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex128, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex128)
         else:
             return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
 
@@ -175,14 +175,14 @@ class rtcc(object):
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
             l2 = torch.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
+            phase = y[-1].item()
         else:
             t1 = np.reshape(y[:len1], (no, nv))
             t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
             l2 = np.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
-
-        # Extract the phase
-        phase = y[-1]
+            # Extract the phase
+            phase = y[-1]
 
         return t1, t2, l1, l2, phase
 
@@ -335,8 +335,11 @@ class rtcc(object):
         B += 0.5*contract("ijab,ia,jb->", l2_r, t1_l, t1_l)
         B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
         B *= np.exp(-phase_r) * np.exp(phase_l)
-
-        return 0.5*A + 0.5*np.conj(B)
+        
+        if isinstance(A, torch.Tensor):
+            return 0.5*A + 0.5*torch.conj(B)
+        else:
+            return 0.5*A + 0.5*np.conj(B)
 
     def step(self,ODE,yi,t,ref=False):
         """
