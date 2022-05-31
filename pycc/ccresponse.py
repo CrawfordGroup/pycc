@@ -18,6 +18,10 @@ class ccresponse(object):
     -------
     linresp():
         Compute a CC linear response function.
+    solve_right():
+        Solve the right-hand perturbed wave function equations.
+    pertcheck():
+        Check first-order perturbed wave functions for all available perturbation operators.
     """
 
     def __init__(self, ccdensity, omega1 = 0, omega2 = 0):
@@ -46,17 +50,43 @@ class ccresponse(object):
         self.cart = ["X", "Y", "Z"]
 
         # Build dictionary of similarity-transformed property integrals
-        self.pertbar = {} # Empty dictionary
+        self.pertbar = {}
 
-        # Electric dipole operator
+        # Electric-dipole operator (length)
         for axis in range(3):
             key = "MU_" + self.cart[axis]
             self.pertbar[key] = pertbar(self.H.mu[axis], self.ccwfn)
 
-        # Magnetic dipole operator
+        # Magnetic-dipole operator
         for axis in range(3):
             key = "M_" + self.cart[axis]
-            self.pertbar[key]  = pertbar(self.H.m[axis], self.ccwfn)
+            self.pertbar[key] = pertbar(self.H.m[axis], self.ccwfn)
+
+        # Complex-conjugate of magnetic-dipole operator
+        for axis in range(3):
+            key = "M*_" + self.cart[axis]
+            self.pertbar[key] = pertbar(np.conj(self.H.m[axis]), self.ccwfn)
+
+        # Electric-dipole operator (velocity)
+        for axis in range(3):
+            key = "P_" + self.cart[axis]
+            self.pertbar[key] = pertbar(self.H.p[axis], self.ccwfn)
+
+        # Complex-conjugate of electric-dipole operator (velocity)
+        for axis in range(3):
+            key = "P*_" + self.cart[axis]
+            self.pertbar[key] = pertbar(np.conj(self.H.p[axis]), self.ccwfn)
+
+        # Traceless quadrupole
+        ij = 0
+        for axis1 in range(3):
+            for axis2 in range(axis1,3):
+                key = "Q_" + self.cart[axis1] + self.cart[axis2]
+                self.pertbar[key] = pertbar(self.H.Q[ij], self.ccwfn)
+                if (axis1 != axis2):
+                    key2 = "Q_" + self.cart[axis2] + self.cart[axis1]
+                    self.pertbar[key2] = self.pertbar[key]
+                ij += 1
 
         # HBAR-based denominators
         eps_occ = np.diag(self.hbar.Hoo)
@@ -64,7 +94,97 @@ class ccresponse(object):
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
 
-    def linresp(self, A, B, omega):
+    def pertcheck(self, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
+        """
+        Build first-order perturbed wave functions for all available perturbations
+        """
+        # dictionaries for perturbed wave functions and test pseudoresponses
+        X1 = {}
+        X2 = {}
+        check = {}
+
+        # Electric-dipole (length)
+        for axis in range(3):
+            pertkey = "MU_" + self.cart[axis]
+            X_key = pertkey + "_" + f"{omega:0.6f}"
+            print("Solving right-hand perturbed wave function for %s:" % (X_key))
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            check[X_key] = polar
+            if (omega != 0.0):
+                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+
+        # Magnetic-dipole
+        for axis in range(3):
+            pertkey = "M_" + self.cart[axis]            
+            X_key = pertkey + "_" + f"{omega:0.6f}"
+            print("Solving right-hand perturbed wave function for %s:" % (X_key))
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            check[X_key] = polar
+            if (omega != 0.0):
+                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+
+        # Complex-conjugate of magnetic-dipole
+        for axis in range(3):
+            pertkey = "M*_" + self.cart[axis] 
+            X_key = pertkey + "_" + f"{omega:0.6f}"
+            print("Solving right-hand perturbed wave function for %s:" % (X_key))
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            check[X_key] = polar
+            if (omega != 0.0):
+                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+
+        # Electric-dipole (velocity)
+        for axis in range(3):
+            pertkey = "P_" + self.cart[axis]
+            X_key = pertkey + "_" + f"{omega:0.6f}"
+            print("Solving right-hand perturbed wave function for %s:" % (X_key))
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            check[X_key] = polar
+            if (omega != 0.0):
+                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+
+        # Complex-conjugate of electric-dipole (velocity)
+        for axis in range(3):
+            pertkey = "P*_" + self.cart[axis]
+            X_key = pertkey + "_" + f"{omega:0.6f}"
+            print("Solving right-hand perturbed wave function for %s:" % (X_key))
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            check[X_key] = polar
+            if (omega != 0.0):
+                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+
+        # Traceless quadrupole
+        for axis1 in range(3):
+            for axis2 in range(3):
+                pertkey = "Q_" + self.cart[axis1] + self.cart[axis2]
+                X_key = pertkey + "_" + f"{omega:0.6f}"
+                print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check[X_key] = polar
+                if (omega != 0.0):
+                    X_key = pertkey + "_" + f"{-omega:0.6f}"
+                    print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                    X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                    check[X_key] = polar
+
+        return check
+
+    def linresp(self, A, B, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         A = A.upper()
         B = B.upper()
 
@@ -76,25 +196,26 @@ class ccresponse(object):
             pertkey = A + "_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega)
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check.append(polar)
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega)
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check.append(polar)
+
 
         if (B != A):
             for axis in range(3):
                 pertkey = B + "_" + self.cart[axis]
                 X_key = pertkey + "_" + f"{omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega)
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check.append(polar)
                 if (omega != 0.0):
                     X_key = pertkey + "_" + f"{-omega:0.6f}"
                     print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                    X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega)
+                    X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check.append(polar)
 
         return check
@@ -110,8 +231,7 @@ class ccresponse(object):
         X2 = (pertbar.Avvoo+pertbar.Avvoo.swapaxes(0,1).swapaxes(2,3))/(Dijab + omega)
 
         pseudo = self.pseudoresponse(pertbar, X1, X2)
-        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo:.15f}  dP = {-pseudo:.5E}")
-
+        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
 
         diis = helper_diis(X1, X2, max_diis)
         contract = self.ccwfn.contract
@@ -136,8 +256,8 @@ class ccresponse(object):
             rms = np.sqrt(rms)
 
             pseudo = self.pseudoresponse(pertbar, self.X1, self.X2)
-            pseudodiff = pseudo - pseudo_last
-            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo:.15f}  dP = {-pseudo:.5E} rms = {rms:.5E}")
+            pseudodiff = np.abs(pseudo - pseudo_last)
+            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
@@ -202,8 +322,8 @@ class ccresponse(object):
 
     def pseudoresponse(self, pertbar, X1, X2):
         contract = self.ccwfn.contract
-        polar1 = 2.0 * contract('ai,ia->', pertbar.Avo, X1)
-        polar2 = 2.0 * contract('ijab,ijab->', pertbar.Avvoo, (2.0*X2 - X2.swapaxes(2,3)))
+        polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
+        polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
         return -2.0*(polar1 + polar2)
         
