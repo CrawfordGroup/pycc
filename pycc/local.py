@@ -437,14 +437,11 @@ class Local(object):
         ## Here, perturbation is dipole moment
         pert = "mu"    
         if pert == "mu":
-            bs = self.H.basisset
-            mints = psi4.core.MintsHelper(bs) 
-            dipole_array = mints.ao_dipole()
-            dirn = ['X','Y','Z']
-            for i, drn in enumerate(dirn):
-                A_list[drn] = np.einsum('uj,vi,uv', self.C, self.C, np.asarray(dipole_array[i]))
-            
-                A = A_list[drn]
+            #dirn = ['X','Y','Z']
+            for i in range(3):
+                A_list[i] = self.H.mu[i]
+                A = A_list[i]
+
                 # Build guess Abar
                 # Abar_ijab = P_ij^ab (t_ij^eb A_ae - t_mj^ab A_mi)
                 Avvoo = contract('ijeb,ae->abij', t2, A[self.no:, self.no:])
@@ -454,10 +451,10 @@ class Local(object):
 
                 # Build guess X's
                 # X_ijab = Abar_ijab / Hbar_ii + Hbar_jj - Hbar_aa _ Hbar_bb
-                X_guess[drn] = Abar.copy()
-                X_guess[drn] /= denom_ijab
+                X_guess[i] = Abar.copy()
+                X_guess[i] /= denom_ijab
 
-                D += self._pairdensity(X_guess[drn])
+                D += self._pairdensity(X_guess[i])
   
             D /= 3.0
         return D

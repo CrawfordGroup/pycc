@@ -27,3 +27,18 @@ class Hamiltonian(object):
         self.basisset = ref.basisset()
         self.C_all = ref.Ca().to_array() # includes frozen core
         self.F_ao = ref.Fa().to_array()
+
+        ## One-electron property integrals
+
+        # Electric dipole integrals (length): -r
+        dipole_ints = mints.ao_dipole()
+        self.mu = []
+        for axis in range(3):
+            self.mu.append(npCp.T @ np.asarray(dipole_ints[axis]) @ npCr)
+
+        # Magnetic dipole integrals: -(e/2 m_e) L
+        m_ints = mints.ao_angular_momentum()
+        self.m = []
+        for axis in range(3):
+            m = (npCp.T @ (np.asarray(m_ints[axis])*-0.5) @ npCr)
+            self.m.append(m*1.0j)
