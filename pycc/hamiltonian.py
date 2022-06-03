@@ -45,7 +45,7 @@ class Hamiltonian(object):
 
         ## One-electron property integrals
 
-        # Electric dipole integrals (length): -r
+        # Electric dipole integrals (length): -e r
         dipole_ints = mints.ao_dipole()
         self.mu = []
         for axis in range(3):
@@ -58,3 +58,18 @@ class Hamiltonian(object):
             m = (npCp.T @ (np.asarray(m_ints[axis])*-0.5) @ npCr)
             self.m.append(m*1.0j)
 
+        # Linear momentum integrals: (-e) (-i hbar) Del
+        p_ints = mints.ao_nabla()
+        self.p = []
+        for axis in range(3):
+            p = (npCp.T @ np.asarray(p_ints[axis]) @ npCr)
+            self.p.append(p*1.0j)
+
+        # Traceless quadrupole: (-e) (-i hbar) Del
+        Q_ints = mints.ao_traceless_quadrupole()
+        self.Q = []
+        ij = 0
+        for axis1 in range(3):
+            for axis2 in range(axis1,3):
+                self.Q.append(npCp.T @ np.asarray(Q_ints[ij]) @ npCr)
+                ij += 1

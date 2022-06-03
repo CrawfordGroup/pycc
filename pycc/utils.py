@@ -56,7 +56,7 @@ class helper_diis(object):
             del self.diis_errors[0]
 
         self.diis_size = len(self.diis_errors)
-        
+
         if isinstance(t1, torch.Tensor):
             # Build error matrix B
             B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=self.device1) * -1
@@ -116,8 +116,8 @@ class helper_diis(object):
             t1 = np.zeros_like(self.oldt1)
             t2 = np.zeros_like(self.oldt2)
             for num in range(self.diis_size):
-                t1 += np.real(ci[num] * self.diis_vals_t1[num + 1])
-                t2 += np.real(ci[num] * self.diis_vals_t2[num + 1])
+                t1 += ci[num] * self.diis_vals_t1[num + 1]
+                t2 += ci[num] * self.diis_vals_t2[num + 1]
 
             # Save extrapolated amplitudes to old_t amplitudes
             self.oldt1 = t1.copy()
