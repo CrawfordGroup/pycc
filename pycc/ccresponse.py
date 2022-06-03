@@ -96,7 +96,27 @@ class ccresponse(object):
 
     def pertcheck(self, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         """
-        Build first-order perturbed wave functions for all available perturbations
+        Build first-order perturbed wave functions for all available perturbations and return a dict of their converged pseudoresponse values.  Primarily for testing purposes.
+
+        Parameters
+        ----------
+        omega: float
+            The external field frequency.
+        e_conv : float
+            convergence condition for the pseudoresponse value (default if 1e-13)
+        r_conv : float
+            convergence condition for perturbed wave function rmsd (default if 1e-13)
+        maxiter : int
+            maximum allowed number of iterations of the wave function equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        Returns
+        -------
+        check: dictionary
+            Converged pseudoresponse values for all available perturbations.
         """
         # dictionaries for perturbed wave functions and test pseudoresponses
         X1 = {}
@@ -185,24 +205,78 @@ class ccresponse(object):
         return check
 
     def linresp(self, A, B, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
+        """
+        Calculate the CC linear-response function for one-electron perturbations A and B at field-frequency omega (w).
+
+        The linear response function, <<A;B>>w, generally requires the following perturbed wave functions and frequencies: 
+            A(-w), A*(w), B(w), B*(-w)
+        If the external field is static (w=0), then we need:
+            A(0), A*(0), B(0), B*(0)
+        If the perturbation A is real and B is pure imaginary:
+            A(-w), A(w), B(w), B*(-w)
+        or vice versa:
+            A(-w), A*(w), B(w), B(-w)
+        If the perturbations are both real and the field is static:
+            A(0), B(0)
+        If the perturbations are identical then:
+            A(w), A*(-w) or A(0), A*(0)
+        If the perturbations are identical, the field is dynamic and the operator is real: 
+            A(-w), A(w)
+        If the perturbations are identical, the field is static and the operator is real: 
+            A(0)
+
+        Parameters:
+        -----------
+        A: string
+            String identifying the left-hand perturbation operator.  
+        B: string
+            String identifying the right-hand perturbation operator.  
+        NB: Allowed values for A and B are: 
+            "MU": Electric dipole operator (length)
+            "P": Electric dipole operator (velocity)
+            "P*": Complex conjugate of electric dipole operator (velocity)
+            "M": Magnetic dipole operator
+            "M*": Complex conjugate of Magnetic dipole operator
+            "Q": Traceless quadrupole operator
+        omega: float
+            The external field frequency.
+        e_conv : float
+            convergence condition for the pseudoresponse value (default if 1e-13)
+        r_conv : float
+            convergence condition for perturbed wave function rmsd (default if 1e-13)
+        maxiter : int
+            maximum allowed number of iterations of the wave function equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        Returns:
+        --------
+        linresp: NumPy array
+            A 3x3 or 9 x 3 x 3 array of values of the chosen linear response function.
+        """
+
         A = A.upper()
         B = B.upper()
 
         # dictionaries for perturbed wave functions
         X1 = {} 
         X2 = {}
-        check = []
         for axis in range(3):
+            # A(-w) or A(0)
             pertkey = A + "_" + self.cart[axis]
-            X_key = pertkey + "_" + f"{omega:0.6f}"
+            X_key = pertkey + "_" + f"{-omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-            check.append(polar)
+            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            # A(w) or A*(w) 
             if (omega != 0.0):
-                X_key = pertkey + "_" + f"{-omega:0.6f}"
+                if (np.iscomplexobj(self.pertbar[pertkey].Aoo)):
+                    pertkey = A + "*_" + self.cart[axis]
+                X_key = pertkey + "_" + f"{omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-                check.append(polar)
+                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
 
 
         if (B != A):
@@ -217,8 +291,6 @@ class ccresponse(object):
                     print("Solving right-hand perturbed wave function for %s:" % (X_key))
                     X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check.append(polar)
-
-        return check
 
     def solve_right(self, pertbar, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         solver_start = time.time()
