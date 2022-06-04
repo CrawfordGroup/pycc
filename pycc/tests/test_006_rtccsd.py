@@ -45,15 +45,16 @@ def test_rtcc_he_cc_pvdz():
     V = sine_square_laser(F_str, omega, tprime)
 
     # RT-CC Setup
+    phase = 0
     t0 = 0
     tf = 1.0
     h = 0.01
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2).astype('complex128')
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).astype('complex128')
     ODE = ode(rtcc.f).set_integrator('vode',atol=1e-13,rtol=1e-13)
     ODE.set_initial_value(y0, t0)
 
-    t1, t2, l1, l2 = rtcc.extract_amps(y0)
+    t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
 
@@ -62,7 +63,7 @@ def test_rtcc_he_cc_pvdz():
     while ODE.successful() and ODE.t < tf:
         y = ODE.integrate(ODE.t+h)
         t = ODE.t
-        t1, t2, l1, l2 = rtcc.extract_amps(y)
+        t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
 

@@ -9,7 +9,7 @@ import numpy as np
 class Hamiltonian(object):
     """
     A molecular Hamiltonian object.
-    
+
     Attributes
     ----------
     F : NumPy array
