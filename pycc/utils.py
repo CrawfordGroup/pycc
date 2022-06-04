@@ -164,11 +164,12 @@ class cc_contract(object):
         elif self.device == 'GPU':
             # Check the type and allocation of the tensors 
             # Transfer the copy from CPU to GPU if needed (for ERI)
-            input_list = list(operand)
+            input_list = list(operands)
             for i in range(len(input_list)):
                 if (not input_list[i].is_cuda):
-                    input_list[i] = input_list[i].to(self.device1)                   
-            output = opt_einsum.contract(subscripts, input_list)
+                    input_list[i] = input_list[i].to(self.device1)               
+            #print(len(input_list), type(input_list[0]), type(input_list[1]))    
+            output = opt_einsum.contract(subscripts, *input_list)
             del input_list
             return output
 
