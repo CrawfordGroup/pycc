@@ -8,7 +8,6 @@ if __name__ == "__main__":
 import numpy as np
 import time
 from .utils import helper_diis
-import opt_einsum
 
 class ccresponse(object):
     """
@@ -406,7 +405,7 @@ class pertbar(object):
         v = ccwfn.v
         t1 = ccwfn.t1
         t2 = ccwfn.t2
-        contract = opt_einsum.contract
+        contract = ccwfn.contract
 
         self.Aov = pert[o,v].copy()
 
