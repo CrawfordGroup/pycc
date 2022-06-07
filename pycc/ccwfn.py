@@ -84,11 +84,11 @@ class ccwfn(object):
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC3']
 
-        valid_local_models = [None, 'LPNO', 'PAO']
+        valid_local_models = [None, 'PNO', 'PAO','PNO++']
         local = kwargs.pop('local', None)
         # TODO: case-protect this kwarg
         if local not in valid_local_models:
-            raise Exception("%s is not an allowed local-CC model." % (local))
+            raise Exception("kwarg it2_opt may only be True or False.")
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
 
@@ -97,6 +97,13 @@ class ccwfn(object):
         if local_MOs not in valid_local_MOs:
             raise Exception("%s is not an allowed MO localization method." % (local_MOs))
         self.local_MOs = local_MOs
+
+        valid_it2_opt = [True,False]
+        it2_opt = kwargs.pop('it2_opt', True)
+        # TODO: case-protect this kwarg
+        if it2_opt not in valid_it2_opt:
+            raise Exception("%s is not an allowed initial t2 amplitudes." % (it2_opt))
+        self.it2_opt = it2_opt
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
@@ -134,7 +141,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff)
+            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
 
         # denominators
         eps_occ = np.diag(self.H.F)[o]
