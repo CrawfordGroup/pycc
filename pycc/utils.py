@@ -61,9 +61,9 @@ class helper_diis(object):
         if isinstance(t1, torch.Tensor):
             # Build error matrix B
             if self.precision == 'DP':
-                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex128, device=self.device1) * -1
+                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.float64, device=self.device1) * -1
             elif self.precision == 'SP':
-                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.complex64, device=self.device1) * -1
+                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.float32, device=self.device1) * -1
             B[-1, -1] = 0
 
             for n1, e1 in enumerate(self.diis_errors):
@@ -78,9 +78,9 @@ class helper_diis(object):
 
             # Build residual vector
             if self.precision == 'DP':
-                resid = torch.zeros((self.diis_size + 1), dtype=torch.complex128, device=self.device1)
+                resid = torch.zeros((self.diis_size + 1), dtype=torch.float64, device=self.device1)
             elif self.precision == 'SP':
-                resid = torch.zeros((self.diis_size + 1), dtype=torch.complex64, device=self.device1)
+                resid = torch.zeros((self.diis_size + 1), dtype=torch.float32, device=self.device1)
             resid[-1] = -1
 
             # Solve pulay equations
@@ -102,7 +102,7 @@ class helper_diis(object):
             if self.precision == 'DP':
                 B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
             elif self.precision == 'SP':
-                B = np.ones((self.diis_size + 1, self.diis_size + 1), dtype=np.complex64) * -1
+                B = np.ones((self.diis_size + 1, self.diis_size + 1), dtype=np.float32) * -1
             B[-1, -1] = 0
 
             for n1, e1 in enumerate(self.diis_errors):
@@ -119,7 +119,7 @@ class helper_diis(object):
             if self.precision == 'DP':
                 resid = np.zeros(self.diis_size + 1)
             elif self.precision == 'SP':
-                resid = np.zeros((self.diis_size + 1), dtype=np.complex64)
+                resid = np.zeros((self.diis_size + 1), dtype=np.float32)
             resid[-1] = -1
 
             # Solve pulay equations
