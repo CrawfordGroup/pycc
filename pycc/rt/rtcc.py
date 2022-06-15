@@ -27,13 +27,13 @@ class rtcc(object):
     V: the time-dependent laser field
         must accept only the current time as an argument, e.g., as defined in lasers.py
     mu: list of NumPy arrays
-        the dipole integrals for each Cartesian direction
+        the dipole integrals for each Cartesian direction (taken from Hamiltonian object)
     mu_tot: NumPy arrays
         1/sqrt(3) * sum of dipole integrals (for isotropic field)
     magnetic: bool
         whether or not to compute the magnetic dipole integrals and value (default = False)
     m: list of NumPy arrays
-        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True)
+        the magnetic dipole integrals for each Cartesian direction (only if magnetic = True) (taken from Hamiltonian object)
 
     Parameters
     ----------
@@ -64,17 +64,11 @@ class rtcc(object):
         self.contract = self.ccwfn.contract
         self.V = V
          
-        # Prep the dipole integrals in MO basis
-        mints = psi4.core.MintsHelper(ccwfn.ref.basisset())
-        dipole_ints = mints.ao_dipole()
-        C = np.asarray(self.ccwfn.C)  # May be localized MOs, so we take them from ccwfn
-        self.mu = []
-        for axis in range(3):
-            if self.ccwfn.precision == 'DP':
-                self.mu.append(C.T @ np.asarray(dipole_ints[axis]) @ C)
-            elif self.ccwfn.precision == 'SP':
-                self.mu.append(np.complex64(C.T @ np.asarray(dipole_ints[axis]) @ C))
-            
+        # Grab the requested dipole integrals from the Hamiltonian
+        self.mu = self.ccwfn.H.mu
+        if self.ccwfn.precision == 'SP':
+            self.mu = np.complex64(self.mu)
+
         if kick:
             s_to_i = {"x":0, "y":1, "z":2}
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
@@ -90,11 +84,7 @@ class rtcc(object):
 
         if magnetic:
             self.magnetic = True
-            m_ints = mints.ao_angular_momentum()
-            self.m = []
-            for axis in range(3):
-                m = (C.T @ (np.asarray(m_ints[axis])*-0.5) @ C)
-                self.m.append(m*1.0j)
+            self.m = self.ccwfn.H.m
         else:
             self.magnetic = False
 
@@ -162,9 +152,9 @@ class rtcc(object):
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
             if self.ccwfn.precision == 'DP':
-                return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex128)
+                return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex128, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex128)
             if self.ccwfn.precision == 'SP':
-                return torch.cat((t1, t2, l1, l2, phase)).type(torch.complex64)
+                return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex64, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex64)
         else:
             if self.ccwfn.precision == 'DP':
                 return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
@@ -196,14 +186,14 @@ class rtcc(object):
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
             l2 = torch.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
+            phase = y[-1].item()
         else:
             t1 = np.reshape(y[:len1], (no, nv))
             t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
             l2 = np.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
-
-        # Extract the phase
-        phase = y[-1]
+            # Extract the phase
+            phase = y[-1]
 
         return t1, t2, l1, l2, phase
 
@@ -356,8 +346,11 @@ class rtcc(object):
         B += 0.5*contract("ijab,ia,jb->", l2_r, t1_l, t1_l)
         B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
         B *= np.exp(-phase_r) * np.exp(phase_l)
-
-        return 0.5*A + 0.5*np.conj(B)
+        
+        if isinstance(A, torch.Tensor):
+            return 0.5*A + 0.5*torch.conj(B)
+        else:
+            return 0.5*A + 0.5*np.conj(B)
 
     def step(self,ODE,yi,t,ref=False):
         """
