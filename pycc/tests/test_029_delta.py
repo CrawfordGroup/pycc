@@ -1,5 +1,5 @@
 """
-Test RT-CCSD propagation with RK4 integrator on water molecule.
+Test delta_pulse_laser function.
 """
 
 # Import package, test suite, and other packages as needed
