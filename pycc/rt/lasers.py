@@ -45,3 +45,15 @@ class sine_square_laser:
             * self.F_str
         )
         return pulse
+
+class delta_pulse_laser:
+    def __init__(self, F_str, center=0.0):
+        self.F_str = F_str
+        self.center = center
+    def __call__(self, t):
+        if t == self.center:
+            pulse = self.F_str * 1.0
+        else:
+            pulse = 0
+        return pulse
+
