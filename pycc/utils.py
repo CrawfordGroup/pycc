@@ -139,39 +139,50 @@ class helper_diis(object):
         return t1, t2
 
 class cc_contract(object):
+    """
+    A wrapper for opt_einsum.contract with tensors stored on CPU and/or GPU.
+    """
     def __init__(self, device='CPU'):
+        """
+        Parameters
+        ----------
+        device: string
+            initiated in ccwfn object, default: 'CPU'
+        
+        Returns
+        -------
+        None
+        """
         self.device = device
         if self.device == 'GPU':
+            # torch.device is an object representing the device on which torch.Tensor is or will be allocated.
             self.device0 = torch.device('cpu')
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
-    def __call__(self, subscript, A, B):        
+    def __call__(self, subscripts, *operands): 
+        """
+        Parameters
+        ----------
+        subscripts: string
+            specify the subscripts for summation (same format as numpy.einsum)
+        *operands: list of array_like
+            the arrays/tensors for the operation
+   
+        Returns
+        -------
+        An ndarray/torch.Tensor that is calculated based on Einstein summation convention.   
+        """       
         if self.device == 'CPU':
-            return opt_einsum.contract(subscript, A, B)
+            return opt_einsum.contract(subscripts, *operands)
         elif self.device == 'GPU':
-            # Check the type and allocation of A, B
+            # Check the type and allocation of the tensors 
             # Transfer the copy from CPU to GPU if needed (for ERI)
-            if (A.is_cuda) and (B.is_cuda):
-                # A and B are both on GPU
-                return opt_einsum.contract(subscript, A, B)
-            elif (not A.is_cuda) and (B.is_cuda):
-                # A is on CPU and needs to be transfered to GPU
-                tmpA = A.to(self.device1)
-                C = opt_einsum.contract(subscript, tmpA, B)
-                del tmpA
-                return C
-            elif (A.is_cuda) and (not B.is_cuda):
-                # B is on CPU and needs to be transfered to GPU
-                tmpB = B.to(self.device1)
-                C = opt_einsum.contract(subscript, A, tmpB)
-                del tmpB
-                return C
-            else:
-                # A and B are both on CPU and need to be transfered to GPU
-                tmpA = A.to(self.device1)
-                tmpB = B.to(self.device1)
-                C = opt_einsum.contract(subscript, tmpA, tmpB)
-                del tmpA
-                del tmpB
-                return C            
-    
+            input_list = list(operands)
+            for i in range(len(input_list)):
+                if (not input_list[i].is_cuda):
+                    input_list[i] = input_list[i].to(self.device1)               
+            #print(len(input_list), type(input_list[0]), type(input_list[1]))    
+            output = opt_einsum.contract(subscripts, *input_list)
+            del input_list
+            return output
+

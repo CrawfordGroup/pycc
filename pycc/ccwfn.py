@@ -88,7 +88,7 @@ class ccwfn(object):
         local = kwargs.pop('local', None)
         # TODO: case-protect this kwarg
         if local not in valid_local_models:
-            raise Exception("kwarg it2_opt may only be True or False.")
+            raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
 
