@@ -4,7 +4,7 @@ import opt_einsum
 
 
 class helper_diis(object):
-    def __init__(self, t1, t2, max_diis, precision):
+    def __init__(self, t1, t2, max_diis, precision='DP'):
         if isinstance(t1, torch.Tensor):
             self.device0 = torch.device('cpu')
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
