@@ -3,8 +3,8 @@ PyCC
 [//]: # (Badges)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![GitHub Actions Build
-Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/lothian/pycc/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/lothian/pycc/branch/main)
+Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/CrawfordGroup/pycc/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/CrawfordGroup/pycc/branch/main)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
@@ -12,17 +12,18 @@ A Python-based coupled cluster implementation.  Current capabilities include:
   - Spin-adapted RHF-CCD, RHF-CC2, RHF-CCSD, and RHF-CCSD(T) energies
   - Triples-drivers for (T), CC3, and other approximate triples
   - RHF-CCSD densities
+  - GPU implementation
+  - Single- and mixed-precision arithmetic
   - Real-time CCSD with a selection of integrators
-  - LPNO-CCSD energies and RT-CC
   - PAO-CCSD energies and RT-CC
+  - PNO-CCSD energies and RT-CC
+  - PNO++-CCSD energies and RT-CC
 
 Future plans:
   - CC3
   - Linear and quadratic response functions
   - EOM-CC
-  - Single- and mixed-precision arithmetic
   - Analytic gradients
-  - GPU implementation
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
