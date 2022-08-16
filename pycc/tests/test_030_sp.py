@@ -39,8 +39,8 @@ def test_rtcc_water_cc_pvdz():
     
     # Check CCSD energy
     epsi4 = -0.22391001870362004
-    assert ((abs(epsi4 - ecc) < 1e-7) & (abs(epsi4 - ecc) > 1e-8))
-
+    assert (abs(epsi4 - ecc) < 1e-7)    
+    assert (abs(epsi4 - ecc) > 1e-8)
     
     hbar = pycc.cchbar(cc)
 
@@ -81,6 +81,6 @@ def test_rtcc_water_cc_pvdz():
    
     # Check the dipole value at time step 1
     mu_z_ref = -0.34894577
-    assert ((abs(mu_z_ref - mu_z.real) < 1e-7) & (abs(mu_z_ref - mu_z.real) > 1e-8))
-
+    assert (abs(mu_z_ref - mu_z.real) < 1e-7)    
+    assert (abs(mu_z_ref - mu_z.real) > 1e-8)
 
