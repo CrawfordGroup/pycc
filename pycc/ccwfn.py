@@ -79,7 +79,7 @@ class ccwfn(object):
         self.model = model
         
         # models requiring singles
-        self.need_singles = ['CCSD', 'CCSD(T)', 'CC2']
+        self.need_singles = ['CCSD', 'CCSD(T)', 'CC2', 'CC3']
 
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC3']
@@ -292,6 +292,8 @@ class ccwfn(object):
 
         o = self.o
         v = self.v
+        no = self.no
+        nv = self.nv
         ERI = self.H.ERI
         L = self.H.L
 
@@ -305,10 +307,43 @@ class ccwfn(object):
 
         r1 = self.r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
         r2 = self.r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
-       
+             
         if isinstance(Fae, torch.Tensor):
-            del Fae, Fmi, Fme, Wmnij, Wmbej, Wmbje, Zmbij 
+            del Fae, Fmi, Wmnij, Wmbej, Wmbje, Zmbij 
+        
+        if self.model == 'CC3':
+            # Build intermediates
+            Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
+            Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
+            Wmnie_cc3 = self.build_cc3_Wmnie(o, v, ERI, t1)
+            Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
+            Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
+              
+            # Loop over sets of ijk
+            for i in range(no):
+                for j in range(no):
+                    for k in range(no):
+                        # t_ijk
+                        t3 = self.build_t3(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, WithDenom=True)
+                        # t_ijkabc -> Sia
+                        r1[i] += self.sigma_T1(v, j, k, L, t3)                       
+                        # t_ijkabc -> Sijab
+                        tmp = self.sigma_T2_A(k, Fme, t3)
+                        r2[i,j] += tmp
+                        r2[j,i] += tmp.swapaxes(0,1)                      
+                        # t_ijkabc -> Sijad
+                        tmp = self.sigma_T2_B(k, Wamef_cc3, t3)
+                        r2[i,j] += tmp
+                        r2[j,i] += tmp.swapaxes(0, 1)
+                        # t_ijkabc -> Silab
+                        for l in range(no):
+                            tmp = self.sigma_T2_C(j, k, l, Wmnie_cc3, t3)
+                            r2[i,l] += tmp
+                            r2[l,i] += tmp.swapaxes(0, 1)  
 
+            if isinstance(t3, torch.Tensor):
+                del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3     
+             
         return r1, r2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
@@ -527,6 +562,123 @@ class ccwfn(object):
         r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
         return r_T2
 
+    # CC3
+
+    # Intermedeates needed for CC3
+    def build_cc3_Wmnij(self, o, v, ERI, t1):
+        contract = self.contract
+        W = ERI[o,o,o,o].copy()
+        tmp = contract('ijma,na->ijmn', ERI[o,o,o,v], t1)
+        W = W + tmp + tmp.swapaxes(0,1).swapaxes(2,3)
+        tmp = contract('ia,mnaf->mnif', t1, ERI[o,o,v,v])
+        W = W + contract('mnif,jf->mnij', tmp, t1)
+        return W
+
+    def build_cc3_Wmbij(self, o, v, ERI, t1, Wmnij):
+        contract = self.contract
+        W = ERI[o,v,o,o].copy()
+        W = W - contract('mnij,nb->mbij', Wmnij, t1)
+        W = W + contract('mbie,je->mbij', ERI[o,v,o,v], t1)
+        tmp = ERI[o,v,v,o] + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
+        W = W + contract('ie,mbej->mbij', t1, tmp)
+        return W
+
+    def build_cc3_Wmnie(self, o, v, ERI, t1):
+        contract = self.contract
+        W = ERI[o,o,o,v].copy()
+        W = W + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
+        return W
+
+    def build_cc3_Wamef(self, o, v, ERI, t1):
+        contract = self.contract
+        W = ERI[v,o,v,v].copy()
+        W = W - contract('na,nmef->amef', t1, ERI[o,o,v,v])
+        return W   
+
+    def build_cc3_Wabei(self, o, v, ERI, t1):
+        contract =self.contract
+        # eiab
+        Z = ERI[v,o,v,v].copy()
+        tmp_ints = ERI[v,v,v,v] + ERI[v,v,v,v].swapaxes(2,3)
+        Z1 = 0.5 * contract('if,abef->eiab', t1, tmp_ints)
+        tmp_ints = ERI[v,v,v,v] - ERI[v,v,v,v].swapaxes(2,3)
+        Z2 = 0.5 * contract('if,abef->eiab', t1, tmp_ints)
+        Z_eiab = Z + Z1 + Z2
+
+        #eiab
+        Zeiam = ERI[v,o,v,o].copy()
+        Zamei = contract('amef,if->amei', ERI[v,o,v,v], t1)
+        Zeiam = Zeiam + Zamei.swapaxes(0,2).swapaxes(1,3)
+        Z_eiab = Z_eiab - contract('eiam,mb->eiab', Zeiam, t1)
+
+        #eiab
+        Zmnei = ERI[o,o,v,o].copy() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
+        Zanei = contract('ma,mnei->anei', t1, Zmnei)
+        Z_eiab = Z_eiab + contract('anei,nb->eiab', Zanei, t1)
+
+        #abei
+        Zmbei = ERI[o,v,v,o].copy()
+        Zmbei = Zmbei + contract('mbef,if->mbei', ERI[o,v,v,v], t1)
+        Z_abei = -1 * contract('ma,mbei->abei', t1, Zmbei)
+
+        # Wabei
+        W = Z_abei + Z_eiab.swapaxes(0,2).swapaxes(1,3)
+        return W
+
+    # t3 for a certain set of ijk
+    def build_t3(self, o, v, i, j, k, t2, Wabei, Wmbij, F, WithDenom=True):
+        contract = self.contract
+        
+        t3 = contract('bae,ce->abc', Wabei[:,:,:,i], t2[k,j])
+        t3 += contract('cae,be->abc', Wabei[:,:,:,i], t2[j,k])
+        t3 += contract('abe,ce->abc', Wabei[:,:,:,j], t2[k,i])
+        t3 += contract('cbe,ae->abc', Wabei[:,:,:,j], t2[i,k])
+        t3 += contract('ace,be->abc', Wabei[:,:,:,k], t2[j,i])
+        t3 += contract('bce,ae->abc', Wabei[:,:,:,k], t2[i,j])
+
+        t3 -= contract('mc,mab->abc', Wmbij[:,:,j,k], t2[i])
+        t3 -= contract('mb,mac->abc', Wmbij[:,:,k,j], t2[i])
+        t3 -= contract('mc,mba->abc', Wmbij[:,:,i,k], t2[j])
+        t3 -= contract('ma,mbc->abc', Wmbij[:,:,k,i], t2[j])
+        t3 -= contract('mb,mca->abc', Wmbij[:,:,i,j], t2[k])
+        t3 -= contract('ma,mcb->abc', Wmbij[:,:,j,i], t2[k])
+        
+        if WithDenom is True:
+            Fv = np.diag(F)[v]
+            denom = np.zeros_like(t3)
+            denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
+            denom += F[i,i] + F[j,j] + F[k,k]
+            return t3/denom
+        else:
+            return t3
+
+    # t3 contribution to t1
+    def sigma_T1(self, v, j, k, L, t3):
+        contract = self.contract
+        S = contract('abc,bc->a', t3, L[j,k,v,v])
+        S -= contract('cba,bc->a', t3, L[j,k,v,v])
+        return S
+
+    # t3 contribution to t2 (3 terms)
+    # t_ijkabc -> S_ijab
+    def sigma_T2_A(self, k, Fme, t3):
+        contract = self.contract
+        S = contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+        return S
+  
+    # t_ijkabc -> S_ijad
+    def sigma_T2_B(self, k, Wamef, t3):
+        contract = self.contract
+        tmp = 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)
+        S = contract('abc,dbc->ad', tmp, Wamef.swapaxes(0,1)[k])
+        return S
+
+    # t_ijkabc -> - Silab
+    def sigma_T2_C(self, j, k, l, Wmnie, t3):
+        contract = self.contract
+        tmp = 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)
+        S = contract('abc,c->ab', tmp, Wmnie[j,k,l])
+        return (-1) * S
 
     def cc_energy(self, o, v, F, L, t1, t2):
         contract = self.contract
