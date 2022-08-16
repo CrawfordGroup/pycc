@@ -15,7 +15,7 @@ def test_rtcc_water_cc_pvdz():
     """H2O cc-pVDZ"""
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
+    psi4.set_options({'basis': 'cc-pvdz',
                       'scf_type': 'pk',
                       'mp2_type': 'conv',
                       'freeze_core': 'false',
@@ -37,6 +37,11 @@ def test_rtcc_water_cc_pvdz():
     cc = pycc.ccwfn(rhf_wfn, precision='SP')
     ecc = cc.solve_cc(e_conv, r_conv)
     
+    # Check CCSD energy
+    epsi4 = -0.22391001870362004
+    assert ((abs(epsi4 - ecc) < 1e-7) & (abs(epsi4 - ecc) > 1e-8))
+
+    
     hbar = pycc.cchbar(cc)
 
     cclambda = pycc.cclambda(cc, hbar)
@@ -54,7 +59,7 @@ def test_rtcc_water_cc_pvdz():
     # RT-CC Setup
     phase = 0
     t0 = 0
-    tf = 0.1
+    tf = 0.01
     h = 0.01
     t = t0
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
@@ -64,18 +69,6 @@ def test_rtcc_water_cc_pvdz():
     t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
-
-    # For saving data at each time step.
-    """
-    dip_x = []
-    dip_y = []
-    dip_z = []
-    time_points = []
-    dip_x.append(mu0_x)
-    dip_y.append(mu0_y)
-    dip_z.append(mu0_z)
-    time_points.append(t)
-    """
     
     while t < tf:
         y = ODE(rtcc.f, t, y)
@@ -83,21 +76,11 @@ def test_rtcc_water_cc_pvdz():
         t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
-        """
-        dip_x.append(mu_x)
-        dip_y.append(mu_y)
-        dip_z.append(mu_z)
-        time_points.append(t)
-        """
         
     print(mu_z)
+   
+    # Check the dipole value at time step 1
     mu_z_ref = -0.34894577
-    assert (abs(mu_z_ref - mu_z.real) < 1e-4)
-    
-    #return (dip_x, dip_y, dip_z, time_points)
-
-#dip = test_rtcc_water_cc_pvdz()
-#np.savez('h2o_F_0.01_h_0.01_t_1_rk4', dip_x=dip[0], dip_y=dip[1], dip_z=dip[2], time_points=dip[3])
-
+    assert ((abs(mu_z_ref - mu_z.real) < 1e-7) & (abs(mu_z_ref - mu_z.real) > 1e-8))
 
 
