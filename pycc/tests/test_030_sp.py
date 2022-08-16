@@ -38,14 +38,17 @@ def test_rtcc_water_cc_pvdz():
     ecc = cc.solve_cc(e_conv, r_conv)
     
     # Check CCSD energy
-    epsi4 = -0.22391001870362004
+    epsi4 = -0.223910018703551
     assert (abs(epsi4 - ecc) < 1e-7)    
-    assert (abs(epsi4 - ecc) > 1e-8)
     
     hbar = pycc.cchbar(cc)
 
     cclambda = pycc.cclambda(cc, hbar)
     lecc = cclambda.solve_lambda(e_conv, r_conv)
+    
+    # Check CCSD pseudo energy
+    lepsi4 = -0.219688229733875
+    assert (abs(lepsi4 - lecc) < 1e-7)
 
     ccdensity = pycc.ccdensity(cc, cclambda)
 
@@ -69,6 +72,10 @@ def test_rtcc_water_cc_pvdz():
     t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
+   
+    # Check dipole moment 
+    mu0_z_ref = -0.3489459218340155 
+    assert(abs(mu0_z_ref - mu0_z) < 1e-6)
     
     while t < tf:
         y = ODE(rtcc.f, t, y)
@@ -80,7 +87,6 @@ def test_rtcc_water_cc_pvdz():
     print(mu_z)
    
     # Check the dipole value at time step 1
-    mu_z_ref = -0.34894577
-    assert (abs(mu_z_ref - mu_z.real) < 1e-7)    
-    #assert (abs(mu_z_ref - mu_z.real) > 1e-8)
+    mu_z_ref = -0.3489459204749751
+    assert (abs(mu_z_ref - mu_z.real) < 1e-6)    
 
