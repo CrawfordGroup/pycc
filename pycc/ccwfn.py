@@ -567,7 +567,10 @@ class ccwfn(object):
     # Intermedeates needed for CC3
     def build_cc3_Wmnij(self, o, v, ERI, t1):
         contract = self.contract
-        W = ERI[o,o,o,o].copy()
+        if isinstance(t1, torch.Tensor):
+            W = ERI[o,o,o,o].clone()
+        else:
+            W = ERI[o,o,o,o].copy()
         tmp = contract('ijma,na->ijmn', ERI[o,o,o,v], t1)
         W = W + tmp + tmp.swapaxes(0,1).swapaxes(2,3)
         tmp = contract('ia,mnaf->mnif', t1, ERI[o,o,v,v])
@@ -576,7 +579,10 @@ class ccwfn(object):
 
     def build_cc3_Wmbij(self, o, v, ERI, t1, Wmnij):
         contract = self.contract
-        W = ERI[o,v,o,o].copy()
+        if isinstance(t1, torch.Tensor):
+            W = ERI[o,v,o,o].clone()
+        else:
+            W = ERI[o,v,o,o].copy()
         W = W - contract('mnij,nb->mbij', Wmnij, t1)
         W = W + contract('mbie,je->mbij', ERI[o,v,o,v], t1)
         tmp = ERI[o,v,v,o] + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
@@ -585,20 +591,29 @@ class ccwfn(object):
 
     def build_cc3_Wmnie(self, o, v, ERI, t1):
         contract = self.contract
-        W = ERI[o,o,o,v].copy()
+        if isinstance(t1, torch.Tensor):
+            W = ERI[o,o,o,v].clone()
+        else:
+            W = ERI[o,o,o,v].copy()
         W = W + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
         return W
 
     def build_cc3_Wamef(self, o, v, ERI, t1):
         contract = self.contract
-        W = ERI[v,o,v,v].copy()
+        if isinstance(t1, torch.Tensor):
+            W = ERI[v,o,v,v].clone()
+        else:
+            W = ERI[v,o,v,v].copy()
         W = W - contract('na,nmef->amef', t1, ERI[o,o,v,v])
         return W   
 
     def build_cc3_Wabei(self, o, v, ERI, t1):
         contract =self.contract
         # eiab
-        Z = ERI[v,o,v,v].copy()
+        if isinstance(t1, torch.Tensor):
+            Z = ERI[v,o,v,v].clone()
+        else:
+            Z = ERI[v,o,v,v].copy()
         tmp_ints = ERI[v,v,v,v] + ERI[v,v,v,v].swapaxes(2,3)
         Z1 = 0.5 * contract('if,abef->eiab', t1, tmp_ints)
         tmp_ints = ERI[v,v,v,v] - ERI[v,v,v,v].swapaxes(2,3)
@@ -606,18 +621,27 @@ class ccwfn(object):
         Z_eiab = Z + Z1 + Z2
 
         #eiab
-        Zeiam = ERI[v,o,v,o].copy()
+        if isinstance(t1, torch.Tensor):
+            Zeiam = ERI[v,o,v,o].clone()
+        else:
+            Zeiam = ERI[v,o,v,o].copy()
         Zamei = contract('amef,if->amei', ERI[v,o,v,v], t1)
         Zeiam = Zeiam + Zamei.swapaxes(0,2).swapaxes(1,3)
         Z_eiab = Z_eiab - contract('eiam,mb->eiab', Zeiam, t1)
 
         #eiab
-        Zmnei = ERI[o,o,v,o].copy() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
+        if isinstance(t1, torch.Tensor):
+            Zmnei = ERI[o,o,v,o].clone() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
+        else:
+            Zmnei = ERI[o,o,v,o].copy() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
         Zanei = contract('ma,mnei->anei', t1, Zmnei)
         Z_eiab = Z_eiab + contract('anei,nb->eiab', Zanei, t1)
 
         #abei
-        Zmbei = ERI[o,v,v,o].copy()
+        if isinstance(t1, torch.Tensor):
+            Zmbei = ERI[v,o,v,o].clone()
+        else:
+            Zmbei = ERI[o,v,v,o].copy()
         Zmbei = Zmbei + contract('mbef,if->mbei', ERI[o,v,v,v], t1)
         Z_abei = -1 * contract('ma,mbei->abei', t1, Zmbei)
 
