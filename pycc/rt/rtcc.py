@@ -66,6 +66,9 @@ class rtcc(object):
          
         # Grab the requested dipole integrals from the Hamiltonian
         self.mu = self.ccwfn.H.mu
+        if self.ccwfn.precision == 'SP':
+            self.mu = np.complex64(self.mu)
+
         if kick:
             s_to_i = {"x":0, "y":1, "z":2}
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
@@ -73,7 +76,10 @@ class rtcc(object):
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
   
         if isinstance(self.ccwfn.t1, torch.Tensor):
-            self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
+            if self.ccwfn.precision == 'DP':
+                self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
+            elif self.ccwfn.precision == 'SP':
+                self.mu = torch.tensor(self.mu, dtype=torch.complex64, device=self.ccwfn.device1)
             self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:
@@ -145,10 +151,15 @@ class rtcc(object):
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
             l2 = torch.flatten(l2)
-            return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex128, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex128)
+            if self.ccwfn.precision == 'DP':
+                return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex128, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex128)
+            if self.ccwfn.precision == 'SP':
+                return torch.cat((t1, t2, l1, l2, torch.tensor(phase, dtype=torch.complex64, device=self.ccwfn.device1).unsqueeze(0))).type(torch.complex64)
         else:
-            return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
-
+            if self.ccwfn.precision == 'DP':
+                return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex128')
+            if self.ccwfn.precision == 'SP':
+                return np.concatenate((t1, t2, l1, l2, phase), axis=None).astype('complex64')
 
     def extract_amps(self, y):
         """
