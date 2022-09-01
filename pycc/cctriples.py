@@ -127,12 +127,12 @@ class cctriples(object):
 
     def t3c_ijk(self, o, v, i, j, k, t2, Wvvvo, Wovoo, F, WithDenom=True):
         contract = self.contract 
-        t3 = contract('eab,ce->abc', Wvvvo[:,:,:,i], t2[k,j])
-        t3 += contract('eac,be->abc', Wvvvo[:,:,:,i], t2[j,k])
-        t3 += contract('eca,be->abc', Wvvvo[:,:,:,k], t2[j,i])
-        t3 += contract('ecb,ae->abc', Wvvvo[:,:,:,k], t2[i,j])
-        t3 += contract('ebc,ae->abc', Wvvvo[:,:,:,j], t2[i,k])
-        t3 += contract('eba,ce->abc', Wvvvo[:,:,:,j], t2[k,i])
+        t3 = contract('bae,ce->abc', Wvvvo[:,:,:,i], t2[k,j])
+        t3 += contract('cae,be->abc', Wvvvo[:,:,:,i], t2[j,k])
+        t3 += contract('ace,be->abc', Wvvvo[:,:,:,k], t2[j,i])
+        t3 += contract('bce,ae->abc', Wvvvo[:,:,:,k], t2[i,j])
+        t3 += contract('cbe,ae->abc', Wvvvo[:,:,:,j], t2[i,k])
+        t3 += contract('abe,ce->abc', Wvvvo[:,:,:,j], t2[k,i])
 
         t3 -= contract('mc,mab->abc', Wovoo[:,:,j,k], t2[i])
         t3 -= contract('mb,mac->abc', Wovoo[:,:,k,j], t2[i])
