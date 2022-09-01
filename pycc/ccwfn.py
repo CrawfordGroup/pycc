@@ -369,7 +369,6 @@ class ccwfn(object):
                         r2[i] += tmp
                         r2[:,i] += tmp.swapaxes(1,2) 
                         
-
             if isinstance(t3, torch.Tensor):
                 del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3     
              
