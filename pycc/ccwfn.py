@@ -318,6 +318,8 @@ class ccwfn(object):
         r1, r2: NumPy arrays
             New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
+    
+        contract = self.contract
 
         o = self.o
         v = self.v
@@ -340,35 +342,33 @@ class ccwfn(object):
         if isinstance(Fae, torch.Tensor):
             del Fae, Fmi, Wmnij, Wmbej, Wmbje, Zmbij 
         
-        if self.model == 'CC3':
-            # Build intermediates
+        if self.model == 'CC3':      
             Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
             Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
             Wmnie_cc3 = self.build_cc3_Wmnie(o, v, ERI, t1)
             Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
             Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
+            
+            if isinstance(t1, torch.Tensor):
+                X1 = torch.zeros_like(t1)
+                X2 = torch.zeros_like(t2)
+            else:
+                X1 = np.zeros_like(t1)
+                X2 = np.zeros_like(t2)
               
-            # Loop over sets of ijk
             for i in range(no):
                 for j in range(no):
-                    for k in range(no):
-                        # t_ijk                        
+                    for k in range(no):                       
                         t3 = cctriples.t3c_ijk(self, o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, WithDenom=True)
-                        # t_ijkabc -> Sia
-                        r1[i] += self.sigma_T1(v, j, k, L, t3)                       
-                        # t_ijkabc -> Sijab
-                        tmp = self.sigma_T2_A(k, Fme, t3)
-                        r2[i,j] += tmp
-                        r2[j,i] += tmp.swapaxes(0,1)                      
-                        # t_ijkabc -> Sijad
-                        tmp = self.sigma_T2_B(k, Wamef_cc3, t3)
-                        r2[i,j] += tmp
-                        r2[j,i] += tmp.swapaxes(0,1)
-                        # t_ijkabc -> Silab
-                        tmp = self.sigma_T2_C(j, k, Wmnie_cc3, t3)
-                        r2[i] += tmp
-                        r2[:,i] += tmp.swapaxes(1,2) 
                         
+                        X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])                       
+                        X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+                        X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
+                        X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])
+            
+            r1 += X1
+            r2 += X2 + X2.swapaxes(0,1).swapaxes(2,3)
+                       
             if isinstance(t3, torch.Tensor):
                 del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3     
              
@@ -590,8 +590,6 @@ class ccwfn(object):
         r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
         return r_T2
 
-    # CC3
-
     # Intermedeates needed for CC3
     def build_cc3_Wmnij(self, o, v, ERI, t1):
         contract = self.contract
@@ -676,35 +674,7 @@ class ccwfn(object):
         # Wabei
         W = Z_abei + Z_eiab.swapaxes(0,2).swapaxes(1,3)
         return W
-
-    # t3 contribution to t1
-    def sigma_T1(self, v, j, k, L, t3):
-        contract = self.contract
-        S = contract('abc,bc->a', t3, L[j,k,v,v])
-        S -= contract('cba,bc->a', t3, L[j,k,v,v])
-        return S
-
-    # t3 contribution to t2 (3 terms)
-    # t_ijkabc -> S_ijab
-    def sigma_T2_A(self, k, Fme, t3):
-        contract = self.contract
-        S = contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
-        return S
-  
-    # t_ijkabc -> S_ijad
-    def sigma_T2_B(self, k, Wamef, t3):
-        contract = self.contract
-        tmp = 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)
-        S = contract('abc,dbc->ad', tmp, Wamef.swapaxes(0,1)[k])
-        return S
-
-    # t_ijkabc -> - Silab
-    def sigma_T2_C(self, j, k, Wmnie, t3):
-        contract = self.contract
-        tmp = 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)
-        S = -1 * contract('abc,lc->lab', tmp, Wmnie[j,k])
-        return S
-
+ 
     def cc_energy(self, o, v, F, L, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
