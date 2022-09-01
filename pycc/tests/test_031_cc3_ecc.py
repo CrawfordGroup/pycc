@@ -1,5 +1,5 @@
 """
-Test CC2 equation solution using various molecule test cases.
+Test CC3 equation solution using various molecule test cases.
 """
 
 # Import package, test suite, and other packages as needed
