@@ -156,6 +156,12 @@ class ccwfn(object):
         else:
             self.t1 = np.zeros((self.no, self.nv))
             self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
+
+        valid_precision = ['SP', 'DP']
+        precision = kwargs.pop('precision', 'DP')
+        if precision.upper() not in valid_precision:
+            raise Exception('%s is not an allowed precision arithmetic.' % (precision))
+        self.precision = precision.upper()
          
         valid_device = ['CPU', 'GPU']
         device = kwargs.pop('device', 'CPU')
@@ -163,6 +169,15 @@ class ccwfn(object):
             raise Exception("%s is not an allowed device." % (device))
         self.device = device.upper()
         
+        if self.precision == 'SP':
+            self.H.F = np.float32(self.H.F)
+            self.t1 = np.float32(self.t1)
+            self.t2 = np.float32(self.t2)
+            self.Dia = np.float32(self.Dia)
+            self.Dijab = np.float32(self.Dijab)
+            self.H.ERI = np.float32(self.H.ERI)
+            self.H.L = np.float32(self.H.L)    
+
         # Initiate the object for a generalized contraction function 
         # for GPU or CPU.  
         self.contract = cc_contract(device=self.device)
@@ -170,19 +185,32 @@ class ccwfn(object):
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
         # ERI will be kept on GPU
-        if device == 'GPU':
-            self.device0 = torch.device('cpu')
-            self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-            # Storing on GPU
-            self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=self.device1)
-            self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=self.device1)
-            self.t2 = torch.tensor(self.t2, dtype=torch.complex128, device=self.device1)
-            self.Dia = torch.tensor(self.Dia, dtype=torch.complex128, device=self.device1)
-            self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex128, device=self.device1)
-            # Storing on CPU
-            self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=self.device0)
-            self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=self.device0)
-
+        if self.device == 'GPU':
+            if self.precision == 'DP':
+                self.device0 = torch.device('cpu')
+                self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+                # Storing on GPU
+                self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=self.device1)
+                self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=self.device1)
+                self.t2 = torch.tensor(self.t2, dtype=torch.complex128, device=self.device1)
+                self.Dia = torch.tensor(self.Dia, dtype=torch.complex128, device=self.device1)
+                self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex128, device=self.device1)
+                # Storing on CPU
+                self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=self.device0)
+                self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=self.device0)
+            elif self.precision == 'SP':
+                self.device0 = torch.device('cpu')
+                self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+                # Storing on GPU
+                self.H.F = torch.tensor(self.H.F, dtype=torch.complex64, device=self.device1)
+                self.t1 = torch.tensor(self.t1, dtype=torch.complex64, device=self.device1)
+                self.t2 = torch.tensor(self.t2, dtype=torch.complex64, device=self.device1)
+                self.Dia = torch.tensor(self.Dia, dtype=torch.complex64, device=self.device1)
+                self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex64, device=self.device1)
+                # Storing on CPU
+                self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex64, device=self.device0)
+                self.H.L = torch.tensor(self.H.L, dtype=torch.complex64, device=self.device0)
+                
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
              
     def solve_cc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
@@ -219,7 +247,7 @@ class ccwfn(object):
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
-        diis = helper_diis(self.t1, self.t2, max_diis)
+        diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
 
         for niter in range(1, maxiter+1):
 
