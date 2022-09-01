@@ -13,6 +13,7 @@ import torch
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
+from .cctriples import cctriples 
 
 
 class ccwfn(object):
@@ -351,8 +352,8 @@ class ccwfn(object):
             for i in range(no):
                 for j in range(no):
                     for k in range(no):
-                        # t_ijk
-                        t3 = self.build_t3(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, WithDenom=True)
+                        # t_ijk                        
+                        t3 = cctriples.t3c_ijk(self, o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, WithDenom=True)
                         # t_ijkabc -> Sia
                         r1[i] += self.sigma_T1(v, j, k, L, t3)                       
                         # t_ijkabc -> Sijab
@@ -676,33 +677,6 @@ class ccwfn(object):
         # Wabei
         W = Z_abei + Z_eiab.swapaxes(0,2).swapaxes(1,3)
         return W
-
-    # t3 for a certain set of ijk
-    def build_t3(self, o, v, i, j, k, t2, Wabei, Wmbij, F, WithDenom=True):
-        contract = self.contract
-        
-        t3 = contract('bae,ce->abc', Wabei[:,:,:,i], t2[k,j])
-        t3 += contract('cae,be->abc', Wabei[:,:,:,i], t2[j,k])
-        t3 += contract('abe,ce->abc', Wabei[:,:,:,j], t2[k,i])
-        t3 += contract('cbe,ae->abc', Wabei[:,:,:,j], t2[i,k])
-        t3 += contract('ace,be->abc', Wabei[:,:,:,k], t2[j,i])
-        t3 += contract('bce,ae->abc', Wabei[:,:,:,k], t2[i,j])
-
-        t3 -= contract('mc,mab->abc', Wmbij[:,:,j,k], t2[i])
-        t3 -= contract('mb,mac->abc', Wmbij[:,:,k,j], t2[i])
-        t3 -= contract('mc,mba->abc', Wmbij[:,:,i,k], t2[j])
-        t3 -= contract('ma,mbc->abc', Wmbij[:,:,k,i], t2[j])
-        t3 -= contract('mb,mca->abc', Wmbij[:,:,i,j], t2[k])
-        t3 -= contract('ma,mcb->abc', Wmbij[:,:,j,i], t2[k])
-        
-        if WithDenom is True:
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(t3)
-            denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-            denom += F[i,i] + F[j,j] + F[k,k]
-            return t3/denom
-        else:
-            return t3
 
     # t3 contribution to t1
     def sigma_T1(self, v, j, k, L, t3):
