@@ -363,12 +363,12 @@ class ccwfn(object):
                         # t_ijkabc -> Sijad
                         tmp = self.sigma_T2_B(k, Wamef_cc3, t3)
                         r2[i,j] += tmp
-                        r2[j,i] += tmp.swapaxes(0, 1)
+                        r2[j,i] += tmp.swapaxes(0,1)
                         # t_ijkabc -> Silab
-                        for l in range(no):
-                            tmp = self.sigma_T2_C(j, k, l, Wmnie_cc3, t3)
-                            r2[i,l] += tmp
-                            r2[l,i] += tmp.swapaxes(0, 1)  
+                        tmp = self.sigma_T2_C(j, k, Wmnie_cc3, t3)
+                        r2[i] += tmp
+                        r2[:,i] += tmp.swapaxes(1,2) 
+                        
 
             if isinstance(t3, torch.Tensor):
                 del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3     
@@ -700,11 +700,11 @@ class ccwfn(object):
         return S
 
     # t_ijkabc -> - Silab
-    def sigma_T2_C(self, j, k, l, Wmnie, t3):
+    def sigma_T2_C(self, j, k, Wmnie, t3):
         contract = self.contract
         tmp = 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)
-        S = contract('abc,c->ab', tmp, Wmnie[j,k,l])
-        return (-1) * S
+        S = -1 * contract('abc,lc->lab', tmp, Wmnie[j,k])
+        return S
 
     def cc_energy(self, o, v, F, L, t1, t2):
         contract = self.contract
