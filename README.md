@@ -9,18 +9,16 @@ Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://g
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
 A Python-based coupled cluster implementation.  Current capabilities include:
-  - Spin-adapted RHF-CCD, RHF-CC2, RHF-CCSD, and RHF-CCSD(T) energies
-  - Triples-drivers for (T), CC3, and other approximate triples
-  - RHF-CCSD densities
-  - GPU implementation
+  - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
+  - Triples-drivers for various approximate triples methods
+  - RHF-CC2 and CCSD and densities
+  - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
-  - Real-time CCSD with a selection of integrators
-  - PAO-CCSD energies and RT-CC
-  - PNO-CCSD energies and RT-CC
-  - PNO++-CCSD energies and RT-CC
+  - Real-time CC2 and CCSD with a selection of integrators
+  - PAO-, PNO-, and PNO++-CCSD energies RT-CC
 
 Future plans:
-  - CC3
+  - RT-CC3
   - Linear and quadratic response functions
   - EOM-CC
   - Analytic gradients
@@ -36,7 +34,7 @@ This package requires the following:
 
 ### Copyright
 
-Copyright (c) 2021, T. Daniel Crawford
+Copyright (c) 2022, T. Daniel Crawford
 
 
 #### Acknowledgements
