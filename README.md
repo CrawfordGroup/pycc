@@ -12,10 +12,9 @@ A Python-based coupled cluster implementation.  Current capabilities include:
   - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
   - Triples-drivers for various approximate triples methods
   - RHF-CC2 and CCSD and densities
-  - Real-time (RT) CC2 and CCSD
+  - Real-time (RT) CC2 and CCSD with a selection of integrators
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
-  - Real-time CC2 and CCSD with a selection of integrators
   - PAO-, PNO-, and PNO++-CCSD energies RT-CC
 
 Future plans:
