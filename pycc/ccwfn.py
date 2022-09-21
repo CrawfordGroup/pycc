@@ -13,7 +13,7 @@ import torch
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
-from .cctriples import cctriples 
+from .cctriples import t_tjl, t3c_ijk
 
 
 class ccwfn(object):
@@ -74,7 +74,7 @@ class ccwfn(object):
         time_init = time.time()
              
         valid_cc_models = ['CCD', 'CC2', 'CCSD', 'CCSD(T)', 'CC3']
-        model = kwargs.pop('model','CCSD')
+        model = kwargs.pop('model','CCSD').upper()
         if model not in valid_cc_models:
             raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
@@ -293,9 +293,15 @@ class ccwfn(object):
                 if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
                     print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                     print("E(REF)  = %20.15f" % self.eref)
-                    print("E(%s) = %20.15f" % (self.model, ecc))
-                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
+                    if (self.model == 'CCSD(T)'):
+                        et = t_tjl(self)
+                        print("E(CCSD) = %20.15f" % ecc)
+                        print("E(T)  = %20.15f" % et)
+                        ecc = ecc + et   
+                    else:
+                        print("E(%s) = %20.15f" % (self.model, ecc))
                     self.ecc = ecc
+                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
                     return ecc
 
             diis.add_error_vector(self.t1, self.t2)
@@ -359,7 +365,8 @@ class ccwfn(object):
             for i in range(no):
                 for j in range(no):
                     for k in range(no):                       
-                        t3 = cctriples.t3c_ijk(self, o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, WithDenom=True)
+                        t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F,
+contract, WithDenom=True)
                         
                         X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])                       
                         X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
