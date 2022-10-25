@@ -7,6 +7,7 @@ import psi4
 import pycc
 import pytest
 from ..data.molecules import *
+from ..cctriples import t_vikings, t_vikings_inverted, t_tjl
 
 def test_ccsd_t_h2o():
     """H2O cc-pVDZ"""
@@ -28,12 +29,11 @@ def test_ccsd_t_h2o():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    cc = pycc.ccwfn(rhf_wfn)
+    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)')
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
-    tcorr = pycc.cctriples(cc)
-    et_vik_ijk = tcorr.t_vikings()
-    et_vik_abc = tcorr.t_vikings_inverted()
-    et_tjl = tcorr.t_tjl()
+    et_vik_ijk = t_vikings(cc)
+    et_vik_abc = t_vikings_inverted(cc)
+    et_tjl = t_tjl(cc)
     epsi4 = -0.000099957499645
     assert (abs(epsi4 - et_vik_ijk) < 1e-11)
     assert (abs(epsi4 - et_vik_abc) < 1e-11)
@@ -41,12 +41,11 @@ def test_ccsd_t_h2o():
 
     psi4.set_options({'basis': 'cc-pVDZ'})
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    cc = pycc.ccwfn(rhf_wfn)
+    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)')
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
-    tcorr = pycc.cctriples(cc)
-    et_vik_ijk = tcorr.t_vikings()
-    et_vik_abc = tcorr.t_vikings_inverted()
-    et_tjl = tcorr.t_tjl()
+    et_vik_ijk = t_vikings(cc)
+    et_vik_abc = t_vikings_inverted(cc)
+    et_tjl = t_tjl(cc)
     epsi4 = -0.003861236558801
     assert (abs(epsi4 - et_vik_ijk) < 1e-11)
     assert (abs(epsi4 - et_vik_abc) < 1e-11)
