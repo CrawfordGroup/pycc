@@ -141,7 +141,6 @@ class cclambda(object):
                         Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])
 
         for niter in range(1, maxiter+1):
-            time0 = time.time()
             lecc_last = lecc
 
             l1 = self.l1
@@ -258,7 +257,6 @@ class cclambda(object):
             diis.add_error_vector(self.l1, self.l2)
             if niter >= start_diis:
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
-            #print("!per iter: ", time.time() - time1)
 
         if isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
