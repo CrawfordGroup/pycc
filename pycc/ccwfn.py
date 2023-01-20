@@ -13,7 +13,7 @@ import torch
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc
 
 
 class ccwfn(object):
@@ -84,6 +84,13 @@ class ccwfn(object):
 
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC3']
+
+        valid_dertypes = ['NONE', 'FIRST']
+        dertype = kwargs.pop('dertype', 'NONE').upper()
+        if dertype not in valid_dertypes:
+            raise Exception("%s is not an allowed CC derivative type." % (dertype))
+        self.dertype = dertype
+        print(dertype)
 
         valid_local_models = [None, 'PNO', 'PAO','PNO++']
         local = kwargs.pop('local', None)
@@ -298,6 +305,8 @@ class ccwfn(object):
                         print("E(CCSD) = %20.15f" % ecc)
                         print("E(T)  = %20.15f" % et)
                         ecc = ecc + et   
+                        if (self.dertype == 'FIRST'):
+                            self.t3_grad()
                     else:
                         print("E(%s) = %20.15f" % (self.model, ecc))
                     self.ecc = ecc
@@ -690,3 +699,69 @@ contract, WithDenom=True)
             ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
             ecc = ecc + contract('ijab,ijab->', self.build_tau(t1, t2), L[o,o,v,v])
         return ecc
+
+    def t3_grad(self):
+        contract = self.contract
+
+        o = self.o
+        v = self.v
+        no = self.no
+        nv = self.nv
+        t1 = self.t1
+        t2 = self.t2
+        F = self.H.F
+        ERI = self.H.ERI
+
+        Dvv = np.zeros((nv))
+        Doo = np.zeros((no))
+        Goovv = np.zeros_like(t2)
+        Gooov = np.zeros((no,no,no,nv))
+        Gvvvo = np.zeros((nv,nv,nv,no))
+        S1 = np.zeros_like(t1)
+        S2 = np.zeros_like(t2)
+
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    M3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
+                    N3 = t3d_ijk(o, v, i, j, k, t1, t2, ERI[o,o,v,v], F, contract, True)
+
+                    X3 = 8.0 * M3 - 4.0 * M3.swapaxes(0,1) - 4.0 * M3.swapaxes(1,2) - 4.0 * M3.swapaxes(0,2) + 2.0 * M3.swapaxes(0,1).swapaxes(0,2) + M3.swapaxes(0,1).swapaxes(1,2)
+                    Y3 = 8.0 * N3 - 4.0 * N3.swapaxes(0,1) - 4.0 * N3.swapaxes(1,2) - 4.0 * N3.swapaxes(0,2) + 2.0 * N3.swapaxes(0,1).swapaxes(0,2) + N3.swapaxes(0,1).swapaxes(1,2)
+
+                    Dvv += 0.5 * contract('abc,abc->a', M3, (X3 + Y3))
+
+                    Goovv[i,j] += 4.0 * contract('c,abc->ab', t1[k], (2.0*M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - M3.swapaxes(0,1).swapaxes(1,2)))
+
+                    Gooov[j,i] -= contract('abc,lbc->la', (2.0*X3+Y3),t2[o,k])
+
+                    Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2.0*X3 + Y3), t2[k,i,:,:])
+
+                    S1[i] += contract('abc,bc->a', (4.0 * M3 - 2.0 * M3.swapaxes(0,2) - 2.0 * M3.swapaxes(1,2) + M3.swapaxes(0,1).swapaxes(1,2)), ERI[j,k,v,v])
+
+                    S2[i] -= contract('abc,lc->lab', (2.0 * X3 + Y3), ERI[j,k,o,v])
+                    S2[i,j] += contract('abc,dcb->ad', (2.0 * X3 + Y3), ERI[k,v,v,v])
+
+        S2 = S2 + S2.swapaxes(0,1).swapaxes(2,3)
+
+        for a in range(nv):
+            for b in range(nv):
+                for c in range(nv):
+                    M3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
+                    N3 = t3d_abc(o, v, a, b, c, t1, t2, ERI[o,o,v,v], F, contract, True)
+
+                    X3 = 8.0 * M3 - 4.0 * M3.swapaxes(0,1) - 4.0 * M3.swapaxes(1,2) - 4.0 * M3.swapaxes(0,2) + 2.0 * M3.swapaxes(0,1).swapaxes(0,2) + M3.swapaxes(0,1).swapaxes(1,2)
+                    Y3 = 8.0 * N3 - 4.0 * N3.swapaxes(0,1) - 4.0 * N3.swapaxes(1,2) - 4.0 * N3.swapaxes(0,2) + 2.0 * N3.swapaxes(0,1).swapaxes(0,2) + N3.swapaxes(0,1).swapaxes(1,2)
+                    
+                    Doo -= 0.5 * contract('ijk,ijk->i', M3, (X3 + Y3))
+
+        self.Dvv = Dvv
+        self.Doo = Doo
+        self.Goovv = Goovv
+        self.Gooov = Gooov
+        self.Gvvvo = Gvvvo
+        self.S1 = S1
+        self.S2 = S2
+
+        print(Dvv)
+        print(Doo)
