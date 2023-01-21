@@ -81,9 +81,10 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
     t3 = contract('ij,k->ijk', Woovv[:,:,a,b], t1[:,c])
     t3 += contract('ik,j->ijk', Woovv[:,:,a,c], t1[:,b])
     t3 += contract('jk,i->ijk', Woovv[:,:,b,c], t1[:,a])
-    t3 += contract('ij,k->ijk', t2[:,:,a,b], F[o,c])
-    t3 += contract('ik,j->ijk', t2[:,:,a,c], F[o,b])
-    t3 += contract('jk,i->ijk', t2[:,:,b,c], F[o,a])
+    Fov = F[o,v]
+    t3 += contract('ij,k->ijk', t2[:,:,a,b], Fov[:,c])
+    t3 += contract('ik,j->ijk', t2[:,:,a,c], Fov[:,b])
+    t3 += contract('jk,i->ijk', t2[:,:,b,c], Fov[:,a])
 
     if WithDenom is True:
         no = o.stop
