@@ -717,6 +717,9 @@ class ccwfn(object):
         Gvvvo = np.zeros((nv,nv,nv,no))
         S1 = np.zeros_like(t1)
         S2 = np.zeros_like(t2)
+        Z3 = np.zeros((nv,nv,nv))
+        ZZ3 = np.zeros((nv,nv,nv))
+        ZZZ3 = np.zeros((nv,nv,nv))
 
         for i in range(no):
             for j in range(no):
@@ -730,11 +733,27 @@ class ccwfn(object):
 
                     Dvv += 0.5 * contract('abc,abc->a', M3, (X3 + Y3))
 
+                    Z3[:,:,:] = 0.0
+                    ZZ3[:,:,:] = 0.0
+                    ZZZ3[:,:,:] = 0.0
+
                     #Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - M3.swapaxes(0,1).swapaxes(1,2))
-                    Z3 = M3.swapaxes(1,2).swapaxes(0,2).copy()
-                    #ZZ3 = Z3.swapaxes(0,2).copy()
-                    print(f"||ZZ3{i,j,k}|| = {np.linalg.norm(Z3)}")
+                    Z3 = M3.swapaxes(0,1).swapaxes(1,2)
+                    ZZ3 = np.transpose(M3, axes=[1,2,0])
+                    ZZZ3 = np.moveaxis(M3, 0, 2)
+                    print(Z3 - ZZZ3)
+                    #print("Swapaxes sort:")
+                    #print(ZZ3)
+
+                    #for a in range(nv):
+                    #    for b in range(nv):
+                    #        for c in range(nv):
+                    #            Z3[a,b,c] = M3[b,c,a]
+                    #print("Manual sort:")
                     #print(Z3)
+
+
+                    #print(f"||ZZ3{i,j,k}|| = {np.linalg.norm(Z3)}")
 
                     Goovv[i,j,:,:] += 4*contract('c,abc->ab', t1[k,:], Z3)
 
@@ -771,7 +790,7 @@ class ccwfn(object):
 #        print(Doo)
 #        print(S1)
 #        print(S2)
-        for i in range(no):
-            for j in range(no):
-                print(f"{i,j}")
-                print(Goovv[i,j])
+#        for i in range(no):
+#            for j in range(no):
+#                print(f"{i,j}")
+#                print(Goovv[i,j])
