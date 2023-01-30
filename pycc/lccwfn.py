@@ -10,22 +10,45 @@ class lccwfn(object):
 
     Attributes
     ----------
-
+    o : Numpy slice
+        occupied orbital subspace 
+    v : Numpy slice
+        virtual orbital subspace
+    no: int
+        number of (active) occupied orbitals
+    nv: int 
+        number of virtual orbitals
+    H: PyCC Hamiltonian object
+       Hamiltonian object with integrals, Fock matrices, and orbital coefficients
+    Local: PyCC Local object 
+       Local object with transformation matrices, local Fock matrices and integrals, etc. 
+      
     Parameters
     ----------
+    local: string 
+           type of local calculation ("PAO", "PNO", etc.)
+    model: string
+           type of CC calculation ("CCD","CCSD", etc.)
+    eref: float
+          reference energy (typically HF/SCF energy)     
 
     Methods
     -------
+    solve_lcc() 
+        Solves the local CC T amplitude equations
+    local_residuals()
+        Computes the local T1 and T2 residuals for a given set of amplitudes and Fock operator  
     
     Notes
     -----
-    Arguments needed?:
-    Q and L 
-    integrals from the Hamiltonian object
-    eps
+    To do: 
+    (1) need DIIS extrapolation
+    (2) time table for each intermediate?
+    (3) generate and store overlap terms prior to the calculation of the residuals
+    (4) remove redundant transformed integrals
     """
  
-    def __init__(self, o, v, no, nv, H, local, model, eref, Local): #QL, dim, eps): 
+    def __init__(self, o, v, no, nv, H, local, model, eref, Local): 
         self.o = o
         self.v = v
         self.no = no
@@ -42,7 +65,6 @@ class lccwfn(object):
         self.t1 = np.zeros((self.no, self.nv))
         t1_ii = []
         t2_ij = [] 
-        emp2 = 0
 
         for i in range(self.no):
             ii = i*self.no + i

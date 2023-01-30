@@ -36,8 +36,6 @@ class Local(object):
         type of local calculation ("PAO", "PNO", etc.)
     it2_opt: bool 
         Flag to optimize initial t2 amplitudes (default = True) 
-    sim: bool 
-        Flag to use the local filter (default = False   
 
     Methods
     -------
