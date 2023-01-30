@@ -14,7 +14,7 @@ from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk
-
+from .lccwfn import lccwfn
 
 class ccwfn(object):
     """
@@ -106,6 +106,13 @@ class ccwfn(object):
             raise Exception("%s is not an allowed initial t2 amplitudes." % (it2_opt))
         self.it2_opt = it2_opt
 
+        valid_sim = [True,False]
+        # TODO: case-protect this kwarg
+        sim = kwargs.pop('sim', False)
+        if sim not in valid_sim:
+            raise Exception("%s is not an allowed local filter." % (sim))
+        self.sim = sim
+
         self.ref = scf_wfn
         self.eref = self.ref.energy()
         self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
@@ -143,7 +150,10 @@ class ccwfn(object):
 
         if local is not None:
             self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
-
+            if sim is not True:
+                self.Local._trans_integrals(self.o, self.v)
+                self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
+        
         # denominators
         eps_occ = np.diag(self.H.F)[o]
         eps_vir = np.diag(self.H.F)[v]
