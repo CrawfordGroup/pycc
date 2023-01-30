@@ -6,7 +6,6 @@ import psi4
 import pycc
 import pytest
 from ..data.molecules import *
-import timer
 
 def test_pno_ccd():
     """H2O PNO-CCD Test"""
