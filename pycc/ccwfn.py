@@ -106,12 +106,12 @@ class ccwfn(object):
             raise Exception("%s is not an allowed initial t2 amplitudes." % (it2_opt))
         self.it2_opt = it2_opt
 
-        valid_sim = [True,False]
+        valid_filter = [True,False]
         # TODO: case-protect this kwarg
-        sim = kwargs.pop('sim', False)
-        if sim not in valid_sim:
-            raise Exception("%s is not an allowed local filter." % (sim))
-        self.sim = sim
+        filter = kwargs.pop('filter', False)
+        if filter not in valid_filter:
+            raise Exception("%s is not an allowed local filter." % (filter))
+        self.filter = filter
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
@@ -150,7 +150,7 @@ class ccwfn(object):
 
         if local is not None:
             self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
-            if sim is not True:
+            if filter is not True:
                 self.Local._trans_integrals(self.o, self.v)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
         

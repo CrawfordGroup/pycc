@@ -28,7 +28,7 @@ def test_pno_ccd():
     r_conv = 1e-12
     
     #simulation code of pno-ccd
-    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-5,it2_opt=False,sim=True)
+    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-5,it2_opt=False,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
     
     #pno-ccd
