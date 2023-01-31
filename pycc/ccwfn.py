@@ -302,7 +302,7 @@ class ccwfn(object):
                     if (self.model == 'CCSD(T)'):
                         et = t_tjl(self)
                         print("E(CCSD) = %20.15f" % ecc)
-                        print("E(T)  = %20.15f" % et)
+                        print("E(T)    = %20.15f" % et)
                         ecc = ecc + et
                         if (self.dertype == 'FIRST'):
                             self.t3_grad()
@@ -718,50 +718,28 @@ class ccwfn(object):
         S1 = np.zeros_like(t1)
         S2 = np.zeros_like(t2)
         Z3 = np.zeros((nv,nv,nv))
-        ZZ3 = np.zeros((nv,nv,nv))
-        ZZZ3 = np.zeros((nv,nv,nv))
 
         for i in range(no):
             for j in range(no):
                 for k in range(no):
                     M3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
-
                     N3 = t3d_ijk(o, v, i, j, k, t1, t2, ERI[o,o,v,v], F, contract, True)
-
-                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*M3.swapaxes(0,1).swapaxes(0,2) + 2*M3.swapaxes(0,1).swapaxes(1,2)
-                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*N3.swapaxes(0,1).swapaxes(0,2) + 2*N3.swapaxes(0,1).swapaxes(1,2)
+                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
+                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
 
                     Dvv += 0.5 * contract('abc,abc->a', M3, (X3 + Y3))
-
-                    Z3[:,:,:] = 0.0
-                    ZZ3[:,:,:] = 0.0
-                    ZZZ3[:,:,:] = 0.0
-
-                    #Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - M3.swapaxes(0,1).swapaxes(1,2))
-                    Z3 = M3.swapaxes(0,1).swapaxes(1,2)
-                    ZZ3 = np.transpose(M3, axes=[1,2,0])
-                    ZZZ3 = np.moveaxis(M3, 0, 2)
-                    print(Z3 - ZZZ3)
-                    #print("Swapaxes sort:")
-                    #print(ZZ3)
 
                     #for a in range(nv):
                     #    for b in range(nv):
                     #        for c in range(nv):
-                    #            Z3[a,b,c] = M3[b,c,a]
-                    #print("Manual sort:")
-                    #print(Z3)
+                    #            Z3[a,b,c] = 2*(M3[a,b,c] - M3[a,c,b]) - (M3[b,a,c] - M3[b,c,a])
 
-
-                    #print(f"||ZZ3{i,j,k}|| = {np.linalg.norm(Z3)}")
-
+                    Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3, 2, 0))
                     Goovv[i,j,:,:] += 4*contract('c,abc->ab', t1[k,:], Z3)
-
-                    Gooov[j,i] -= contract('abc,lbc->la', (2*X3+Y3),t2[o,k])
-
+                    Gooov[j,i] -= contract('abc,lbc->la', (2*X3 + Y3), t2[:,k])
                     Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
 
-                    S1[i] += contract('abc,bc->a', (4*M3 - 2*M3.swapaxes(0,2) - 2*M3.swapaxes(1,2) + M3.swapaxes(0,1).swapaxes(1,2)), ERI[j,k,v,v])
+                    S1[i] += contract('abc,bc->a', (4*M3 - 2*M3.swapaxes(0,2) - 2*M3.swapaxes(1,2) + np.moveaxis(M3, 2, 0)), ERI[j,k,v,v])
                     S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[j,k,o,v])
                     S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[k,v,v,v])
 
@@ -772,10 +750,8 @@ class ccwfn(object):
                 for c in range(nv):
                     M3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
                     N3 = t3d_abc(o, v, a, b, c, t1, t2, ERI[o,o,v,v], F, contract, True)
-                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*M3.swapaxes(0,1).swapaxes(0,2) + 2*M3.swapaxes(0,1).swapaxes(1,2)
-                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*N3.swapaxes(0,1).swapaxes(0,2) + 2*N3.swapaxes(0,1).swapaxes(1,2)
-
-
+                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
+                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
                     Doo -= 0.5 * contract('ijk,ijk->i', M3, (X3 + Y3))
 
         self.Dvv = Dvv
@@ -786,11 +762,23 @@ class ccwfn(object):
         self.S1 = S1
         self.S2 = S2
 
+#        print("Dvv:")
 #        print(Dvv)
+#        print("Doo:")
 #        print(Doo)
+#        print("S1:")
 #        print(S1)
-#        print(S2)
 #        for i in range(no):
 #            for j in range(no):
-#                print(f"{i,j}")
+#                print(f"S2{i,j}")
+#                print(S2[i,j])
+#
+#        for i in range(no):
+#            for j in range(no):
+#                print(f"Goovv{i,j}")
 #                print(Goovv[i,j])
+#
+#        for i in range(no):
+#            for j in range(no):
+#                print(f"Gooov{i,j}")
+#                print(Gooov[i,j])
