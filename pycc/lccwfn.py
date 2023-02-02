@@ -80,7 +80,7 @@ class lccwfn(object):
         self.t1_ii = t1_ii    
         self.t2_ij = t2_ij 
 
-    def solve_lcc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100):
+    def solve_lcc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8,start_diis=1):
         """
         Parameters
         ----------
@@ -110,6 +110,8 @@ class lccwfn(object):
         #self.r1_t = Timer("r1")
         #self.r2_t = Timer("r2")
         #self.energy_t = Timer("energy")
+
+        ldiis = helper_ldiis(self.t1_ii, self.t2_ij, max_diis) 
         
         elcc = self.lcc_energy(self.Local.Fov_ij,self.Local.Loovv_ij,self.t1_ii, self.t2_ij)
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
@@ -147,6 +149,10 @@ class lccwfn(object):
                 self.elcc = elcc
                 #print(Timer.timers)
                 return elcc
+
+            ldiis.add_error_vector(self.t1_ii,self.t2_ij)
+            if niter >= start_diis:
+                self.t1_ii, self.t2_ij = ldiis.extrapolate(self.t1_ii, self.t2_ij)
 
     def local_residuals(self, t1_ii, t2_ij):
         """
@@ -250,17 +256,11 @@ class lccwfn(object):
         return Fmi_tot 
 
     def build_lFme(self, Fme_ij, Fov_ij, Loovv_ij, t1_ii):
-        """
-        Implemented up to CCSD but debugging at the CCD level to narrow down terms
-        """
         #self.fme_t.start()
         #self.fme_t.stop()
         return
 
     def build_lWmnij(self, o, ERI, ERIooov_ij, ERIoovo_ij, ERIoovv_ij, t1_ii, t2_ij):
-        """
-        Implemented up to CCSD but debugging at the CCD level to narrow down terms
-        """
         #self.wmnij_t.start()
 
         Wmnij = ERI[o,o,o,o].copy()
@@ -277,9 +277,6 @@ class lccwfn(object):
         return Wmnij_tot
 
     def build_lZmbij(self, Zmbij_ij, ERIovvv_ij, t1_ii, t2_ij):
-        """
-        Implemented up to CCSD but debugging at the CCD level to narrow down terms
-        """
         #self.zmbij_t.start()
         #self.zmbij_t.stop()
         return
@@ -382,9 +379,6 @@ class lccwfn(object):
         return Wmbje_ijim, Wmbie_ijmj
 
     def lr_T1(self, r1_ii, Fov_ij , ERIovvv_ij, Lovvo_ij, Loovo_ij, t1_ii, t2_ij, Fae_ij , Fme_ij, lFmi):
-        """
-        Implemented up to CCSD but debugging at the CCD level to narrow down terms
-        """
         #self.r1_t.start()
         for i in range(self.no):
             r1_ii.append(np.zeros_like(t1_ii[i]))
