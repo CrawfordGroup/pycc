@@ -111,7 +111,7 @@ class lccwfn(object):
         #self.r2_t = Timer("r2")
         #self.energy_t = Timer("energy")
 
-        ldiis = helper_ldiis(self.t1_ii, self.t2_ij, max_diis) 
+        #ldiis = helper_ldiis(self.t1_ii, self.t2_ij, max_diis) 
         
         elcc = self.lcc_energy(self.Local.Fov_ij,self.Local.Loovv_ij,self.t1_ii, self.t2_ij)
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
@@ -150,9 +150,9 @@ class lccwfn(object):
                 #print(Timer.timers)
                 return elcc
 
-            ldiis.add_error_vector(self.t1_ii,self.t2_ij)
-            if niter >= start_diis:
-                self.t1_ii, self.t2_ij = ldiis.extrapolate(self.t1_ii, self.t2_ij)
+            #ldiis.add_error_vector(self.t1_ii,self.t2_ij)
+            #if niter >= start_diis:
+                #self.t1_ii, self.t2_ij = ldiis.extrapolate(self.t1_ii, self.t2_ij)
 
     def local_residuals(self, t1_ii, t2_ij):
         """
