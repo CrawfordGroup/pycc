@@ -23,6 +23,9 @@ Future plans:
   - EOM-CC
   - Analytic gradients
 
+Notes on PNO-CC: 
+[embed]https://github.com/JoseMadriaga/Notes/blob/main/LocalCCSD.pdf[/embed]
+
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
 This package requires the following:
