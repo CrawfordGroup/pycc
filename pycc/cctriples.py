@@ -1,6 +1,4 @@
-# Triples class for (T) corrections, CC3, etc.
-
-# Unfinished (Zhe, 0407)
+#Triples class for (T) corrections, CC3, etc.
 
 import numpy as np
 import torch
@@ -249,12 +247,13 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
         return l3
 
 def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    l3 = contract('ij,k->ijk', L[o,o,a,b], l1[:,c]) - contract('ij,k->ijk', L[o,o,a,c], l1[:,b])
-    l3 += contract('ik,j->ijk', L[o,o,a,c], l1[:,b]) - contract('ik,j->ijk', L[o,o,a,b], l1[:,c])
-    l3 += contract('ji,k->ijk', L[o,o,b,a], l1[:,c]) - contract('ji,k->ijk', L[o,o,b,c], l1[:,a])
-    l3 += contract('ki,j->ijk', L[o,o,c,a], l1[:,b]) - contract('ki,j->ijk', L[o,o,c,b], l1[:,a])
-    l3 += contract('jk,i->ijk', L[o,o,b,c], l1[:,a]) - contract('jk,i->ijk', L[o,o,b,a], l1[:,c])
-    l3 += contract('kj,i->ijk', L[o,o,c,b], l1[:,a]) - contract('kj,i->ijk', L[o,o,c,a], l1[:,b])
+    Loovv = L[o,o,v,v].copy()
+    l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
+    l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
+    l3 += contract('ji,k->ijk', Loovv[:,:,b,a], l1[:,c]) - contract('ji,k->ijk', Loovv[:,:,b,c], l1[:,a])
+    l3 += contract('ki,j->ijk', Loovv[:,:,c,a], l1[:,b]) - contract('ki,j->ijk', Loovv[:,:,c,b], l1[:,a])
+    l3 += contract('jk,i->ijk', Loovv[:,:,b,c], l1[:,a]) - contract('jk,i->ijk', Loovv[:,:,b,a], l1[:,c])
+    l3 += contract('kj,i->ijk', Loovv[:,:,c,b], l1[:,a]) - contract('kj,i->ijk', Loovv[:,:,c,a], l1[:,b])
 
     l3 += contract('i,jk->ijk', Fov[:,a], l2[:,:,b,c]) - contract('i,jk->ijk', Fov[:,b], l2[:,:,a,c])
     l3 += contract('i,kj->ijk', Fov[:,a], l2[:,:,c,b]) - contract('i,kj->ijk', Fov[:,c], l2[:,:,a,b])
@@ -350,12 +349,13 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
         return l3
 
 def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    l3 = contract('ij,k->ijk', L[o,o,a,b], l1[:,c]) - contract('ij,k->ijk', L[o,o,a,c], l1[:,b])
-    l3 += contract('ik,j->ijk', L[o,o,a,c], l1[:,b]) - contract('ik,j->ijk', L[o,o,a,b], l1[:,c])
-    l3 += contract('ji,k->ijk', L[o,o,b,a], l1[:,c]) - contract('ji,k->ijk', L[o,o,b,c], l1[:,a])
-    l3 += contract('ki,j->ijk', L[o,o,c,a], l1[:,b]) - contract('ki,j->ijk', L[o,o,c,b], l1[:,a])
-    l3 += contract('jk,i->ijk', L[o,o,b,c], l1[:,a]) - contract('jk,i->ijk', L[o,o,b,a], l1[:,c])
-    l3 += contract('kj,i->ijk', L[o,o,c,b], l1[:,a]) - contract('kj,i->ijk', L[o,o,c,a], l1[:,b])
+    Loovv = L[o,o,v,v].copy()
+    l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
+    l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
+    l3 += contract('ji,k->ijk', Loovv[:,:,b,a], l1[:,c]) - contract('ji,k->ijk', Loovv[:,:,b,c], l1[:,a])
+    l3 += contract('ki,j->ijk', Loovv[:,:,c,a], l1[:,b]) - contract('ki,j->ijk', Loovv[:,:,c,b], l1[:,a])
+    l3 += contract('jk,i->ijk', Loovv[:,:,b,c], l1[:,a]) - contract('jk,i->ijk', Loovv[:,:,b,a], l1[:,c])
+    l3 += contract('kj,i->ijk', Loovv[:,:,c,b], l1[:,a]) - contract('kj,i->ijk', Loovv[:,:,c,a], l1[:,b])
 
     l3 += contract('i,jk->ijk', Fov[:,a], l2[:,:,b,c]) - contract('i,jk->ijk', Fov[:,b], l2[:,:,a,c])
     l3 += contract('i,kj->ijk', Fov[:,a], l2[:,:,c,b]) - contract('i,kj->ijk', Fov[:,c], l2[:,:,a,b])
@@ -386,6 +386,97 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
         denom = np.zeros_like(l3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
         denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        return l3/denom
+    else:
+        return l3
+
+# Triples drivers that are useful for density matrix calculation
+# W_bc(ijka)
+def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
+    
+    t3 = contract('aei,kje->ijka', Wvvvo[b], t2[:,:,c])
+    t3 += contract('aei,jke->ijka', Wvvvo[c], t2[:,:,b])
+    t3 += contract('aek,jie->ijka', Wvvvo[:,c], t2[:,:,b])
+    t3 += contract('ek,ijae->ijka', Wvvvo[b,c], t2)
+    t3 += contract('ej,ikae->ijka', Wvvvo[c,b], t2)
+    t3 += contract('aej,kie->ijka', Wvvvo[:,b], t2[:,:,c])
+
+    t3 -= contract('mjk,ima->ijka', Wovoo[:,c,:,:], t2[:,:,:,b])
+    t3 -= contract('mkj,ima->ijka', Wovoo[:,b,:,:], t2[:,:,:,c])
+    t3 -= contract('mij,kma->ijka', Wovoo[:,b,:,:], t2[:,:,c])
+    t3 -= contract('maji,km->ijka', Wovoo, t2[:,:,c,b])
+    t3 -= contract('maki,jm->ijka', Wovoo, t2[:,:,b,c])
+    t3 -= contract('mik,jma->ijka', Wovoo[:,c,:,:], t2[:,:,b])
+
+    if WithDenom is True:
+        no = o.stop
+        Fo = np.diag(F)[o]
+        Fv = np.diag(F)[v]
+        denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
+        denom -= Fv.reshape(1,1,1,-1)
+        denom -= F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3
+
+def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    Loovv = L[o,o,v,v].copy()
+    l3 = contract('ija,k->ijka', Loovv[:,:,:,b], l1[:,c]) - contract('ija,k->ijka', Loovv[:,:,:,c], l1[:,b])
+    l3 += contract('ika,j->ijka', Loovv[:,:,:,c], l1[:,b]) - contract('ika,j->ijka', Loovv[:,:,:,b], l1[:,c])
+    l3 += contract('jia,k->ijka', Loovv[:,:,b], l1[:,c]) - contract('ji,ka->ijka', Loovv[:,:,b,c], l1)
+    l3 += contract('kia,j->ijka', Loovv[:,:,c], l1[:,b]) - contract('ki,ja->ijka', Loovv[:,:,c,b], l1)
+    l3 += contract('jk,ia->ijka', Loovv[:,:,b,c], l1) - contract('jka,i->ijka', Loovv[:,:,b], l1[:,c])
+    l3 += contract('kj,ia->ijka', Loovv[:,:,c,b], l1) - contract('kja,i->ijka', Loovv[:,:,c], l1[:,b])
+
+    l3 += contract('ia,jk->ijka', Fov, l2[:,:,b,c]) - contract('i,jka->ijka', Fov[:,b], l2[:,:,:,c])
+    l3 += contract('ia,kj->ijka', Fov, l2[:,:,c,b]) - contract('i,kja->ijka', Fov[:,c], l2[:,:,:,b])
+    l3 += contract('j,ika->ijka', Fov[:,b], l2[:,:,:,c]) - contract('ja,ik->ijka', Fov, l2[:,:,b,c])
+    l3 += contract('k,ija->ijka', Fov[:,c], l2[:,:,:,b]) - contract('ka,ij->ijka', Fov, l2[:,:,c,b])
+    l3 += contract('j,kia->ijka', Fov[:,b], l2[:,:,c]) - contract('j,kia->ijka', Fov[:,c], l2[:,:,b])
+    l3 += contract('k,jia->ijka', Fov[:,c], l2[:,:,b]) - contract('k,jia->ijka', Fov[:,b], l2[:,:,c])
+
+ 
+    tmp_W = 2 * Wvovv - Wvovv.swapaxes(2,3)
+    W = contract('eja,kie->ijka',  tmp_W[:,:,:,b], l2[:,:,c,:])
+    W += contract('eka,jie->ijka', tmp_W[:,:,:,c], l2[:,:,b,:])
+    W += contract('eia,kje->ijka', tmp_W[:,:,b], l2[:,:,c,:])
+    W += contract('eia,jke->ijka', tmp_W[:,:,c], l2[:,:,b,:])
+    W += contract('ek,ijae->ijka', tmp_W[:,:,b,c], l2)
+    W += contract('ej,ikae->ijka', tmp_W[:,:,c,b], l2)
+    
+    W -= contract('ei,jkea->ijka', Wvovv[:,:,b,c], l2)    
+    W -= contract('ei,kjea->ijka', Wvovv[:,:,c,b], l2)
+    W -= contract('eka,jie->ijka', Wvovv[:,:,b], l2[:,:,:,c])
+    W -= contract('eja,ike->ijka', Wvovv[:,:,:,c], l2[:,:,:,b])
+    W -= contract('eja,kie->ijka', Wvovv[:,:,c], l2[:,:,:,b])
+    W -= contract('eka,ije->ijka', Wvovv[:,:,:,b], l2[:,:,:,c])
+
+    tmp_W = 2 * Wooov - Wooov.swapaxes(0,1)
+    W -= contract('jima,km->ijka', tmp_W, l2[:,:,c,b])
+    W -= contract('kima,jm->ijka', tmp_W, l2[:,:,b,c])
+    W -= contract('ijm,kma->ijka', tmp_W[:,:,:,b], l2[:,:,c])
+    W -= contract('ikm,jma->ijka', tmp_W[:,:,:,c], l2[:,:,b])
+    W -= contract('kjm,ima->ijka', tmp_W[:,:,:,b], l2[:,:,:,c])
+    W -= contract('jkm,ima->ijka', tmp_W[:,:,:,c], l2[:,:,:,b])
+
+    W += contract('ijm,kma->ijka', Wooov[:,:,:,c], l2[:,:,b])
+    W += contract('ikm,jma->ijka', Wooov[:,:,:,b], l2[:,:,c])
+    W += contract('kjma,im->ijka', Wooov, l2[:,:,b,c])
+    W += contract('jim,kma->ijka', Wooov[:,:,:,c], l2[:,:,:,b])
+    W += contract('jkma,im->ijka', Wooov, l2[:,:,c,b])
+    W += contract('kim,jma->ijka', Wooov[:,:,:,b], l2[:,:,:,c])
+  
+    l3 += W
+   
+    if WithDenom is True:
+        no = o.stop
+        Fo = np.diag(F)[o]
+        Fv = np.diag(F)[v]
+        denom = np.zeros_like(l3)
+        denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
+        denom -= Fv.reshape(1,1,1,-1)
+        denom -= F[b+no,b+no] + F[c+no,c+no]
         return l3/denom
     else:
         return l3
