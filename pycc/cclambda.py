@@ -201,7 +201,6 @@ class cclambda(object):
                     for l in range(no):
                         for m in range(no):  
                             Y1 += contract('a,i->ia', Zjlma[j,l,m], Wmnij_cc3[:,j,l,m])                             
-                            #tmp += Zjlma[j,l,m] * Wmnij_cc3[i,j,l,m]
                 for j in range(no):
                     for l in range(no):
                         Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wmbje_cc3[j,:,l,:])
@@ -314,14 +313,11 @@ class cclambda(object):
                     for n in range(no):
                         t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)        
                         Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
-            for i in range(no):  
-                tmp = 0                 
-                for m in range(no):
-                    tmp += contract('df,dfa->a', l2[i,m], Zmdfa[m])
-                    tmp += contract('af,f->a', L[i,m,v,v], Znf[m])  
-                    for n in range(no):                            
-                        tmp += contract('ad,d->a', l2[m,n], Zmndi[m,n,:,i])   
-                Y1[i] += tmp
+            for m in range(no):
+                Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
+                Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])  
+                for n in range(no):                            
+                    Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])   
             # end of t3l1
             #l3l1+l3l2
             Zbide = np.zeros((nv,no,nv,nv))
@@ -344,21 +340,19 @@ class cclambda(object):
                         # l3l2
                         Y2[i,j] += contract('deb,eda->ab', l3_kij, Wabei_cc3[:,:,:,k]) 
                         Y2[i] -= contract('dab,ld->lab', l3_kij, Wmbij_cc3[:,:,j,k])
-            # l3l1
-            for i in range(no):                   
-                tmp = contract('bde,deab->a', Zbide[:,i,:,:], Wabef_cc3)
-                for j in range(no):
-                    for l in range(no):
-                        for m in range(no):                               
-                            tmp += Zjlma[j,l,m] * Wmnij_cc3[i,j,l,m]
-                for j in range(no):
-                    for l in range(no):
-                        tmp -= contract('d,da->a', Zjlid_1[j,l,i,:], Wmbje_cc3[j,:,l,:])
-                        tmp -= contract('d,da->a', Zjlid_2[j,l,i,:], Wmbej_cc3[j,:,:,l])
+            # l3l1                          
+            Y1 += contract('bide,deab->ia', Zbide, Wabef_cc3)
+            for j in range(no):
                 for l in range(no):
-                    tmp -= contract('bad,db->a', Zblad_1[:,l,:,:], Wmbje_cc3[i,:,l,:])
-                    tmp -= contract('bad,db->a', Zblad_2[:,l,:,:], Wmbej_cc3[i,:,:,l])   
-                Y1[i] += tmp
+                    for m in range(no):     
+                        Y1 += contract('a,i->ia', Zjlma[j,l,m], Wmnij_cc3[:,j,l,m])                          
+            for j in range(no):
+                for l in range(no):
+                    Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wmbje_cc3[j,:,l,:])
+                    Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wmbej_cc3[j,:,:,l])
+            for l in range(no):
+                Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wmbje_cc3[:,:,l,:])
+                Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wmbej_cc3[:,:,:,l])   
             # end l3l1+l3l2
                          
             r1 += Y1
