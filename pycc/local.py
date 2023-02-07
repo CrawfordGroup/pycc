@@ -1,7 +1,7 @@
 import psi4
 import numpy as np
 from opt_einsum import contract
-
+import time
 
 class Local(object):
     """
@@ -36,7 +36,7 @@ class Local(object):
         type of local calculation ("PAO", "PNO", etc.)
     it2_opt: bool 
         Flag to optimize initial t2 amplitudes (default = True) 
-   
+
     Methods
     -------
     filter_amps(): Returns t1 and t2 amplitude numpy arrays
@@ -49,7 +49,8 @@ class Local(object):
     _build_PAO(): build PAO orbital rotation tensors
     _build_PNO(): build PNO orbital rotation tensors   
     _build_PNOpp(): build PNO++ orbital rotation tensors
-    
+    _trans_integral(): transform Fock matrix and ERI from the MO basis to a local basis 
+
     Notes
     -----
     -try using the simulation code to ignore certain amplitudes in the ccsd for NO
@@ -77,7 +78,7 @@ class Local(object):
         self.r_conv = r_conv
 
         self._build()
- 
+    
     def _build(self):
         if self.local.upper() in ["PNO"]:
             self._build_PNO()
@@ -343,6 +344,16 @@ class Local(object):
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
 
+        #temporary way to generate make sure the phase factor of Q_ij and L_ij matches with Q_ji and L_ji
+        for i in range(self.no):
+            for j in range(self.no):
+                if i < j:
+                    ij = i*self.no + j
+                    ji = j*self.no + i
+
+                    self.Q[ji] = self.Q[ij]
+                    self.L[ji] = self.L[ij]
+
         #print("Now doing PNO mp2")
         #self._local_MP2_loop()
         #self._sim_MP2_loop()
@@ -489,7 +500,7 @@ class Local(object):
         for ij in range(self.no*self.no):
             i = ij // self.no
             j = ij % self.no
-
+  
             # Compute local and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
             if (occ[ij] < 0).any(): # Check for negative occupation numbers
@@ -797,3 +808,120 @@ class Local(object):
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
         return t1, t2
+
+    def _trans_integrals(self, o, v):
+        """
+        Transforming all the necessary integrals to the semi-canonical PNO basis, stored in a list with length occ*occ
+        Naming scheme will have the tensor name with _ij such as Fov_ij
+  
+        Notes
+        -----
+        There are some integral transformation that may not be needed, double check and remove 
+        """
+
+        trans_intstart = time.time()
+
+        #Initializing the transformation matrices
+        Q = self.Q
+        L = self.L
+
+        #contraction notation i,j,a,b typically MO; A,B,C,D virtual semicanonical PNO;
+
+        #Initializing transformation and integral lists
+        QL = []
+        QLT = []
+
+        Fov_ij = []
+        Fvv_ij = []
+
+        ERIoovo_ij = []
+        ERIooov_ij = []
+        ERIovvv_ij = []
+        ERIvvvv_ij = []
+        ERIoovv_ij = []
+        ERIovvo_ij = []
+        ERIvvvo_ij = []
+        ERIovov_ij = []
+        ERIovoo_ij = []
+
+        Loovv_ij = []
+        Lovvv_ij = []
+        Looov_ij = []
+        Loovo_ij = []
+        Lovvo_ij = []
+
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+
+            QL.append(Q[ij] @ L[ij])
+
+            Fov_ij.append(self.H.F[o,v] @ QL[ij])
+
+            Fvv_ij.append(L[ij].T @ Q[ij].T @ self.H.F[v,v] @ QL[ij])
+
+            ERIoovo_ij.append(contract('ijak,aA->ijAk', self.H.ERI[o,o,v,o],QL[ij]))
+
+            ERIooov_ij.append(contract('ijka,aA->ijkA', self.H.ERI[o,o,o,v],QL[ij]))
+
+            tmp = contract('ijab,aA->ijAb',self.H.ERI[o,o,v,v], QL[ij])
+            ERIoovv_ij.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
+
+            tmp1 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
+            tmp2 = contract('iAbc,bB->iABc',tmp1, QL[ij])
+            ERIovvv_ij.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
+
+            tmp3 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+            tmp4 = contract('Abcd,bB->ABcd',tmp3, QL[ij])
+            tmp5 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
+            ERIvvvv_ij.append(contract('ABCd,dD->ABCD',tmp5, QL[ij]))
+
+            tmp6 = contract('iabj,aA->iAbj',self.H.ERI[o,v,v,o], QL[ij])
+            ERIovvo_ij.append(contract('iAbj,bB->iABj',tmp6,QL[ij]))
+
+            tmp7 = contract('abci,aA->Abci',self.H.ERI[v,v,v,o], QL[ij])
+            tmp8 = contract('Abci,bB->ABci',tmp7, QL[ij])
+            ERIvvvo_ij.append(contract('ABci,cC->ABCi',tmp8, QL[ij]))
+
+            tmp9 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
+            ERIovov_ij.append(contract('iAjb,bB->iAjB', tmp9, QL[ij]))
+
+            ERIovoo_ij.append(contract('iajk,aA->iAjk', self.H.ERI[o,v,o,o], QL[ij]))
+
+            Loovo_ij.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
+
+            tmp10 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
+            Loovv_ij.append(contract('ijAb,bB->ijAB',tmp10,QL[ij]))
+
+            tmp11 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
+            tmp12 = contract('iAbc,bB->iABc',tmp11, QL[ij])
+            Lovvv_ij.append(contract('iABc,cC->iABC',tmp12, QL[ij]))
+
+            Looov_ij.append(contract('ijka,aA->ijkA',self.H.L[o,o,o,v], QL[ij]))
+
+            tmp13 = contract('iabj,aA->iAbj',self.H.L[o,v,v,o], QL[ij])
+            Lovvo_ij.append(contract('iAbj,bB->iABj',tmp13,QL[ij]))
+
+            #Storing the list to this class
+            self.QL = QL
+            self.QLT = QLT
+            self.Fov_ij = Fov_ij
+            self.Fvv_ij = Fvv_ij
+
+            self.ERIoovo_ij = ERIoovo_ij
+            self.ERIooov_ij = ERIooov_ij
+            self.ERIovvv_ij = ERIovvv_ij
+            self.ERIvvvv_ij = ERIvvvv_ij
+            self.ERIoovv_ij = ERIoovv_ij
+            self.ERIovvo_ij = ERIovvo_ij
+            self.ERIvvvo_ij = ERIvvvo_ij
+            self.ERIovov_ij = ERIovov_ij
+            self.ERIovoo_ij = ERIovoo_ij
+
+            self.Loovv_ij = Loovv_ij
+            self.Lovvv_ij = Lovvv_ij
+            self.Looov_ij = Looov_ij
+            self.Loovo_ij = Loovo_ij
+            self.Lovvo_ij = Lovvo_ij
+
+        print("Integrals transformed in %.3f seconds." % (time.time() - trans_intstart))
