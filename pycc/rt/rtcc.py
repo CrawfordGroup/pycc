@@ -213,17 +213,42 @@ class rtcc(object):
         x, y, z : scalars
             Cartesian components of the dipole moment
         """
-        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+        if self.ccwfn.model == 'CC3':
+            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+        else:
+            opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+
         if magnetic:
             ints = self.m
         else:
             ints = self.mu
 
-        x = ints[0].flatten().dot(opdm.flatten())
-        y = ints[1].flatten().dot(opdm.flatten())
-        z = ints[2].flatten().dot(opdm.flatten())
-        return x, y, z
+        if self.ccwfn.model == 'CC3':
+            # Calculating T1-transformed dipole integral  
+            no = self.ccwfn.no
+            nv = self.ccwfn.nv
+            ints_cc3 = np.zeros_like(ints)
+            for i in range(3):
+                ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
+                ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
+     
+            x = ints[0].flatten().dot(opdm.flatten())
+            y = ints[1].flatten().dot(opdm.flatten())
+            z = ints[2].flatten().dot(opdm.flatten())
+            # Contractions between Doo_cc3, Dvv_cc3 and T1-transformed dipole integrals
+            x += ints_cc3[0].flatten().dot(opdm_cc3.flatten())
+            y += ints_cc3[1].flatten().dot(opdm_cc3.flatten())
+            z += ints_cc3[2].flatten().dot(opdm_cc3.flatten())
+            
+            return x, y, z
 
+        else:
+            x = ints[0].flatten().dot(opdm.flatten())
+            y = ints[1].flatten().dot(opdm.flatten())
+            z = ints[2].flatten().dot(opdm.flatten())
+
+            return x, y, z    
+    
     def lagrangian(self, t, t1, t2, l1, l2):
         """
         Parameters
