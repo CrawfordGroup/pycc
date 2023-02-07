@@ -2,6 +2,7 @@ import psi4
 import numpy as np
 from opt_einsum import contract
 import time
+from debug import Debug
 
 class Local(object):
     """
@@ -76,7 +77,7 @@ class Local(object):
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
         self.r_conv = r_conv
-
+        self.Debug = Debug(self.no,self.nv)
         self._build()
     
     def _build(self):
@@ -727,6 +728,64 @@ class Local(object):
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
     
+#Debug 
+    def filter_r1amps(self, r1, name):
+       no = self.no
+       nv = self.nv
+       dim = self.dim
+
+       t1 = np.zeros((no,nv))
+       for i in range(no):
+           ii = i * no + i
+
+           X = self.Q[ii].T @ r1[i]
+           Y = self.L[ii].T @ X
+           if i == 2:
+               self.Debug._store_t1(Y, name)  
+ 
+    def filter_Hvv(self,Hvv,name):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        Q = self.Q
+        L = self.L
+        t2_ij = []
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+            ji = j*self.no + i
+
+            QL = Q[ij] @ L[ij]
+
+            Y = QL.T @ Hvv @ QL
+            t2_ij.append(Y)
+
+        ij = 0
+        self.Debug._store_t2(t2_ij[ij],name)
+
+    def filter_r2amps(self,r2,name):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        Q = self.Q
+        L = self.L
+        t2_ij = []
+        t2 = np.zeros((no,no,nv,nv))
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+            ji = j*self.no + i
+
+            QL = Q[ij] @ L[ij]
+
+            Y = QL.T @ r2[i,j] @ QL
+            t2_ij.append(Y)
+
+        ij = 0
+        self.Debug._store_t2(t2_ij[ij],name)
+
     def filter_t2amps(self,r2):
         no = self.no
         nv = self.nv
@@ -843,6 +902,7 @@ class Local(object):
         ERIvvvo_ij = []
         ERIovov_ij = []
         ERIovoo_ij = []
+        ERIvovv_ij = []
 
         Loovv_ij = []
         Lovvv_ij = []
@@ -888,6 +948,10 @@ class Local(object):
 
             ERIovoo_ij.append(contract('iajk,aA->iAjk', self.H.ERI[o,v,o,o], QL[ij]))
 
+            tmp14 = contract('aibc,aA->Aibc',self.H.ERI[v,o,v,v], QL[ij])
+            tmp15 = contract('Aibc,bB->AiBc',tmp14, QL[ij]) 
+            ERIvovv_ij.append(contract('AiBc,cC->AiBC',tmp15, QL[ij]))
+
             Loovo_ij.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
             tmp10 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
@@ -917,6 +981,7 @@ class Local(object):
             self.ERIvvvo_ij = ERIvvvo_ij
             self.ERIovov_ij = ERIovov_ij
             self.ERIovoo_ij = ERIovoo_ij
+            self.ERIvovv_ij = ERIvovv_ij
 
             self.Loovv_ij = Loovv_ij
             self.Lovvv_ij = Lovvv_ij
