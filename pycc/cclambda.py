@@ -129,8 +129,14 @@ class cclambda(object):
             Wabef_cc3 = self.build_cc3_Wabef(o, v, ERI, t1)
 
             # Building intermediates in t3l1
-            Zmndi = np.zeros((no,no,nv,no))
-            Zmdfa = np.zeros((no,nv,nv,nv))
+            if isinstance(t1, torch.Tensor):                
+                Zmndi = torch.zeros_like(t2[:,:,:,:no])
+                Zmdfa = torch.zeros_like(t2)
+                Zmdfa = torch.nn.functional.pad(Zmdfa, ((0,0),(0,nv-no),(0,0),(0,0)))
+            else:
+                Zmndi = np.zeros_like(t2[:,:,:,:no])
+                Zmdfa = np.zeros_like(t2)
+                Zmdfa = np.pad(Zmdfa, ((0,0),(0,nv-no),(0,0),(0,0)))
             for m in range(no):
                 for n in range(no):
                     for l in range(no):
@@ -158,11 +164,36 @@ class cclambda(object):
                 if isinstance(t1, torch.Tensor):
                     Y1 = torch.zeros_like(l1)
                     Y2 = torch.zeros_like(l2)
+                    # Z intermediates in CC3 l1, l2 equations
+                    # t3l1
+                    Znf = torch.zeros_like(l1)
+                    #l3l1+l3l2
+                    Zbide = torch.zeros_like(l2)
+                    Zbide = torch.nn.functional.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
+                    Zblad_1 = torch.zeros_like(l2)
+                    Zblad_1 = torch.nn.functional.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
+                    Zblad_2 = torch.zeros_like(l2)
+                    Zblad_2 = torch.nn.functional.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))
+                    Zjlma = torch.zeros_like(l2[:,:,:no,:])
+                    Zjlid_1 = torch.zeros_like(l2[:,:,:no,:])
+                    Zjlid_2 = torch.zeros_like(l2[:,:,:no,:])
                 else:
                     Y1 = np.zeros_like(l1)
-                    Y2 = np.zeros_like(l2)                
+                    Y2 = np.zeros_like(l2)     
+                    # Z intermediates in CC3 l1, l2 equations           
+                    # t3l1
+                    Znf = np.zeros_like(l1)
+                    #l3l1+l3l2
+                    Zbide = np.zeros_like(l2)
+                    Zbide = np.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
+                    Zblad_1 = np.zeros_like(l2)
+                    Zblad_1 = np.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
+                    Zblad_2 = np.zeros_like(l2)
+                    Zblad_2 = np.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))                    
+                    Zjlma = np.zeros_like(l2[:,:,:no,:])
+                    Zjlid_1 = np.zeros_like(l2[:,:,:no,:])
+                    Zjlid_2 = np.zeros_like(l2[:,:,:no,:])
                 # t3l1
-                Znf = np.zeros((no,nv))
                 for l in range(no):
                     for m in range(no):
                         for n in range(no):
@@ -175,12 +206,6 @@ class cclambda(object):
                         Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])                   
                 # end of t3l1
                 #l3l1+l3l2
-                Zbide = np.zeros((nv,no,nv,nv))
-                Zblad_1 = np.zeros((nv,no,nv,nv))
-                Zblad_2 = np.zeros((nv,no,nv,nv))
-                Zjlma = np.zeros((no,no,no,nv))
-                Zjlid_1 = np.zeros((no,no,no,nv))
-                Zjlid_2 = np.zeros((no,no,no,nv))
                 for i in range(no):
                     for j in range(no):
                         for k in range(no):
@@ -214,7 +239,7 @@ class cclambda(object):
                 r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
 
                 if isinstance(r1, torch.Tensor):
-                    del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
+                    del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Z_blad_2, Zjlid_1, Zjlid_2, Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
                                       
             if self.ccwfn.local is not None:
                 inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
@@ -299,15 +324,69 @@ class cclambda(object):
         if isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
 
-        if self.ccwfn.model == 'CC3':                                                   
+        if self.ccwfn.model == 'CC3':   
+             # Intermediates for t3
+            Fme = self.ccwfn.build_Fme(o, v, F, L, t1)
+            Wmnij_cc3 = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
+            Wmbij_cc3 = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
+            Wmnie_cc3 = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
+            Wamef_cc3 = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
+            Wabei_cc3 = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
+            # Additional intermediates for l3
+            Wmbje_cc3 = self.build_cc3_Wmbje(o, v, ERI, t1)
+            Wmbej_cc3 = self.build_cc3_Wmbej(o, v, ERI, t1)
+            Wabef_cc3 = self.build_cc3_Wabef(o, v, ERI, t1)
+
+            # Building intermediates in t3l1
+            if isinstance(t1, torch.Tensor):                
+                Zmndi = torch.zeros_like(t2[:,:,:,:no])
+                Zmdfa = torch.zeros_like(t2)
+                Zmdfa = torch.nn.functional.pad(Zmdfa, ((0,0),(0,nv-no),(0,0),(0,0)))
+            else:
+                Zmndi = np.zeros_like(t2[:,:,:,:no])
+                Zmdfa = np.zeros_like(t2)
+                Zmdfa = np.pad(Zmdfa, ((0,0),(0,nv-no),(0,0),(0,0)))
+            for m in range(no):
+                for n in range(no):
+                    for l in range(no):
+                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                        Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
+                        Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
+                        Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
+                        Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])                                                
             if isinstance(t1, torch.Tensor):
                 Y1 = torch.zeros_like(l1)
                 Y2 = torch.zeros_like(l2)
+                # Z intermediates in CC3 l1, l2 equations
+                # t3l1
+                Znf = torch.zeros_like(l1)
+                #l3l1+l3l2
+                Zbide = torch.zeros_like(l2)
+                Zbide = torch.nn.functional.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
+                Zblad_1 = torch.zeros_like(l2)
+                Zblad_1 = torch.nn.functional.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
+                Zblad_2 = torch.zeros_like(l2)
+                Zblad_2 = torch.nn.functional.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))
+                Zjlma = torch.zeros_like(l2[:,:,:no,:])
+                Zjlid_1 = torch.zeros_like(l2[:,:,:no,:])
+                Zjlid_2 = torch.zeros_like(l2[:,:,:no,:])
             else:
                 Y1 = np.zeros_like(l1)
-                Y2 = np.zeros_like(l2)                
+                Y2 = np.zeros_like(l2)     
+                # Z intermediates in CC3 l1, l2 equations           
+                # t3l1
+                Znf = np.zeros_like(l1)
+                #l3l1+l3l2
+                Zbide = np.zeros_like(l2)
+                Zbide = np.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
+                Zblad_1 = np.zeros_like(l2)
+                Zblad_1 = np.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
+                Zblad_2 = np.zeros_like(l2)
+                Zblad_2 = np.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))                    
+                Zjlma = np.zeros_like(l2[:,:,:no,:])
+                Zjlid_1 = np.zeros_like(l2[:,:,:no,:])
+                Zjlid_2 = np.zeros_like(l2[:,:,:no,:])            
             # t3l1
-            Znf = np.zeros((no,nv))
             for l in range(no):
                 for m in range(no):
                     for n in range(no):
@@ -320,12 +399,6 @@ class cclambda(object):
                     Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])   
             # end of t3l1
             #l3l1+l3l2
-            Zbide = np.zeros((nv,no,nv,nv))
-            Zblad_1 = np.zeros((nv,no,nv,nv))
-            Zblad_2 = np.zeros((nv,no,nv,nv))
-            Zjlma = np.zeros((no,no,no,nv))
-            Zjlid_1 = np.zeros((no,no,no,nv))
-            Zjlid_2 = np.zeros((no,no,no,nv))
             for i in range(no):
                 for j in range(no):
                     for k in range(no):
@@ -359,7 +432,7 @@ class cclambda(object):
             r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
 
             if isinstance(r1, torch.Tensor):
-                del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
+                del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
                                                     
         return r1, r2
 
