@@ -527,9 +527,9 @@ class cclambda(object):
             W = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
         else:
             W = ERI[o,v,o,v].copy()
-        W += contract('mbfe,jf->mbje', ERI[o,v,v,v], t1)
-        W -= contract('mnje,nb->mbje', ERI[o,o,o,v], t1)
-        W -= contract('mnfe,jf,nb->mbje', ERI[o,o,v,v], t1, t1)
+        W = W + contract('mbfe,jf->mbje', ERI[o,v,v,v], t1)
+        W = W - contract('mnje,nb->mbje', ERI[o,o,o,v], t1)
+        W = W - contract('mnfe,jf,nb->mbje', ERI[o,o,v,v], t1, t1)
         return W
 
     def build_cc3_Wmbej(self, o, v, ERI, t1):
@@ -538,9 +538,9 @@ class cclambda(object):
             W = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
         else:
             W = ERI[o,v,v,o].copy()
-        W += contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
-        W -= contract('mnej,nb->mbej', ERI[o,o,v,o], t1)
-        W -= contract('mnef,jf,nb->mbej', ERI[o,o,v,v], t1, t1)
+        W = W + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
+        W = W - contract('mnej,nb->mbej', ERI[o,o,v,o], t1)
+        W = W - contract('mnef,jf,nb->mbej', ERI[o,o,v,v], t1, t1)
         return W
 
     def build_cc3_Wabef(self, o, v, ERI, t1):
@@ -551,7 +551,7 @@ class cclambda(object):
             W = ERI[v,v,v,v].copy()
         tmp = contract('mbef,ma->abef', ERI[o,v,v,v], t1)
         W = W - tmp - tmp.swapaxes(0,1).swapaxes(2,3)
-        W += contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)
+        W = W + contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)
         return W
                                          
     def pseudoenergy(self, o, v, ERI, l2):
