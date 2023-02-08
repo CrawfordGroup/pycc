@@ -207,15 +207,16 @@ class ccdensity(object):
             Wamef_cc3 = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
             Wmnie_cc3 = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
            
-            opdm[o,v] += np.complex128(self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wabei_cc3, Wmbij_cc3, Fme, Wamef_cc3, Wmnie_cc3))
+            #opdm[o,v] += np.complex128(self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wabei_cc3, Wmbij_cc3, Fme, Wamef_cc3, Wmnie_cc3))
+            opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wabei_cc3, Wmbij_cc3, Fme, Wamef_cc3, Wmnie_cc3)
 
             # Density matrix blocks in contractions with T1-transformed dipole integrals
             if isinstance(t1, torch.Tensor):
                 opdm_cc3 = torch.zeros_like(opdm)
             else: 
                 opdm_cc3 = np.zeros_like(opdm)
-            opdm_cc3[o,o] += np.complex128(self.build_cc3_Doo(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3))
-            opdm_cc3[v,v] += np.complex128(self.build_cc3_Dvv(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3))
+            opdm_cc3[o,o] += self.build_cc3_Doo(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3)
+            opdm_cc3[v,v] += self.build_cc3_Dvv(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3)
 
             return (opdm, opdm_cc3)
                         
