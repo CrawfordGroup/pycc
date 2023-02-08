@@ -293,9 +293,12 @@ class cclambda(object):
         -------
         r1, r2: L1 and L2 residuals: r_mu = <0|(1+L) [HBAR, tau_mu]|0>
         """
+        contract = self.ccwfn.contract
 
         o = self.ccwfn.o
         v = self.ccwfn.v
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
         hbar = self.hbar
