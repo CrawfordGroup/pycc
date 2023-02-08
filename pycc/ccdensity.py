@@ -209,8 +209,11 @@ class ccdensity(object):
            
             opdm[o,v] += np.complex128(self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wabei_cc3, Wmbij_cc3, Fme, Wamef_cc3, Wmnie_cc3))
 
-            # Density matrix blocks in contractions with T1-transformed dipole integrals 
-            opdm_cc3 = np.zeros_like(opdm)
+            # Density matrix blocks in contractions with T1-transformed dipole integrals
+            if isinstance(t1, torch.Tensor):
+                opdm_cc3 = torch.zeros_like(opdm)
+            else: 
+                opdm_cc3 = np.zeros_like(opdm)
             opdm_cc3[o,o] += np.complex128(self.build_cc3_Doo(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3))
             opdm_cc3[v,v] += np.complex128(self.build_cc3_Dvv(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3))
 
@@ -274,14 +277,18 @@ class ccdensity(object):
     
     # CC3 contributions to the one electron densities
     def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov):
-        contract = self.contract     
-        Dov = np.zeros_like(t1)    
-        # Intermediate for Dov_2              
-        Zlmdi = np.zeros((no,no,nv,no)) * l1[0,0] # Keep it the same type as the amplitudes (real/complex)
+        contract = self.contract  
+        if isinstance(t1, torch.Tensor):
+            Dov = torch.zeros_like(t1)   
+            Zlmdi = torch.zeros_like(t2[:,:,:,:no])
+        else:
+            Dov = np.zeros_like(t1)    
+            Zlmdi = np.zeros_like(t2[:,:,:,:no])    
         for i in range(no):
             for j in range(no):
                 for k in range(no):                    
                     l3 = l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)  
+                    # Intermediate for Dov_2
                     Zlmdi[i,j] += contract('def,ife->di', l3, t2[k])
                     # Dov_1
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
@@ -293,7 +300,10 @@ class ccdensity(object):
                                     
     def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov):
         contract = self.contract
-        Doo = np.zeros((no, no)) * l1[0,0]         
+        if isinstance(l1, torch.Tensor):
+            Doo = torch.zeros_like(l1[:,:no])
+        else:
+            Doo = np.zeros_like(l1[:,:no])        
         for b in range(nv): 
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
@@ -304,7 +314,12 @@ class ccdensity(object):
 
     def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov):
         contract = self.contract
-        Dvv = np.zeros((nv, nv)) * l1[0,0]
+        if isinstance(l1, torch.Tensor):
+            Dvv = torch.zeros_like(l1)
+            Dvv = torch.nn.functional.pad(Dvv, (0,0,0,nv-no))
+        else:
+            Dvv = np.zeros_like(l1)
+            Dvv = np.pad(Dvv, ((0,nv-no), (0,0)))
         for i in range(no):
             for j in range(no):
                 for k in range(no):
@@ -543,14 +558,20 @@ class ccdensity(object):
     # T1-transformed dipole integrals needed in CC3
     def build_Moo(self, no, nv, ints, t1):
         contract = self.contract
-        Moo = ints[:no,:no].copy()
+        if isinstance(t1, torch.Tensor):
+            Moo = ints[:no,:no].clone()
+        else:
+            Moo = ints[:no,:no].copy()
         Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
 
         return Moo
 
     def build_Mvv(self, no, nv, ints, t1):
         contract = self.contract
-        Mvv = ints[-nv:,-nv:].copy()
+        if isinstance(t1, torch.Tensor):
+            Mvv = ints[-nv:,-nv:].clone()
+        else:
+            Mvv = ints[-nv:,-nv:].copy()
         Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
 
         return Mvv

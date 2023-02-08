@@ -227,7 +227,10 @@ class rtcc(object):
             # Calculating T1-transformed dipole integral  
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            ints_cc3 = np.zeros_like(ints)
+            if isinstance(t1, torch.Tensor):
+                ints_cc3 = torch.zeros_like(ints)
+            else:
+                ints_cc3 = np.zeros_like(ints)
             for i in range(3):
                 ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
                 ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
