@@ -601,7 +601,7 @@ contract, WithDenom=True)
     def build_cc3_Wmnij(self, o, v, ERI, t1):
         contract = self.contract
         if isinstance(t1, torch.Tensor):
-            W = ERI[o,o,o,o].clone()
+            W = ERI[o,o,o,o].clone().to(self.device1)
         else:
             W = ERI[o,o,o,o].copy()
         tmp = contract('ijma,na->ijmn', ERI[o,o,o,v], t1)
@@ -613,19 +613,22 @@ contract, WithDenom=True)
     def build_cc3_Wmbij(self, o, v, ERI, t1, Wmnij):
         contract = self.contract
         if isinstance(t1, torch.Tensor):
-            W = ERI[o,v,o,o].clone()
+            W = ERI[o,v,o,o].clone().to(self.device1)
         else:
             W = ERI[o,v,o,o].copy()
         W = W - contract('mnij,nb->mbij', Wmnij, t1)
         W = W + contract('mbie,je->mbij', ERI[o,v,o,v], t1)
-        tmp = ERI[o,v,v,o] + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
+        if isinstance(t1, torch.Tensor):            
+            tmp = ERI[o,v,v,o].clone().to(self.device1) + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
+        else:
+            tmp = ERI[o,v,v,o].copy() + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
         W = W + contract('ie,mbej->mbij', t1, tmp)
         return W
 
     def build_cc3_Wmnie(self, o, v, ERI, t1):
         contract = self.contract
         if isinstance(t1, torch.Tensor):
-            W = ERI[o,o,o,v].clone()
+            W = ERI[o,o,o,v].clone().to(self.device1)
         else:
             W = ERI[o,o,o,v].copy()
         W = W + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
@@ -634,7 +637,7 @@ contract, WithDenom=True)
     def build_cc3_Wamef(self, o, v, ERI, t1):
         contract = self.contract
         if isinstance(t1, torch.Tensor):
-            W = ERI[v,o,v,v].clone()
+            W = ERI[v,o,v,v].clone().to(self.device1)
         else:
             W = ERI[v,o,v,v].copy()
         W = W - contract('na,nmef->amef', t1, ERI[o,o,v,v])
@@ -644,7 +647,7 @@ contract, WithDenom=True)
         contract =self.contract
         # eiab
         if isinstance(t1, torch.Tensor):
-            Z = ERI[v,o,v,v].clone()
+            Z = ERI[v,o,v,v].clone().to(self.device1)
         else:
             Z = ERI[v,o,v,v].copy()
         tmp_ints = ERI[v,v,v,v] + ERI[v,v,v,v].swapaxes(2,3)
@@ -655,7 +658,7 @@ contract, WithDenom=True)
 
         #eiab
         if isinstance(t1, torch.Tensor):
-            Zeiam = ERI[v,o,v,o].clone()
+            Zeiam = ERI[v,o,v,o].clone().to(self.device1)
         else:
             Zeiam = ERI[v,o,v,o].copy()
         Zamei = contract('amef,if->amei', ERI[v,o,v,v], t1)
@@ -664,7 +667,7 @@ contract, WithDenom=True)
 
         #eiab
         if isinstance(t1, torch.Tensor):
-            Zmnei = ERI[o,o,v,o].clone() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
+            Zmnei = ERI[o,o,v,o].clone().to(self.device1) + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
         else:
             Zmnei = ERI[o,o,v,o].copy() + contract('mnef,if->mnei', ERI[o,o,v,v], t1)
         Zanei = contract('ma,mnei->anei', t1, Zmnei)
@@ -672,7 +675,7 @@ contract, WithDenom=True)
 
         #abei
         if isinstance(t1, torch.Tensor):
-            Zmbei = ERI[v,o,v,o].clone()
+            Zmbei = ERI[o,v,v,o].clone().to(self.device1)
         else:
             Zmbei = ERI[o,v,v,o].copy()
         Zmbei = Zmbei + contract('mbef,if->mbei', ERI[o,v,v,v], t1)
