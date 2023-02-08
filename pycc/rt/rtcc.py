@@ -7,8 +7,6 @@ import numpy as np
 import torch
 import pickle as pk
 from os.path import exists
-
-# Will be removed after generalize cc_contract
 import opt_einsum
 
 
@@ -269,7 +267,11 @@ class rtcc(object):
         o = self.ccwfn.o
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
-        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+        if self.ccwfn.model == 'CC3':
+            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+            opdm = opdm + opdm_cc3
+        else:            
+            opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
         Doooo = self.ccdensity.build_Doooo(t1, t2, l2)
         Dvvvv = self.ccdensity.build_Dvvvv(t1, t2, l2)
         Dooov = self.ccdensity.build_Dooov(t1, t2, l1, l2)
