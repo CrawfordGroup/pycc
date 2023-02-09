@@ -22,7 +22,7 @@ mol = psi4.geometry(moldict["H2O"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
 maxiter = 100
-e_conv = 1e-5
+e_conv = 1e-6
 r_conv = 1e-3
    
 #simulation code of pno-ccsd

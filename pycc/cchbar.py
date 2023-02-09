@@ -68,14 +68,14 @@ class cchbar(object):
         t2 = ccwfn.t2
 
         if ccwfn.local is not None:
-            print("Here first")
+            #print("Here first")
             self.Local = ccwfn.Local
             self.no = ccwfn.no
             self.nv = ccwfn.nv
             self.Debug = Debug(self.no,self.nv)
         
         if ccwfn.filter is True:    
-            print("I am here")     
+            #print("I am here")     
             self.Hov = self.build_Hov(o, v, F, L, t1)
             self.Hvv = self.build_Hvv(o, v, F, L, t1, t2)
             self.Hoo = self.build_Hoo(o, v, F, L, t1, t2)
@@ -89,7 +89,7 @@ class cchbar(object):
             self.Hovoo = self.build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
                     
         elif ccwfn.filter is not True:    
-            print("Here'second")
+            #print("Here'second")
             self.lccwfn = ccwfn.lccwfn
 
             self.Hov_ij = self.build_Hov_ij(o, v, ccwfn.no, self.Local.Fov_ij, L, self.Local.QL, self.lccwfn.t1_ii)
@@ -107,10 +107,10 @@ class cchbar(object):
             self.lccwfn.t1_ii, self.lccwfn.t2_ij)
             self.Hovov_ij = self.build_Hovov_ij(o, v, ccwfn.no, ERI, self.Local.ERIovov_ij, self.Local.ERIooov_ij, self.Local.QL,
             self.lccwfn.t1_ii,self.lccwfn.t2_ij) 
-            #self.Hvvvo_ij = self.build_Hvvvo_ij(o, v, ccwfn.no, ERI, L, self.Local.ERIvvvo_ij, self.Local.ERIoovo_ij, self.Local.QL, 
-            #self.lccwfn.t1_ii, self.lccwfn.t2_ij, self.Hov_ij)
-            #self.Hovoo_ij = self.build_Hovoo_ij(o, v, ccwfn.no, self.Local.ERIovoo_ij, self.Local.ERIovvv_ij, self.Local.ERIooov_ij,
-            #self.Local.Looov_ij, self.Local.QL, self.lccwfn.t2_ij, self.Hov_ij)
+            self.Hvvvo_ij = self.build_Hvvvo_ij(o, v, ccwfn.no, ERI, L, self.Local.ERIvvvo_ij, self.Local.ERIoovo_ij, self.Local.ERIvoov_ij, self.Local.ERIvovo_ij, 
+            self.Local.ERIoovv_ij, self.Local.Loovv_ij, self.Local.QL,self.lccwfn.t1_ii, self.lccwfn.t2_ij, self.Hov_ij)
+            self.Hovoo_ij = self.build_Hovoo_ij(o, v, ccwfn.no, ERI, L, self.Local.ERIovoo_ij, self.Local.ERIovvv_ij, self.Local.ERIooov_ij,
+            self.Local.ERIovov_ij, self.Local.ERIvoov_ij,self.Local.Looov_ij, self.Local.QL, self.lccwfn.t1_ii, self.lccwfn.t2_ij, self.Hov_ij, self.lHoooo)
         #if isinstance(t1, torch.Tensor):
             #print("Hov norm = %20.15f" % torch.linalg.norm(self.Hov))
             #print("Hvv norm = %20.15f" % torch.linalg.norm(self.Hvv))
@@ -360,7 +360,10 @@ class cchbar(object):
         contract = self.contract
         if self.ccwfn.model == 'CCD':  
             Hvvvv_ij = []
+            #Hvvv_ij = []
+            #Hv_ij = []
             for ij in range(no*no):
+
                 Hvvvv = ERIvvvv_ij[ij].copy()
                 
                 Hvvvv_1 = np.zeros_like(Hvvvv)
@@ -373,6 +376,21 @@ class cchbar(object):
                     tmp1 = tmp @ Sijmn.T 
                     Hvvvv_1 += contract('ab,ef->abef',tmp1, ERIoovv_ij[ij][m,n]) 
                 Hvvvv_ij.append(Hvvvv + Hvvvv_1)
+                #if ij == 1:  
+                    #print("hvvvv_ij", Hvvvv_ij[ij])              
+                #if self.Local.dim[ij] > 0:
+                    #Hvvv_ij.append(Hvvvv_ij[ij][:,:,:,-1]) 
+                    #Hv_ij.append(Hvvvv_ij[ij][-1,-1,-1,:])
+                #else:
+                    #Hvvv_ij.append(np.empty((self.Local.dim[ij],self.Local.dim[ij],self.Local.dim[ij])))
+                    #Hv_ij.append(np.empty((self.Local.dim[ij])))
+            
+            #ij = 1
+            #print("compare")
+            #print("tot",Hvvvv_ij[ij])
+            #print("concat", contract('abe,f->abef',Hvvv_ij[ij], Hv_ij[ij])) #  + Hvvvv_1[:,:,:,-1], Hvvvv[-1,-1,-1,:] + Hvvvv_1[-1,-1,-1,:]))
+            #print("Hvvvv_ij[ij][:,:,:,-1]", Hvvvv_ij[ij][:,:,:,-1]) 
+            #print("Hvvv_ij[0]", Hvvv_ij[0])
         else: 
             Hvvvv_ij = []
             for ij in range(no*no):
@@ -388,7 +406,7 @@ class cchbar(object):
                     Sijmm = QL[ij].T @ QL[mm]
                     tmp = t1_ii[m] @ Sijmm.T 
                     tmp1 = contract('b,aef->abef',tmp, ERIvovv_ij[ij][:,m,:,:]) 
-                    Hvvvv_1 -= tmp1  + tmp1.swapaxes(0,1).swapaxes(2,3)
+                    Hvvvv_1 -= tmp1  + tmp1 #.swapaxes(0,1).swapaxes(2,3)
  
                     for n in range(no):
                         mn = m*no + n
@@ -403,7 +421,7 @@ class cchbar(object):
                         tmp4 = t1_ii[m] @ Sijmm.T 
                         tmp5 = t1_ii[n] @ Sijnn.T 
                         Hvvvv_3 += contract('a,b,ef->abef',tmp4, tmp5, ERIoovv_ij[ij][m,n])
-                Hvvvv_ij.append(Hvvvv + Hvvvv_1 + Hvvvv_2 + Hvvvv_3)              
+                Hvvvv_ij.append(Hvvvv + Hvvvv_1 + Hvvvv_2 + Hvvvv_3) 
         return Hvvvv_ij            
 
     def build_Hvvvv(self, o, v, ERI, t1, t2):
@@ -413,7 +431,7 @@ class cchbar(object):
                 Hvvvv = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
             else:
                 Hvvvv = ERI[v,v,v,v].copy()
-            Hvvvv = Hvvvv + contract('mnab,mnef->abef', t2, ERI[o,o,v,v])             
+            Hvvvv = Hvvvv + contract('mnab,mnef->abef', t2, ERI[o,o,v,v])           
         else:
             if isinstance(ERI, torch.Tensor):
                 Hvvvv = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
@@ -425,6 +443,11 @@ class cchbar(object):
                 Hvvvv = Hvvvv + contract('nb,anef->abef', t1, contract('ma,mnef->anef', t1, ERI[o,o,v,v]))
             else:
                 Hvvvv = Hvvvv + contract('mnab,mnef->abef', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
+            QL = self.Local.Q[1] @ self.Local.L[1]
+            tmp3 = contract('abcd,aA->Abcd',Hvvvv, QL)
+            tmp4 = contract('Abcd,bB->ABcd',tmp3, QL)
+            tmp5 = contract('ABcd,cC->ABCd',tmp4, QL)
+            print("cool", contract('ABCd,dD->ABCD',tmp5, QL))
         return Hvvvv
 
     def build_Hvovv_ij(self,o,v,no, ERIvovv_ij, ERIoovv_ij, QL, t1_ii): 
@@ -654,7 +677,7 @@ class cchbar(object):
                         tmp7 = tmp5 @ QL[jj]
                         Hovov_4[m,:,j,:] -= contract('f,b,ef->be',t1_ii[j], tmp3, tmp7)
                 Hovov_ij.append(Hovov + Hovov_1 + Hovov_2 + Hovov_3 + Hovov_4 ) 
-            print(Hovov_ij[1][:,:,1,:])              
+            #print(Hovov_ij[1][:,:,1,:])              
         return Hovov_ij 
 
     def build_Hovov(self, o, v, ERI, t1, t2):
@@ -677,47 +700,8 @@ class cchbar(object):
             if self.ccwfn.model != 'CC2':
                 Hovov = Hovov - contract('jnfb,nmef->mbje', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
         return Hovov
-"""
-    def gen_Hvvvv_ij(self, o,v, no,ij,ii ERIoovv_ij, ERIvovv_ij, ERIvvvv_ij, QL, t1_ii, t2_ij):
-        contract = self.contract
-        rtmp = contract('abcd,aA->Abcd',ERI[v,v,v,v].copy(), QL[ij])
-        rtmp1 = contract('Abcd,bB->ABcd',rtmp, QL[ij])
-        rtmp2 = contract('ABcd,cC->ABCd',rtmp1, QL[ij])
-        Hvvvv = contract('ABCd,dD->ABCD',rtmp2, QL[ii])
 
-        rtmp3 = contract('aibc,aA->Aibc',ERI[v,o,v,v], QL[ij])
-        rtmp4 = contract('Aibc,bB->AiBc',rtmp3, QL[ij])
-        ERIvovv = contract('AiBc,cC->AiBC',rtmp4, QL[ii]))
-        
-        tmp1 = np.zeros_like(Hvvvv)
-        Hvvvv_1 = np.zeros_like(Hvvvv)
-        Hvvvv_2 = np.zeros_like(Hvvvv)
-        Hvvvv_3 = np.zeros_like(Hvvvv) 
-        for m in range(no):  
-            mm = m*no + m
-            
-            Sijmm = QL[ij].T @ QL[mm]
-            tmp = t1_ii[m] @ Sijmm.T
-            tmp1 = contract('b,aef->abef',tmp, ERIvovv[:,m,:,:])
-            Hvvvv_1 -= tmp1  + tmp1.swapaxes(0,1).swapaxes(2,3)
-                
-            for n in range(no):
-                mn = m*no + n
-                nn = n*no + n
-                
-                Sijmn = QL[ij].T @ QL[mn]
-                tmp2 = Sijmn @ t2_ij[mn]
-                tmp3 = tmp2 @ Sijmn.T 
-                Hvvvv_2 += contract('ab,ef->abef',tmp3, ERIoovv_ij[ij][m,n])
-    
-                Sijnn = QL[ij].T @ QL[nn]
-                tmp4 = t1_ii[m] @ Sijmm.T
-                tmp5 = t1_ii[n] @ Sijnn.T
-                Hvvvv_3 += contract('a,b,ef->abef',tmp4, tmp5, ERIoovv_ij[ij][m,n])
-
-        return (Hvvvv + Hvvvv_1 + Hvvvv_2 + Hvvvv_3 + Hvvvv_4)
-"""
-    def build_Hvvvo_ij(self, o, v, no, ERI, L, ERIvvvo_ij, ERIoovo_ij,  QL, t1_ii, t2_ij, Hov_ij):  
+    def build_Hvvvo_ij(self, o, v, no, ERI, L, ERIvvvo_ij, ERIoovo_ij, ERIvoov_ij, ERIvovo_ij,ERIoovv_ij, Loovv_ij, QL, t1_ii, t2_ij, Hov_ij):  
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             Hvvvo_ij = []
@@ -775,10 +759,46 @@ class cchbar(object):
                         Hvvvo_3[:,:,:,i] += contract('a,b,e->abe',tmp13,tmp14, ERIoovo_ij[ij][m,n,:,i])
                 Hvvvo_ij.append( Hvvvo + Hvvvo_1 + Hvvvo_2 + Hvvvo_3 + Hvvvo_4 + Hvvvo_5 + Hvvvo_6)
         else:
-           Hvvvo_ij = []
+            Hvvvo_ij = []
+            tmp_ij = []
+            tmp1_ij = []
+            for i in range(no):
+                for j in range(no):
+                     ij = i*no + j
+                     tmp1 = np.zeros((self.Local.dim[ij],no, self.Local.dim[ij], no))
+                     tmp2 = np.zeros((self.Local.dim[ij],no, no,self.Local.dim[ij]))
+                     for m in range(no):
+                         tmp1[:,m,:,i] += ERIvovo_ij[ij][:,m,:,i].copy()
+                         tmp2[:,m,i,:] += ERIvoov_ij[ij][:,m,i,:].copy()
+                         
+                         for n in range(no):
+                             _in = i*no + n
+                             ni = n*no + i
+ 
+                             Sijin = QL[ij].T @ QL[_in]
+                             tmp3 = t2_ij[_in] @ Sijin.T 
+
+                             rtmp = contract('ab,aA->Ab', ERI[m,n,v,v], QL[_in])
+                             rtmp1 = contract('Ab,bB->AB',rtmp,QL[ij])
+
+                             tmp1[:,m,:,i] -= contract('fa,fe->ae',tmp3, rtmp1)
+
+                             rtmp2 = contract('ab,aA->Ab', ERI[m,n,v,v], QL[ij])
+                             rtmp3 = contract('Ab,bB->AB',rtmp2,QL[_in])
+                             tmp2[:,m,i,:] -= contract('fb,ef->be',tmp3, rtmp3)
+
+                             Sijni = QL[ij].T @ QL[ni]
+                             tmp4 = t2_ij[ni] @ Sijni.T
+                             rtmp4 = contract('ab,aA->Ab', L[m,n,v,v], QL[ij])
+                             rtmp5 = contract('Ab,bB->AB',rtmp4,QL[ni])
+                             tmp2[:,m,i,:] += contract('fb,ef->be', tmp4, rtmp5)
+
+                     tmp_ij.append(tmp1)
+                     tmp1_ij.append(tmp2) 
             for ij in range(no*no):
                 i = ij // no
                 j = ij % no
+                ii = i*no + i
 
                 Hvvvo = ERIvvvo_ij[ij].copy()
 
@@ -791,8 +811,6 @@ class cchbar(object):
                 Hvvvo_7 = np.zeros_like(Hvvvo)
                 Hvvvo_8 = np.zeros_like(Hvvvo)
                 Hvvvo_9 = np.zeros_like(Hvvvo)
-                Hvvvo_10 = np.zeros_like(Hvvvo)
-                Hvvvo_6 = np.zeros_like(Hvvvo)
                 for m in range(no):
                     mi = m*no + i
                     im = i*no + m
@@ -802,6 +820,8 @@ class cchbar(object):
                     tmp = t2_ij[mi] @ Sijmi.T
                     tmp1 = Sijmi @ tmp
                     Hvvvo_1[:,:,:,i] -= contract('e,ab->abe',Hov_ij[ij][m],tmp1)
+  
+                    Hvvvo_7[:,:,:,i] += contract('f,abef->abe', t1_ii[i], self.gen_Hvvvv(o,v,no, ERI, QL, t1_ii, t2_ij, ii, ij))                  
 
                     tmp2 = contract('aef,aA->Aef', L[v,m,v,v], QL[ij])
                     tmp3 = contract('Aef,eE->AEf',tmp2, QL[ij])
@@ -819,10 +839,18 @@ class cchbar(object):
                     tmp10 = contract('AEf,fF->AEF',tmp9, QL[mi])
                     Hvvvo_5[:,:,:,i] -= contract('fb,aef->abe', tmp5, tmp10)
 
+                    Sijmm = QL[ij].T @ QL[mm]
+                    tmp17 = t1_ii[m] @ Sijmm.T 
+                    Hvvvo_8[:,:,:,i] -= contract('b,ae->abe',tmp17, tmp_ij[ij][:,m,:,i])                  
+                    
+                    Hvvvo_9[:,:,:,i] -= contract('a,be->abe', tmp17 , tmp1_ij[ij][:,m,i,:])
+
                     for n in range(no):
                         mn = m*no + n
                         nn = n*no + n
-
+                        _in = i*no + n
+                        ni = n*no + i              
+   
                         Sijmn = QL[ij].T @ QL[mn]
                         tmp11 = Sijmn @ t2_ij[mn]
                         tmp12 = tmp11 @ Sijmn.T
@@ -833,8 +861,9 @@ class cchbar(object):
                         tmp13 = t1_ii[m] @ Sijmm.T
                         tmp14 = t1_ii[n] @ Sijnn.T
                         Hvvvo_3[:,:,:,i] += contract('a,b,e->abe',tmp13,tmp14, ERIoovo_ij[ij][m,n,:,i])
-                Hvvvo_ij.append( Hvvvo + Hvvvo_1 + Hvvvo_2 + Hvvvo_3 + Hvvvo_4 + Hvvvo_5 + Hvvvo_6)
-    
+  
+                Hvvvo_ij.append( Hvvvo + Hvvvo_1 + Hvvvo_2 + Hvvvo_3 + Hvvvo_4 + Hvvvo_5 + Hvvvo_6 + Hvvvo_8 + Hvvvo_9)# + Hvvvo_7)
+            print(Hvvvo_ij[6][:,:,:,1])            
         return Hvvvo_ij
 
     def build_Hvvvo(self, o, v, ERI, L, Hov, Hvvvv, t1, t2):
@@ -871,7 +900,7 @@ class cchbar(object):
             else:
                 Hvvvo = ERI[v,v,v,o].copy()
             Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
-            Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
+            #Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo - contract('imfb,amef->abei', t2, ERI[v,o,v,v])
@@ -891,9 +920,55 @@ class cchbar(object):
             Hvvvo = Hvvvo - contract('ma,bmie->abei', t1, tmp)
             if isinstance(tmp, torch.Tensor):
                 del tmp
+            QL = self.Local.Q[6] @ self.Local.L[6]
+            tmp7 = contract('abci,aA->Abci',Hvvvo, QL)
+            tmp8 = contract('Abci,bB->ABci',tmp7, QL)
+            print("here", contract('ABci,cC->ABCi',tmp8, QL)[:,:,:,1])            
         return Hvvvo
 
-    def build_Hovoo_ij(self, o, v, no, ERIovoo_ij, ERIovvv_ij, ERIooov_ij, Looov_ij, QL, t2_ij, Hov_ij):
+    def gen_Hvvvv(self,o,v,no, ERI, QL, t1_ii, t2_ij, ii, ij):
+        contract = self.contract 
+
+        tmp = contract('abcd,aA->Abcd',ERI[v,v,v,v], QL[ij])
+        tmp1 = contract('Abcd,bB->ABcd',tmp, QL[ij])
+        tmp2 = contract('ABcd,cC->ABCd',tmp1, QL[ij])
+        Hvvvv = contract('ABCd,dD->ABCD',tmp2, QL[ii])
+
+        tmp3 = np.zeros_like(Hvvvv)
+        Hvvvv_1 = np.zeros_like(Hvvvv)
+        Hvvvv_2 = np.zeros_like(Hvvvv)
+        Hvvvv_3 = np.zeros_like(Hvvvv)
+        for m in range(no):
+            mm = m*no + m
+
+            Sijmm = QL[ij].T @ QL[mm]
+            tmp = t1_ii[m] @ Sijmm.T
+
+            tmp4 = contract('aibc,aA->Aibc',ERI[v,o,v,v], QL[ij])
+            tmp5 = contract('Aibc,bB->AiBc',tmp4, QL[ij])
+            tmp6 = contract('AiBc,cC->AiBC',tmp5, QL[ii])
+            tmp3 = contract('b,aef->abef',tmp, tmp6[:,m,:,:])
+            Hvvvv_1 -= tmp3  + tmp3 #.swapaxes(0,1).swapaxes(2,3)
+
+            for n in range(no):
+                mn = m*no + n
+                nn = n*no + n
+
+                Sijmn = QL[ij].T @ QL[mn]
+                tmp7 = Sijmn @ t2_ij[mn]
+                tmp8 = tmp7 @ Sijmn.T
+
+                tmp9 = contract('ijab,aA->ijAb',ERI[o,o,v,v], QL[ij])
+                tmp10 = contract('ijAb,bB->ijAB',tmp9,QL[ii])
+                Hvvvv_2 += contract('ab,ef->abef',tmp8, tmp10[m,n])
+
+                Sijnn = QL[ij].T @ QL[nn]
+                tmp4 = t1_ii[m] @ Sijmm.T
+                tmp5 = t1_ii[n] @ Sijnn.T
+                Hvvvv_3 += contract('a,b,ef->abef',tmp4, tmp5, tmp10[m,n])
+        return Hvvvv + Hvvvv_1 + Hvvvv_2 + Hvvvv_3
+
+    def build_Hovoo_ij(self, o, v, no, ERI, L, ERIovoo_ij, ERIovvv_ij, ERIooov_ij, ERIovov_ij, ERIvoov_ij, Looov_ij, QL, t1_ii, t2_ij, Hov_ij, lHoooo):
         contract = self.contract
         if self.ccwfn.model =='CCD':
            Hovoo_ij = []
@@ -931,8 +1006,104 @@ class cchbar(object):
                        tmp2 = t2_ij[nj] @ Sijnj.T
                        Hovoo_5[m,:,i,j] += tmp2.T @ Looov_ij[nj][m,n,i]  
                Hovoo_ij.append(Hovoo + Hovoo_1 + Hovoo_2 + Hovoo_3 + Hovoo_4 + Hovoo_5)
-        print("Hovoo_ij", 0)
-        print(Hovoo_ij[0][:,:,0,0])
+        else:
+            Hovoo_ij = []
+            tmp_ij = []
+            tmp1_ij = []
+            for i in range(no):
+                ii = i*no + i 
+                for j in range(no):
+                    ij = i*no + j 
+                    jj = j*no + j
+       
+                    tmp = np.zeros((no,self.Local.dim[ij], no,self.Local.dim[jj]))
+                    tmp1 = np.zeros((self.Local.dim[ij], no, no, self.Local.dim[ii]))
+                    for m in range(no):
+                        
+                        tmp[m,:,i,:] += contract('aA,bB,ab->AB', QL[ij], QL[jj], ERI[m,v,i,v])
+                        tmp1[:,m,j,:] += contract('aA,bB,ab->AB', QL[ij], QL[ii], ERI[v,m,j,v])
+                        for n in range(no):
+                            _in = i*no + n
+                            jn = j*no + n
+                            nj = n*no + j
+
+                            Sijin = QL[ij].T @ QL[_in]
+                            tmp3 = t2_ij[_in] @ Sijin.T
+
+                            rtmp = contract('ab,aA->Ab', ERI[m,n,v,v], QL[_in])
+                            rtmp1 = contract('Ab,bB->AB',rtmp,QL[jj])
+
+                            tmp[m,:,i,:] -= contract('fa,fe->ae',tmp3, rtmp1)
+
+                            Sijjn = QL[ij].T @ QL[jn]
+                            tmp4 = t2_ij[jn] @ Sijjn.T
+                            rtmp2 = contract('ab,aA->Ab', ERI[m,n,v,v], QL[ii])
+                            rtmp3 = contract('Ab,bB->AB',rtmp2,QL[jn])
+                            tmp1[:,m,j,:] -= contract('fb,ef->be',tmp4, rtmp3)
+
+                            Sijnj = QL[ij].T @ QL[nj]
+                            tmp5 = t2_ij[nj] @ Sijnj.T
+                            rtmp4 = contract('ab,aA->Ab', L[m,n,v,v], QL[ii])
+                            rtmp5 = contract('Ab,bB->AB',rtmp4,QL[nj])
+                            tmp1[:,m,j,:] += contract('fb,ef->be', tmp5, rtmp5)
+
+                    tmp_ij.append(tmp)
+                    tmp1_ij.append(tmp1)       
+            for ij in range(no*no):
+                i = ij // no
+                j = ij % no
+
+                ii = i*no + i 
+                jj = j*no + j
+
+                Hovoo = ERIovoo_ij[ij].copy()
+ 
+                Hovoo_1 = np.zeros_like(Hovoo)
+                Hovoo_2 = np.zeros_like(Hovoo)
+                Hovoo_3 = np.zeros_like(Hovoo)
+                Hovoo_4 = np.zeros_like(Hovoo)
+                Hovoo_5 = np.zeros_like(Hovoo)
+                Hovoo_6 = np.zeros_like(Hovoo)
+                Hovoo_7 = np.zeros_like(Hovoo)
+                Hovoo_8 = np.zeros_like(Hovoo)
+                Hovoo_9 = np.zeros_like(Hovoo)
+                for m in range(no):
+
+                    Hovoo_1[m,:,i,j] += Hov_ij[ij][m] @ t2_ij[ij]
+
+                    Hovoo_2[m,:,i,j] += contract('ef,bef->b',t2_ij[ij], ERIovvv_ij[ij][m])
+ 
+                    rtmp_1 = contract('abc,aA->Abc',ERI[m,v,v,v], QL[ij])
+                    rtmp_2 = contract('Abc,bB->ABc',rtmp_1, QL[ii])
+                    rtmp_3 = contract('ABc,cC->ABC',rtmp_2, QL[jj])
+                    Hovoo_6[m,:,i,j] += contract('e,f,bef->b', t1_ii[i], t1_ii[j], rtmp_3)
+  
+                    Hovoo_7[m,:,i,j] += contract('e,be->b',t1_ii[j], tmp_ij[ij][m,:,i,:])   
+
+                    Hovoo_8[m,:,i,j] += contract('e,be->b',t1_ii[i], tmp1_ij[ij][:,m,i,:])
+                    for n in range(no):
+                        _in = i*no + n
+                        jn = j*no + n
+                        nj = n*no + j
+                        nn = n*no + n
+
+                        Sijin = QL[ij].T @ QL[_in]
+                        tmp = t2_ij[_in] @ Sijin.T
+                        Hovoo_3[m,:,i,j] -= tmp.T @ ERIooov_ij[_in][n,m,j]
+
+                        Sijjn = QL[ij].T @ QL[jn]
+                        tmp1 = t2_ij[jn] @ Sijjn.T
+                        Hovoo_4[m,:,i,j] -= tmp1.T @ ERIooov_ij[jn][m,n,i]
+
+                        Sijnj = QL[ij].T @ QL[nj]
+                        tmp2 = t2_ij[nj] @ Sijnj.T
+                        Hovoo_5[m,:,i,j] += tmp2.T @ Looov_ij[nj][m,n,i]
+  
+                        Sijnn = QL[ij].T @ QL[nn]
+                        Hovoo_9[m,:,i,j] -= (t1_ii[n] @ Sijnn.T) * lHoooo[m,n,i,j]
+
+                Hovoo_ij.append(Hovoo + Hovoo_1 + Hovoo_2 + Hovoo_3 + Hovoo_4 + Hovoo_5 + Hovoo_6 + Hovoo_9 + Hovoo_7 + Hovoo_8)
+            #print(Hovoo_ij[1][:,:,0,1])       
         return Hovoo_ij
 
     def build_Hovoo(self, o, v, ERI, L, Hov, Hoooo, t1, t2):
@@ -949,8 +1120,8 @@ class cchbar(object):
             Hovoo = Hovoo - contract('ineb,nmje->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo - contract('jneb,mnie->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo + contract('njeb,mnie->mbij', t2, L[o,o,o,v])
-            print("Hovoo_ij", 0)
-            print(Hovoo[:,:,0,0] @ Q[0] @ Lij[0])
+            #print("Hovoo_ij", 0)
+            #print(Hovoo[:,:,0,0] @ Q[0] @ Lij[0])
         elif self.ccwfn.model == 'CC2':
             if isinstance(ERI, torch.Tensor):
                 Hovoo = ERI[o,v,o,o].clone().to(self.ccwfn.device1)
@@ -969,7 +1140,7 @@ class cchbar(object):
                 Hovoo = ERI[o,v,o,o].copy()
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
             Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
-            Hovoo = Hovoo + contract('ijef,mbef->mbij', self.ccwfn.build_tau(t1, t2), ERI[o,v,v,v])
+            Hovoo = Hovoo + contract('ijef,mbef->mbij', self.ccwfn.build_tau(t1, t2), ERI[o,v,v,v]) # self.ccwfn.build_tau(t1, t2)
             Hovoo = Hovoo - contract('ineb,nmje->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo - contract('jneb,mnie->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo + contract('njeb,mnie->mbij', t2, L[o,o,o,v])
@@ -986,7 +1157,7 @@ class cchbar(object):
             tmp = tmp - contract('jnfb,mnef->bmje', t2, ERI[o,o,v,v])
             tmp = tmp + contract('njfb,mnef->bmje', t2, L[o,o,v,v])
             Hovoo = Hovoo + contract('ie,bmje->mbij', t1, tmp)
-            
+            #print(contract('bB,mbij->mBij',self.Local.Q[1] @ self.Local.L[1], Hovoo)[:,:,0,1])
             if isinstance(tmp, torch.Tensor):
                 del tmp
         return Hovoo

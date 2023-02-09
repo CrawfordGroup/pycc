@@ -333,7 +333,7 @@ class lccwfn(object):
         v = self.v
         
         if self.model == 'CCD':
-            return 
+            return Fme_ij, Fme_totim
         else:
             for ij in range(self.no*self.no):
                 i = ij // self.no

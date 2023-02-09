@@ -903,6 +903,8 @@ class Local(object):
         ERIovov_ij = []
         ERIovoo_ij = []
         ERIvovv_ij = []
+        ERIvovo_ij = []
+        ERIvoov_ij = []
 
         Loovv_ij = []
         Lovvv_ij = []
@@ -952,6 +954,12 @@ class Local(object):
             tmp15 = contract('Aibc,bB->AiBc',tmp14, QL[ij]) 
             ERIvovv_ij.append(contract('AiBc,cC->AiBC',tmp15, QL[ij]))
 
+            tmp16 = contract('aibj,aA->Aibj',self.H.ERI[v,o,v,o], QL[ij])
+            ERIvovo_ij.append(contract('Aibj,bB->AiBj', tmp16, QL[ij]))
+
+            tmp17 = contract('aijb,aA->Aijb',self.H.ERI[v,o,o,v], QL[ij])
+            ERIvoov_ij.append(contract('Aijb,bB->AijB', tmp17, QL[ij]))
+
             Loovo_ij.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
             tmp10 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
@@ -982,7 +990,8 @@ class Local(object):
             self.ERIovov_ij = ERIovov_ij
             self.ERIovoo_ij = ERIovoo_ij
             self.ERIvovv_ij = ERIvovv_ij
-
+            self.ERIvoov_ij = ERIvoov_ij
+            self.ERIvovo_ij = ERIvovo_ij
             self.Loovv_ij = Loovv_ij
             self.Lovvv_ij = Lovvv_ij
             self.Looov_ij = Looov_ij
