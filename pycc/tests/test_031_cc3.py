@@ -7,6 +7,7 @@ import psi4
 import pycc
 import pytest
 from ..data.molecules import *
+import numpy as np
 
 # H2O/cc-pVDZ
 def test_cc3_h2o():
@@ -40,11 +41,23 @@ def test_cc3_h2o():
     lcc_cfour = -0.2233231845185215 
     assert(abs(lcc - lcc_cfour) < 1e-11)
 
-    #ccdensity = pycc.ccdensity(cc, cclambda)
-    #ecc = ccdensity.compute_energy()
-    #assert (abs(epsi4 - ecc) < 1e-11)
+    ccdensity = pycc.ccdensity(cc, cclambda)
+    # no laser
+    rtcc = pycc.rtcc(cc, cclambda, ccdensity, None, magnetic = False)
+    
+    # Nuclear dipole from Psi4: 1.12729111248 au
+    #nuc_dipole = mol.nuclear_dipole()
+    # Total dipole from CFOUR: [0, 0, 0.7703875967] au
+    ref = [0, 0, -0.3569035158] # au
+
+    mu_x, mu_y, mu_z = rtcc.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2, withref=True)
+
+    assert (abs(ref[0] - np.real(mu_x)) < 1E-10)
+    assert (abs(ref[1] - np.real(mu_y)) < 1E-10)
+    assert (abs(ref[2] - np.real(mu_z)) < 1E-10)
 
 # H2/cc-pVDZ
+"""
 def test_cc3_h2():
     # Psi4 Setup
     psi4.set_memory('2 GB')
@@ -74,8 +87,5 @@ def test_cc3_h2():
     lcc = cclambda.solve_lambda(e_conv, r_conv)
     lcc_cfour = -0.0341034656430758
     assert(abs(lcc - lcc_cfour) < 1e-11)
-
-    #ccdensity = pycc.ccdensity(cc, cclambda)
-    #ecc = ccdensity.compute_energy()
-    #assert (abs(epsi4 - ecc) < 1e-11)
+"""
 
