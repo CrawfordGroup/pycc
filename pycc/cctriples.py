@@ -259,7 +259,10 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
         return l3
 
 def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    Loovv = L[o,o,v,v].copy()
+    if isinstance(l1, torch.Tensor):
+        Loovv = L[o,o,v,v].clone()
+    else:
+        Loovv = L[o,o,v,v].copy()
     l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
     l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
     l3 += contract('ji,k->ijk', Loovv[:,:,b,a], l1[:,c]) - contract('ji,k->ijk', Loovv[:,:,b,c], l1[:,a])
@@ -369,7 +372,10 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
         return l3
 
 def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    Loovv = L[o,o,v,v].copy()
+    if isinstance(l1, torch.Tensor):
+        Loovv = L[o,o,v,v].clone()
+    else:
+        Loovv = L[o,o,v,v].copy()
     l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
     l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
     l3 += contract('ji,k->ijk', Loovv[:,:,b,a], l1[:,c]) - contract('ji,k->ijk', Loovv[:,:,b,c], l1[:,a])
@@ -450,7 +456,10 @@ def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
         return t3
 
 def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    Loovv = L[o,o,v,v].copy()
+    if isinstance(l1, torch.Tensor):
+        Loovv = L[o,o,v,v].clone()
+    else:
+        Loovv = L[o,o,v,v].copy()
     l3 = contract('ija,k->ijka', Loovv[:,:,:,b], l1[:,c]) - contract('ija,k->ijka', Loovv[:,:,:,c], l1[:,b])
     l3 += contract('ika,j->ijka', Loovv[:,:,:,c], l1[:,b]) - contract('ika,j->ijka', Loovv[:,:,:,b], l1[:,c])
     l3 += contract('jia,k->ijka', Loovv[:,:,b], l1[:,c]) - contract('ji,ka->ijka', Loovv[:,:,b,c], l1)

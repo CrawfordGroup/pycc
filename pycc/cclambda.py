@@ -117,16 +117,16 @@ class cclambda(object):
 
         if self.ccwfn.model == 'CC3':
             # Intermediates for t3
-            Fme = self.ccwfn.build_Fme(o, v, F, L, t1)
-            Wmnij_cc3 = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
-            Wmbij_cc3 = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
-            Wmnie_cc3 = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
-            Wamef_cc3 = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
-            Wabei_cc3 = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
+            Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
+            Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
+            Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
+            Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
+            Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
+            Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
             # Additional intermediates for l3
-            Wmbje_cc3 = self.build_cc3_Wmbje(o, v, ERI, t1)
-            Wmbej_cc3 = self.build_cc3_Wmbej(o, v, ERI, t1)
-            Wabef_cc3 = self.build_cc3_Wabef(o, v, ERI, t1)
+            Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
+            Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
+            Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
 
             # Building intermediates in t3l1
             if isinstance(t1, torch.Tensor):                
@@ -140,7 +140,7 @@ class cclambda(object):
             for m in range(no):
                 for n in range(no):
                     for l in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                         Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
                         Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
                         Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
@@ -194,7 +194,7 @@ class cclambda(object):
                 for l in range(no):
                     for m in range(no):
                         for n in range(no):
-                            t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)        
+                            t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)        
                             Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
                 for m in range(no):
                     Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
@@ -206,7 +206,7 @@ class cclambda(object):
                 for i in range(no):
                     for j in range(no):
                         for k in range(no):
-                            l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fme, Wamef_cc3, Wmnie_cc3, F, contract, WithDenom=True)
+                            l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
                             # l3l1_Z_build
                             Zbide[:,i,:,:] += contract('bc,cde->bde', t2[j,k], l3_kij)
                             Zblad_1[:,i,:,:] += contract('bc,cad->bad', t2[j,k], l3_kij)
@@ -215,21 +215,21 @@ class cclambda(object):
                             Zjlid_1[:,i,j,:] += contract('jbc,cbd->jd', t2[:,k,:,:], l3_kij)
                             Zjlid_2[:,i,j,:] += contract('jbc,cdb->jd', t2[:,k,:,:], l3_kij)
                             # l3l2
-                            Y2[i,j] += contract('deb,eda->ab', l3_kij, Wabei_cc3[:,:,:,k]) 
-                            Y2[i] -= contract('dab,ld->lab', l3_kij, Wmbij_cc3[:,:,j,k])
+                            Y2[i,j] += contract('deb,eda->ab', l3_kij, Wvvvo[:,:,:,k]) 
+                            Y2[i] -= contract('dab,ld->lab', l3_kij, Wovoo[:,:,j,k])
                 # l3l1
-                Y1 += contract('bide,deab->ia', Zbide, Wabef_cc3)
+                Y1 += contract('bide,deab->ia', Zbide, Wvvvv)
                 for j in range(no):
                     for l in range(no):
                         for m in range(no):  
-                            Y1 += contract('a,i->ia', Zjlma[j,l,m], Wmnij_cc3[:,j,l,m])                             
+                            Y1 += contract('a,i->ia', Zjlma[j,l,m], Woooo[:,j,l,m])                             
                 for j in range(no):
                     for l in range(no):
-                        Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wmbje_cc3[j,:,l,:])
-                        Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wmbej_cc3[j,:,:,l])
+                        Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wovov[j,:,l,:])
+                        Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wovvo[j,:,:,l])
                 for l in range(no):
-                    Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wmbje_cc3[:,:,l,:])
-                    Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wmbej_cc3[:,:,:,l])   
+                    Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wovov[:,:,l,:])
+                    Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wovvo[:,:,:,l])   
                 # end l3l1+l3l2
                               
                 r1 += Y1
@@ -276,7 +276,7 @@ class cclambda(object):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
 
         if (isinstance(r1, torch.Tensor)) & (self.ccwfn.model == 'CC3'):
-            del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
+            del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
            
     def residuals(self, F, t1, t2, l1, l2):
         """
@@ -321,17 +321,17 @@ class cclambda(object):
         r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
         if self.ccwfn.model == 'CC3':   
-             # Intermediates for t3
-            Fme = self.ccwfn.build_Fme(o, v, F, L, t1)
-            Wmnij_cc3 = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
-            Wmbij_cc3 = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
-            Wmnie_cc3 = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
-            Wamef_cc3 = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
-            Wabei_cc3 = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
+            # Intermediates for t3
+            Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
+            Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
+            Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
+            Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
+            Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
+            Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
             # Additional intermediates for l3
-            Wmbje_cc3 = self.build_cc3_Wmbje(o, v, ERI, t1)
-            Wmbej_cc3 = self.build_cc3_Wmbej(o, v, ERI, t1)
-            Wabef_cc3 = self.build_cc3_Wabef(o, v, ERI, t1)
+            Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
+            Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
+            Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
 
             # Building intermediates in t3l1
             if isinstance(t1, torch.Tensor):                
@@ -345,7 +345,7 @@ class cclambda(object):
             for m in range(no):
                 for n in range(no):
                     for l in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                         Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
                         Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
                         Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
@@ -386,7 +386,7 @@ class cclambda(object):
             for l in range(no):
                 for m in range(no):
                     for n in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)        
+                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)        
                         Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
             for m in range(no):
                 Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
@@ -398,7 +398,7 @@ class cclambda(object):
             for i in range(no):
                 for j in range(no):
                     for k in range(no):
-                        l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fme, Wamef_cc3, Wmnie_cc3, F, contract, WithDenom=True)
+                        l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
                         # l3l1_Z_build
                         Zbide[:,i,:,:] += contract('bc,cde->bde', t2[j,k], l3_kij)
                         Zblad_1[:,i,:,:] += contract('bc,cad->bad', t2[j,k], l3_kij)
@@ -407,28 +407,28 @@ class cclambda(object):
                         Zjlid_1[:,i,j,:] += contract('jbc,cbd->jd', t2[:,k,:,:], l3_kij)
                         Zjlid_2[:,i,j,:] += contract('jbc,cdb->jd', t2[:,k,:,:], l3_kij)
                         # l3l2
-                        Y2[i,j] += contract('deb,eda->ab', l3_kij, Wabei_cc3[:,:,:,k]) 
-                        Y2[i] -= contract('dab,ld->lab', l3_kij, Wmbij_cc3[:,:,j,k])
+                        Y2[i,j] += contract('deb,eda->ab', l3_kij, Wvvvo[:,:,:,k]) 
+                        Y2[i] -= contract('dab,ld->lab', l3_kij, Wovoo[:,:,j,k])
             # l3l1                          
-            Y1 += contract('bide,deab->ia', Zbide, Wabef_cc3)
+            Y1 += contract('bide,deab->ia', Zbide, Wvvvv)
             for j in range(no):
                 for l in range(no):
                     for m in range(no):     
-                        Y1 += contract('a,i->ia', Zjlma[j,l,m], Wmnij_cc3[:,j,l,m])                          
+                        Y1 += contract('a,i->ia', Zjlma[j,l,m], Woooo[:,j,l,m])                          
             for j in range(no):
                 for l in range(no):
-                    Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wmbje_cc3[j,:,l,:])
-                    Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wmbej_cc3[j,:,:,l])
+                    Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wovov[j,:,l,:])
+                    Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wovvo[j,:,:,l])
             for l in range(no):
-                Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wmbje_cc3[:,:,l,:])
-                Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wmbej_cc3[:,:,:,l])   
+                Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wovov[:,:,l,:])
+                Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wovvo[:,:,:,l])   
             # end l3l1+l3l2
                          
             r1 += Y1
             r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
 
             if isinstance(r1, torch.Tensor):
-                del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3, Wmbje_cc3, Wmbej_cc3, Wabef_cc3
+                del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
        
         if isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
