@@ -200,22 +200,22 @@ class ccdensity(object):
         opdm[v,o] = self.build_Dvo(l1)
 
         if self.ccwfn.model == 'CC3':
-            Fme = self.ccwfn.build_Fme(o, v, F, L, t1)
-            Wabei_cc3 = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
-            Wmnij_cc3 = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
-            Wmbij_cc3 = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
-            Wamef_cc3 = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
-            Wmnie_cc3 = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
+            Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
+            Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
+            Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
+            Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
+            Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
+            Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
            
-            opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wabei_cc3, Wmbij_cc3, Fme, Wamef_cc3, Wmnie_cc3)
+            opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov)
 
             # Density matrix blocks in contractions with T1-transformed dipole integrals
             if isinstance(t1, torch.Tensor):
                 opdm_cc3 = torch.zeros_like(opdm)
             else: 
                 opdm_cc3 = np.zeros_like(opdm)
-            opdm_cc3[o,o] += self.build_cc3_Doo(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3)
-            opdm_cc3[v,v] += self.build_cc3_Dvv(o, v, no, nv, F, L, t2, l1, l2, Fme, Wabei_cc3, Wmbij_cc3, Wamef_cc3, Wmnie_cc3)
+            opdm_cc3[o,o] += self.build_cc3_Doo(o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov)
+            opdm_cc3[v,v] += self.build_cc3_Dvv(o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov)
 
             return (opdm, opdm_cc3)
                         
