@@ -29,9 +29,11 @@ def test_ccsd_t_h2o():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #etot = psi4.energy('CCSD(T)')
-    #epsi4 = psi4.variable('(T) CORRECTION ENERGY')
-    epsi4 = -0.000099877296028
+    psi4.core.clean()
+
+    etot = psi4.energy('CCSD(T)')
+    epsi4 = psi4.variable('(T) CORRECTION ENERGY')
+    #epsi4 = -0.000099877296028
 
     cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
@@ -46,9 +48,9 @@ def test_ccsd_t_h2o():
 
     psi4.set_options({'basis': 'cc-pVDZ'})
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-    #etot = psi4.energy('CCSD(T)')
-    #epsi4 = psi4.variable('(T) CORRECTION ENERGY')
-    epsi4 = -0.003885576370197
+    etot = psi4.energy('CCSD(T)')
+    epsi4 = psi4.variable('(T) CORRECTION ENERGY')
+    #epsi4 = -0.003885576370197
 
     cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)')
     eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
