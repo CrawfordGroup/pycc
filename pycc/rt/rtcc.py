@@ -83,6 +83,13 @@ class rtcc(object):
         if magnetic:
             self.magnetic = True
             self.m = self.ccwfn.H.m
+            if self.ccwfn.precision == 'SP':
+                self.m = np.complex64(self.m)
+            if isinstance(self.ccwfn.t1, torch.Tensor):
+                if self.ccwfn.precision == 'DP':
+                    self.m = torch.tensor(self.m, dtype=torch.complex128, device=self.ccwfn.device1)
+                elif self.ccwfn.precision == 'SP':
+                    self.m = torch.tensor(self.m, dtype=torch.complex64, device=self.ccwfn.device1)
         else:
             self.magnetic = False
 
