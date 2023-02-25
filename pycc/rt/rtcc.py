@@ -78,7 +78,12 @@ class rtcc(object):
                 self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
             elif self.ccwfn.precision == 'SP':
                 self.mu = torch.tensor(self.mu, dtype=torch.complex64, device=self.ccwfn.device1)
-            self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
+            
+            if kick:
+                s_to_i = {"x":0, "y":1, "z":2}
+                self.mu_tot = self.mu[s_to_i[kick.lower()]]
+            else:
+                self.mu_tot = sum(self.mu) / (torch.sqrt(torch.tensor(3.0)).item())
 
         if magnetic:
             self.magnetic = True
