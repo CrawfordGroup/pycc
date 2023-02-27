@@ -333,7 +333,7 @@ class lccwfn(object):
         v = self.v
         
         if self.model == 'CCD':
-            return 
+            return Fme_ij, Fme_totim 
         else:
             for ij in range(self.no*self.no):
                 i = ij // self.no
@@ -366,7 +366,7 @@ class lccwfn(object):
                     Fme_totim.append(Fme_im + Fme1_im)
                 Fme_ij.append(Fme + Fme_1)
         #self.fme_t.stop()
-        return Fme_ij, Fme_totim
+            return Fme_ij, Fme_totim
 
     def build_lWmnij(self, o, ERI, ERIooov_ij, ERIoovo_ij, ERIoovv_ij, t1_ii, t2_ij):
         #self.wmnij_t.start()
