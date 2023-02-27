@@ -10,11 +10,11 @@ import psi4
 import time
 import numpy as np
 import torch
-from .utils import helper_diis, cc_contract
-from .hamiltonian import Hamiltonian
-from .local import Local
-from .cctriples import t_tjl, t3c_ijk
-from .lccwfn import lccwfn
+from utils import helper_diis, cc_contract
+from hamiltonian import Hamiltonian
+from local import Local
+from cctriples import t_tjl, t3c_ijk
+from lccwfn import lccwfn
 
 class ccwfn(object):
     """
@@ -151,7 +151,8 @@ class ccwfn(object):
         if local is not None:
             self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
             if filter is not True:
-                self.Local._trans_integrals(self.o, self.v)
+                self.Local.trans_integrals(self.o, self.v)
+                self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
         
         # denominators
