@@ -49,7 +49,7 @@ class Local(object):
     _build_PAO(): build PAO orbital rotation tensors
     _build_PNO(): build PNO orbital rotation tensors   
     _build_PNOpp(): build PNO++ orbital rotation tensors
-    _trans_integral(): transform Fock matrix and ERI from the MO basis to a local basis 
+    trans_integrals(): transform Fock matrix and ERI from the MO basis to a local basis 
 
     Notes
     -----
@@ -296,10 +296,6 @@ class Local(object):
         self.dim = dim  # dimension of PAO space
         self.eps = eps  # semicananonical PAO energies
  
-        #print("Now doing PAO_mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
- 
     def _build_PNO(self):
         """
         Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
@@ -346,13 +342,12 @@ class Local(object):
 
         #temporary way to generate make sure the phase factor of Q_ij and L_ij matches with Q_ji and L_ji
         for i in range(self.no):
-            for j in range(self.no):
-                if i < j:
-                    ij = i*self.no + j
-                    ji = j*self.no + i
+            for j in range(0,i):
+                ij = i*self.no + j
+                ji = j*self.no + i
 
-                    self.Q[ji] = self.Q[ij]
-                    self.L[ji] = self.L[ij]
+                self.Q[ji] = self.Q[ij]
+                self.L[ji] = self.L[ij]
 
         #print("Now doing PNO mp2")
         #self._local_MP2_loop()
@@ -400,11 +395,7 @@ class Local(object):
         self.L = L  # transform between local and semicanonical local spaces 
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
-    
-        #print("Now doing PNO++ mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
-
+        
     def _pert_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
@@ -809,14 +800,13 @@ class Local(object):
 
         return t1, t2
 
-    def _trans_integrals(self, o, v):
+    def trans_integrals(self, o, v):
         """
         Transforming all the necessary integrals to the semi-canonical PNO basis, stored in a list with length occ*occ
         Naming scheme will have the tensor name with _ij such as Fov_ij
   
         Notes
         -----
-        There are some integral transformation that may not be needed, double check and remove 
         """
 
         trans_intstart = time.time()
@@ -829,26 +819,25 @@ class Local(object):
 
         #Initializing transformation and integral lists
         QL = []
-        QLT = []
 
-        Fov_ij = []
-        Fvv_ij = []
+        Fov = []
+        Fvv = []
 
-        ERIoovo_ij = []
-        ERIooov_ij = []
-        ERIovvv_ij = []
-        ERIvvvv_ij = []
-        ERIoovv_ij = []
-        ERIovvo_ij = []
-        ERIvvvo_ij = []
-        ERIovov_ij = []
-        ERIovoo_ij = []
+        ERIoovo = []
+        ERIooov = []
+        ERIovvv = []
+        ERIvvvv = []
+        ERIoovv = []
+        ERIovvo = []
+        ERIvvvo = []
+        ERIovov = []
+        ERIovoo = []
 
-        Loovv_ij = []
-        Lovvv_ij = []
-        Looov_ij = []
-        Loovo_ij = []
-        Lovvo_ij = []
+        Loovv = []
+        Lovvv = []
+        Looov = []
+        Loovo = []
+        Lovvo = []
 
         for ij in range(self.no*self.no):
             i = ij // self.no
@@ -856,72 +845,136 @@ class Local(object):
 
             QL.append(Q[ij] @ L[ij])
 
-            Fov_ij.append(self.H.F[o,v] @ QL[ij])
+            Fov.append(self.H.F[o,v] @ QL[ij])
 
-            Fvv_ij.append(L[ij].T @ Q[ij].T @ self.H.F[v,v] @ QL[ij])
+            Fvv.append(L[ij].T @ Q[ij].T @ self.H.F[v,v] @ QL[ij])
 
-            ERIoovo_ij.append(contract('ijak,aA->ijAk', self.H.ERI[o,o,v,o],QL[ij]))
+            ERIoovo.append(contract('ijak,aA->ijAk', self.H.ERI[o,o,v,o],QL[ij]))
 
-            ERIooov_ij.append(contract('ijka,aA->ijkA', self.H.ERI[o,o,o,v],QL[ij]))
+            ERIooov.append(contract('ijka,aA->ijkA', self.H.ERI[o,o,o,v],QL[ij]))
 
             tmp = contract('ijab,aA->ijAb',self.H.ERI[o,o,v,v], QL[ij])
-            ERIoovv_ij.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
+            ERIoovv.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
 
             tmp1 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
             tmp2 = contract('iAbc,bB->iABc',tmp1, QL[ij])
-            ERIovvv_ij.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
+            ERIovvv.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
 
             tmp3 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
             tmp4 = contract('Abcd,bB->ABcd',tmp3, QL[ij])
             tmp5 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
-            ERIvvvv_ij.append(contract('ABCd,dD->ABCD',tmp5, QL[ij]))
+            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp5, QL[ij]))
 
             tmp6 = contract('iabj,aA->iAbj',self.H.ERI[o,v,v,o], QL[ij])
-            ERIovvo_ij.append(contract('iAbj,bB->iABj',tmp6,QL[ij]))
+            ERIovvo.append(contract('iAbj,bB->iABj',tmp6,QL[ij]))
 
             tmp7 = contract('abci,aA->Abci',self.H.ERI[v,v,v,o], QL[ij])
             tmp8 = contract('Abci,bB->ABci',tmp7, QL[ij])
-            ERIvvvo_ij.append(contract('ABci,cC->ABCi',tmp8, QL[ij]))
+            ERIvvvo.append(contract('ABci,cC->ABCi',tmp8, QL[ij]))
 
             tmp9 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
-            ERIovov_ij.append(contract('iAjb,bB->iAjB', tmp9, QL[ij]))
+            ERIovov.append(contract('iAjb,bB->iAjB', tmp9, QL[ij]))
 
-            ERIovoo_ij.append(contract('iajk,aA->iAjk', self.H.ERI[o,v,o,o], QL[ij]))
+            ERIovoo.append(contract('iajk,aA->iAjk', self.H.ERI[o,v,o,o], QL[ij]))
 
-            Loovo_ij.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
+            Loovo.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
             tmp10 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
-            Loovv_ij.append(contract('ijAb,bB->ijAB',tmp10,QL[ij]))
+            Loovv.append(contract('ijAb,bB->ijAB',tmp10,QL[ij]))
 
             tmp11 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
             tmp12 = contract('iAbc,bB->iABc',tmp11, QL[ij])
-            Lovvv_ij.append(contract('iABc,cC->iABC',tmp12, QL[ij]))
+            Lovvv.append(contract('iABc,cC->iABC',tmp12, QL[ij]))
 
-            Looov_ij.append(contract('ijka,aA->ijkA',self.H.L[o,o,o,v], QL[ij]))
+            Looov.append(contract('ijka,aA->ijkA',self.H.L[o,o,o,v], QL[ij]))
 
             tmp13 = contract('iabj,aA->iAbj',self.H.L[o,v,v,o], QL[ij])
-            Lovvo_ij.append(contract('iAbj,bB->iABj',tmp13,QL[ij]))
+            Lovvo.append(contract('iAbj,bB->iABj',tmp13,QL[ij]))
 
             #Storing the list to this class
             self.QL = QL
-            self.QLT = QLT
-            self.Fov_ij = Fov_ij
-            self.Fvv_ij = Fvv_ij
+            self.Fov = Fov
+            self.Fvv = Fvv
 
-            self.ERIoovo_ij = ERIoovo_ij
-            self.ERIooov_ij = ERIooov_ij
-            self.ERIovvv_ij = ERIovvv_ij
-            self.ERIvvvv_ij = ERIvvvv_ij
-            self.ERIoovv_ij = ERIoovv_ij
-            self.ERIovvo_ij = ERIovvo_ij
-            self.ERIvvvo_ij = ERIvvvo_ij
-            self.ERIovov_ij = ERIovov_ij
-            self.ERIovoo_ij = ERIovoo_ij
+            self.ERIoovo = ERIoovo
+            self.ERIooov = ERIooov
+            self.ERIovvv = ERIovvv
+            self.ERIvvvv = ERIvvvv
+            self.ERIoovv = ERIoovv
+            self.ERIovvo = ERIovvo
+            self.ERIvvvo = ERIvvvo
+            self.ERIovov = ERIovov
+            self.ERIovoo = ERIovoo
 
-            self.Loovv_ij = Loovv_ij
-            self.Lovvv_ij = Lovvv_ij
-            self.Looov_ij = Looov_ij
-            self.Loovo_ij = Loovo_ij
-            self.Lovvo_ij = Lovvo_ij
+            self.Loovv = Loovv
+            self.Lovvv = Lovvv
+            self.Looov = Looov
+            self.Loovo = Loovo
+            self.Lovvo = Lovvo
 
         print("Integrals transformed in %.3f seconds." % (time.time() - trans_intstart))
+
+    def overlaps(self, QL): 
+        """
+        Generating and storing overlap terms
+
+        Notes
+        -----
+        Length: two unique index = no*no, three unique index = no*no*no, four unique index = no*no*no*no 
+        Computational scaling is length*(nv*nv)  
+        """
+        no = self.no 
+
+        Siimm = []
+        Siiim = [] 
+        Sijmm = []
+        Sijim = []
+        Sijmj = []
+        Sijnn = []
+        Sijin = []
+        Sijnj = []
+        Sijjn = []
+        Siimn = []
+        Sijmn = []
+        
+        for i in range(no):
+            ii = i*no + i
+            for j in range(no):
+                ij = i*no + j
+                for m in range(no):
+                    mm = m*no + m
+                    im = i*no + m
+                    mj = m*no + j
+
+                    Sijmm.append(QL[ij].T @ QL[mm])
+                    Sijim.append(QL[ij].T @ QL[im]) 
+                    Sijmj.append(QL[ij].T @ QL[mj])  
+                    if ii == ij:
+                        Siimm.append(QL[ii].T @ QL[mm]) 
+                        Siiim.append(QL[ii].T @ QL[im])
+                for n in range(no):
+                    nn = n*no + n
+                    _in = i*no + n 
+                    nj = n*no + j 
+                    jn = j*no + n
+                    ijn = ij*no + n
+                    Sijnn.append(QL[ij].T @ QL[nn])
+                    Sijin.append(QL[ij].T @ QL[_in]) 
+                    Sijnj.append(QL[ij].T @ QL[nj])
+                    Sijjn.append(QL[ij].T @ QL[jn])
+                for mn in range(no*no):
+                    Sijmn.append(QL[ij].T @ QL[mn])
+                    if ii == ij: 
+                        Siimn.append(QL[ii].T @ QL[mn])
+               
+        self.Siimm = Siimm
+        self.Siiim = Siiim
+        self.Sijmj = Sijmj
+        self.Sijmm = Sijmm 
+        self.Sijim = Sijim
+        self.Sijnn = Sijnn
+        self.Sijin = Sijin
+        self.Sijnj = Sijnj
+        self.Sijjn = Sijjn
+        self.Siimn = Siimm
+        self.Sijmn = Sijmn
