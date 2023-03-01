@@ -55,11 +55,11 @@ def test_pnopp_ccd():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #simulation code of pno-ccd
+    #simulation code of pno++-ccd
     ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO++', local_cutoff=1e-7,it2_opt=False,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
 
-    #pno-ccd
+    #pno++-ccd
     lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO++', local_cutoff=1e-7,it2_opt=False)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
@@ -113,11 +113,11 @@ def test_pao_ccd_opt():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #simulation code of pno-ccd
+    #simulation code of pao-ccd
     ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PAO', local_cutoff=2e-2,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
 
-    #pno-ccd
+    #pao-ccd
     lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PAO', local_cutoff=2e-2)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
