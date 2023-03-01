@@ -267,7 +267,7 @@ class Local(object):
             evals = np.delete(evals,toss)
             for c in range(Xt.shape[1]):
                 Xt[:,c] = Xt[:,c] / evals[c]**0.5
-            dim.append(Xt.shape[1])
+            dim.append(np.dtype('int64').type(Xt.shape[1]))
 
             # just below Eq 51, redundant PAO Fock 
             Ft = contract('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
@@ -295,7 +295,7 @@ class Local(object):
         self.L = L  # transform between PAO and semicanonical PAO spaces
         self.dim = dim  # dimension of PAO space
         self.eps = eps  # semicananonical PAO energies
- 
+
     def _build_PNO(self):
         """
         Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
@@ -348,10 +348,6 @@ class Local(object):
 
                 self.Q[ji] = self.Q[ij]
                 self.L[ji] = self.L[ij]
-
-        #print("Now doing PNO mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
          
     def _build_PNOpp(self):
         """
@@ -395,7 +391,7 @@ class Local(object):
         self.L = L  # transform between local and semicanonical local spaces 
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
-        
+
     def _pert_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
@@ -803,10 +799,10 @@ class Local(object):
     def trans_integrals(self, o, v):
         """
         Transforming all the necessary integrals to the semi-canonical PNO basis, stored in a list with length occ*occ
-        Naming scheme will have the tensor name with _ij such as Fov_ij
-  
+ 
         Notes
         -----
+        contraction notations: i,j,a,b are MOs; A,B,C,D virtual semicanonical PNO
         """
 
         trans_intstart = time.time()
@@ -814,15 +810,10 @@ class Local(object):
         #Initializing the transformation matrices
         Q = self.Q
         L = self.L
-
-        #contraction notation i,j,a,b typically MO; A,B,C,D virtual semicanonical PNO;
-
-        #Initializing transformation and integral lists
+        
         QL = []
-
         Fov = []
         Fvv = []
-
         ERIoovo = []
         ERIooov = []
         ERIovvv = []
@@ -832,7 +823,6 @@ class Local(object):
         ERIvvvo = []
         ERIovov = []
         ERIovoo = []
-
         Loovv = []
         Lovvv = []
         Looov = []
@@ -851,53 +841,48 @@ class Local(object):
 
             ERIoovo.append(contract('ijak,aA->ijAk', self.H.ERI[o,o,v,o],QL[ij]))
 
-            ERIooov.append(contract('ijka,aA->ijkA', self.H.ERI[o,o,o,v],QL[ij]))
+            ERIooov.append(ERIoovo[ij].swapaxes(0,1).swapaxes(2,3))
+
+            ERIovoo.append(ERIooov[ij].swapaxes(0,2).swapaxes(1,3))
 
             tmp = contract('ijab,aA->ijAb',self.H.ERI[o,o,v,v], QL[ij])
             ERIoovv.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
 
-            tmp1 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
-            tmp2 = contract('iAbc,bB->iABc',tmp1, QL[ij])
+            ERIovvo.append(ERIoovv[ij].swapaxes(1,3))
+
+            tmp1 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
+            ERIovov.append(contract('iAjb,bB->iAjB',tmp1, QL[ij]))
+
+            tmp2 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
+            tmp2 = contract('iAbc,bB->iABc',tmp2, QL[ij])
             ERIovvv.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
 
-            tmp3 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
-            tmp4 = contract('Abcd,bB->ABcd',tmp3, QL[ij])
-            tmp5 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
-            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp5, QL[ij]))
+            tmp3 = ERIovvv[ij].swapaxes(0,1).swapaxes(2,3)
+            ERIvvvo.append(tmp3.swapaxes(1,3))
 
-            tmp6 = contract('iabj,aA->iAbj',self.H.ERI[o,v,v,o], QL[ij])
-            ERIovvo.append(contract('iAbj,bB->iABj',tmp6,QL[ij]))
-
-            tmp7 = contract('abci,aA->Abci',self.H.ERI[v,v,v,o], QL[ij])
-            tmp8 = contract('Abci,bB->ABci',tmp7, QL[ij])
-            ERIvvvo.append(contract('ABci,cC->ABCi',tmp8, QL[ij]))
-
-            tmp9 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
-            ERIovov.append(contract('iAjb,bB->iAjB', tmp9, QL[ij]))
-
-            ERIovoo.append(contract('iajk,aA->iAjk', self.H.ERI[o,v,o,o], QL[ij]))
-
+            tmp4 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+            tmp4 = contract('Abcd,bB->ABcd',tmp4, QL[ij])
+            tmp4 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
+            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp4, QL[ij]))
+            
             Loovo.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
-            tmp10 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
-            Loovv.append(contract('ijAb,bB->ijAB',tmp10,QL[ij]))
+            Looov.append(Loovo[ij].swapaxes(0,1).swapaxes(2,3))
 
-            tmp11 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
-            tmp12 = contract('iAbc,bB->iABc',tmp11, QL[ij])
-            Lovvv.append(contract('iABc,cC->iABC',tmp12, QL[ij]))
+            tmp5 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
+            Loovv.append(contract('ijAb,bB->ijAB',tmp5,QL[ij]))
 
-            Looov.append(contract('ijka,aA->ijkA',self.H.L[o,o,o,v], QL[ij]))
+            Lovvo.append(Loovv[ij].swapaxes(1,3))
 
-            tmp13 = contract('iabj,aA->iAbj',self.H.L[o,v,v,o], QL[ij])
-            Lovvo.append(contract('iAbj,bB->iABj',tmp13,QL[ij]))
+            tmp6 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
+            tmp6 = contract('iAbc,bB->iABc',tmp6, QL[ij])
+            Lovvv.append(contract('iABc,cC->iABC',tmp6, QL[ij]))
 
-            #Storing the list to this class
             self.QL = QL
             self.Fov = Fov
             self.Fvv = Fvv
-
             self.ERIoovo = ERIoovo
-            self.ERIooov = ERIooov
+            self.ERIooov = ERIoovo
             self.ERIovvv = ERIovvv
             self.ERIvvvv = ERIvvvv
             self.ERIoovv = ERIoovv
@@ -905,7 +890,6 @@ class Local(object):
             self.ERIvvvo = ERIvvvo
             self.ERIovov = ERIovov
             self.ERIovoo = ERIovoo
-
             self.Loovv = Loovv
             self.Lovvv = Lovvv
             self.Looov = Looov
@@ -922,6 +906,12 @@ class Local(object):
         -----
         Length: two unique index = no*no, three unique index = no*no*no, four unique index = no*no*no*no 
         Computational scaling is length*(nv*nv)  
+        Storage size is length*(pno*pno) where pno dimension varies based on cutoff
+        May not need Siiim,Siimm, Siimn but needs to be check once pno-ccsd is implemented to test out  
+        
+        To do
+        -----
+        Compare the timings for the use of stored overlap terms versus "on the fly" overlap terms 
         """
         no = self.no 
 
