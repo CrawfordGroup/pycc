@@ -44,8 +44,6 @@ class lccwfn(object):
     To do: 
     (1) need DIIS extrapolation
     (2) time table for each intermediate?
-    (3) generate and store overlap terms prior to the calculation of the residuals
-    (4) remove redundant transformed integrals 
     """
  
     def __init__(self, o, v, no, nv, H, local, model, eref, Local): 
@@ -170,12 +168,10 @@ class lccwfn(object):
 
         Fae = []
         Fme = []
-
         Wmbej = []
         Wmbje = []
         Wmbie = []
         Zmbij = []
-
         r1 = []
         r2 = []
 
