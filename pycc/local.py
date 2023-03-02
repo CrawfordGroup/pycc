@@ -907,7 +907,6 @@ class Local(object):
         Length: two unique index = no*no, three unique index = no*no*no, four unique index = no*no*no*no 
         Computational scaling is length*(nv*nv)  
         Storage size is length*(pno*pno) where pno dimension varies based on cutoff
-        May not need Siiim,Siimm, Siimn but needs to be check once pno-ccsd is implemented to test out  
         
         To do
         -----
@@ -915,8 +914,6 @@ class Local(object):
         """
         no = self.no 
 
-        Siimm = []
-        Siiim = [] 
         Sijmm = []
         Sijim = []
         Sijmj = []
@@ -924,11 +921,9 @@ class Local(object):
         Sijin = []
         Sijnj = []
         Sijjn = []
-        Siimn = []
         Sijmn = []
         
         for i in range(no):
-            ii = i*no + i
             for j in range(no):
                 ij = i*no + j
                 for m in range(no):
@@ -939,26 +934,22 @@ class Local(object):
                     Sijmm.append(QL[ij].T @ QL[mm])
                     Sijim.append(QL[ij].T @ QL[im]) 
                     Sijmj.append(QL[ij].T @ QL[mj])  
-                    if ii == ij:
-                        Siimm.append(QL[ii].T @ QL[mm]) 
-                        Siiim.append(QL[ii].T @ QL[im])
+
                 for n in range(no):
                     nn = n*no + n
                     _in = i*no + n 
                     nj = n*no + j 
                     jn = j*no + n
                     ijn = ij*no + n
+
                     Sijnn.append(QL[ij].T @ QL[nn])
                     Sijin.append(QL[ij].T @ QL[_in]) 
                     Sijnj.append(QL[ij].T @ QL[nj])
                     Sijjn.append(QL[ij].T @ QL[jn])
+
                 for mn in range(no*no):
                     Sijmn.append(QL[ij].T @ QL[mn])
-                    if ii == ij: 
-                        Siimn.append(QL[ii].T @ QL[mn])
-               
-        self.Siimm = Siimm
-        self.Siiim = Siiim
+
         self.Sijmj = Sijmj
         self.Sijmm = Sijmm 
         self.Sijim = Sijim
@@ -966,5 +957,4 @@ class Local(object):
         self.Sijin = Sijin
         self.Sijnj = Sijnj
         self.Sijjn = Sijjn
-        self.Siimn = Siimm
         self.Sijmn = Sijmn

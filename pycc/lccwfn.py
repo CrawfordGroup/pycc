@@ -191,7 +191,7 @@ class lccwfn(object):
         Wmbej = self.build_Wmbej(Wmbej, ERI, L, self.Local.ERIoovo, self.Local.Sijnn, self.Local.Sijnj, self.Local.Sijjn, t1, t2)
         Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIooov, self.Local.Sijnn, self.Local.Sijin, self.Local.Sijjn, t1, t2)
 
-        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Siimm, self.Local.Siiim, self.Local.Siimn,
+        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Sijmm, self.Local.Sijim, self.Local.Sijmn,
         t1, t2, Fae, Fmi, Fme)
         r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim,
         self.Local.Sijmj, self.Local.Sijnn, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
@@ -233,7 +233,7 @@ class lccwfn(object):
                     mm = m*self.no + m
                     ijm = ij*(self.no) + m
 
-                    tmp = (QL[ij].T @ QL[mm]) @ t1[m] # Sijmm[ijm] @ t1[m]
+                    tmp = Sijmm[ijm] @ t1[m]
                     Fae -= 0.5* contract('e,a->ae',Fov[ij][m],tmp)
 
                     tmp1 = contract('abc,aA->Abc',L[m,v,v,v], QL[ij])
@@ -246,7 +246,7 @@ class lccwfn(object):
                         nn = n*self.no + n
                         ijmn = ij*(self.no**2) + mn
 
-                        tmp2 = (QL[ij].T @ QL[mn]) @ t2[mn] #Sijmn[ijmn] @ t2[mn]
+                        tmp2 = Sijmn[ijmn] @ t2[mn]
                         tmp3_0 = QL[ij].T @ L[m,n,v,v]
                         tmp3_1 = tmp3_0 @ QL[mn]
                         Fae -= tmp2 @ tmp3_1.T
@@ -433,10 +433,10 @@ class lccwfn(object):
                         nj = n*self.no + j
                         ijn = ij*(self.no) + n
 
-                        tmp1 = (QL[ij].T @ QL[nn]) @ t1[n] #Sijnn[ijn] @ t1[n]
+                        tmp1 = Sijnn[ijn] @ t1[n]
                         Wmbej -= contract('b,e->be', tmp1, ERIoovo[im][m,n,:,j])
 
-                        tmp2 = 0.5 * t2[jn] @ (QL[ij].T @ QL[jn]).T  # t2[jn] @ Sijjn[ijn].T
+                        tmp2 = 0.5 * t2[jn] @ Sijjn[ijn].T
                         tmp3_0 = QL[im].T @ ERI[m,n,v,v]
                         tmp3 = tmp3_0 @ QL[jn]
                         Wmbej -= tmp2.T @ tmp3.T
@@ -444,7 +444,7 @@ class lccwfn(object):
                         tmp4 = tmp3_0 @ QL[jj]
                         Wmbej -= contract('f,b,ef-> be',t1[j],tmp1,tmp4)
 
-                        tmp5 = t2[nj] @ (QL[ij].T @ QL[nj]).T #Sijnj[ijn].T
+                        tmp5 = t2[nj] @ Sijnj[ijn].T
                         tmp6 = QL[im].T @ L[m,n,v,v]
                         tmp6 = tmp6 @ QL[nj]
                         Wmbej += 0.5 * tmp5.T @ tmp6.T
@@ -528,14 +528,12 @@ class lccwfn(object):
                         _in = i*self.no + n
                         ijn = ij*self.no + n
 
-                        tmp2 = (QL[ij].T @ QL[nn]) @ t1[n]
-                        #tmp2 = Sijnn[ijn] @ t1[n]
-                        #print(Wmbje.shape, tmp2.shape, ERIooov[im][m,n,j].shape)
+                        tmp2 = Sijnn[ijn] @ t1[n]
                         Wmbje += contract('b,e->be',tmp2,ERIooov[im][m,n,j])
 
                         Wmbie += contract('b,e->be',tmp2,ERIooov[mj][m,n,i])
 
-                        tmp3 = 0.5 * t2[jn] @ (QL[ij].T @ QL[jn]).T #Sijjn[ijn].T
+                        tmp3 = 0.5 * t2[jn] @ Sijjn[ijn].T
                         tmp4 = QL[jn].T @ ERI[m,n,v,v]
                         tmp4 = tmp4 @ QL[im]
                         Wmbje += tmp3.T @ tmp4
@@ -544,7 +542,7 @@ class lccwfn(object):
                         tmp5= tmp5 @ QL[im]
                         Wmbje += contract('f,b,fe->be',t1[j], tmp2, tmp5)
 
-                        tmp2_mj = 0.5 * t2[_in] @ (QL[ij].T @ QL[_in]).T #Sijin[ijn].T
+                        tmp2_mj = 0.5 * t2[_in] @ Sijin[ijn].T
                         tmp3_mj = QL[_in].T @ ERI[m,n,v,v]
                         tmp3_mj = tmp3_mj @ QL[mj]
                         Wmbie += tmp2_mj.T @ tmp3_mj
@@ -558,7 +556,7 @@ class lccwfn(object):
         #self.wmbje_t.stop()
         return Wmbje_ijim, Wmbie_ijmj
 
-    def r_T1(self, r1_ii, Fov , ERI, L, Loovo, Siimm, Siiim, Siimn, t1, t2, Fae, Fmi, Fme):
+    def r_T1(self, r1_ii, Fov , ERI, L, Loovo, Sijmm, Sijim, Sijmn, t1, t2, Fae, Fmi, Fme):
         #self.r1_t.start()
         v = self.v
         QL = self.QL
@@ -580,11 +578,12 @@ class lccwfn(object):
                     mm = m*self.no + m
                     im = i*self.no + m
                     mi = m*self.no + i
+                    iim = ii*(self.no) + m
 
-                    tmp =  (QL[ii].T @ QL[mm]) @ t1[m] #Siimm[im] @ t1[m]
+                    tmp = Sijmm[iim] @ t1[m] 
                     r1 -= tmp * Fmi[m,i]
 
-                    tmp1 = (QL[ii].T @ QL[im]) @ (2*t2[im] - t2[im].swapaxes(0,1)) #Siiim[im] @ (2*t2[im] - t2[im].swapaxes(0,1))
+                    tmp1 = Sijim[iim] @ (2*t2[im] - t2[im].swapaxes(0,1))
                     r1 += contract('aE,E->a',tmp1, Fme[im][m])
 
                     tmp2 = contract('abc,aA->Abc',ERI[m,v,v,v], QL[ii])
@@ -603,9 +602,9 @@ class lccwfn(object):
                     m = mn // self.no
                     n = mn % self.no
                     imn = i*(self.no**2) + mn
-
-                    tmp4 = (QL[ii].T @ QL[mn]) @ t2[mn]
-                    #tmp4 = Siimn[imn] @ t2[mn]
+                    iimn =ii*(self.no**2) + mn 
+             
+                    tmp4 = Sijmn[iimn] @ t2[mn]
                     r1 -= contract('aE,E->a',tmp4,Loovo[mn][n,m,:,i])
 
                 r1_ii.append(r1)
@@ -680,7 +679,6 @@ class lccwfn(object):
                 tmp = contract('ABCd,dD->ABCD', tmp, QL[jj])
                 r2 += 0.5 *contract('e,f,abef->ab',t1[i],t1[j], tmp)
 
-                #r_11
                 tmp1 = contract('abc,aA->Abc',ERI[v,v,v,j], QL[ij])
                 tmp1 = contract('Abc,bB->ABc',tmp1, QL[ij])
                 tmp1 = contract('ABc,cC->ABC',tmp1, QL[ii])
@@ -692,7 +690,7 @@ class lccwfn(object):
                     mj = m*self.no + j
                     ijm = ij*self.no + m
 
-                    tmp2_0 = (QL[ij].T @ QL[mm]) @ t1[m] #Sijmm[ijm] @ t1[m]
+                    tmp2_0 = Sijmm[ijm] @ t1[m]
                     tmp2 = contract('b,e->be', tmp2_0, Fme[ij][m])
                     r2 -= 0.5 * t2[ij] @ tmp2.T
 
@@ -712,22 +710,18 @@ class lccwfn(object):
                     tmp7 = Wmbej[ijm] + Wmbje[ijm]
                     r2 += tmp6 @ tmp7.T
 
-
                     tmp8 = Sijmj[ijm] @ t2[mj]
                     r2 += tmp8 @ Wmbie[ijm].T
 
-                    #r_9
                     tmp9 = QL[ij].T @ ERI[m,v,v,j]
                     tmp9 = tmp9 @ QL[ii]
                     tmp10 = contract ('E,a->Ea', t1[i], tmp2_0)
                     r2 -= tmp10.T @ tmp9.T
 
-                    #r_10
                     tmp11 = QL[ij].T @ ERI[m,v,j,v]
                     tmp11 = tmp11 @ QL[ii]
                     r2 -= tmp11 @ tmp10
 
-                    #r_12  
                     r2 -= contract('a,b->ab',tmp2_0, ERIovoo[ij][m,:,i,j])
 
                     for n in range(self.no):
@@ -738,7 +732,7 @@ class lccwfn(object):
 
                         tmp12 = Sijmn[ijmn] @ t2[mn]
                         tmp12 = tmp12 @ Sijmn[ijmn].T
-                        tmp13 = (QL[ij].T @ QL[nn]) @ t1[n] #Sijnn[ijn] @ t1[n]
+                        tmp13 = Sijnn[ijn] @ t1[n]
                         r2 += 0.5 * tmp12 * Wmnij[m,n,i,j]
                         r2 += 0.5 * contract('a,b->ab',tmp2_0, tmp13) * Wmnij[m,n,i,j]
 
