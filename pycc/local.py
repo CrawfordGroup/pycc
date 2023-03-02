@@ -882,7 +882,7 @@ class Local(object):
             self.Fov = Fov
             self.Fvv = Fvv
             self.ERIoovo = ERIoovo
-            self.ERIooov = ERIoovo
+            self.ERIooov = ERIooov
             self.ERIovvv = ERIovvv
             self.ERIvvvv = ERIvvvv
             self.ERIoovv = ERIoovv
