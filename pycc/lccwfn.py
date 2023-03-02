@@ -44,8 +44,6 @@ class lccwfn(object):
     To do: 
     (1) need DIIS extrapolation
     (2) time table for each intermediate?
-    (3) generate and store overlap terms prior to the calculation of the residuals
-    (4) remove redundant transformed integrals 
     """
  
     def __init__(self, o, v, no, nv, H, local, model, eref, Local): 
@@ -62,28 +60,28 @@ class lccwfn(object):
         self.dim = self.Local.dim
         self.eps = self.Local.eps 
 
-        self.t1 = np.zeros((self.no, self.nv))
-        t1_ii = []
-        t2_ij = [] 
+        t1 = []
+        t2 = [] 
 
         for i in range(self.no):
             ii = i*self.no + i
     
-            t1_ii.append(self.QL[ii].T @ self.t1[i]) 
+            t1.append(np.zeros((self.Local.dim[ii])))
  
             for j in range(self.no):
                 ij = i*self.no + j
                                 
-                t2_ij.append(-1* self.Local.ERIoovv_ij[ij][i,j] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1) 
+                t2.append(-1* self.Local.ERIoovv[ij][i,j] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1) 
                 - self.H.F[i,i] - self.H.F[j,j]))   
 
-        self.t1_ii = t1_ii    
-        self.t2_ij = t2_ij 
+        self.t1 = t1    
+        self.t2 = t2
 
     def solve_lcc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8,start_diis=1):
         """
         Parameters
         ----------
+
         e_conv : float
             convergence condition for correlation energy (default if 1e-7)
         r_conv : float
@@ -111,16 +109,16 @@ class lccwfn(object):
         #self.r2_t = Timer("r2")
         #self.energy_t = Timer("energy")
 
-        #ldiis = helper_ldiis(self.t1_ii, self.t2_ij, max_diis) 
+        #ldiis = helper_ldiis(self.t1, self.t2, max_diis) 
         
-        elcc = self.lcc_energy(self.Local.Fov_ij,self.Local.Loovv_ij,self.t1_ii, self.t2_ij)
+        elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
 
         for niter in range(1, maxiter+1):
 
             elcc_last = elcc
 
-            r1_ii, r2_ij = self.local_residuals(self.t1_ii, self.t2_ij)
+            r1, r2 = self.local_residuals(self.t1, self.t2)
 
             rms = 0
             rms_t1 = 0
@@ -131,20 +129,20 @@ class lccwfn(object):
                 
                 #need to change to reshape
                 for a in range(self.Local.dim[ii]):
-                    self.t1_ii[i][a] += r1_ii[i][a]/(self.H.F[i,i] - self.Local.eps[ii][a]) 
+                    self.t1[i][a] += r1[i][a]/(self.H.F[i,i] - self.Local.eps[ii][a]) 
 
-                rms_t1 += contract('Z,Z->',r1_ii[i],r1_ii[i])
+                rms_t1 += contract('Z,Z->',r1[i],r1[i])
 
                 for j in range(self.no):
                     ij = i*self.no + j
 
-                    self.t2_ij[ij] -= r2_ij[ij]/(self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1)
+                    self.t2[ij] -= r2[ij]/(self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1)
                     - self.H.F[i,i] - self.H.F[j,j])
 
-                    rms_t2 += contract('ZY,ZY->',r2_ij[ij],r2_ij[ij])
+                    rms_t2 += contract('ZY,ZY->',r2[ij],r2[ij])
 
-            rms = np.sqrt(rms_t1 + rms_t2)
-            elcc = self.lcc_energy(self.Local.Fov_ij,self.Local.Loovv_ij,self.t1_ii, self.t2_ij)
+            rms = np.sqrt(rms_t2)
+            elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
             ediff = elcc - elcc_last
             print("lCC Iter %3d: lCC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, elcc, ediff, rms))
 
@@ -158,27 +156,17 @@ class lccwfn(object):
                 #print(Timer.timers)
                 return elcc
 
-            #ldiis.add_error_vector(self.t1_ii,self.t2_ij)
+            #ldiis.add_error_vector(self.t1,self.t2)
             #if niter >= start_diis:
-                #self.t1_ii, self.t2_ij = ldiis.extrapolate(self.t1_ii, self.t2_ij)
+                #self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
 
-    def local_residuals(self, t1_ii, t2_ij):
+    def local_residuals(self, t1, t2):
         """
         Constructing the two- and four-index intermediates
         Then evaluating the singles and doubles residuals, storing them in a list of length occ (single) and length occ*occ (doubles)
-        Naming scheme same as integrals where _ij is attach as a suffix to the intermediate name 
-        ... special naming scheme for those involving two different pair space ij and im -> _ijm
 
         To do
         ------
-        There are some arguments that isn't really being used and will be updated once things are good to go
-        Listed here are intermediates with corresponding arguments that aren't needed since it requires "on the fly" generation
-        Fae_ij Lovvv_ij
-        Fme_ij (Fme_im) Loovv_ij
-        Wmbej_ijim ERIovvv_ij, ERIoovv_ij, Loovv_ij
-        Wmbje_ijim (Wmbie_ijmj) ERIovvv_ij, ERIoovv_ij
-        r1_ii Lovvo_ij, ERIovvo_ij
-        r2_ij ERIovvo_ij, ERIovov_ij, ERIvvvo_ij
         """
         o = self.o
         v = self.v
@@ -186,39 +174,31 @@ class lccwfn(object):
         L = self.H.L
         ERI = self.H.ERI
 
-        Fae_ij = []
-        Fme_ij = []
-        Fme_im = []      
- 
-        Wmbej_ijim = []
-        Wmbje_ijim = []
-        Wmbie_ijmj = []
-        Zmbij_ij = []
+        Fae = []
+        Fme = []
+        Wmbej = []
+        Wmbje = []
+        Wmbie = []
+        Zmbij = []
+        r1 = []
+        r2 = []
 
-        r1_ii = []
-        r2_ij = []
+        Fae = self.build_Fae(Fae, L, self.Local.Fvv, self.Local.Fov, self.Local.Sijmm, self.Local.Sijmn, t1, t2)
+        Fmi = self.build_Fmi(o, F, L, self.Local.Fov, self.Local.Looov, self.Local.Loovv, t1, t2)
+        Fme = self.build_Fme(Fme, L, self.Local.Fov, t1)
+        Wmnij = self.build_Wmnij(o, ERI, self.Local.ERIooov, self.Local.ERIoovo, self.Local.ERIoovv, t1, t2)
+        Zmbij = self.build_Zmbij(Zmbij, ERI, self.Local.ERIovvv, t1, t2)
+        Wmbej = self.build_Wmbej(Wmbej, ERI, L, self.Local.ERIoovo, self.Local.Sijnn, self.Local.Sijnj, self.Local.Sijjn, t1, t2)
+        Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIoovo, self.Local.Sijin, self.Local.Sijjn, t1, t2)
 
-        Fae_ij = self.build_lFae(Fae_ij, self.Local.Fvv_ij, self.Local.Fov_ij, 
-        self.Local.Lovvv_ij, self.Local.Loovv_ij, t1_ii, t2_ij)
-        lFmi = self.build_lFmi(o, F, self.Local.Fov_ij, self.Local.Looov_ij, self.Local.Loovv_ij, t1_ii, t2_ij)
-        Fme_ij, Fme_im = self.build_lFme(Fme_ij, Fme_im, self.Local.Fov_ij, self.Local.Loovv_ij, t1_ii)
-        lWmnij = self.build_lWmnij(o, ERI, self.Local.ERIooov_ij, self.Local.ERIoovo_ij, 
-        self.Local.ERIoovv_ij, t1_ii, t2_ij)
-        Zmbij = self.build_lZmbij(Zmbij_ij, self.Local.ERIovvv_ij, t1_ii, t2_ij)
-        Wmbej_ijim = self.build_lWmbej(Wmbej_ijim, self.Local.ERIoovv_ij, self.Local.ERIovvo_ij, 
-        self.Local.ERIovvv_ij,self.Local.ERIoovo_ij, self.Local.Loovv_ij, t1_ii, t2_ij)
-        Wmbje_ijim, Wmbie_ijmj = self.build_lWmbje(Wmbje_ijim, Wmbie_ijmj, self.Local.ERIovov_ij, 
-        self.Local.ERIovvv_ij,self.Local.ERIoovv_ij, self.Local.ERIooov_ij, t1_ii, t2_ij)
+        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Siimm, self.Local.Siiim, self.Local.Siimn,  
+        t1, t2, Fae, Fmi, Fme)
+        r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim, 
+        self.Local.Sijmj, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
 
-        #looks like I used Fme_ij for r1_ii and it works ...
-        r1_ii = self.lr_T1(r1_ii, self.Local.Fov_ij , self.Local.ERIovvv_ij, self.Local.Lovvo_ij, self.Local.Loovo_ij, 
-        t1_ii, t2_ij,Fae_ij, Fme_ij, lFmi)
-        r2_ij = self.lr_T2(r2_ij, self.Local.ERIoovv_ij, self.Local.ERIvvvv_ij, self.Local.ERIovvo_ij, self.Local.ERIovoo_ij, 
-        self.Local.ERIvvvo_ij,self.Local.ERIovov_ij, t1_ii, t2_ij, Fae_ij ,lFmi,Fme_ij,lWmnij, Zmbij_ij, Wmbej_ijim, Wmbje_ijim, Wmbie_ijmj)
+        return r1, r2    
 
-        return r1_ii, r2_ij    
-
-    def build_lFae(self, Fae_ij, Fvv_ij,Fov_ij, Lovvv_ij, Loovv_ij, t1_ii, t2_ij):
+    def build_Fae(self, Fae_ij, L, Fvv, Fov, Sijmm, Sijmn, t1, t2):
         #self.fae_t.start()
         o = self.o
         v = self.v
@@ -229,66 +209,56 @@ class lccwfn(object):
                 i = ij // self.no
                 j = ij % self.no
 
-                Fae = Fvv_ij[ij].copy()
+                Fae = Fvv[ij].copy()
 
-                Fae_3 = np.zeros_like(Fae)
                 for m in range(self.no):
                     for n in range(self.no):
                         mn = m *self.no +n
-                        nn = n*self.no + n
+                        ijmn = ij*(self.no**2) + mn
 
-                        Sijmn = QL[ij].T @ QL[mn]
+                        tmp = Sijmn[ijmn] @ t2[mn]
+                        tmp1 = QL[ij].T @ L[m,n,v,v]
+                        tmp1 = tmp1 @ QL[mn]
+                        Fae -= tmp @ tmp1.T
 
-                        tmp2 = Sijmn @ t2_ij[mn]
-                        tmp3_0 = QL[ij].T @ self.H.L[m,n,v,v]
-                        tmp3_1 = tmp3_0 @ QL[mn]
-                        Fae_3 -= tmp2 @ tmp3_1.T
-
-                Fae_ij.append(Fae + Fae_3)  
+                Fae_ij.append(Fae)
         else:      
             for ij in range(self.no*self.no):
                 i = ij // self.no
                 j = ij % self.no
 
-                Fae = Fvv_ij[ij].copy()
+                Fae = Fvv[ij].copy()
 
-                Fae_1 = np.zeros_like(Fae)
-                Fae_2 = np.zeros_like(Fae)
-                Fae_3 = np.zeros_like(Fae)
-                Fae_4 = np.zeros_like(Fae)
                 for m in range(self.no):
                     mm = m*self.no + m
+                    ijm = ij*(self.no) + m
 
-                    Sijmm = QL[ij].T @ QL[mm]
-                    tmp = Sijmm @ t1_ii[m]
+                    tmp = Sijmm[ijm] @ t1[m]
+                    Fae -= 0.5* contract('e,a->ae',Fov[ij][m],tmp)
 
-                    Fae_1 -= 0.5* contract('e,a->ae',Fov_ij[ij][m],tmp)
-
-                    tmp1_0 = contract('abc,aA->Abc',self.H.L[m,v,v,v], QL[ij])
-                    tmp1_1 = contract('Abc,bB->ABc',tmp1_0, QL[mm])
-                    tmp1_2 = contract('ABc,cC->ABC',tmp1_1, QL[ij])
-
-                    Fae_2 += contract('F,aFe->ae',t1_ii[m],tmp1_2)
+                    tmp1= contract('abc,aA->Abc',L[m,v,v,v], QL[ij])
+                    tmp1 = contract('Abc,bB->ABc',tmp1, QL[mm])
+                    tmp1 = contract('ABc,cC->ABC',tmp1, QL[ij])
+                    Fae += contract('F,aFe->ae',t1[m],tmp1)
 
                     for n in range(self.no):
                         mn = m *self.no +n
                         nn = n*self.no + n
+                        ijmn = ij*(self.no**2) + mn 
 
-                        Sijmn = QL[ij].T @ QL[mn]
-
-                        tmp2 = Sijmn @ t2_ij[mn]
-                        tmp3_0 = QL[ij].T @ self.H.L[m,n,v,v]
+                        tmp2 = Sijmn[ijmn] @ t2[mn]
+                        tmp3_0 = QL[ij].T @ L[m,n,v,v]
                         tmp3_1 = tmp3_0 @ QL[mn]
-                        Fae_3 -= tmp2 @ tmp3_1.T
+                        Fae -= tmp2 @ tmp3_1.T
 
                         tmp4 = tmp3_0 @ QL[nn]
-                        Fae_4 -= 0.5 *contract('a,F,eF->ae', tmp, t1_ii[n], tmp4)
+                        Fae -= 0.5 *contract('a,F,eF->ae', tmp, t1[n], tmp4)
 
-                Fae_ij.append(Fae + Fae_1 + Fae_2 + Fae_3 + Fae_4)
+                Fae_ij.append(Fae)
         #self.fae_t.stop()
         return Fae_ij
 
-    def build_lFmi(self, o, F, Fov_ij, Looov_ij, Loovv_ij, t1_ii, t2_ij):
+    def build_Fmi(self, o, F, L, Fov, Looov, Loovv, t1, t2):
         #self.fmi_t.start()
         v = self.v
         QL = self.QL
@@ -296,79 +266,55 @@ class lccwfn(object):
         Fmi = F[o,o].copy()
 
         if self.model == 'CCD':
-            Fmi_3 = np.zeros_like(Fmi)
             for j in range(self.no):
                for n in range(self.no):
                    jn = j*self.no + n
-
-                   Fmi_3[:,j] += contract('EF,mEF->m',t2_ij[jn],Loovv_ij[jn][:,n,:,:])
-
-            Fmi_tot = Fmi + Fmi_3
+    
+                   Fmi[:,j] += contract('EF,mEF->m',t2[jn],Loovv[jn][:,n,:,:])
         else:
-            Fmi_1 = np.zeros_like(Fmi)
-            Fmi_2 = np.zeros_like(Fmi)
-            Fmi_3 = np.zeros_like(Fmi)
-            Fmi_4 = np.zeros_like(Fmi)
             for j in range(self.no):
                 jj = j*self.no +j
                 for n in range(self.no):
                    jn = j*self.no + n
                    nn = n*self.no + n
 
-                   Fmi_1[:,j] += 0.5 * contract('e,me->m', t1_ii[j], Fov_ij[jj])
-                   Fmi_2[:,j] += contract('e,me->m',t1_ii[n],Looov_ij[nn][:,n,j])
+                   Fmi[:,j] += 0.5 * contract('e,me->m', t1[j], Fov[jj])
+                   Fmi[:,j] += contract('e,me->m',t1[n],Looov[nn][:,n,j])
+                   Fmi[:,j] += contract('EF,mEF->m',t2[jn],Loovv[jn][:,n,:,:])
 
-                   Fmi_3[:,j] += contract('EF,mEF->m',t2_ij[jn],Loovv_ij[jn][:,n,:,:])
-
-                   tmp = contract('mab,aA,bB->mAB', self.H.L[o,n,v,v].copy(),QL[jj],QL[nn])
-                   Fmi_4[:,j] += 0.5 * contract('E,F,mEF->m',t1_ii[j], t1_ii[n], tmp.copy())
-
-            Fmi_tot = Fmi + Fmi_1 + Fmi_2 + Fmi_3  + Fmi_4 #+ Fmi_1 + Fmi_2 #Fmi_1 + Fmi_2 + Fmi_3 + Fmi_4
+                   tmp = contract('mab,aA->mAb', L[o,n,v,v],QL[jj])
+                   tmp = contract('mAb,bB->mAB', tmp, QL[nn])
+                   Fmi[:,j] += 0.5 * contract('E,F,mEF->m',t1[j], t1[n], tmp)
+                  
         #self.fmi_t.stop()
-        return Fmi_tot 
+        return Fmi 
 
-    def build_lFme(self, Fme_ij, Fme_totim, Fov_ij, Loovv_ij, t1_ii):
+    def build_Fme(self, Fme_ij, L, Fov, t1):
         #self.fme_t.start()
         QL = self.QL
         v = self.v
         
         if self.model == 'CCD':
-            return Fme_ij, Fme_totim 
+            return  
         else:
             for ij in range(self.no*self.no):
-                i = ij // self.no
-                j = ij % self.no
 
-                Fme = np.zeros((self.no,self.Local.dim[ij]))
-                Fme_1 = np.zeros_like(Fme)
-
-                Fme = Fov_ij[ij].copy()
+                Fme = Fov[ij].copy()
 
                 for m in range(self.no):
-                    im = i*self.no + m
-
-                    Fme_im = np.zeros((self.no,self.Local.dim[im]))
-                    Fme1_im = np.zeros_like(Fme_im)
-
-                    Fme_im = Fov_ij[im].copy()
-
                     for n in range(self.no):
                         nn = n*self.no + n
 
-                        tmp = QL[ij].T @ self.H.L[m,n,v,v]
-                        tmp1 = tmp @ QL[nn]
-                        Fme_1[m] += t1_ii[n] @ tmp1.T
+                        tmp = QL[ij].T @ L[m,n,v,v]
+                        tmp = tmp @ QL[nn]
+                        Fme[m] += t1[n] @ tmp.T
 
-                        tmp_im = QL[im].T @ self.H.L[m,n,v,v]
-                        tmp1_im = tmp_im @ QL[nn]
-                        Fme1_im[m] += t1_ii[n] @ tmp1_im.T
+                Fme_ij.append(Fme)
 
-                    Fme_totim.append(Fme_im + Fme1_im)
-                Fme_ij.append(Fme + Fme_1)
         #self.fme_t.stop()
-            return Fme_ij, Fme_totim
+        return Fme_ij
 
-    def build_lWmnij(self, o, ERI, ERIooov_ij, ERIoovo_ij, ERIoovv_ij, t1_ii, t2_ij):
+    def build_Wmnij(self, o, ERI, ERIooov, ERIoovo, ERIoovv, t1, t2):
         #self.wmnij_t.start()
         v = self.v 
         QL = self.Local.QL
@@ -376,37 +322,29 @@ class lccwfn(object):
         Wmnij = ERI[o,o,o,o].copy()
 
         if self.model == 'CCD':
-            Wmnij_3 = np.zeros_like(Wmnij)
             for i in range(self.no):
                 for j in range(self.no):
                     ij = i*self.no + j
 
-                    Wmnij_3[:,:,i,j] += contract('ef,mnef->mn',t2_ij[ij], ERIoovv_ij[ij])
-
-            Wmnij_tot = Wmnij + Wmnij_3
-        else:
-            Wmnij_1 = np.zeros_like(Wmnij)
-            Wmnij_2 = np.zeros_like(Wmnij)
-            Wmnij_3 = np.zeros_like(Wmnij)
-            Wmnij_4 = np.zeros_like(Wmnij)
             for i in range(self.no):
                 for j in range(self.no):
                     ij = i*self.no + j
                     ii = i*self.no + i
                     jj = j*self.no + j
+                    
+                    print(t1[j].shape, ERIooov[jj][:,:,i,:].shape)
+                    Wmnij[:,:,i,j] += contract('E,mnE->mn', t1[j], ERIooov[jj][:,:,i,:])
+                    Wmnij[:,:,i,j] += contract('E,mnE->mn', t1[i], ERIoovo[ii][:,:,:,j])
+                    Wmnij[:,:,i,j] += contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
+                    
+                    tmp = contract('aA,mnab->mnAB', QL[ii], ERI[o,o,v,v]) 
+                    tmp = contract('bB,mnAb->mnAB', QL[jj], tmp)
+                    Wmnij[:,:,i,j] += contract('e,f,mnef->mn', t1[i], t1[j], tmp)
 
-                    Wmnij_1[:,:,i,j] += contract('E,mnE->mn', t1_ii[j], ERIooov_ij[jj][:,:,i,:])
-                    Wmnij_2[:,:,i,j] += contract('E,mnE->mn', t1_ii[i], ERIoovo_ij[ii][:,:,:,j])
-
-                    Wmnij_3[:,:,i,j] += contract('ef,mnef->mn',t2_ij[ij], ERIoovv_ij[ij])
-                    tmp = contract('aA,bB,mnab->mnAB',QL[ii], QL[jj], self.H.ERI[o,o,v,v].copy())
-                    Wmnij_4[:,:,i,j] += contract('e,f,mnef->mn', t1_ii[i], t1_ii[j], tmp.copy())
-
-            Wmnij_tot = Wmnij + Wmnij_1 + Wmnij_2 + Wmnij_3 + Wmnij_4
         #self.wmnij_t.stop()
-        return Wmnij_tot
+        return Wmnij
 
-    def build_lZmbij(self, Zmbij_ij, ERIovvv_ij, t1_ii, t2_ij):
+    def build_Zmbij(self, Zmbij_ij, ERI, ERIovvv, t1, t2):
         #self.zmbij_t.start()
         o = self.o
         v = self.v
@@ -424,16 +362,18 @@ class lccwfn(object):
                 Zmbij = np.zeros((self.no,self.Local.dim[ij]))
 
                 Zmbij = contract('mbef,ef->mb', ERIovvv_ij[ij], t2_ij[ij])
-                tmp = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
-                tmp1 = contract('iAbc,bB->iABc',tmp, QL[ii])
-                tmp2 = contract('iABc,cC->iABC',tmp1, QL[jj])
-                Zmbij = Zmbij.copy() + contract('e,f,mbef->mb',t1_ii[i], t1_ii[j], tmp2)
+                
+                tmp = contract('iabc,aA->iAbc',ERI[o,v,v,v], QL[ij])
+                tmp = contract('iAbc,bB->iABc',tmp, QL[ii])
+                tmp = contract('iABc,cC->iABC',tmp, QL[jj])
+                Zmbij += contract('e,f,mbef->mb',t1[i], t1[j], tmp)
 
                 Zmbij_ij.append(Zmbij)
-        #self.zmbij_t.stop()
-        return
 
-    def build_lWmbej(self, Wmbej_ijim, ERIoovv_ij, ERIovvo_ij, ERIovvv_ij, ERIoovo_ij, Loovv_ij, t1_ii, t2_ij):
+        #self.zmbij_t.stop()
+        return Zmbij_ij
+
+    def build_Wmbej(self, Wmbej_ijim, ERI, L, ERIoovo, Sijnn, Sijnj, Sijjn, t1, t2):
         #self.wmbej_t.start()
         v = self.v
         o = self.o
@@ -444,46 +384,35 @@ class lccwfn(object):
             for ij in range(self.no*self.no):
                 i = ij // self.no
                 j = ij % self.no
-                jj = j*self.no + j
-
                 for m in range(self.no):
                     im = i*self.no + m
 
                     Wmbej = np.zeros((dim[ij],dim[im]))
 
-                    tmp = QL[ij].T @ self.H.ERI[m,v,v,j]
+                    tmp = QL[ij].T @ ERI[m,v,v,j]
                     Wmbej = tmp @ QL[im]
 
-                    Wmbej_1 = np.zeros_like(Wmbej)
-                    Wmbej_2 = np.zeros_like(Wmbej)
-                    Wmbej_3 = np.zeros_like(Wmbej)
-                    Wmbej_4 = np.zeros_like(Wmbej)
                     for n in range(self.no):
-                        nn = n*self.no + n
                         jn = j*self.no + n
                         nj = n*self.no + j
+                        ijn = ij*self.no + n
 
-                        Sijjn = QL[ij].T @ QL[jn]
+                        tmp = 0.5 * t2[jn] @ Sijjn[ijn].T
+                        tmp1 = QL[im].T @ ERI[m,n,v,v]
+                        tmp1 = tmp1 @ QL[jn]
+                        Wmbej -= tmp.T @ tmp1.T
 
-                        tmp5 = 0.5 * t2_ij[jn] @ Sijjn.T
-                        tmp6_1 = QL[im].T @ self.H.ERI[m,n,v,v]
-                        tmp6_2 = tmp6_1 @ QL[jn]
-                        Wmbej_3 -= tmp5.T @ tmp6_2.T
+                        tmp2 = t2[nj] @ Sijnj[ijn].T
+                        tmp3 = QL[im].T @ L[m,n,v,v]
+                        tmp3 = tmp3 @ QL[nj]
+                        Wmbej += 0.5 * tmp2.T @ tmp3.T
 
-                        Sijnj = QL[ij].T @ QL[nj]
-
-                        tmp7 = t2_ij[nj] @ Sijnj.T
-                        tmp8_1 = QL[im].T @ self.H.L[m,n,v,v]
-                        tmp8_2 = tmp8_1 @ QL[nj]
-                        Wmbej_4 += 0.5 * tmp7.T @ tmp8_2.T
-
-                    Wmbej_ijim.append(Wmbej + Wmbej_3 + Wmbej_4)
+                    Wmbej_ijim.append(Wmbej)
         else:        
             for ij in range(self.no*self.no):
                 i = ij // self.no
                 j = ij % self.no
                 jj = j*self.no + j
-
                 for m in range(self.no):
                     im = i*self.no + m
 
@@ -492,46 +421,38 @@ class lccwfn(object):
                     tmp = QL[ij].T @ self.H.ERI[m,v,v,j]
                     Wmbej = tmp @ QL[im]
 
-                    Wmbej_1 = np.zeros_like(Wmbej)
-                    Wmbej_2 = np.zeros_like(Wmbej)
-                    Wmbej_3 = np.zeros_like(Wmbej)
-                    Wmbej_4 = np.zeros_like(Wmbej)
+                    tmp = contract('abc,aA->Abc',ERI[m,v,v,v], QL[ij])
+                    tmp = contract('Abc,bB->ABc',tmp, QL[im])
+                    tmp = contract('ABc,cC->ABC',tmp, QL[jj])
+                    Wmbej += contract('F,beF->be', t1[j], tmp)
 
-                    tmp1 = contract('abc,aA->Abc',self.H.ERI[m,v,v,v], QL[ij])
-                    tmp2 = contract('Abc,bB->ABc',tmp1, QL[im])
-                    tmp3 = contract('ABc,cC->ABC',tmp2, QL[jj])
-                    Wmbej_1 = contract('F,beF->be', t1_ii[j], tmp3)
                     for n in range(self.no):
                         nn = n*self.no + n
                         jn = j*self.no + n
                         nj = n*self.no + j
+                        ijn = ij*(self.no) + n
 
-                        Sijnn = QL[ij].T @ QL[nn]
+                        tmp1 = Sijnn[ijn] @ t1_ii[n]
+                        Wmbej -= contract('b,e->be', tmp1, ERIoovo[im][m,n,:,j])
 
-                        tmp4 = Sijnn @ t1_ii[n]
-                        Wmbej_2 -= contract('b,e->be',tmp4,ERIoovo_ij[im][m,n,:,j])
+                        tmp2 = 0.5 * t2[jn] @ Sijjn[ijn].T
+                        tmp3_0 = QL[im].T @ ERI[m,n,v,v]
+                        tmp3_1 = tmp3_0 @ QL[jn]
+                        Wmbej -= tmp2.T @ tmp3_0.T
 
-                        Sijjn = QL[ij].T @ QL[jn]
+                        tmp4 = tmp3_0 @ QL[jj]
+                        Wmbej -= contract('f,b,ef-> be',t1[j],tmp1,tmp4)
 
-                        tmp5 = 0.5 * t2_ij[jn] @ Sijjn.T
-                        tmp6_1 = QL[im].T @ self.H.ERI[m,n,v,v].copy()
-                        tmp6_2 = tmp6_1.copy() @ QL[jn]
-                        Wmbej_3 -= tmp5.T @ tmp6_2.T
-                        tmp6_3 =  tmp6_1.copy() @ QL[jj]
-                        Wmbej_3 = Wmbej_3.copy() - contract('f,b,ef-> be',t1_ii[j],tmp4.copy(),tmp6_3.copy())
+                        tmp5 = t2_ij[nj] @ Sijnj[ijn].T
+                        tmp6 = QL[im].T @ L[m,n,v,v]
+                        tmp6 = tmp6 @ QL[nj]
+                        Wmbej += 0.5 * tmp5.T @ tmp6.T
 
-                        Sijnj = QL[ij].T @ QL[nj]
-
-                        tmp7 = t2_ij[nj] @ Sijnj.T
-                        tmp8_1 = QL[im].T @ self.H.L[m,n,v,v]
-                        tmp8_2 = tmp8_1 @ QL[nj]
-                        Wmbej_4 += 0.5 * tmp7.T @ tmp8_2.T
-
-                    Wmbej_ijim.append(Wmbej + Wmbej_1 + Wmbej_2 + Wmbej_4 + Wmbej_3)
+                    Wmbej_ijim.append(Wmbej)
         #self.wmbej_t.stop()
         return Wmbej_ijim
 
-    def build_lWmbje(self, Wmbje_ijim,Wmbie_ijmj,ERIovov_ij, ERIovvv_ij, ERIoovv_ij, ERIooov_ij, t1_ii, t2_ij):
+    def build_Wmbje(self, Wmbje_ijim, Wmbie_ijmj, ERI, ERIooov, Sijin, Sijjn, t1, t2):
         #self.wmbje_t.start()
         o = self.o
         v = self.v
@@ -542,8 +463,6 @@ class lccwfn(object):
             for ij in range(self.no*self.no):
                 i = ij // self.no
                 j = ij % self.no
-                ii = i*self.no + i
-                jj = j*self.no + j
 
                 for m in range(self.no):
                     im = i*self.no + m
@@ -552,33 +471,28 @@ class lccwfn(object):
                     Wmbje = np.zeros(dim[ij],dim[im])
                     Wmbie = np.zeros(dim[ij],dim[mj])
 
-                    tmp_im = QL[ij].T @ self.H.ERI[m,v,j,v]
-                    tmp_mj = QL[ij].T @ self.H.ERI[m,v,i,v]
-                    Wmbje = -1.0 * tmp_im @ QL[im]
+                    tmp = QL[ij].T @ ERI[m,v,j,v]
+                    tmp_mj = QL[ij].T @ ERI[m,v,i,v]
+                    Wmbje = -1.0 * tmp @ QL[im]
                     Wmbie = -1.0 * tmp_mj @ QL[mj]
 
-                    Wmbje_3 = np.zeros_like(Wmbje)
-                    Wmbie_3 = np.zeros_like(Wmbie)
                     for n in range(self.no):
-                        nn = n*self.no + n
                         jn = j*self.no + n
                         _in = i*self.no + n
+                        ijn = ij*self.no + n 
 
-                        Sijjn = QL[ij].T @ QL[jn]
-                        Sijin = QL[ij].T @ QL[_in]
+                        tmp1 = 0.5* t2[jn] @ Sijjn[ijn].T
+                        tmp2 = QL[jn].T @ ERI[m,n,v,v]
+                        tmp2 = tmp2 @ QL[im]
+                        Wmbje += tmp1.T @ tmp2
 
-                        tmp5 = 0.5* t2_ij[jn] @ Sijjn.T
-                        tmp6_1 = QL[jn].T @ self.H.ERI[m,n,v,v]
-                        tmp6_2 = tmp6_1 @ QL[im]
-                        Wmbje_3 += tmp5.T @ tmp6_2
+                        tmp1_mj = 0.5 * t2[_in] @ Sijin[ijn].T
+                        tmp2_mj = QL[_in].T @ ERI[m,n,v,v]
+                        tmp2_mj = tmp2_mj @ QL[mj]
+                        Wmbie += tmp1_mj.T @ tmp2_mj
 
-                        tmp5_mj = 0.5 * t2_ij[_in] @ Sijin.T
-                        tmp6_1mj = QL[_in].T @ self.H.ERI[m,n,v,v]
-                        tmp6_2mj = tmp6_1mj @ QL[mj]
-                        Wmbie_3 += tmp5_mj.T @ tmp6_2mj
-
-                    Wmbje_ijim.append(Wmbje + Wmbje_3)
-                    Wmbie_ijmj.append(Wmbie + Wmbie_3)        
+                    Wmbje_ijim.append(Wmbje)
+                    Wmbie_ijmj.append(Wmbie)      
         else:
             for ij in range(self.no*self.no):
                 i = ij // self.no
@@ -593,139 +507,112 @@ class lccwfn(object):
                     Wmbje = np.zeros(dim[ij],dim[im])
                     Wmbie = np.zeros(dim[ij],dim[mj])
 
-                    tmp_im = QL[ij].T @ self.H.ERI[m,v,j,v]
-                    tmp_mj = QL[ij].T @ self.H.ERI[m,v,i,v]
+                    tmp = QL[ij].T @ ERI[m,v,j,v]
+                    tmp_mj = QL[ij].T @ ERI[m,v,i,v]
                     Wmbje = -1.0 * tmp_im @ QL[im]
                     Wmbie = -1.0 * tmp_mj @ QL[mj]
 
-                    Wmbje_1 = np.zeros_like(Wmbje)
-                    Wmbje_2 = np.zeros_like(Wmbje)
-                    Wmbje_3 = np.zeros_like(Wmbje)
+                    tmp1_0 = contract('abc,aA->Abc',ERI[m,v,v,v], QL[ij])
+                    tmp1 = contract('Abc,bB->ABc',tmp1_0, QL[jj])
+                    tmp1 = contract('ABc,cC->ABC',tmp1, QL[im])
+                    Wmbje -=  contract('F,bFe->be', t1[j], tmp1)
 
-                    Wmbie_1 = np.zeros_like(Wmbie)
-                    Wmbie_2 = np.zeros_like(Wmbie)
-                    Wmbie_3 = np.zeros_like(Wmbie)
-
-                    tmp1 = contract('abc,aA->Abc',self.H.ERI[m,v,v,v], QL[ij])
-                    tmp2 = contract('Abc,bB->ABc',tmp1, QL[jj])
-                    tmp3 = contract('ABc,cC->ABC',tmp2, QL[im])
-                    Wmbje_1 = -1.0 * contract('F,bFe->be', t1_ii[j], tmp3)
-
-                    tmp2_mj = contract('Abc,bB->ABc',tmp1, QL[ii])
-                    tmp3_mj = contract('ABc,cC->ABC',tmp2_mj, QL[mj])
-                    Wmbie_1 = -1.0 * contract('F,bFe->be', t1_ii[i], tmp3_mj)
+                    tmp1_mj = contract('Abc,bB->ABc',tmp1_0, QL[ii])
+                    tmp1_mj = contract('ABc,cC->ABC',tmp1_mj, QL[mj])
+                    Wmbie -=  contract('F,bFe->be', t1[i], tmp1_mj)
 
                     for n in range(self.no):
                         nn = n*self.no + n
                         jn = j*self.no + n
                         _in = i*self.no + n
+                        ijn = ij*self.no + n
 
-                        Sijnn = QL[ij].T @ QL[nn]
+                        tmp2 = Sijnn[ijn] @ t1_ii[n]
+                        Wmbje += contract('b,e->be',tmp4,ERIooov[im][m,n,j])
 
-                        tmp4 = Sijnn @ t1_ii[n]
-                        Wmbje_2 += contract('b,e->be',tmp4,ERIooov_ij[im][m,n,j])
+                        Wmbie += contract('b,e->be',tmp4,ERIooov[mj][m,n,i])
 
-                        Wmbie_2 += contract('b,e->be',tmp4,ERIooov_ij[mj][m,n,i])
+                        tmp3 = 0.5 * t2[jn] @ Sijjn[ijn].T
+                        tmp4 = QL[jn].T @ self.H.ERI[m,n,v,v]
+                        tmp4 = tmp4 @ QL[im]
+                        Wmbje += tmp3.T @ tmp4
 
-                        Sijjn = QL[ij].T @ QL[jn]
-                        Sijin = QL[ij].T @ QL[_in]
+                        tmp5 = QL[jj].T @ self.H.ERI[m,n,v,v]
+                        tmp5= tmp5 @ QL[im]
+                        Wmbje += contract('f,b,fe->be',t1_ii[j], tmp2, tmp5)
 
-                        #tmp5 = self.build_ltau(jn,t1_ii,t2_ij, 0.5, 1.0) @ Sijjn.T
-                        tmp5 = 0.5 * t2_ij[jn] @ Sijjn.T
-                        tmp6_1 = QL[jn].T @ self.H.ERI[m,n,v,v]
-                        tmp6_2 = tmp6_1 @ QL[im]
-                        Wmbje_3 += tmp5.T @ tmp6_2
-                        tmp6_3 = QL[jj].T @ self.H.ERI[m,n,v,v]
-                        tmp6_4 = tmp6_3 @ QL[im]
-                        Wmbje_3 = Wmbje_3.copy() + contract('f,b,fe->be',t1_ii[j], tmp4, tmp6_4)
+                        tmp2_mj = 0.5 * t2[_in] @ Sijin[ijn].T
+                        tmp3_mj = QL[_in].T @ ERI[m,n,v,v]
+                        tmp3_mj = tmp3_mj @ QL[mj]
+                        Wmbie_3 += tmp2_mj.T @ tmp3_mj
 
-                        #tmp5_mj = self.build_ltau(_in,t1_ii,t2_ij, 0.5, 1.0) @ Sijin.T
-                        tmp5_mj = 0.5*t2_ij[_in] @ Sijin.T
-                        tmp6_1mj = QL[_in].T @ self.H.ERI[m,n,v,v]
-                        tmp6_2mj = tmp6_1mj @ QL[mj]
-                        Wmbie_3 += tmp5_mj.T @ tmp6_2mj
-                        tmp6_3mj = QL[ii].T @ self.H.ERI[m,n,v,v]
-                        tmp6_4mj = tmp6_3mj @ QL[mj]
-                        Wmbie_3 = Wmbie_3.copy() + contract('f,b,fe->be',t1_ii[i], tmp4, tmp6_4mj)
+                        tmp4_mj = QL[ii].T @ ERI[m,n,v,v]
+                        tmp4_mj = tmp4_mj @ QL[mj]
+                        Wmbie_3 += contract('f,b,fe->be',t1[i], tmp2, tmp4_mj)
 
-                    Wmbje_ijim.append(Wmbje + Wmbje_1 + Wmbje_2 +  Wmbje_3)
-                    Wmbie_ijmj.append(Wmbie + Wmbie_1 + Wmbie_2 + Wmbie_3)
+                    Wmbje_ijim.append(Wmbje)
+                    Wmbie_ijmj.append(Wmbie)
         #self.wmbje_t.stop()
         return Wmbje_ijim, Wmbie_ijmj
 
-    def lr_T1(self, r1_ii, Fov_ij , ERIovvv_ij, Lovvo_ij, Loovo_ij, t1_ii, t2_ij, Fae_ij , Fme_im, lFmi):
+    def r_T1(self, r1_ii, Fov , ERI, L, Loovo, Siimm, Siiim, Siimn, t1, t2, Fae, Fmi, Fme):
         #self.r1_t.start()
-        v = self.v
-        QL = self.QL
 
         if self.model == 'CCD':
             for i in range(self.no):
-                r1_ii.append(np.zeros_like(t1_ii[i]))        
+                r1_ii.append(np.zeros_like(t1[i]))
+
         else:
             for i in range(self.no):
                 ii = i*self.no + i
 
                 r1 = np.zeros(self.Local.dim[ii])
-                r1_1 = np.zeros_like(r1)
 
                 r1 = Fov_ij[ii][i]
-                r1_1 = contract('e,ae->a', t1_ii[i], Fae_ij[ii])
-
-                r1_2 = np.zeros_like(r1)
-                r1_3 = np.zeros_like(r1)
-                r1_5 = np.zeros_like(r1)
+                r1 += contract('e,ae->a', t1_ii[i], Fae_ij[ii])
 
                 for m in range(self.no):
                     mm = m*self.no + m
-
-                    Siimm = QL[ii].T @ QL[mm]
-
-                    tmp =  Siimm @ t1_ii[m]
-                    r1_2 -= tmp * lFmi[m,i]
-
                     im = i*self.no + m
-                    Siiim = QL[ii].T @ QL[im]
-
-                    tmp1 = Siiim @ (2*t2_ij[im] - t2_ij[im].swapaxes(0,1))
-                    r1_3 += contract('aE,E->a',tmp1, Fme_im[im][m])
-
                     mi = m*self.no + i
 
-                    tmp2 = contract('abc,aA->Abc',self.H.ERI[m,v,v,v], QL[ii])
-                    tmp3 = contract('Abc,bB->ABc',tmp2, QL[mi])
-                    tmp4 = contract('ABc,cC->ABC',tmp3, QL[mi])
-                    r1_5 += contract('EF,aEF->a', (2.0*t2_ij[mi] - t2_ij[mi].swapaxes(0,1)), tmp4)
+                    tmp =  Siimm[im] @ t1_ii[m]
+                    r1 -= tmp * Fmi[m,i]
 
-                r1_4 = np.zeros_like(r1)
+                    tmp1 = Siiim[im] @ (2*t2[im] - t2[im].swapaxes(0,1))
+                    r1 += contract('aE,E->a',tmp1, Fme[im][m])
+
+                    tmp2 = contract('abc,aA->Abc',H.ERI[m,v,v,v], QL[ii])
+                    tmp2 = contract('Abc,bB->ABc',tmp2, QL[mi])
+                    tmp2 = contract('ABc,cC->ABC',tmp2, QL[mi])
+                    r1 += contract('EF,aEF->a', (2.0*t2[mi] - t2[mi].swapaxes(0,1)), tmp2)
+
                 for n in range(self.no):
                     nn = n*self.no + n
 
-                    tmp5 = contract('ab,aA->Ab', self.H.L[n,v,v,i],QL[ii])
-                    tmp5_1 = contract('Ab,bB->AB',tmp5, QL[nn])
-                    r1_4 += contract('F,aF->a', t1_ii[n], tmp5_1)
+                    tmp3 = contract('ab,aA->Ab', L[n,v,v,i],QL[ii])
+                    tmp3 = contract('Ab,bB->AB', tmp3, QL[nn])
+                    r1 += contract('F,aF->a', t1[n], tmp3)
 
-                r1_6 = np.zeros_like(r1)
                 for mn in range(self.no*self.no):
                     m = mn // self.no
                     n = mn % self.no
+                    imn = i*(self.no**2) + mn
 
-                    Siimn = QL[ii].T @ QL[mn]
+                    tmp4 = Siimn[imn] @ t2[mn]
+                    r1 -= contract('aE,E->a',tmp4,Loovo[mn][n,m,:,i])
 
-                    tmp3 = Siimn @ t2_ij[mn]
-                    r1_6 -= contract('aE,E->a',tmp3,Loovo_ij[mn][n,m,:,i])
-
-                r1_ii.append(r1 + r1_1 + r1_2 + r1_3 +  r1_4 + r1_5 + r1_6) #+ r1_3 + r1_4 + r1_5 + r1_6)
+                r1_ii.append(r1)
         #self.r1_t.stop()
         return r1_ii
 
-    def lr_T2(self,r2_ij,ERIoovv_ij, ERIvvvv_ij, ERIovvo_ij, ERIovoo_ij, ERIvvvo_ij, ERIovov_ij, t1_ii,
-    t2_ij, Fae_ij,lFmi,Fme_ij, lWmnij, Zmbij_ij, Wmbej_ijim, Wmbje_ijim, Wmbie_ijmj):
+    def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
         #self.r2_t.start()
         v = self.v
         QL = self.QL
         dim = self.dim
 
-        nr2_ij = []
+        nr2 = []
         if self.model == 'CCD':
             for ij in range(self.no*self.no):
                 i = ij //self.no
@@ -734,55 +621,40 @@ class lccwfn(object):
                 jj = j*self.no + j
 
                 r2 = np.zeros(dim[ij],dim[ij])
-                r2_1one = np.zeros_like(r2)
-                r2_4 = np.zeros_like(r2)
 
-                r2 = 0.5 * ERIoovv_ij[ij][i,j]
-                r2_1one = t2_ij[ij] @ Fae_ij[ij].T
-                r2_4 = 0.5 * contract('ef,abef->ab',t2_ij[ij],ERIvvvv_ij[ij])
+                r2 = 0.5 * ERIoovv[ij][i,j]
+                r2 += t2[ij] @ Fae[ij].T
+                r2 += 0.5 * contract('ef,abef->ab',t2[ij],ERIvvvv[ij])
 
-                r2_2one = np.zeros_like(r2)
-                r2_3 = np.zeros_like(r2)
-                r2_6 = np.zeros_like(r2)
-                r2_7 = np.zeros_like(r2)
-                r2_8 = np.zeros_like(r2)
                 for m in range(self.no):
                     mm = m *self.no + m
                     im = i*self.no + m
                     mj = m*self.no+ j 
                     ijm = ij*self.no + m
 
-                    Sijmm = QL[ij].T @ QL[mm]
-                    Sijim = QL[ij].T @ QL[im]
-                    Sijmj = QL[ij].T @ QL[mj]
+                    tmp = Sijim[ijm] @ t2[im]
+                    tmp = tmp @ Sijim[ijm].T
+                    r2 -= tmp * Fmi[m,j]
 
-                    tmp = Sijmm @ t1_ii[m]
+                    tmp1 = Sijim[ijm] @ (t2[im] - t2[im].swapaxes(0,1))
+                    r2 += tmp1 @ Wmbej[ijm].T
 
-                    tmp2_1 = Sijim @ t2_ij[im]
-                    tmp2_2 = tmp2_1 @ Sijim.T
-                    r2_2one -= tmp2_2 * lFmi[m,j]
+                    tmp2 = Sijim[ijm] @ t2[im]
+                    tmp3 = Wmbej[ijm] + Wmbje[ijm]
+                    r2 += tmp2 @ tmp3.T
 
-                    tmp5 = Sijim @ (t2_ij[im] - t2_ij[im].swapaxes(0,1))
-                    r2_6 += tmp5 @ Wmbej_ijim[ijm].T
-
-                    tmp6 = Sijim @ t2_ij[im]
-                    tmp7 = Wmbej_ijim[ijm] + Wmbje_ijim[ijm]
-                    r2_7 += tmp6 @ tmp7.T
-
-                    tmp8 = Sijmj @ t2_ij[mj]
-                    tmp9 = Wmbie_ijmj[ijm]
-                    r2_8 += tmp8 @ tmp9.T
+                    tmp4 = Sijmj[ijm] @ t2[mj]
+                    r2 += tmp4 @ Wmbie[ijm].T
 
                     for n in range(self.no):
                         mn = m*self.no + n
+                        ijmn = ij*(self.no**2) + mn
 
-                        Sijmn = QL[ij].T @ QL[mn]
+                        tmp5 = Sijmn[ijmn] @ t2[mn]
+                        tmp5 = tmp5 @ Sijmn[ijmn].T
+                        r2 += 0.5 * tmp5 * Wmnij[m,n,i,j]
 
-                        tmp4_1 = Sijmn @ t2_ij[mn]
-                        tmp4_2 = tmp4_1 @ Sijmn.T
-                        r2_3 += 0.5 * tmp4_2 * lWmnij[m,n,i,j]
-
-                nr2_ij.append(r2 + r2_1one + r2_2one + r2_3 + r2_4 + r2_6 + r2_7 + r2_8)
+                nr2.append(r2)            
         else:
             for ij in range(self.no*self.no):
                 i = ij //self.no
@@ -791,110 +663,87 @@ class lccwfn(object):
                 jj = j*self.no + j
     
                 r2 = np.zeros(dim[ij],dim[ij])
-                r2_1one = np.zeros_like(r2)
-                r2_4 = np.zeros_like(r2)
-                r2_11 = np.zeros_like(r2)        
+
+                r2 = 0.5 * ERIoovv[ij][i,j]    
+                r2 += contract('ae,be->ab', t2[ij], Fae[ij])
+                r2 += 0.5 * contract('ef,abef->ab', t2[ij],ERIvvvv[ij])
+
+                tmp = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+                tmp = contract('Abcd,bB->ABcd',r2_4tmp, QL[ij])
+                tmp = contract('ABcd,cC->ABCd',r2_4tmp1, QL[ii])
+                tmp = contract('ABCd,dD->ABCD',r2_4tmp2, QL[jj])
+                r2 += 0.5 *contract('e,f,abef->ab',t1[i],t1[j], tmp)
     
-                r2 = 0.5 * ERIoovv_ij[ij][i,j]
+                tmp1 = contract('abc,aA->Abc',ERI[v,v,v,j], QL[ij])
+                tmp1 = contract('Abc,bB->ABc',tmp1, QL[ij])
+                tmp1 = contract('ABc,cC->ABC',tmp1, QL[ii])
+                r2 += contract('E,abE->ab', t1[i], tmp1)
     
-                r2_1one = contract('ae,be->ab', t2_ij[ij], Fae_ij[ij])
-    
-                r2_4 = 0.5 * contract('ef,abef->ab', t2_ij[ij],ERIvvvv_ij[ij])
-                r2_4tmp = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
-                r2_4tmp1 = contract('Abcd,bB->ABcd',r2_4tmp, QL[ij])
-                r2_4tmp2 = contract('ABcd,cC->ABCd',r2_4tmp1, QL[ii])
-                r2_4tmp3 = contract('ABCd,dD->ABCD',r2_4tmp2, QL[jj])
-                r2_4 = r2_4.copy() + 0.5 *contract('e,f,abef->ab',t1_ii[i],t1_ii[j],r2_4tmp3.copy())
-    
-                tmp15 = contract('abc,aA->Abc',self.H.ERI[v,v,v,j], QL[ij])
-                tmp16 = contract('Abc,bB->ABc',tmp15, QL[ij])
-                tmp17 = contract('ABc,cC->ABC',tmp16, QL[ii])
-                r2_11 = contract('E,abE->ab', t1_ii[i], tmp17)
-    
-                r2_1two = np.zeros_like(r2)
-                r2_2one = np.zeros_like(r2)
-                r2_2two = np.zeros_like(r2)
-                r2_3 = np.zeros_like(r2)
-                r2_5 = np.zeros_like(r2)
-                r2_6 = np.zeros_like(r2)
-                r2_7 = np.zeros_like(r2)
-                r2_8 = np.zeros_like(r2)
-                r2_9 = np.zeros_like(r2)
-                r2_10 = np.zeros_like(r2)
-                r2_12 = np.zeros_like(r2)
                 for m in range(self.no):
                     mm = m *self.no + m
                     im = i*self.no + m
+                    mj = m*self.no + j
                     ijm = ij*self.no + m
     
-                    Sijmm = QL[ij].T @ QL[mm]
+                    tmp2_0 = Sijmm[ijm] @ t1[m]
+                    tmp2 = contract('b,e->be', tmp2_0, Fme[ij][m])
+                    r2 -= 0.5 * t2[ij] @ tmp2.T
     
-                    tmp = Sijmm @ t1_ii[m]
-                    tmp1 = contract('b,e->be', tmp, Fme_ij[ij][m])
-                    r2_1two -= 0.5 * t2_ij[ij] @ tmp1.T
+                    tmp3 = Sijim[ijm] @ t2[im]
+                    tmp3 = tmp3 @ Sijim[ijm].T
+                    r2 -= tmp3 * Fmi[m,j]
     
-                    im = i*self.no + m
-                    Sijim = QL[ij].T @ QL[im]
+                    tmp4 = contract('E,E->',t1[j], Fme[jj][m])
+                    r2 -= 0.5 * tmp3 * tmp4
     
-                    tmp2_1 = Sijim @ t2_ij[im]
-                    tmp2_2 = tmp2_1 @ Sijim.T
-                    r2_2one -= tmp2_2 * lFmi[m,j]
+                    r2 -= contract('a,b->ab',tmp2_0,Zmbij[ij][m])
     
-                    tmp3 = contract('E,E->',t1_ii[j], Fme_ij[jj][m])
-                    r2_2two -= 0.5 * tmp2_2 * tmp3
+                    tmp5 = Sijim[ijm] @ (t2[im] - t2[im].swapaxes(0,1))
+                    r2 += tmp5 @ Wmbej[ijm].T
     
-                    r2_5 -= contract('a,b->ab',tmp.copy(),Zmbij_ij[ij][m])
+                    tmp6 = Sijim[ijm] @ t2[im]
+                    tmp7 = Wmbej[ijm] + Wmbje[ijm]
+                    r2 += tmp6 @ tmp7.T
     
-                    tmp5 = Sijim @ (t2_ij[im] - t2_ij[im].swapaxes(0,1))
-                    r2_6 += tmp5 @ Wmbej_ijim[ijm].T
+                    tmp8 = Sijmj[ijm] @ t2[mj]
+                    r2 += tmp8 @ Wmbie[ijm].T
     
-                    tmp6 = Sijim @ t2_ij[im]
-                    tst  = Wmbje_ijim[ijm]
-                    tmp7 = Wmbej_ijim[ijm] + tst
-                    r2_7 += tmp6 @ tmp7.T
+                    tmp9 = QL[ij].T @ ERI[m,v,v,j]
+                    tmp9 = tmp9 @ QL[ii]
+                    tmp10 = contract ('E,a->Ea', t1[i], tmp2_0)
+                    r2 -= tmp10.T @ tmp9.T
     
-                    mj = m*self.no + j
-                    Sijmj = QL[ij].T @ QL[mj]
+                    tmp11 = QL[ij].T @ ERI[m,v,j,v]
+                    tmp11 = tmp11 @ QL[ii]
+                    r2 -= tmp11 @ tmp10
     
-                    tmp8 = Sijmj @ t2_ij[mj]
-                    tmp9 = Wmbie_ijmj[ijm]
-                    r2_8 += tmp8 @ tmp9.T
-    
-                    tmp10 = QL[ij].T @ self.H.ERI[m,v,v,j]
-                    tmp11 = tmp10 @ QL[ii]
-                    tmp12 = contract ('E,a->Ea', t1_ii[i],tmp)
-                    r2_9 -= tmp12.T @ tmp11.T
-    
-                    tmp13 = QL[ij].T @ self.H.ERI[m,v,j,v]
-                    tmp14 = tmp13 @ QL[ii]
-                    r2_10 -= tmp14 @ tmp12
-    
-                    r2_12 -= contract('a,b->ab',tmp, ERIovoo_ij[ij][m,:,i,j])
+                    r2 -= contract('a,b->ab',tmp2_0, ERIovoo[ij][m,:,i,j])
     
                     for n in range(self.no):
                         mn = m*self.no + n
                         nn = n*self.no + n
-    
-                        Sijmn = QL[ij].T @ QL[mn]
-                        Sijnn = QL[ij].T @ QL[nn]
-    
-                        tmp4_1 = Sijmn @ t2_ij[mn] #self.build_ltau(mn,t1_ii,t2_ij)
-                        tmp4_2 = tmp4_1 @ Sijmn.T
-                        tmp4_3 = Sijnn @ t1_ii[n]
-                        r2_3 += 0.5 * tmp4_2 * lWmnij[m,n,i,j]
-                        r2_3 = r2_3 + 0.5 * contract('a,b->ab',tmp, tmp4_3) * lWmnij[m,n,i,j]
-                nr2_ij.append(r2 + r2_1one + r2_1two + r2_2one + r2_2two + r2_3 + r2_4 + r2_5 + r2_6 + r2_7 +
-                r2_8 + r2_9 + r2_10 + r2_11 + r2_12)
-    
+                        ijmn = ij*(self.no**2) + mn                       
+                        ijn = ij*self.no + n
+
+                        tmp12 = Sijmn[ijmn] @ t2[mn]
+                        tmp12 = tmp12 @ Sijmn[ijmn].T
+                        tmp13 = Sijnn[ijn] @ t1[n]
+                        r2 += 0.5 * tmp12 * Wmnij[m,n,i,j]
+                        r2 += 0.5 * contract('a,b->ab',tmp2_0, tmp13) * Wmnij[m,n,i,j]
+
+                nr2_ij.append(r2) 
+  
         for i in range(self.no):
             for j in range(self.no):
                 ij = i*self.no + j
                 ji = j*self.no + i
-                r2_ij.append(nr2_ij[ij].copy() + nr2_ij[ji].copy().transpose())
+
+                r2_ij.append(nr2[ij].copy() + nr2[ji].copy().transpose())
+        
         #self.r2_t.stop()
         return r2_ij 
 
-    def lcc_energy(self,Fov_ij,Loovv_ij,t1_ii,t2_ij):
+    def lcc_energy(self, Fov, Loovv, t1, t2):
         #self.energy_t.start()
         QL = self.QL
         v = self.v
@@ -906,14 +755,14 @@ class lccwfn(object):
             for i in range(self.no):
                 for j in range(self.no):
                     ij = i*self.no + j
-
-                    ecc_ij = contract('ab,ab->',t2_ij[ij],Loovv_ij[ij][i,j])
-                    ecc += ecc_ij
+                    
+                    ecc_ij = contract('ab,ab->',t2[ij],Loovv[ij][i,j])
+                    ecc += ecc_ij 
         else:        
             for i in range(self.no):
                 ii = i*self.no + i
 
-                ecc_ii = 2.0 *contract ('a,a->',Fov_ij[ii][i], t1_ii[i])
+                ecc_ii = 2.0 *contract ('a,a->',Fov[ii][i], t1[i])
                 ecc += ecc_ii
 
                 for j in range(self.no):
@@ -921,15 +770,10 @@ class lccwfn(object):
                     ii = i*self.no + i
                     jj = j*self.no + j
 
-                    Sijii = QL[ij].T @ QL[ii]
-                    Sijjj = QL[ij].T @ QL[jj]
-
-                    tmp = Sijii @ t1_ii[i]
-                    tmp1 = t1_ii[j] @ Sijjj.T
-
-                    ecc_ij = contract('ab,ab->',t2_ij[ij],Loovv_ij[ij][i,j])
-                    tmp2 = QL[ii].T @ self.H.L[i,j,v,v] @ QL[jj]
-                    ecc_ij = ecc_ij + contract('a,b,ab->',t1_ii[i], t1_ii[j], tmp2)
+                    ecc_ij = contract('ab,ab->',t2[ij],Loovv[ij][i,j])
+                    tmp2 = QL[ii].T @ self.H.L[i,j,v,v] 
+                    tmp2 = tmp2 @ QL[jj]
+                    ecc_ij += contract('a,b,ab->',t1[i], t1[j], tmp2)
                     ecc += ecc_ij
         #self.energy_t.stop()
         return ecc
