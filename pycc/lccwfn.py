@@ -181,12 +181,12 @@ class lccwfn(object):
         Wmnij = self.build_Wmnij(o, ERI, self.Local.ERIooov, self.Local.ERIoovo, self.Local.ERIoovv, t1, t2)
         Zmbij = self.build_Zmbij(Zmbij, ERI, self.Local.ERIovvv, t1, t2)
         Wmbej = self.build_Wmbej(Wmbej, ERI, L, self.Local.ERIoovo, self.Local.Sijnn, self.Local.Sijnj, self.Local.Sijjn, t1, t2)
-        Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIoovo, self.Local.Sijin, self.Local.Sijjn, t1, t2)
+        Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIooov, self.Local.Sijnn, self.Local.Sijin, self.Local.Sijjn, t1, t2)
 
         r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Siimm, self.Local.Siiim, self.Local.Siimn,  
         t1, t2, Fae, Fmi, Fme)
         r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim, 
-        self.Local.Sijmj, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
+        self.Local.Sijmj, self.Local.Sijnn, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
 
         return r1, r2    
 
@@ -292,7 +292,7 @@ class lccwfn(object):
         #self.wmbej_t.stop()
         return Wmbej_ijim
 
-    def build_Wmbje(self, Wmbje_ijim, Wmbie_ijmj, ERI, ERIooov, Sijin, Sijjn, t1, t2):
+    def build_Wmbje(self, Wmbje_ijim, Wmbie_ijmj, ERI, ERIooov, Sijnn, Sijin, Sijjn, t1, t2):
         #self.wmbje_t.start()
         o = self.o
         v = self.v
@@ -342,7 +342,7 @@ class lccwfn(object):
         #self.r1_t.stop()
         return r1_ii
 
-    def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
+    def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijnn, Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
         #self.r2_t.start()
         v = self.v
         QL = self.QL
