@@ -151,7 +151,8 @@ class ccwfn(object):
         if local is not None:
             self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
             if filter is not True:
-                self.Local._trans_integrals(self.o, self.v)
+                self.Local.trans_integrals(self.o, self.v)
+                self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
         
         # denominators

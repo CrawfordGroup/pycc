@@ -112,6 +112,9 @@ class helper_diis(object):
                     if n1 >= n2:
                         continue
                     B[n1, n2] = np.dot(e1, e2)
+                    print("B",B)
+                    print("e1", n1,e1) 
+                    print("e2",n2,e2)
                     B[n2, n1] = B[n1, n2]
 
             B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
@@ -194,8 +197,11 @@ class helper_ldiis(object):
              error_t1.append((self.diis_vals_t1[-1][i] - self.oldt1[i]).ravel())
              for j in range(no):
                 ij = i*no + j
-
+                
                 error_t2.append((self.diis_vals_t2[-1][ij] - self.oldt2[ij]).ravel())
+                if ij ==2:
+                    print(error_t2[ij])
+                print("len of error_t2", len(error_t2[ij]), self.oldt2[ij].shape) 
                 #if ij == 24:
                     #print("diis t2 last", ij, self.diis_vals_t2[-1][ij])
                     #print("oldt2 last", ij, self.oldt2[ij])
@@ -236,7 +242,7 @@ class helper_ldiis(object):
                     B_t1[n1, n2] = np.dot(e1[i], e2[i])
                     B_t1[n2, n1] = B_t1[n1, n2]
             B_t1[:-1, :-1] /= np.abs(B_t1[:-1, :-1]).max()
-
+            print("B_t1", B_t1)
             # Build residual vector
             resid = np.zeros(self.diis_size_t1 + 1)
             resid[-1] = -1
@@ -258,10 +264,13 @@ class helper_ldiis(object):
                         if n1 >= n2:
                             continue
                         B_t2[n1, n2] = np.dot(e1[ij], e2[ij])
+                        print("B_t2",B_t2) 
+                        print("e1", n1, e1[ij])
+                        print("e2", n2, e2[ij])
                         B_t2[n2, n1] = B_t2[n1, n2] 
-
+                print("B_t2 before", B_t2)                
                 B_t2[:-1, :-1] /= np.abs(B_t2[:-1, :-1]).max()
-
+                print("B_t2", B_t2)
                 # Build residual vector
                 resid = np.zeros(self.diis_size_t2 + 1)
                 resid[-1] = -1

@@ -15,9 +15,6 @@ class helper_diis(object):
         else:
             self.oldt1 = t1.copy()
             self.oldt2 = t2.copy()
-            print(self.oldt1.shape)
-            print(self.oldt1)
-            print(self.oldt2.shape)
             self.diis_vals_t1 = [t1.copy()]
             self.diis_vals_t2 = [t2.copy()]
 
@@ -111,9 +108,6 @@ class helper_diis(object):
 
             for n1, e1 in enumerate(self.diis_errors):
                 B[n1, n1] = np.dot(e1, e1)
-                print("diis_errors",self.diis_errors[n1])
-                print("B", B.shape)
-                print("n1","e1",n1,e1.shape)      
                 for n2, e2 in enumerate(self.diis_errors):
                     if n1 >= n2:
                         continue
@@ -146,24 +140,26 @@ class helper_diis(object):
         return t1, t2
 
 class helper_ldiis(object):
-    def __init__(se
-lf, no,t1_ii, t2_ij, max_diis):
+    def __init__(self, no,t1_ii, t2_ij, max_diis):
         oldt1 = []
-        oldt2 = []w
-        for i in range(no): 
-             
-            oldt1.append(t1_ii[i].copy(),dtype="object"))
-            for j in range(no)::
+        oldt2 = []
+        diis_vals_t1 = []
+        diis_vals_t2 = []
+        for i in range(no):
+            oldt1.append(t1_ii[i].copy())
+            for j in range(no):
                 ij = i*no + j
-                
                 oldt2.append(t2_ij[ij].copy())
 
         self.oldt1 = oldt1
         self.oldt2 = oldt2
-        print(self.oldt1)
-        self.diis_vals_t1 = [np.array(self.oldt1,dtype="object")]
-        self.diis_vals_t2 = [np.array(self.oldt2,dtype="object")]
-        self.diis_errors = []
+        diis_vals_t1.append(self.oldt1.copy())
+        diis_vals_t2.append(self.oldt2.copy())
+        self.diis_vals_t1 = diis_vals_t1
+        self.diis_vals_t2 = diis_vals_t2
+        #print("diis t2 initial", self.diis_vals_t2)
+        self.diis_errors_t1 = []
+        self.diis_errors_t2 = []
         self.diis_size = 0
         self.max_diis = max_diis
 
@@ -171,74 +167,118 @@ lf, no,t1_ii, t2_ij, max_diis):
         # Add DIIS vectors
         self.addt1 = []
         self.addt2 = []
+
         for i in range(no):
             ii = i*no + i 
  
-            self.addt1.append(np.array(t1_ii[i],dtype="object"))
+            self.addt1.append(t1_ii[i])
+
             for j in range(no):
                 ij = i*no + j 
     
-                self.addt2.append(np.array(t2_ij[ij],dtype="object"))
+                self.addt2.append(t2_ij[ij]) 
+                #if ij == 24:
+                    #print("t2 compare", ij, t2_ij[ij])
 
-        self.diis_vals_t1.append(np.array(self.addt1,dtype="object"))
-        self.diis_vals_t2.append(np.array(self.addt2,dtype="object"))
+        self.diis_vals_t1.append(self.addt1.copy(),dtype="object"))
+        self.diis_vals_t2.append(np.array(self.addt2.copy(),dtype="object"))  
+        #for n1, e1 in enumerate(self.diis_vals_t2):
+            #print("n1", n1, "e1", e1[24])
+            
+        #print("oldt2", self.oldt2[ij])
+
         # Add new error vectors
-        error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
-        error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
-        self.diis_errors.append(np.concatenate((error_t1, error_t2)))
+        error_t1 = []
+        error_t2 = []
+        for i in range(no):
+             error_t1.append((self.diis_vals_t1[-1][i] - self.oldt1[i]).ravel())
+             for j in range(no):
+                ij = i*no + j
+
+                error_t2.append((self.diis_vals_t2[-1][ij] - self.oldt2[ij]).ravel())
+                #if ij == 24:
+                    #print("diis t2 last", ij, self.diis_vals_t2[-1][ij])
+                    #print("oldt2 last", ij, self.oldt2[ij])
+        #print(error_t2[24])
+        self.diis_errors_t1.append(error_t1)
+        self.diis_errors_t2.append(error_t2)
         self.oldt1 = self.addt1.copy()
         self.oldt2 = self.addt2.copy()
 
-    def extrapolate(self, t1_ii, t2_ij):
+    def extrapolate(self, no,t1_ii, t2_ij):
 
         if (self.max_diis == 0):
             return t1_ii, t2_ij
 
         # Limit size of DIIS vector
-        if (len(self.diis_errors) > self.max_diis):
+        if (len(self.diis_errors_t1) > self.max_diis):
             del self.diis_vals_t1[0]
             del self.diis_vals_t2[0]
-            del self.diis_errors[0]
+            del self.diis_errors_t1[0]
+            del self.diis_errors_t2[0]
 
-        self.diis_size = len(self.diis_errors)
-     
-        B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
-        B[-1, -1] = 0
-
-        for n1, e1 in enumerate(self.diis_errors):
-             print("B",B.shape )
-             print("n1","e1", n1, e1.shape)
-             print("diis_errors",self.diis_errors[n1])
-             B[n1, n1] = np.dot(e1, e1)
-             for n2, e2 in enumerate(self.diis_errors):
-                 if n1 >= n2:
-                     continue
-                 B[n1, n2] = np.dot(e1, e2)
-                 B[n2, n1] = B[n1, n2]
-
-        B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
-
-        # Build residual vector
-        resid = np.zeros(self.diis_size + 1)
-        resid[-1] = -1
-
-        # Solve pulay equations
-        ci = np.linalg.solve(B, resid)
-
-        # Calculate new amplitudes
+        self.diis_size_t1 = len(self.diis_errors_t1)
+        self.diis_size_t2 = len(self.diis_errors_t2)
+        B_t1 = np.ones((self.diis_size_t1 + 1, self.diis_size_t1 + 1)) * -1
+        B_t1[-1, -1] = 0
+        B_t2 = np.ones((self.diis_size_t2 + 1, self.diis_size_t2 + 1)) * -1
+        B_t2[-1, -1] = 0
+   
         t1_ii = np.zeros_like(self.oldt1)
         t2_ij = np.zeros_like(self.oldt2)
-        for num in range(self.diis_size):
-            t1_ii += ci[num] * self.diis_vals_t1[num + 1]
-            t2_ij += ci[num] * self.diis_vals_t2[num + 1]
+        for i in range(no):
+       
+            for n1, e1 in enumerate(self.diis_errors_t1):
+                B_t1[n1, n1] = np.dot(e1[i], e1[i])
+                for n2, e2 in enumerate(self.diis_errors_t1):
+                    if n1 >= n2:
+                        continue
+                    B_t1[n1, n2] = np.dot(e1[i], e2[i])
+                    B_t1[n2, n1] = B_t1[n1, n2]
+            B_t1[:-1, :-1] /= np.abs(B_t1[:-1, :-1]).max()
 
-        # Save extrapolated amplitudes to old_t amplitudes
-        self.oldt1 = t1_ii.copy()
-        self.oldt2 = t2_ij.copy()
+            # Build residual vector
+            resid = np.zeros(self.diis_size_t1 + 1)
+            resid[-1] = -1
 
-        t1_ii = list(np.float_(t1_ii))#float(t1_ii.tolist())
-        t2_ij = list(np.float_(t2_ij))#float(t2_ij.tolist())
+            # Solve pulay equations
+            ci = np.linalg.solve(B_t1, resid)
 
+            # Calculate new amplitudes
+            for num in range(self.diis_size_t1):
+                t1_ii[i] = t1_ii[i] + np.array(ci[num] * self.diis_vals_t1[num + 1][i])
+
+            # Save extrapolated amplitudes to old_t amplitudes
+            for j in range(no):                
+                ij = i*no + j
+
+                for n1, e1 in enumerate(self.diis_errors_t2):
+                    B_t2[n1, n1] = np.dot(e1[ij], e1[ij])
+                    for n2, e2 in enumerate(self.diis_errors_t2):
+                        if n1 >= n2:
+                            continue
+                        B_t2[n1, n2] = np.dot(e1[ij], e2[ij])
+                        B_t2[n2, n1] = B_t2[n1, n2] 
+
+                B_t2[:-1, :-1] /= np.abs(B_t2[:-1, :-1]).max()
+
+                # Build residual vector
+                resid = np.zeros(self.diis_size_t2 + 1)
+                resid[-1] = -1
+
+                # Solve pulay equations
+                ci = np.linalg.solve(B_t2, resid)
+                #print("ci", ci, "ci.shape", ci.shape)
+ 
+                # Calculate new amplitudes
+                for num in range(self.diis_size_t2):
+                    t2_ij[ij] = t2_ij[ij] + np.array(ci[num] * self.diis_vals_t2[num + 1][ij])
+        #print("old", self.oldt2[24])
+        #print("new", t2_ij[24])
+        print(type(t1_ii.copy()))
+        self.oldt1 = t1_ii.copy().tolist()
+        self.oldt2 = t2_ij.copy().tolist()
+        print("this",type(t1_ii))
         return t1_ii, t2_ij
 
 class cc_contract(object):
