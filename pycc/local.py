@@ -1,7 +1,7 @@
 import psi4
 import numpy as np
 from opt_einsum import contract
-
+import time
 
 class Local(object):
     """
@@ -36,7 +36,7 @@ class Local(object):
         type of local calculation ("PAO", "PNO", etc.)
     it2_opt: bool 
         Flag to optimize initial t2 amplitudes (default = True) 
-   
+
     Methods
     -------
     filter_amps(): Returns t1 and t2 amplitude numpy arrays
@@ -49,7 +49,8 @@ class Local(object):
     _build_PAO(): build PAO orbital rotation tensors
     _build_PNO(): build PNO orbital rotation tensors   
     _build_PNOpp(): build PNO++ orbital rotation tensors
-    
+    trans_integrals(): transform Fock matrix and ERI from the MO basis to a local basis 
+
     Notes
     -----
     -try using the simulation code to ignore certain amplitudes in the ccsd for NO
@@ -77,7 +78,7 @@ class Local(object):
         self.r_conv = r_conv
 
         self._build()
- 
+    
     def _build(self):
         if self.local.upper() in ["PNO"]:
             self._build_PNO()
@@ -266,7 +267,7 @@ class Local(object):
             evals = np.delete(evals,toss)
             for c in range(Xt.shape[1]):
                 Xt[:,c] = Xt[:,c] / evals[c]**0.5
-            dim.append(Xt.shape[1])
+            dim.append(np.dtype('int64').type(Xt.shape[1]))
 
             # just below Eq 51, redundant PAO Fock 
             Ft = contract('pq,pr,rs->qs',Rt,self.H.F_ao,Rt)
@@ -294,11 +295,7 @@ class Local(object):
         self.L = L  # transform between PAO and semicanonical PAO spaces
         self.dim = dim  # dimension of PAO space
         self.eps = eps  # semicananonical PAO energies
- 
-        #print("Now doing PAO_mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
- 
+
     def _build_PNO(self):
         """
         Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
@@ -343,9 +340,14 @@ class Local(object):
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
 
-        #print("Now doing PNO mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
+        #temporary way to generate make sure the phase factor of Q_ij and L_ij matches with Q_ji and L_ji
+        for i in range(self.no):
+            for j in range(0,i):
+                ij = i*self.no + j
+                ji = j*self.no + i
+
+                self.Q[ji] = self.Q[ij]
+                self.L[ji] = self.L[ij]
          
     def _build_PNOpp(self):
         """
@@ -389,10 +391,6 @@ class Local(object):
         self.L = L  # transform between local and semicanonical local spaces 
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
-    
-        #print("Now doing PNO++ mp2")
-        #self._local_MP2_loop()
-        #self._sim_MP2_loop()
 
     def _pert_pairdensity(self,t2):
         '''
@@ -489,7 +487,7 @@ class Local(object):
         for ij in range(self.no*self.no):
             i = ij // self.no
             j = ij % self.no
-
+  
             # Compute local and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
             if (occ[ij] < 0).any(): # Check for negative occupation numbers
@@ -797,3 +795,166 @@ class Local(object):
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
         return t1, t2
+
+    def trans_integrals(self, o, v):
+        """
+        Transforming all the necessary integrals to the semi-canonical PNO basis, stored in a list with length occ*occ
+ 
+        Notes
+        -----
+        contraction notations: i,j,a,b are MOs; A,B,C,D virtual semicanonical PNO
+        """
+
+        trans_intstart = time.time()
+
+        #Initializing the transformation matrices
+        Q = self.Q
+        L = self.L
+        
+        QL = []
+        Fov = []
+        Fvv = []
+        ERIoovo = []
+        ERIooov = []
+        ERIovvv = []
+        ERIvvvv = []
+        ERIoovv = []
+        ERIovvo = []
+        ERIvvvo = []
+        ERIovov = []
+        ERIovoo = []
+        Loovv = []
+        Lovvv = []
+        Looov = []
+        Loovo = []
+        Lovvo = []
+
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+
+            QL.append(Q[ij] @ L[ij])
+
+            Fov.append(self.H.F[o,v] @ QL[ij])
+
+            Fvv.append(L[ij].T @ Q[ij].T @ self.H.F[v,v] @ QL[ij])
+
+            ERIoovo.append(contract('ijak,aA->ijAk', self.H.ERI[o,o,v,o],QL[ij]))
+
+            ERIooov.append(ERIoovo[ij].swapaxes(0,1).swapaxes(2,3))
+
+            ERIovoo.append(ERIooov[ij].swapaxes(0,2).swapaxes(1,3))
+
+            tmp = contract('ijab,aA->ijAb',self.H.ERI[o,o,v,v], QL[ij])
+            ERIoovv.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
+
+            ERIovvo.append(ERIoovv[ij].swapaxes(1,3))
+
+            tmp1 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
+            ERIovov.append(contract('iAjb,bB->iAjB',tmp1, QL[ij]))
+
+            tmp2 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
+            tmp2 = contract('iAbc,bB->iABc',tmp2, QL[ij])
+            ERIovvv.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
+
+            tmp3 = ERIovvv[ij].swapaxes(0,1).swapaxes(2,3)
+            ERIvvvo.append(tmp3.swapaxes(1,3))
+
+            tmp4 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+            tmp4 = contract('Abcd,bB->ABcd',tmp4, QL[ij])
+            tmp4 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
+            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp4, QL[ij]))
+            
+            Loovo.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
+
+            Looov.append(Loovo[ij].swapaxes(0,1).swapaxes(2,3))
+
+            tmp5 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
+            Loovv.append(contract('ijAb,bB->ijAB',tmp5,QL[ij]))
+
+            Lovvo.append(Loovv[ij].swapaxes(1,3))
+
+            tmp6 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
+            tmp6 = contract('iAbc,bB->iABc',tmp6, QL[ij])
+            Lovvv.append(contract('iABc,cC->iABC',tmp6, QL[ij]))
+
+            self.QL = QL
+            self.Fov = Fov
+            self.Fvv = Fvv
+            self.ERIoovo = ERIoovo
+            self.ERIooov = ERIooov
+            self.ERIovvv = ERIovvv
+            self.ERIvvvv = ERIvvvv
+            self.ERIoovv = ERIoovv
+            self.ERIovvo = ERIovvo
+            self.ERIvvvo = ERIvvvo
+            self.ERIovov = ERIovov
+            self.ERIovoo = ERIovoo
+            self.Loovv = Loovv
+            self.Lovvv = Lovvv
+            self.Looov = Looov
+            self.Loovo = Loovo
+            self.Lovvo = Lovvo
+
+        print("Integrals transformed in %.3f seconds." % (time.time() - trans_intstart))
+
+    def overlaps(self, QL): 
+        """
+        Generating and storing overlap terms
+
+        Notes
+        -----
+        Length: two unique index = no*no, three unique index = no*no*no, four unique index = no*no*no*no 
+        Computational scaling is length*(nv*nv)  
+        Storage size is length*(pno*pno) where pno dimension varies based on cutoff
+        
+        To do
+        -----
+        Compare the timings for the use of stored overlap terms versus "on the fly" overlap terms 
+        """
+        no = self.no 
+
+        Sijmm = []
+        Sijim = []
+        Sijmj = []
+        Sijnn = []
+        Sijin = []
+        Sijnj = []
+        Sijjn = []
+        Sijmn = []
+        
+        for i in range(no):
+            ii = i*no + i
+            for j in range(no):
+                ij = i*no + j
+                for m in range(no):
+                    mm = m*no + m
+                    im = i*no + m
+                    mj = m*no + j
+
+                    Sijmm.append(QL[ij].T @ QL[mm])
+                    Sijim.append(QL[ij].T @ QL[im]) 
+                    Sijmj.append(QL[ij].T @ QL[mj])  
+
+                for n in range(no):
+                    nn = n*no + n
+                    _in = i*no + n 
+                    nj = n*no + j 
+                    jn = j*no + n
+
+                    Sijnn.append(QL[ij].T @ QL[nn])
+                    Sijin.append(QL[ij].T @ QL[_in]) 
+                    Sijnj.append(QL[ij].T @ QL[nj])
+                    Sijjn.append(QL[ij].T @ QL[jn])
+
+                for mn in range(no*no):
+                    Sijmn.append(QL[ij].T @ QL[mn])
+               
+        self.Sijmj = Sijmj
+        self.Sijmm = Sijmm 
+        self.Sijim = Sijim
+        self.Sijnn = Sijnn
+        self.Sijin = Sijin
+        self.Sijnj = Sijnj
+        self.Sijjn = Sijjn
+        self.Sijmn = Sijmn
