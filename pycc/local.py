@@ -940,7 +940,6 @@ class Local(object):
                     _in = i*no + n 
                     nj = n*no + j 
                     jn = j*no + n
-                    ijn = ij*no + n
 
                     Sijnn.append(QL[ij].T @ QL[nn])
                     Sijin.append(QL[ij].T @ QL[_in]) 

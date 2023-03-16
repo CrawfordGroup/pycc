@@ -9,7 +9,6 @@ if __name__ == "__main__":
 import time
 import numpy as np
 import torch
-from debug import Debug
 
 class cchbar(object):
     """
