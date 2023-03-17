@@ -146,8 +146,7 @@ class helper_diis(object):
         return t1, t2
 
 class helper_ldiis(object):
-    def __init__(se
-lf, no,t1_ii, t2_ij, max_diis):
+    def __init__(self, no,t1_ii, t2_ij, max_diis):
         oldt1 = []
         oldt2 = []w
         for i in range(no): 
