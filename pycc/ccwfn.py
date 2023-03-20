@@ -10,7 +10,7 @@ import psi4
 import time
 import numpy as np
 import torch
-from utils import helper_diis, cc_contract
+from utils_correct import helper_diis, cc_contract
 from hamiltonian import Hamiltonian
 from local import Local
 from cctriples import t_tjl, t3c_ijk
