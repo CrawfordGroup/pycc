@@ -9,7 +9,7 @@ from data.molecules import *
 
 psi4.set_memory('2 GB')
 psi4.core.set_output_file('output.dat', False)
-psi4.set_options({'basis': 'cc-pvdz',
+psi4.set_options({'basis': 'aug-cc-pvdz',
                   'scf_type': 'pk',
                   'mp2_type': 'conv',
                   'freeze_core': 'false',
@@ -21,8 +21,8 @@ mol = psi4.geometry(moldict["H2O"])
 rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
 maxiter = 100
-e_conv = 1e-5
-r_conv = 1e-5
+e_conv = 1e-12
+r_conv = 1e-12
    
 #simulation code of pno-ccd
 ccd_sim = ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-7,it2_opt=False,filter=True)
