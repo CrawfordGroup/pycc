@@ -48,7 +48,7 @@ def test_pnopp_ccd():
                       'd_convergence': 1e-13,
                       'r_convergence': 1e-13,
                       'diis': 1})
-    mol = psi4.geometry(moldict["(H2O)_2"])
+    mol = psi4.geometry(moldict["H2O"])
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     maxiter = 100

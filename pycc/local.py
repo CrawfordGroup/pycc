@@ -392,6 +392,15 @@ class Local(object):
         self.eps = eps  # semicananonical local energies
         self.dim = dim  # dimension of local space
 
+        #temporary way to generate make sure the phase factor of Q_ij and L_ij matches with Q_ji and L_ji
+        for i in range(self.no):
+            for j in range(0,i):
+                ij = i*self.no + j
+                ji = j*self.no + i
+
+                self.Q[ji] = self.Q[ij]
+                self.L[ji] = self.L[ij]
+
     def _pert_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
