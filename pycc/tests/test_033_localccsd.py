@@ -1,5 +1,5 @@
 """
-Test basic PNO-CCD, PNO++-CCD, PAO-CCD energies
+Test basic PNO-CCSD, PNO++-CCSD, PAO-CCSD energies
 """
 # Import package, test suite, and other packages as needed
 import psi4
@@ -7,8 +7,8 @@ import pycc
 import pytest
 from ..data.molecules import *
 
-def test_pno_ccd():
-    """H2O PNO-CCD Test"""
+def test_pno_ccsd():
+    """H2O PNO-CCSD Test"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -26,18 +26,18 @@ def test_pno_ccd():
     e_conv = 1e-12
     r_conv = 1e-12
     
-    #simulation code of pno-ccd
-    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-5,it2_opt=False,filter=True)
-    eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
+    #simulation code of pno-ccsd
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-5,it2_opt=False,filter=True)
+    eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
     
-    #pno-ccd
-    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-5,it2_opt=False)
-    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter) 
+    #pno-ccsd
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-5,it2_opt=False)
+    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter) 
 
-    assert(abs(eccd_sim - elccd) < 1e-12) 
+    assert(abs(eccsd_sim - elccsd) < 1e-12) 
 
-def test_pnopp_ccd():
-    """H2O PNO++ CCD Test"""
+def test_pnopp_ccsd():
+    """H2O PNO++ CCSD Test"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': '6-31G',
@@ -55,18 +55,18 @@ def test_pnopp_ccd():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #simulation code of pno++-ccd
-    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO++', local_cutoff=1e-7,it2_opt=False,filter=True)
-    eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
+    #simulation code of pno++-ccsd
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO++', local_cutoff=1e-7,it2_opt=False,filter=True)
+    eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
 
-    #pno++-ccd
-    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO++', local_cutoff=1e-7,it2_opt=False)
-    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
+    #pno++-ccsd
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO++', local_cutoff=1e-7,it2_opt=False)
+    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccd_sim - elccd) < 1e-12) 
+    assert(abs(eccsd_sim - elccsd) < 1e-12) 
 
-def test_pno_cdd_opt():
-    """H2O PNO-CCD with Optimized Initial T2 Amplitudes"""
+def test_pno_ccsd_opt():
+    """H2O PNO-CCSD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -84,18 +84,18 @@ def test_pno_cdd_opt():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #simulation code of pno-ccd
-    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-7,filter=True)
-    eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
+    #simulation code of pno-ccsd
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-5,filter=True)
+    eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
 
-    #pno-ccd
-    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-7)
-    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
+    #pno-ccsd
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-5)
+    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccd_sim - elccd) < 1e-12)
+    assert(abs(eccsd_sim - elccsd) < 1e-12)
 
-def test_pao_ccd_opt():
-    """H2O PAO-CCD with Optimized Initial T2 Amplitudes"""
+def test_pao_ccsd_opt():
+    """H2O PAO-CCSD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -113,12 +113,12 @@ def test_pao_ccd_opt():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    #simulation code of pao-ccd
-    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PAO', local_cutoff=2e-2,filter=True)
-    eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
+    #simulation code of pao-ccsd
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PAO', local_cutoff=2e-2,filter=True)
+    eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
 
-    #pao-ccd
-    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PAO', local_cutoff=2e-2)
-    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
+    #pao-ccsd
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PAO', local_cutoff=2e-2)
+    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccd_sim - elccd) < 1e-12)
+    assert(abs(eccsd_sim - elccsd) < 1e-12)
