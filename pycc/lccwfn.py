@@ -73,17 +73,10 @@ class lccwfn(object):
 
                 t2.append(-1* self.Local.ERIoovv[ij][i,j] / (self.eps[ij].reshape(1,-1) + self.eps[ij].reshape(-1,1)
                 - self.H.F[i,i] - self.H.F[j,j]))
-<<<<<<< HEAD
 
         self.t1 = t1
         self.t2 = t2
 
-=======
-
-        self.t1 = t1
-        self.t2 = t2
-
->>>>>>> main
     def solve_lcc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8,start_diis=1):
         """
         Parameters
@@ -116,11 +109,8 @@ class lccwfn(object):
         #self.r2_t = Timer("r2")
         #self.energy_t = Timer("energy")
 
-<<<<<<< HEAD
         ldiis = helper_ldiis(self.no, self.t1, self.t2, max_diis, self.Local)
-=======
-        #ldiis = helper_ldiis(self.t1, self.t2, max_diis)
->>>>>>> main
+
 
         elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
@@ -167,15 +157,9 @@ class lccwfn(object):
                 #print(Timer.timers)
                 return elcc
 
-<<<<<<< HEAD
-            ldiis.add_error_vector(self.no, self.t1,self.t2)
+            ldiis.add_error_vector(self.t1,self.t2)
             if niter >= start_diis:
-                self.t1, self.t2 = ldiis.extrapolate(self.no, self.t1, self.t2)
-=======
-            #ldiis.add_error_vector(self.t1,self.t2)
-            #if niter >= start_diis:
-                #self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
->>>>>>> main
+                self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
 
     def local_residuals(self, t1, t2):
         """
@@ -208,15 +192,9 @@ class lccwfn(object):
         Wmbej = self.build_Wmbej(Wmbej, ERI, L, self.Local.ERIoovo, self.Local.Sijnn, self.Local.Sijnj, self.Local.Sijjn, t1, t2)
         Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIooov, self.Local.Sijnn, self.Local.Sijin, self.Local.Sijjn, t1, t2)
 
-<<<<<<< HEAD
-        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Sijmm, self.Local.Sijim, self.Local.Sijmn,
-        t1, t2, Fae, Fmi, Fme)
-        r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim,
-=======
         r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Sijmm, self.Local.Sijim, self.Local.Sijmn,  
         t1, t2, Fae, Fmi, Fme)
         r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim, 
->>>>>>> main
         self.Local.Sijmj, self.Local.Sijnn, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
 
         return r1, r2   
@@ -238,7 +216,6 @@ class lccwfn(object):
                     for n in range(self.no):
                         mn = m *self.no +n
                         ijmn = ij*(self.no**2) + mn
-<<<<<<< HEAD
 
                         tmp = Sijmn[ijmn] @ t2[mn]
                         tmp1 = QL[ij].T @ L[m,n,v,v]
@@ -278,47 +255,6 @@ class lccwfn(object):
                         tmp4 = tmp3_0 @ QL[nn]
                         Fae -= 0.5 *contract('a,F,eF->ae', tmp, t1[n], tmp4)
 
-=======
-
-                        tmp = Sijmn[ijmn] @ t2[mn]
-                        tmp1 = QL[ij].T @ L[m,n,v,v]
-                        tmp1 = tmp1 @ QL[mn]
-                        Fae -= tmp @ tmp1.T
-
-                Fae_ij.append(Fae)
-        else:     
-            for ij in range(self.no*self.no):
-                i = ij // self.no
-                j = ij % self.no
-
-                Fae = Fvv[ij].copy()
-
-                for m in range(self.no):
-                    mm = m*self.no + m
-                    ijm = ij*(self.no) + m
-
-                    tmp = Sijmm[ijm] @ t1[m]
-                    Fae -= 0.5* contract('e,a->ae',Fov[ij][m],tmp)
-
-                    tmp1 = contract('abc,aA->Abc',L[m,v,v,v], QL[ij])
-                    tmp1 = contract('Abc,bB->ABc',tmp1, QL[mm])
-                    tmp1 = contract('ABc,cC->ABC',tmp1, QL[ij])
-                    Fae += contract('F,aFe->ae',t1[m],tmp1)
-
-                    for n in range(self.no):
-                        mn = m *self.no +n
-                        nn = n*self.no + n
-                        ijmn = ij*(self.no**2) + mn
-
-                        tmp2 = Sijmn[ijmn] @ t2[mn]
-                        tmp3_0 = QL[ij].T @ L[m,n,v,v]
-                        tmp3_1 = tmp3_0 @ QL[mn]
-                        Fae -= tmp2 @ tmp3_1.T
-
-                        tmp4 = tmp3_0 @ QL[nn]
-                        Fae -= 0.5 *contract('a,F,eF->ae', tmp, t1[n], tmp4)
-
->>>>>>> main
                 Fae_ij.append(Fae)
         #self.fae_t.stop()
         return Fae_ij
@@ -334,7 +270,6 @@ class lccwfn(object):
             for j in range(self.no):
                for n in range(self.no):
                    jn = j*self.no + n
-<<<<<<< HEAD
 
                    Fmi[:,j] += contract('EF,mEF->m',t2[jn],Loovv[jn][:,n,:,:])
         else:
@@ -344,17 +279,6 @@ class lccwfn(object):
                    jn = j*self.no + n
                    nn = n*self.no + n
 
-=======
-
-                   Fmi[:,j] += contract('EF,mEF->m',t2[jn],Loovv[jn][:,n,:,:])
-        else:
-            for j in range(self.no):
-                jj = j*self.no +j
-                for n in range(self.no):
-                   jn = j*self.no + n
-                   nn = n*self.no + n
-
->>>>>>> main
                    Fmi[:,j] += 0.5 * contract('e,me->m', t1[j], Fov[jj])
                    Fmi[:,j] += contract('e,me->m',t1[n],Looov[nn][:,n,j])
                    Fmi[:,j] += contract('EF,mEF->m',t2[jn],Loovv[jn][:,n,:,:])
@@ -402,7 +326,6 @@ class lccwfn(object):
             for i in range(self.no):
                 for j in range(self.no):
                     ij = i*self.no + j
-<<<<<<< HEAD
 
                     Wmnij[:,:,i,j] += contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
         else:
@@ -416,21 +339,6 @@ class lccwfn(object):
                     Wmnij[:,:,i,j] += contract('E,mnE->mn', t1[i], ERIoovo[ii][:,:,:,j])
                     Wmnij[:,:,i,j] += contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
 
-=======
-
-                    Wmnij[:,:,i,j] += contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
-        else:
-            for i in range(self.no):
-                for j in range(self.no):
-                    ij = i*self.no + j
-                    ii = i*self.no + i
-                    jj = j*self.no + j
-
-                    Wmnij[:,:,i,j] += contract('E,mnE->mn', t1[j], ERIooov[jj][:,:,i,:])
-                    Wmnij[:,:,i,j] += contract('E,mnE->mn', t1[i], ERIoovo[ii][:,:,:,j])
-                    Wmnij[:,:,i,j] += contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
-
->>>>>>> main
                     tmp = contract('aA,mnab->mnAb', QL[ii], ERI[o,o,v,v])
                     tmp = contract('bB,mnAb->mnAB', QL[jj], tmp)
                     Wmnij[:,:,i,j] += contract('e,f,mnef->mn', t1[i], t1[j], tmp)
@@ -443,7 +351,6 @@ class lccwfn(object):
         o = self.o
         v = self.v
         QL = self.QL
-<<<<<<< HEAD
 
         if self.model == 'CCD':
             return
@@ -458,22 +365,6 @@ class lccwfn(object):
 
                 Zmbij = contract('mbef,ef->mb', ERIovvv[ij], t2[ij])
 
-=======
-
-        if self.model == 'CCD':
-            return
-        else:
-            for ij in range(self.no*self.no):
-                i = ij // self.no
-                j = ij % self.no
-                ii = i*self.no + i
-                jj = j*self.no + j
-
-                Zmbij = np.zeros((self.no,self.Local.dim[ij]))
-
-                Zmbij = contract('mbef,ef->mb', ERIovvv[ij], t2[ij])
-
->>>>>>> main
                 tmp = contract('iabc,aA->iAbc',ERI[o,v,v,v], QL[ij])
                 tmp = contract('iAbc,bB->iABc',tmp, QL[ii])
                 tmp = contract('iABc,cC->iABC',tmp, QL[jj])
