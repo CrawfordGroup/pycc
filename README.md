@@ -5,8 +5,6 @@ PyCC
 [![GitHub Actions Build
 Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/CrawfordGroup/pycc/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/CrawfordGroup/pycc/branch/main)
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/alerts/)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/lothian/pycc.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/lothian/pycc/context:python)
 
 A Python-based coupled cluster implementation.  Current capabilities include:
   - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
@@ -23,6 +21,9 @@ Future plans:
   - EOM-CC
   - Analytic gradients
 
+Notes on PNO-CC: 
+https://github.com/JoseMadriaga/Notes/blob/main/LocalCCSD.pdf
+
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
 This package requires the following:
@@ -34,7 +35,7 @@ This package requires the following:
 
 ### Copyright
 
-Copyright (c) 2022, T. Daniel Crawford
+Copyright (c) 2023, T. Daniel Crawford
 
 
 #### Acknowledgements
