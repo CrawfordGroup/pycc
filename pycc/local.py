@@ -2,6 +2,7 @@ import psi4
 import numpy as np
 from opt_einsum import contract
 import time
+from debug import Debug
 
 class Local(object):
     """
@@ -76,7 +77,7 @@ class Local(object):
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
         self.r_conv = r_conv
-
+        self.Debug = Debug(self.no,self.nv)
         self._build()
     
     def _build(self):
@@ -723,6 +724,64 @@ class Local(object):
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
     
+#Debug 
+    def filter_r1amps(self, r1, name):
+       no = self.no
+       nv = self.nv
+       dim = self.dim
+
+       t1 = np.zeros((no,nv))
+       for i in range(no):
+           ii = i * no + i
+
+           X = self.Q[ii].T @ r1[i]
+           Y = self.L[ii].T @ X
+           if i == 2:
+               self.Debug._store_t1(Y, name)  
+ 
+    def filter_Hvv(self,Hvv,name):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        Q = self.Q
+        L = self.L
+        t2_ij = []
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+            ji = j*self.no + i
+
+            QL = Q[ij] @ L[ij]
+
+            Y = QL.T @ Hvv @ QL
+            t2_ij.append(Y)
+
+        ij = 0
+        self.Debug._store_t2(t2_ij[ij],name)
+
+    def filter_r2amps(self,r2,name):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        Q = self.Q
+        L = self.L
+        t2_ij = []
+        t2 = np.zeros((no,no,nv,nv))
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+            ji = j*self.no + i
+
+            QL = Q[ij] @ L[ij]
+
+            Y = QL.T @ r2[i,j] @ QL
+            t2_ij.append(Y)
+
+        ij = 0
+        self.Debug._store_t2(t2_ij[ij],name)
+
     def filter_t2amps(self,r2):
         no = self.no
         nv = self.nv
@@ -826,12 +885,15 @@ class Local(object):
         ERIoovo = []
         ERIooov = []
         ERIovvv = []
+        ERIvovv = []
         ERIvvvv = []
         ERIoovv = []
         ERIovvo = []
         ERIvvvo = []
         ERIovov = []
         ERIovoo = []
+        ERIvoov = []
+        ERIvovo = []
         Loovv = []
         Lovvv = []
         Looov = []
@@ -858,34 +920,39 @@ class Local(object):
             ERIoovv.append(contract('ijAb,bB->ijAB',tmp,QL[ij]))
 
             ERIovvo.append(ERIoovv[ij].swapaxes(1,3))
+  
+            ERIvoov.append(ERIovvo[ij].swapaxes(0,1).swapaxes(2,3))
 
             tmp1 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
             ERIovov.append(contract('iAjb,bB->iAjB',tmp1, QL[ij]))
+
+            ERIvovo.append(ERIovov[ij].swapaxes(0,1).swapaxes(2,3))
 
             tmp2 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
             tmp2 = contract('iAbc,bB->iABc',tmp2, QL[ij])
             ERIovvv.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
 
-            tmp3 = ERIovvv[ij].swapaxes(0,1).swapaxes(2,3)
-            ERIvvvo.append(tmp3.swapaxes(1,3))
+            ERIvovv.append(ERIovvv[ij].swapaxes(0,1).swapaxes(2,3))
+        
+            ERIvvvo.append(ERIvovv[ij].swapaxes(1,3))
 
-            tmp4 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
-            tmp4 = contract('Abcd,bB->ABcd',tmp4, QL[ij])
-            tmp4 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
-            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp4, QL[ij]))
+            tmp3 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+            tmp3 = contract('Abcd,bB->ABcd',tmp3, QL[ij])
+            tmp3 = contract('ABcd,cC->ABCd',tmp3, QL[ij])
+            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp3, QL[ij]))
             
             Loovo.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
             Looov.append(Loovo[ij].swapaxes(0,1).swapaxes(2,3))
 
-            tmp5 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
-            Loovv.append(contract('ijAb,bB->ijAB',tmp5,QL[ij]))
+            tmp4 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
+            Loovv.append(contract('ijAb,bB->ijAB',tmp4,QL[ij]))
 
             Lovvo.append(Loovv[ij].swapaxes(1,3))
 
-            tmp6 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
-            tmp6 = contract('iAbc,bB->iABc',tmp6, QL[ij])
-            Lovvv.append(contract('iABc,cC->iABC',tmp6, QL[ij]))
+            tmp5 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
+            tmp5 = contract('iAbc,bB->iABc',tmp5, QL[ij])
+            Lovvv.append(contract('iABc,cC->iABC',tmp5, QL[ij]))
 
             self.QL = QL
             self.Fov = Fov
@@ -893,12 +960,15 @@ class Local(object):
             self.ERIoovo = ERIoovo
             self.ERIooov = ERIooov
             self.ERIovvv = ERIovvv
+            self.ERIvovv = ERIvovv
             self.ERIvvvv = ERIvvvv
             self.ERIoovv = ERIoovv
             self.ERIovvo = ERIovvo
             self.ERIvvvo = ERIvvvo
             self.ERIovov = ERIovov
             self.ERIovoo = ERIovoo
+            self.ERIvoov = ERIvoov
+            self.ERIvovo = ERIvovo
             self.Loovv = Loovv
             self.Lovvv = Lovvv
             self.Looov = Looov

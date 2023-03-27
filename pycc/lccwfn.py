@@ -112,6 +112,7 @@ class lccwfn(object):
         #ldiis = helper_ldiis(self.t1, self.t2, max_diis)
 
         elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
+
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
 
         for niter in range(1, maxiter+1):
@@ -125,6 +126,7 @@ class lccwfn(object):
             rms_t2 = 0
 
             for i in range(self.no):
+
                 ii = i*self.no + i
 
                 #need to change to reshape
@@ -203,7 +205,7 @@ class lccwfn(object):
         o = self.o
         v = self.v
         QL = self.QL
-
+        
         if self.model == 'CCD':
             for ij in range(self.no*self.no):
                 i = ij // self.no
@@ -414,6 +416,7 @@ class lccwfn(object):
                 i = ij // self.no
                 j = ij % self.no
                 jj = j*self.no + j
+
                 for m in range(self.no):
                     im = i*self.no + m
 
@@ -737,7 +740,7 @@ class lccwfn(object):
                         r2 += 0.5 * contract('a,b->ab',tmp2_0, tmp13) * Wmnij[m,n,i,j]
 
                 nr2.append(r2) 
-
+    
         for i in range(self.no):
             for j in range(self.no):
                 ij = i*self.no + j
@@ -755,7 +758,7 @@ class lccwfn(object):
         ecc_ii = 0
         ecc_ij = 0
         ecc = 0
-
+        
         if self.model == 'CCD':
             for i in range(self.no):
                 for j in range(self.no):
