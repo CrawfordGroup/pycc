@@ -82,6 +82,25 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
     else:
         return t3
 
+def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
+    t3 = contract('ij,k->ijk', Woovv[:,:,a,b], t1[:,c])
+    t3 += contract('ik,j->ijk', Woovv[:,:,a,c], t1[:,b])
+    t3 += contract('jk,i->ijk', Woovv[:,:,b,c], t1[:,a])
+    Fov = F[o,v]
+    t3 += contract('ij,k->ijk', t2[:,:,a,b], Fov[:,c])
+    t3 += contract('ik,j->ijk', t2[:,:,a,c], Fov[:,b])
+    t3 += contract('jk,i->ijk', t2[:,:,b,c], Fov[:,a])
+
+    if WithDenom is True:
+        no = o.stop
+        Fo = np.diag(F)[o]
+        denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
+        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3
+
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn):
