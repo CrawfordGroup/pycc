@@ -714,6 +714,10 @@ contract, WithDenom=True)
         return ecc
 
     def t3_density(self):
+        """
+        Computes (T) contributions to Lambda equations and one-/two-electron densities
+        """
+
         contract = self.contract
 
         o = self.o
@@ -769,11 +773,59 @@ contract, WithDenom=True)
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
                     Doo -= 0.5 * contract('ijk,ijk->i', M3, (X3 + Y3))
 
-        self.Dvv = Dvv
-        self.Doo = Doo
+        self.Dvv = np.zeros((nv,nv))
+        for a in range(nv):
+            self.Dvv[a,a] = Dvv[a]
+
+        self.Doo = np.zeros((no,no))
+        for i in range(no):
+            self.Doo[i,i] = Doo[i]
+
         self.Goovv = Goovv
         self.Gooov = Gooov
         self.Gvvvo = Gvvvo
         self.S1 = S1
         self.S2 = S2
+
+#        print("Dvv:")
+#        it = np.nditer(self.Dvv, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("Doo:")
+#        it = np.nditer(self.Doo, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("S1 Amplitudes:")
+#        it = np.nditer(self.S1, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("S2 Amplitudes:")
+#        it = np.nditer(self.S2, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("Goovv Density:")
+#        it = np.nditer(self.Goovv, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("Gooov Density:")
+#        it = np.nditer(self.Gooov, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("Gvvvo Density:")
+#        it = np.nditer(self.Gvvvo, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
 
