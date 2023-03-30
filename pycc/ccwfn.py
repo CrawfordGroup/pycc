@@ -52,7 +52,7 @@ class ccwfn(object):
         the final CC correlation energy
 
     Methods
-    ------- 
+    -------
     solve_cc()
         Solves the CC T amplitude equations
     residuals()
@@ -65,20 +65,20 @@ class ccwfn(object):
         ----------
         scf_wfn : Psi4 Wavefunction Object
             computed by Psi4 energy() method
-        
+
         Returns
         -------
         None
         """
 
         time_init = time.time()
-             
+
         valid_cc_models = ['CCD', 'CC2', 'CCSD', 'CCSD(T)', 'CC3']
         model = kwargs.pop('model','CCSD').upper()
         if model not in valid_cc_models:
             raise Exception("%s is not an allowed CC model." % (model))
         self.model = model
-        
+
         # models requiring singles
         self.need_singles = ['CCSD', 'CCSD(T)', 'CC2', 'CC3']
 
@@ -160,7 +160,7 @@ class ccwfn(object):
                 self.Local.trans_integrals(self.o, self.v)
                 self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
-        
+
         # denominators
         eps_occ = np.diag(self.H.F)[o]
         eps_vir = np.diag(self.H.F)[v]
@@ -180,13 +180,13 @@ class ccwfn(object):
         if precision.upper() not in valid_precision:
             raise Exception('%s is not an allowed precision arithmetic.' % (precision))
         self.precision = precision.upper()
-         
+
         valid_device = ['CPU', 'GPU']
         device = kwargs.pop('device', 'CPU')
         if device.upper() not in valid_device:
             raise Exception("%s is not an allowed device." % (device))
         self.device = device.upper()
-        
+
         if self.precision == 'SP':
             self.H.F = np.float32(self.H.F)
             self.t1 = np.float32(self.t1)
@@ -194,12 +194,12 @@ class ccwfn(object):
             self.Dia = np.float32(self.Dia)
             self.Dijab = np.float32(self.Dijab)
             self.H.ERI = np.float32(self.H.ERI)
-            self.H.L = np.float32(self.H.L)    
+            self.H.L = np.float32(self.H.L)
 
         # Initiate the object for a generalized contraction function 
         # for GPU or CPU.  
         self.contract = cc_contract(device=self.device)
-       
+
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
         # ERI will be kept on GPU
@@ -228,9 +228,10 @@ class ccwfn(object):
                 # Storing on CPU
                 self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex64, device=self.device0)
                 self.H.L = torch.tensor(self.H.L, dtype=torch.complex64, device=self.device0)
-                
+
         print("CC object initialized in %.3f seconds." % (time.time() - time_init))
-             
+
+
     def solve_cc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
         """
         Parameters
@@ -259,7 +260,7 @@ class ccwfn(object):
         L = self.H.L
         Dia = self.Dia
         Dijab = self.Dijab
-        
+
         contract = self.contract
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
@@ -311,12 +312,13 @@ class ccwfn(object):
                     print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                     print("E(REF)  = %20.15f" % self.eref)
                     if (self.model == 'CCSD(T)'):
-                        et = t_tjl(self)
                         print("E(CCSD) = %20.15f" % ecc)
+                        if (self.dertype == 'FIRST'):
+                            et = self.t3_density()
+                        else:
+                            et = t_tjl(self)
                         print("E(T)    = %20.15f" % et)
                         ecc = ecc + et
-                        if (self.dertype == 'FIRST'):
-                            self.t3_density()
                     else:
                         print("E(%s) = %20.15f" % (self.model, ecc))
                     self.ecc = ecc
@@ -363,41 +365,41 @@ class ccwfn(object):
 
         r1 = self.r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
         r2 = self.r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
-             
+
         if isinstance(Fae, torch.Tensor):
-            del Fae, Fmi, Wmnij, Wmbej, Wmbje, Zmbij 
-        
-        if self.model == 'CC3':      
+            del Fae, Fmi, Wmnij, Wmbej, Wmbje, Zmbij
+
+        if self.model == 'CC3':
             Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
             Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
             Wmnie_cc3 = self.build_cc3_Wmnie(o, v, ERI, t1)
             Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
             Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
-            
+
             if isinstance(t1, torch.Tensor):
                 X1 = torch.zeros_like(t1)
                 X2 = torch.zeros_like(t2)
             else:
                 X1 = np.zeros_like(t1)
                 X2 = np.zeros_like(t2)
-              
+
             for i in range(no):
                 for j in range(no):
-                    for k in range(no):                       
+                    for k in range(no):
                         t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F,
 contract, WithDenom=True)
-                        
-                        X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])                       
+
+                        X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
                         X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
                         X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
                         X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])
-            
+
             r1 += X1
             r2 += X2 + X2.swapaxes(0,1).swapaxes(2,3)
-                       
+
             if isinstance(t3, torch.Tensor):
-                del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3     
-             
+                del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3
+
         return r1, r2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
@@ -537,7 +539,7 @@ contract, WithDenom=True)
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 r_T1 = torch.zero_like(t1)
-            else: 
+            else:
                 r_T1 = np.zeros_like(t1)
         else:
             if isinstance(t1, torch.Tensor):
@@ -581,7 +583,7 @@ contract, WithDenom=True)
             r_T2 = r_T2 + 0.5 * contract('ma,mbij->ijab', t1, contract('nb,mnij->mbij', t1, Wmnij))
             r_T2 = r_T2 + 0.5 * contract('jf,abif->ijab', t1, contract('ie,abef->abif', t1, ERI[v,v,v,v]))
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o])) 
+            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o]))
             r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
@@ -609,7 +611,7 @@ contract, WithDenom=True)
             r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
             r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
             r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
-            
+
             if isinstance(tmp, torch.Tensor):
                 del tmp
 
@@ -637,7 +639,7 @@ contract, WithDenom=True)
             W = ERI[o,v,o,o].copy()
         W = W - contract('mnij,nb->mbij', Wmnij, t1)
         W = W + contract('mbie,je->mbij', ERI[o,v,o,v], t1)
-        if isinstance(t1, torch.Tensor):            
+        if isinstance(t1, torch.Tensor):
             tmp = ERI[o,v,v,o].clone().to(self.device1) + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
         else:
             tmp = ERI[o,v,v,o].copy() + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
@@ -660,7 +662,7 @@ contract, WithDenom=True)
         else:
             W = ERI[v,o,v,v].copy()
         W = W - contract('na,nmef->amef', t1, ERI[o,o,v,v])
-        return W   
+        return W
 
     def build_cc3_Wabei(self, o, v, ERI, t1):
         contract =self.contract
@@ -703,7 +705,7 @@ contract, WithDenom=True)
         # Wabei
         W = Z_abei + Z_eiab.swapaxes(0,2).swapaxes(1,3)
         return W
- 
+
     def cc_energy(self, o, v, F, L, t1, t2):
         contract = self.contract
         if self.model == 'CCD':
@@ -739,6 +741,8 @@ contract, WithDenom=True)
         S1 = np.zeros_like(t1)
         S2 = np.zeros_like(t2)
         Z3 = np.zeros((nv,nv,nv))
+        X1 = np.zeros_like(t1)
+        X2 = np.zeros_like(t2)
 
         for i in range(no):
             for j in range(no):
@@ -747,6 +751,12 @@ contract, WithDenom=True)
                     N3 = t3d_ijk(o, v, i, j, k, t1, t2, ERI[o,o,v,v], F, contract, True)
                     X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
+
+                    # Doubles contribution (T) correction (Viking's formulation)
+#                    X1[i] += contract('abc,bc->a',(M3 - M3.swapaxes(0,2)), L[j,k,v,v])
+                    X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[k,v])
+                    X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,k,v,v])
+                    X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[j,k,o,v])
 
                     # (T) contribution to vir-vir block of one-electron density
                     Dvv += 0.5 * contract('acd,bcd->ab', M3, (X3 + Y3))
@@ -784,6 +794,12 @@ contract, WithDenom=True)
         self.Gvvvo = Gvvvo
         self.S1 = S1
         self.S2 = S2
+
+        # (T) correction
+        ET = contract('ia,ia->', t1, S1) # NB: Factor of two is already included in S1 definition
+        ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
+
+        return ET
 
 #        print("Dvv:")
 #        it = np.nditer(self.Dvv, flags=['multi_index'])

@@ -41,7 +41,7 @@ units bohr
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
     cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
-    ecc = cc.solve_cc(e_conv,r_conv,maxiter, max_diis=0)
+    ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis=0)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
@@ -67,7 +67,7 @@ units bohr
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
     cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
-    ecc = cc.solve_cc(e_conv,r_conv,maxiter)
+    ecc = cc.solve_cc(e_conv, r_conv, maxiter)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
