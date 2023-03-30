@@ -40,7 +40,7 @@ units bohr
     etot = psi4.energy('CCSD(T)')
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
-    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
+    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', make_t3_density=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis=0)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)
@@ -66,7 +66,7 @@ units bohr
     etot = psi4.energy('CCSD(T)')
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
-    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
+    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', make_t3_density=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)

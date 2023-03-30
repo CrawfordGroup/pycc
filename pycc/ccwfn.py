@@ -85,11 +85,7 @@ class ccwfn(object):
         # models requiring T1-transformed integrals
         self.need_t1_transform = ['CC3']
 
-        valid_dertypes = ['NONE', 'FIRST']
-        dertype = kwargs.pop('dertype', 'NONE').upper()
-        if dertype not in valid_dertypes:
-            raise Exception("%s is not an allowed CC derivative type." % (dertype))
-        self.dertype = dertype
+        self.make_t3_density = kwargs.pop('make_t3_density', False)
 
         valid_local_models = [None, 'PNO', 'PAO','PNO++']
         local = kwargs.pop('local', None)
@@ -313,7 +309,7 @@ class ccwfn(object):
                     print("E(REF)  = %20.15f" % self.eref)
                     if (self.model == 'CCSD(T)'):
                         print("E(CCSD) = %20.15f" % ecc)
-                        if (self.dertype == 'FIRST'):
+                        if self.make_t3_density is True:
                             et = self.t3_density()
                         else:
                             et = t_tjl(self)
