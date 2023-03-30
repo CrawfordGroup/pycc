@@ -753,13 +753,15 @@ contract, WithDenom=True)
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
 
                     # Doubles contribution (T) correction (Viking's formulation)
-#                    X1[i] += contract('abc,bc->a',(M3 - M3.swapaxes(0,2)), L[j,k,v,v])
                     X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[k,v])
                     X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,k,v,v])
                     X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[j,k,o,v])
 
                     # (T) contribution to vir-vir block of one-electron density
                     Dvv += 0.5 * contract('acd,bcd->ab', M3, (X3 + Y3))
+
+                    # (T) contribution to occ-vir block of one-electron density
+                    Dov[i] += contract('abc,bc->a', (M3 - M3.swapaxes(0,2)), (4*t2[j,k] - 2*t2[j,k].T))
 
                     # (T) contributions to two-electron density
                     Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3, 2, 0))
@@ -799,8 +801,6 @@ contract, WithDenom=True)
         ET = contract('ia,ia->', t1, S1) # NB: Factor of two is already included in S1 definition
         ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
 
-        return ET
-
 #        print("Dvv:")
 #        it = np.nditer(self.Dvv, flags=['multi_index'])
 #        for val in it:
@@ -809,6 +809,12 @@ contract, WithDenom=True)
 #
 #        print("Doo:")
 #        it = np.nditer(self.Doo, flags=['multi_index'])
+#        for val in it:
+#            if np.abs(val) > 1e-12:
+#                print("%s %20.15f" % (it.multi_index, val))
+#
+#        print("Dov:")
+#        it = np.nditer(self.Dov, flags=['multi_index'])
 #        for val in it:
 #            if np.abs(val) > 1e-12:
 #                print("%s %20.15f" % (it.multi_index, val))
@@ -843,3 +849,4 @@ contract, WithDenom=True)
 #            if np.abs(val) > 1e-12:
 #                print("%s %20.15f" % (it.multi_index, val))
 
+        return ET
