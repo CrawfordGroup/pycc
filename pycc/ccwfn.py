@@ -756,7 +756,7 @@ contract, WithDenom=True)
                     Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
 
                     # (T) contribution to Lambda_1 residual
-                    S1[i] += contract('abc,bc->a', (4*M3 - 2*M3.swapaxes(0,2) - 2*M3.swapaxes(1,2) + np.moveaxis(M3, 2, 0)), ERI[j,k,v,v])
+                    S1[i] += contract('abc,bc->a', (4*M3 - 4*M3.swapaxes(0,1) - 2*M3.swapaxes(1,2) + 2*np.moveaxis(M3, 2, 0)), ERI[j,k,v,v])
                     # (T) contribution to Lambda_2 residual
                     S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[j,k,o,v])
                     S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[k,v,v,v])

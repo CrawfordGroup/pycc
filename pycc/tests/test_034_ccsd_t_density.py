@@ -22,7 +22,16 @@ def test_ccsd_t_h2o():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
                       'diis': 1})
-    mol = psi4.geometry(moldict["H2O"])
+#    mol = psi4.geometry(moldict["H2O"])
+    mol = psi4.geometry(
+"""
+O 0.000000000000000   0.000000000000000   0.143225857166674
+H 0.000000000000000  -1.638037301628121  -1.136549142277225
+H 0.000000000000000   1.638037301628121  -1.136549142277225
+symmetry c1
+units bohr
+"""
+)
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     maxiter = 75
