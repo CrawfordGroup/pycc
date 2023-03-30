@@ -289,8 +289,8 @@ class ccwfn(object):
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
                 if isinstance(r1, torch.Tensor):
-                    rms = torch.sqrt(rms) 
-                else:               
+                    rms = torch.sqrt(rms)
+                else:
                     rms = np.sqrt(rms)
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
@@ -314,7 +314,7 @@ class ccwfn(object):
                         et = t_tjl(self)
                         print("E(CCSD) = %20.15f" % ecc)
                         print("E(T)    = %20.15f" % et)
-                        ecc = ecc + et   
+                        ecc = ecc + et
                         if (self.dertype == 'FIRST'):
                             self.t3_density()
                     else:
@@ -343,7 +343,7 @@ class ccwfn(object):
         r1, r2: NumPy arrays
             New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
-    
+
         contract = self.contract
 
         o = self.o
@@ -728,9 +728,11 @@ contract, WithDenom=True)
         t2 = self.t2
         F = self.H.F
         ERI = self.H.ERI
+        L = self.H.L
 
-        Dvv = np.zeros((nv))
-        Doo = np.zeros((no))
+        Dvv = np.zeros((nv,nv))
+        Doo = np.zeros((no,no))
+        Dov = np.zeros((no,nv))
         Goovv = np.zeros_like(t2)
         Gooov = np.zeros((no,no,no,nv))
         Gvvvo = np.zeros((nv,nv,nv,no))
@@ -747,7 +749,7 @@ contract, WithDenom=True)
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
 
                     # (T) contribution to vir-vir block of one-electron density
-                    Dvv += 0.5 * contract('abc,abc->a', M3, (X3 + Y3))
+                    Dvv += 0.5 * contract('acd,bcd->ab', M3, (X3 + Y3))
 
                     # (T) contributions to two-electron density
                     Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3, 2, 0))
@@ -756,7 +758,7 @@ contract, WithDenom=True)
                     Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
 
                     # (T) contribution to Lambda_1 residual
-                    S1[i] += contract('abc,bc->a', (4*M3 - 4*M3.swapaxes(0,1) - 2*M3.swapaxes(1,2) + 2*np.moveaxis(M3, 2, 0)), ERI[j,k,v,v])
+                    S1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), L[j,k,v,v])
                     # (T) contribution to Lambda_2 residual
                     S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[j,k,o,v])
                     S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[k,v,v,v])
@@ -771,15 +773,11 @@ contract, WithDenom=True)
                     N3 = t3d_abc(o, v, a, b, c, t1, t2, ERI[o,o,v,v], F, contract, True)
                     X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
-                    Doo -= 0.5 * contract('ijk,ijk->i', M3, (X3 + Y3))
+                    Doo -= 0.5 * contract('ikl,jkl->ij', M3, (X3 + Y3))
 
-        self.Dvv = np.zeros((nv,nv))
-        for a in range(nv):
-            self.Dvv[a,a] = Dvv[a]
-
-        self.Doo = np.zeros((no,no))
-        for i in range(no):
-            self.Doo[i,i] = Doo[i]
+        self.Dvv = Dvv
+        self.Doo = Doo
+        self.Dov = Dov # Need to add this even though it doesn't contribute to the energy for RHF references
 
         self.Goovv = Goovv
         self.Gooov = Gooov

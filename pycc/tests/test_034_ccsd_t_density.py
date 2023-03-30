@@ -22,7 +22,6 @@ def test_ccsd_t_h2o():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
                       'diis': 1})
-#    mol = psi4.geometry(moldict["H2O"])
     mol = psi4.geometry(
 """
 O 0.000000000000000   0.000000000000000   0.143225857166674
@@ -38,47 +37,49 @@ units bohr
     e_conv = 1e-12
     r_conv = 1e-12
 
-    psi4.core.clean()
-
     etot = psi4.energy('CCSD(T)')
-    et_psi4 = psi4.variable('(T) CORRECTION ENERGY')
-    print("(T) correction from Psi: %20.15f" % (et_psi4))
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
-    print("CCSD(T) correlation energy from Psi: %20.15f" % (ecc_psi4))
 
     cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
-    eccsd = cc.solve_cc(e_conv,r_conv,maxiter, max_diis=0)
-    et_tjl = t_tjl(cc)
-    print("(T) correction from PyCC: %20.15f" % (et_tjl))
-    assert (abs(et_psi4 - et_tjl) < 1e-11)
+    ecc = cc.solve_cc(e_conv,r_conv,maxiter, max_diis=0)
+    assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
     lcc = cclambda.solve_lambda(e_conv, r_conv, maxiter, max_diis=0)
     ccdensity = pycc.ccdensity(cc, cclambda)
     ecc_density = ccdensity.compute_energy()
-    print("CCSD(T) correlation energy from PyCC: %20.15f" % (ecc_density))
-    assert (abs(ecc_psi4 - ecc_density) < 1e-11)
+    eone = ccdensity.eone
+    etwo = ccdensity.etwo
+
+    lambda_psi4 = -0.069084521221746
+    eone_psi4 = 0.104463374777302
+    etwo_psi4 = -0.175243393781829
+    assert (abs(lambda_psi4 - lcc) < 1e-11)
+    assert (abs(eone_psi4 - eone) < 1e-11)
+    assert (abs(etwo_psi4 - etwo) < 1e-11)
 
     psi4.core.clean()
 
-#    psi4.set_options({'basis': 'cc-pVDZ'})
-#    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-#    etot = psi4.energy('CCSD(T)')
-#    et_psi4 = psi4.variable('(T) CORRECTION ENERGY')
-#    print("(T) correction from Psi: %20.15f" % (et_psi4))
-#    ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
-#    print("CCSD(T) correlation energy from Psi: %20.15f" % (ecc_psi4))
-#
-#    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
-#    eccsd = cc.solve_cc(e_conv,r_conv,maxiter)
-#    et_tjl = t_tjl(cc)
-#    print("(T) correction from PyCC: %20.15f" % (et_tjl))
-#    assert (abs(et_psi4 - et_tjl) < 1e-11)
-#    hbar = pycc.cchbar(cc)
-#    cclambda = pycc.cclambda(cc, hbar)
-#    lcc = cclambda.solve_lambda(e_conv, r_conv)
-#    ccdensity = pycc.ccdensity(cc, cclambda)
-#    ecc_density = ccdensity.compute_energy()
-#    print("CCSD(T) correlation energy from PyCC: %20.15f" % (ecc_density))
-#    assert (abs(ecc_psi4 - ecc_density) < 1e-11)
+    psi4.set_options({'basis': 'cc-pVDZ'})
+    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
+    etot = psi4.energy('CCSD(T)')
+    ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
+
+    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', dertype='first')
+    ecc = cc.solve_cc(e_conv,r_conv,maxiter)
+    assert (abs(ecc_psi4 - ecc) < 1e-11)
+    hbar = pycc.cchbar(cc)
+    cclambda = pycc.cclambda(cc, hbar)
+    lcc = cclambda.solve_lambda(e_conv, r_conv)
+    ccdensity = pycc.ccdensity(cc, cclambda)
+    ecc_density = ccdensity.compute_energy()
+    eone = ccdensity.eone
+    etwo = ccdensity.etwo
+
+    lambda_psi4 = -0.227199866607450
+    eone_psi4 = 0.251210862963227
+    etwo_psi4 = -0.479006477929931
+    assert (abs(lambda_psi4 - lcc) < 1e-11)
+    assert (abs(eone_psi4 - eone) < 1e-11)
+    assert (abs(etwo_psi4 - etwo) < 1e-11)
