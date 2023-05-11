@@ -9,9 +9,9 @@ if __name__ == "__main__":
 import numpy as np
 import time
 from opt_einsum import contract
-from .utils import helper_diis
+from utils import helper_diis
 import torch
-from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
+from cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
 
 
 class cclambda(object):
@@ -54,10 +54,421 @@ class cclambda(object):
         self.hbar = hbar
         self.contract = self.ccwfn.contract 
 
-        self.l1 = 2.0 * self.ccwfn.t1
-        self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
+        if ccwfn.filter is not True:
+            self.lccwfn = ccwfn.lccwfn
+            self.no = ccwfn.no
+            self.local = ccwfn.local
+            self.model = ccwfn.model         
+            self.Local = ccwfn.Local          
 
-    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+            l1 = []
+            l2 = []
+            for i in range(self.no):
+                l1.append(2.0 * self.lccwfn.t1[i])
+
+                for j in range(self.no):
+                    ij = i*self.no + j
+                    l2.append(2.0 * (2.0 * self.lccwfn.t2[ij] - self.lccwfn.t2[ij].swapaxes(0, 1)))     
+           
+            self.l1 = l1
+            self.l2 = l2
+
+        else:
+            self.l1 = 2.0 * self.ccwfn.t1
+            self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
+
+
+    def solve_llambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=200, max_diis=8, start_diis=1):
+        """
+        Parameters
+        ----------
+        e_conv : float
+            convergence condition for correlation energy (default if 1e-7)
+        r_conv : float
+            convergence condition for wave function rmsd (default if 1e-7)
+        maxiter : int
+            maximum allowed number of iterations of the CC equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        Returns
+        -------
+        lecc : float
+            lCC pseudoenergy
+
+        """
+        contract = self.ccwfn.contract
+        lambda_tstart = time.time()
+
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+        t1 = self.lccwfn.t1
+        t2 = self.lccwfn.t2
+        l1 = self.l1
+        l2 = self.l2
+        #Dia = self.ccwfn.Dia
+        #Dijab = self.ccwfn.Dijab
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        L = self.ccwfn.H.L
+
+        Hov = self.hbar.Hov
+        Hvv = self.hbar.Hvv
+        Hvv_ii = self.hbar.Hvv_ii 
+        Hoo = self.hbar.Hoo
+        Hoooo = self.hbar.Hoooo
+        Hvvvv = self.hbar.Hvvvv
+        Hvovv = self.hbar.Hvovv
+        Hvovv_ii = self.hbar.Hvovv_ii 
+        Hvovv_imn = self.hbar.Hvovv_imn
+        Hvovv_imns = self.hbar.Hvovv_imns
+        Hooov = self.hbar.Hooov
+        Hmine = self.hbar.Hmine
+        Himne = self.hbar.Himne
+        Hjiov = self.hbar.Hjiov
+        Hijov = self.hbar.Hijov
+        Hovvo = self.hbar.Hovvo
+        Hovvo_mi = self.hbar.Hovvo_mi 
+        Hovvo_mj = self.hbar.Hovvo_mj
+        Hovvo_mm = self.hbar.Hovvo_mm 
+        Hovov = self.hbar.Hovov
+        Hovov_mi = self.hbar.Hovov_mi
+        Hovov_mj = self.hbar.Hovov_mj
+        Hovov_mm = self.hbar.Hovov_mm  
+        Hvvvo = self.hbar.Hvvvo
+        Hvvvo_ijm = self.hbar.Hvvvo_ijm 
+        Hovoo = self.hbar.Hovoo
+        Hovoo_mn = self.hbar.Hovoo_mn 
+
+        lecc = self.local_pseudoenergy(self.Local.ERIoovv, l2)
+
+        print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
+
+        #diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
+
+        contract = self.contract
+ 
+        for niter in range(1, maxiter+1):
+            lecc_last = lecc
+
+            l1 = self.l1
+            l2 = self.l2
+
+            #I'm going to see if I truly need to decompose these Goo and Gvv to t2 and l2 but first i'm going to project the t2 to l2 spaces
+            Goo = self.build_lGoo(t2, l2)
+            Gvv = self.build_lGvv(t2, l2) # using regular Gvv for now 
+            r1 = self.lr_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo_mm, Hovov_mm, Hvvvo_ijm, Hovoo_mn, Hvovv_imn, Hvovv_imns, Hmine, Himne, Gvv, Goo)
+            r2 = self.lr_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvvvo, Hovoo, Hvovv_ii, Hooov, Hjiov, Hijov, Gvv, Goo)
+            #Hovvo_mi, Hovov_mi, Hovvo_mj, Hovov_mj, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+
+            rms = 0
+            rms_l1 = 0
+            rms_l2 = 0
+
+            for i in range(self.no):
+
+                ii = i*self.no + i
+
+                #need to change to reshape
+                for a in range(self.Local.dim[ii]):
+                    self.l1[i][a] += r1[i][a]/(F[i,i] - self.Local.eps[ii][a])
+
+                rms_l1 += contract('Z,Z->',r1[i],r1[i])
+
+                for j in range(self.no):
+                    ij = i*self.no + j
+
+                    self.l2[ij] -= r2[ij]/(self.Local.eps[ij].reshape(1,-1) + self.Local.eps[ij].reshape(-1,1) - F[i,i] - F[j,j])
+
+                    rms_l2 += contract('ZY,ZY->',r2[ij],r2[ij])
+
+            rms = np.sqrt(rms_l1 + rms_l2)
+            lecc = self.local_pseudoenergy(self.Local.ERIoovv, l2)
+            ediff = lecc - lecc_last
+            print("lLCC Iter %3d: lLCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
+
+            # check for convergence
+            if ((abs(ediff) < e_conv) and rms < r_conv):
+                print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                return lecc
+
+    def build_lGoo(self, t2, l2):
+        contract = self.contract
+        QL = self.Local.QL
+        Goo = np.zeros((self.no,self.no))
+        for i in range(self.no):
+            for j in range(self.no): 
+                ij = i*self.no + j
+                
+                #Goo = np.zeros((self.no,self.no))
+
+                for m in range(self.no):
+                    mj = m*self.no + j
+  
+                    Sijmj = QL[ij].T @ QL[mj]
+                    tmp = Sijmj @ t2[mj] 
+                    tmp = tmp @ Sijmj.T 
+                    Goo[m,i] += contract('ab,ab->',tmp,l2[ij])
+        return Goo 
+
+    def build_lGvv(self, t2, l2):
+        contract = self.contract
+        lGvv = []
+
+        for ij in range(self.no*self.no): 
+            Gvv = np.zeros((self.Local.dim[ij],self.Local.dim[ij])) 
+            Gvv = -1.0 * contract('eb,ab->ae', t2[ij], l2[ij]) 
+            #print("Gvv", ij, Gvv)
+            lGvv.append(Gvv) 
+
+        return lGvv
+
+    def lr_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hvovvs, Hmine, Himne, Gvv, Goo):
+        contract = self.contract
+        QL = self.Local.QL 
+        lr_l1 = []
+        if self.ccwfn.model == 'CCD':
+            for i in range(self.no):
+                lr_l1.append(np.zeros_like(l1[i]))
+        else: 
+            for i in range(self.no):
+                ii = i*self.no + i
+                r_l1 = np.zeros((self.Local.dim[ii]))
+     
+                r_l1 = 2.0 * Hov[ii][i].copy()
+       
+                r_l1_1 = np.zeros_like(r_l1)
+                r_l1_6 = np.zeros_like(r_l1)  
+                r_l1_7 = np.zeros_like(r_l1) #this involves Gvv
+
+                r_l1_1 = contract('e,ea->a',l1[i], Hvv[ii])
+                
+                r_l1_2 = np.zeros_like(r_l1)
+                r_l1_3 = np.zeros_like(r_l1)
+                r_l1_4 = np.zeros_like(r_l1)  
+                r_l1_5 = np.zeros_like(r_l1) 
+                r_l1_8 = np.zeros_like(r_l1)
+                r_l1_9 = np.zeros_like(r_l1)    
+                for m in range(self.no):
+                    mm = m*self.no + m
+                    im = i*self.no + m
+           
+                    Siimm = QL[ii].T @ QL[mm]
+                    tmp2 = Siimm @ l1[m]
+                    r_l1_2 -= tmp2 * Hoo[i,m]
+
+                    Siiim = QL[ii].T @ QL[im]
+                    tmp = Siiim @ l2[im] 
+                    tmp = tmp @ Siiim.T 
+                    r_l1_3 += contract('ef,efa->a', l2[im], Hvvvo[im]) #    [ii][:,:,:,m])
+
+                    r_l1_5 += contract('e,ea->a', l1[m], (2* Hovvo[im] - Hovov[im])) 
+                     
+                    Smmim = QL[mm].T @ QL[im]  
+                    for n in range(self.no):
+                        mn = m*self.no + n
+                        nm = n*self.no +m 
+                        imn = im*self.no + n
+
+                        Siimn = QL[ii].T @ QL[mn]
+                        tmp1 = Siimn @ l2[mn]
+                        r_l1_4 -= contract('ae,e->a', tmp1, Hovoo[imn])
+                                    
+                        r_l1_6 -= 2.0 * contract('ef,efa->a', Gvv[mn], Hvovv[imn])  
+          
+                        r_l1_7 += contract('ef,eaf->a', Gvv[mn], Hvovvs[imn])
+
+                        r_l1_8 -= 2.0 * Goo[m,n] * Hmine[imn]
+                        
+                        r_l1_9 += Goo[m,n] * Himne[imn]
+
+                lr_l1.append(r_l1 + r_l1_1 + r_l1_2 + r_l1_3 + r_l1_4 + r_l1_5 + r_l1_6 + r_l1_7 + r_l1_8 + r_l1_9)           
+                 
+        return lr_l1
+
+    def lr_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvvvo, Hovoo, Hvovv, Hooov, Hjiov, Hijov, Gvv, Goo):
+    #Hovvo_mi, Hovov_mi, Hovvo_mj, Hovov_mj, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        #Loovv
+        contract = self.contract
+        QL = self.Local.QL
+        lr_l2 = []
+        nlr_l2 = []
+        if self.ccwfn.model == 'CCD':
+            for ij in range(self.no*self.no):
+                i = ij // self.no 
+                j = ij % self.no 
+
+                r_l2 =  np.zeros(self.Local.dim[ij],self.Local.dim[ij])
+                r_l2 = self.Local.Loovv[ij][i,j].copy()
+
+                r_l2_1 = np.zeros_like(r_l2)
+                r_l2_4 = np.zeros_like(r_l2)
+                r_l2_8 = np.zeros_like(r_l2) 
+ 
+                r_l2_1 = contract('eb,ea->ab',l2[ij], Hvv[ij])
+                r_l2_4 = 0.5 * contract('ef,efab->ab', l2[ij], Hvvvv[ij])       
+           
+                r_l2_2 = np.zeros_like(r_l2)
+                r_l2_3 = np.zeros_like(r_l2)           
+                r_l2_5 = np.zeros_like(r_l2) 
+                r_l2_6 = np.zeros_like(r_l2) 
+                r_l2_7 = np.zeros_like(r_l2)
+                r_l2_9 = np.zeros_like(r_l2) 
+                for m in range(self.no):
+                    mj = m*self.no + j
+                    mi = m*self.no + i 
+                    ijm = ij*self.no + m           
+          
+                    Sijmj = QL[ij].T @ QL[mj]
+                    tmp = Sijmj @ l2[mj]
+                    tmp = tmp @ Sijmj.T 
+                    r_l2_2 -= tmp * Hoo[i,m]
+          
+                    tst = l2[mj] @ Sijmj.T 
+                    r_l2_5 += contract('eb,ea->ab', tst, 2.0 * Hovvo_mj[ijm] - Hovov_mj[ijm]) # [i,:,:,m]))                 
+                     
+                    Sijmi = QL[ij].T @ QL[mi]
+                    tmp2 = Sijmi @ l2[mi] 
+                    
+                    tst = Hovov_mi[ijm]
+                    r_l2_6 -= contract('be,ea->ab', tmp2, tst) # ,.swapaxes(2,3)Hovov[ij][j]) # ,:,m,:])   
+                    
+                    tst = Hovvo_mi[ijm]    
+                    tmp3 = l2[mi] @ Sijmi.T 
+                    r_l2_7 -= contract('eb,ea->ab', tmp3, tst) #[j,:,:,m])
+                  
+                    tst = contract('aA, bB, ab-> AB', QL[mj], QL[mj], L[m,j,v,v])
+                    r_l2_9 -=  Goo[m,i] * self.Local.Loovv[ij][m,j] #l2[ij] * contract('ab,ab->',self.lccwfn.t2[mj], tst)  #Goo[m,i] * Loovv[ij][m,j] 
+                    for n in range(self.no):
+                        mn = m*self.no + n 
+                      
+                        Sijmn = QL[ij].T @ QL[mn] 
+                        tmp1 = Sijmn @ l2[mn] 
+                        tmp1 = tmp1 @ Sijmn.T 
+                        r_l2_3 += 0.5 * tmp1 * Hoooo[i,j,m,n]
+
+                        tmp2 = Sijmn @ Gvv[mn] 
+                        tmp3 = contract('eb, eE, bB->EB', L[i,j,v,v], QL[mn], QL[ij]) 
+                        r_l2_8 += contract('ae,eb->ab', tmp2, tmp3)
+
+                nlr_l2.append( r_l2  + r_l2_1 + r_l2_2 + r_l2_3 + r_l2_4 + r_l2_6 + r_l2_7 + r_l2_5 + r_l2_9 + r_l2_8)
+        else: 
+            for ij in range(self.no*self.no):
+                i = ij // self.no 
+                j = ij % self.no 
+                ii = i*self.no + i
+                jj = j*self.no + j 
+
+                r_l2 =  np.zeros(self.Local.dim[ij],self.Local.dim[ij])
+                r_l2 = self.Local.Loovv[ij][i,j].copy()
+
+                r_l2_1 = np.zeros_like(r_l2)
+                r_l2_2 = np.zeros_like(r_l2)
+                r_l2_3 = np.zeros_like(r_l2)
+                r_l2_4 = np.zeros_like(r_l2)
+                r_l2_7 = np.zeros_like(r_l2)
+                r_l2_10 = np.zeros_like(r_l2)
+                #r_l2_14 = np.zeros_like(r_l2)
+
+                Sijii = QL[ij].T @ QL[ii]
+                tmp = Sijii @ l1[i]
+                r_l2_1 = 2.0 * contract('a,b->ab', tmp, Hov[ij][j])
+              
+                Sijjj = QL[ij].T @ QL[jj]
+                tmp1 = Sijjj @ l1[j]
+                r_l2_2 = -1.0 * contract('a,b->ab', tmp1, Hov[ij][i])
+
+                r_l2_3 = 2.0 * contract('e,eab->ab', l1[i], Hvovv[ij][:,j,:,:])
+
+                r_l2_4 = -1.0 * contract('e,eba ->ab', l1[i], Hvovv[ij][:,j,:,:]) 
+
+                r_l2_7 = contract('eb,ea->ab',l2[ij], Hvv[ij])
+
+                r_l2_10 = 0.5 * contract('ef,efab->ab', l2[ij], Hvvvv[ij])
+ 
+                r_l2_5 = np.zeros_like(r_l2)
+                r_l2_6 = np.zeros_like(r_l2)
+                r_l2_8 = np.zeros_like(r_l2)
+                r_l2_11 = np.zeros_like(r_l2)
+                r_l2_12 = np.zeros_like(r_l2)
+                r_l2_13 = np.zeros_like(r_l2)
+                r_l2_15 = np.zeros_like(r_l2)
+                r_l2_9 = np.zeros_like(r_l2)
+                r_l2_14 = np.zeros_like(r_l2) 
+                for m in range(self.no):
+                    mm = m*self.no + m 
+ 
+                    mj = m*self.no + j
+                    mi = m*self.no + i
+                    ijm = ij*self.no + m
+                   
+                    Sijmm = QL[ij].T @ QL[mm]
+                    tmp2 = Sijmm @ l1[m] 
+                    r_l2_5 -= 2.0 * contract('b,a->ab', tmp2, Hjiov[ij][m])
+
+                    r_l2_6 += contract('b,a->ab', tmp2, Hijov[ij][m]) 
+
+                    Sijmj = QL[ij].T @ QL[mj]
+                    tmp = Sijmj @ l2[mj]
+                    tmp = tmp @ Sijmj.T
+                    r_l2_8 -= tmp * Hoo[i,m]
+
+                    tst = l2[mj] @ Sijmj.T
+                    r_l2_11 += contract('eb,ea->ab', tst, 2.0 * Hovvo_mj[ijm] - Hovov_mj[ijm]) # [i,:,:,m]))
+
+                    Sijmi = QL[ij].T @ QL[mi]
+                    tmp2 = Sijmi @ l2[mi]
+
+                    tst = Hovov_mi[ijm]
+                    r_l2_12 -= contract('be,ea->ab', tmp2, tst) # ,.swapaxes(2,3)Hovov[ij][j]) # ,:,m,:])
+
+                    tst = Hovvo_mi[ijm]
+                    tmp3 = l2[mi] @ Sijmi.T
+                    r_l2_13 -= contract('eb,ea->ab', tmp3, tst) #[j,:,:,m])
+
+                    tst = contract('aA, bB, ab-> AB', QL[mj], QL[mj], L[m,j,v,v])
+                    r_l2_15 -=  Goo[m,i] * self.Local.Loovv[ij][m,j] #l2[ij] * contract('ab,ab->',self.lccwfn.t2[mj], tst)  #Goo[m,i] * Loovv[ij][m,j]
+                    for n in range(self.no):
+                        mn = m*self.no + n
+                        
+                        Sijmn = QL[ij].T @ QL[mn]
+                        tmp1 = Sijmn @ l2[mn]
+                        tmp1 = tmp1 @ Sijmn.T
+                        r_l2_9 += 0.5 * tmp1 * Hoooo[i,j,m,n]
+
+                        tmp4 = Sijmn @ Gvv[mn]
+                        tmp5 = contract('eb, eE, bB->EB', L[i,j,v,v], QL[mn], QL[ij])
+                        r_l2_14 += contract('ae,eb->ab', tmp4, tmp5)
+
+                nlr_l2.append( r_l2 + r_l2_1 + r_l2_2 + r_l2_3 + r_l2_4 + r_l2_5 + r_l2_6 + r_l2_7 + r_l2_9 + r_l2_8 + r_l2_10 + r_l2_11 + r_l2_12 + r_l2_13 + r_l2_14 + r_l2_15)    
+        for i in range(self.no):
+            for j in range(self.no):
+                ij = i*self.no + j
+                ji = j*self.no + i
+
+                lr_l2.append(nlr_l2[ij].copy() + nlr_l2[ji].copy().transpose())
+
+        #self.r2_t.stop()
+        return lr_l2
+
+    def local_pseudoenergy(self, ERIoovv, l2):
+        contract = self.contract
+        ecc_ij = 0
+        ecc = 0
+        for i in range(self.no):
+            for j in range(self.no):
+                ij = i*self.no + j
+
+                ecc_ij = contract('ab,ab->',l2[ij],ERIoovv[ij][i,j])
+                ecc += ecc_ij
+
+        return 0.5 * ecc
+
+    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=200, max_diis=8, start_diis=1):
         """
         Parameters
         ----------
@@ -442,6 +853,9 @@ class cclambda(object):
 
     def build_Gvv(self, t2, l2):
         contract = self.contract 
+        tmp = -1.0 * contract('ijeb,ijab->ae', t2, l2)
+        #for ij in range(self.ccwfn.no**2):
+            #print("Gvv", ij, contract('aA,bB,ab->AB', self.ccwfn.Local.Q[ij] @ self.ccwfn.Local.L[ij], self.ccwfn.Local.Q[ij] @ self.ccwfn.Local.L[ij], tmp))
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
@@ -456,13 +870,13 @@ class cclambda(object):
             if isinstance(l1, torch.Tensor):
                 r_l1 = 2.0 * Hov.clone()
             else: 
-                r_l1 = 2.0 * Hov.copy()
+                r_l1 = 2.0 * Hov.copy() #r_l1
 
-            r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
-            r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
-            r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
-            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv) #r_l1_1
+            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo) #r_l1_2         
+            r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo) #r_l1_3
+            r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo) #r_L1_4
+            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3))) #r_l1_5
             if self.ccwfn.model == 'CC2':
                 tmp = contract('me,nmfe->nf', l1, self.ccwfn.t2)
                 r_l1 = r_l1 + contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.L[o,o,v,v]))
@@ -470,14 +884,17 @@ class cclambda(object):
                 r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
                 r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
             else:
-                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
-                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
-                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
-                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
+                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv) #r_l1_6
+                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv) #r_l1_7
+                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov) #r_l1_8
+                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov) #r_l1_9
         return r_l1
 
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        #r_L2_8 needs double checking
         contract = self.contract 
+        Q = self.ccwfn.Local.Q
+        L_ij = self.ccwfn.Local.L 
         if self.ccwfn.model == 'CCD':
             if isinstance(l1, torch.Tensor):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
@@ -486,36 +903,36 @@ class cclambda(object):
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
             r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
             r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-            r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+            r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv) 
             r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
             r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
             r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
-            r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+            r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v]) 
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
             if isinstance(l1, torch.Tensor):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
-                r_l2 = L[o,o,v,v].copy()
-            r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
-            r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
-            r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
-            r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
-            r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
-            r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
+                r_l2 = L[o,o,v,v].copy() # r_l2
+            r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov) #r_l2_1
+            r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov) # r_l2_2
+            r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv) #r_l2_3
+            r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv) #r_l2_4
+            r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov) #r_l2_5
+            r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov) #r_l2_6
             if self.ccwfn.model == 'CC2':
                 r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
                 r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
             else:
-                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
-                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
-                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
-                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
-                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
-                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
-                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
-                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv) #r_l2_7
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo) #r_l2_8
+                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo) #r_l2_9 
+                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv) #r_l2_10
+                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3))) #r_l2_11
+                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov) #r_L2_12
+                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo) #r_l2_13
+                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v]) #r_l2_14
+                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v]) #r_l2_15
 
         r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
         return r_l2

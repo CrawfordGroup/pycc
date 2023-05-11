@@ -261,7 +261,7 @@ class ccwfn(object):
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
-        #diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
+        diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
 
         for niter in range(1, maxiter+1):
 
@@ -317,9 +317,9 @@ class ccwfn(object):
                     print("E(TOT)  = %20.15f" % (ecc + self.eref))
                     return ecc
 
-            #diis.add_error_vector(self.t1, self.t2)
-            #if niter >= start_diis:
-                #self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+            diis.add_error_vector(self.t1, self.t2)
+            if niter >= start_diis:
+                self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
 
     def residuals(self, F, t1, t2):
         """

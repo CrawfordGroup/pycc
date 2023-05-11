@@ -794,15 +794,15 @@ class Local(object):
 
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
             Y = self.L[ij].T @ X @ self.L[ij]
+            print(ij, Y)
+            #for a in range(dim[ij]):
+                #for b in range(dim[ij]):
+                    #Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
 
-            for a in range(dim[ij]):
-                for b in range(dim[ij]):
-                    Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+            #X = self.L[ij] @ Y @ self.L[ij].T
+            #t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
 
-            X = self.L[ij] @ Y @ self.L[ij].T
-            t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
-
-        return t2
+        #return t2
 
     def filter_amps(self, r1, r2):
         no = self.no

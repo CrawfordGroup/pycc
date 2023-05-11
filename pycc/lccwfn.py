@@ -143,7 +143,7 @@ class lccwfn(object):
 
                     rms_t2 += contract('ZY,ZY->',r2[ij],r2[ij])
 
-            rms = np.sqrt(rms_t2)
+            rms = np.sqrt(rms_t1 + rms_t2)
             elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
             ediff = elcc - elcc_last
             print("lCC Iter %3d: lCC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, elcc, ediff, rms))
@@ -156,8 +156,19 @@ class lccwfn(object):
                 print("E(TOT)  = %20.15f" % (elcc + self.eref))
                 self.elcc = elcc
                 #print(Timer.timers)
-                return elcc
+                #with open('t_amps.txt', 'w') as f: 
+                    #for i in range(self.no):
+                        #ii = i*self.no + i 
+                        #for a in range(self.Local.dim[ii]):
+                            #f.write(self.t1[i][a]) 
 
+                        #for j in range(self.no):
+                            #ij = i*self.no + j
+                            #for a in range(self.Local.dim[ij]): 
+                                #for b in range(self.Local.dim[ij]): 
+                                    #f.write(self.t2[ij][a][b]) 
+                return elcc
+      
             #ldiis.add_error_vector(self.t1,self.t2)
             #if niter >= start_diis:
                 #self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
