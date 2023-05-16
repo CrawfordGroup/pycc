@@ -13,7 +13,6 @@ from .utils import helper_diis
 import torch
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
 
-
 class cclambda(object):
     """
     An RHF-CC wave function and energy object.
@@ -63,7 +62,7 @@ class cclambda(object):
         self.hbar = hbar
         self.contract = self.ccwfn.contract 
 
-        if ccwfn.filter is not True:
+        if ccwfn.local is not None and ccwfn.filter is not True:
             self.lccwfn = ccwfn.lccwfn
             self.no = ccwfn.no
             self.local = ccwfn.local

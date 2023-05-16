@@ -27,17 +27,17 @@ def test_pno_lambda_ccsd():
     r_conv = 1e-12
        
     #simulation code of pno-ccsd lambda
-    ccsd_sim = ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
     eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccsd_sim)
-    cclambda_sim = cclambda(ccsd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccsd_sim)
+    cclambda_sim = pycc.cclambda(ccsd_sim, hbar_sim)
     l_ccsd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
     
     #pno-ccsd lambda
-    lccsd = ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-6,it2_opt=False)
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-6,it2_opt=False)
     elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccsd)  
-    lcclambda = cclambda(lccsd, lhbar)
+    lhbar = pycc.cchbar(lccsd)  
+    lcclambda = pycc.cclambda(lccsd, lhbar)
     l_lccsd = lcclambda.solve_llambda(e_conv, r_conv, maxiter) 
     
     assert(abs(l_ccsd_sim - l_lccsd) < 1e-12)
@@ -62,17 +62,17 @@ def test_pnopp_lambda_ccsd():
     r_conv = 1e-12
    
     #simulation code of pno++-ccsd lambda
-    ccsd_sim = ccwfn(rhf_wfn, model='CCSD',local='PNO++', local_cutoff=1e-6,it2_opt=False,filter=True)
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO++', local_cutoff=1e-6,it2_opt=False,filter=True)
     eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccsd_sim)
-    cclambda_sim = cclambda(ccsd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccsd_sim)
+    cclambda_sim = pycc.cclambda(ccsd_sim, hbar_sim)
     l_ccsd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
     
     #pno++-ccsd lambda
-    lccsd = ccwfn(rhf_wfn,model='CCSD', local='PNO++', local_cutoff=1e-6,it2_opt=False)
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO++', local_cutoff=1e-6,it2_opt=False)
     elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccsd)
-    lcclambda = cclambda(lccsd, lhbar)
+    lhbar = pycc.cchbar(lccsd)
+    lcclambda = pycc.cclambda(lccsd, lhbar)
     l_lccsd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccsd_sim - l_lccsd) < 1e-12)
@@ -97,17 +97,17 @@ def test_pno_lambda_ccsd_opt():
     r_conv = 1e-12
 
     #simulation code of pno-ccsd lambda
-    ccsd_sim = ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-6,it2_opt=True,filter=True)
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PNO', local_cutoff=1e-6,it2_opt=True,filter=True)
     eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccsd_sim)
-    cclambda_sim = cclambda(ccsd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccsd_sim)
+    cclambda_sim = pycc.cclambda(ccsd_sim, hbar_sim)
     l_ccsd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
 
     #pno-ccsd lambda
-    lccsd = ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-6,it2_opt=True)
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-6,it2_opt=True)
     elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccsd)
-    lcclambda = cclambda(lccsd, lhbar)
+    lhbar = pycc.cchbar(lccsd)
+    lcclambda = pycc.cclambda(lccsd, lhbar)
     l_lccsd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccsd_sim - l_lccsd) < 1e-12)
@@ -132,17 +132,17 @@ def test_pao_lambda_ccsd_opt():
     r_conv = 1e-12
 
     #simulation code of pao-ccsd    
-    ccsd_sim = ccwfn(rhf_wfn, model='CCSD',local='PAO', local_cutoff=1e-6,it2_opt=True,filter=True)
+    ccsd_sim = pycc.ccwfn(rhf_wfn, model='CCSD',local='PAO', local_cutoff=1e-6,it2_opt=True,filter=True)
     eccsd_sim = ccsd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccsd_sim)  
-    cclambda_sim = cclambda(ccsd_sim, hbar_sim) 
+    hbar_sim = pycc.cchbar(ccsd_sim)  
+    cclambda_sim = pycc.cclambda(ccsd_sim, hbar_sim) 
     l_ccsd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
 
     #pao-ccsd
-    lccsd = ccwfn(rhf_wfn,model='CCSD', local='PAO', local_cutoff=1e-6,it2_opt=True)
+    lccsd = pycc.ccwfn(rhf_wfn,model='CCSD', local='PAO', local_cutoff=1e-6,it2_opt=True)
     elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccsd)
-    lcclambda = cclambda(lccsd, lhbar)
+    lhbar = pycc.cchbar(lccsd)
+    lcclambda = pycc.cclambda(lccsd, lhbar)
     l_lccsd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccsd_sim - l_lccsd) < 1e-12)

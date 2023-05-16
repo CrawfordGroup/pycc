@@ -345,11 +345,10 @@ class cchbar(object):
                 j = ij % no
                                            
                 Hoooo[:,:,i,j] = Hoooo[:,:,i,j] + contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
-            lHoooo = Hoooo + Hoooo_1 
+            lHoooo = Hoooo
         else:
             Hoooo = ERI[o,o,o,o].copy()
-  
-            tmp = np.zeros_like(Hoooo)           
+       
             for ij in range(no*no):
                 i = ij // no
                 j = ij % no
@@ -357,16 +356,17 @@ class cchbar(object):
                 jj = j*no + j
 
                 #something is weird here
-                tmp[:,:,i,j] = contract('e,mne->mn',t1[j], ERIooov[jj][:,:,i])
-                Hoooo_1 = tmp + tmp.swapaxes(0,1).swapaxes(2,3)
+                tmp = contract('e,mne->mn',t1[j], ERIooov[jj][:,:,i])
+                tmp1 = contract('e,mne->nm', t1[i], ERIooov[ii][:,:,j]) 
+                Hoooo[:,:,i,j] = Hoooo[:,:,i,j] + (tmp + tmp1)
                                   
                 Hoooo[:,:,i,j] = Hoooo[:,:,i,j] + contract('ef,mnef->mn',t2[ij], ERIoovv[ij])
                 
-                #tmp1 = contract('eE,fF,mnef->mnEF',QL[ii], QL[jj], ERI[o,o,v,v])
-                tmp1 = contract('eE,mnef -> mnEf', QL[ii], ERI[o,o,v,v])
-                tmp1 = contract('fF, mnEf -> mnEF', QL[jj], tmp1)
-                Hoooo[:,:,i,j] = Hoooo[:,:,i,j] + contract('e,f,mnef->mn',t1[i],t1[j],tmp1)
-            lHoooo = Hoooo + Hoooo_1 
+                #tmp2 = contract('eE,fF,mnef->mnEF',QL[ii], QL[jj], ERI[o,o,v,v])
+                tmp2 = contract('eE,mnef -> mnEf', QL[ii], ERI[o,o,v,v])
+                tmp2 = contract('fF, mnEf -> mnEF', QL[jj], tmp2)
+                Hoooo[:,:,i,j] = Hoooo[:,:,i,j] + contract('e,f,mnef->mn',t1[i],t1[j],tmp2)
+            lHoooo = Hoooo  
         return lHoooo  
 
     def build_Hoooo(self, o, v, ERI, t1, t2):
@@ -406,7 +406,7 @@ class cchbar(object):
                     Sijmn = QL[ij].T @ QL[mn]
                     tmp = Sijmn @ t2[mn]
                     tmp = tmp @ Sijmn.T 
-                    Hvvvv = Hvvvv + contract('ab,ef->abef',tmp1, ERIoovv[ij][m,n]) 
+                    Hvvvv = Hvvvv + contract('ab,ef->abef',tmp, ERIoovv[ij][m,n]) 
                 lHvvvv.append(Hvvvv)
         else: 
             lHvvvv = []
@@ -614,6 +614,8 @@ class cchbar(object):
             lHooov = ERIooov.copy()
             lHijov = []
             lHjiov = []
+            lHmine = []
+            lHimne = []
         else:
             lHooov = []
             lHijov = []
@@ -708,7 +710,8 @@ class cchbar(object):
             lHovvo = [] 
             lHovvo_mi = []
             lHovvo_mj = []
-            
+            lHovvo_mm = []
+ 
             #Hovvo_mj 
             for ij in range(no*no):
                 i = ij // no
@@ -1010,6 +1013,8 @@ class cchbar(object):
             lHovov = [] 
             lHovov_mi = []
             lHovov_mj = []
+            lHovov_mm = []
+
             #for ij in range(no*no):
                 #i = ij // no 
                 #j = ij % no

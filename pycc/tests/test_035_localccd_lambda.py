@@ -6,6 +6,7 @@ import psi4
 import pycc 
 import pytest 
 from ..data.molecules import * 
+
 def test_pno_lambda_ccd():
     """H2O PNO-Lambda CCD Test"""    
     psi4.set_memory('2 GB')
@@ -26,22 +27,22 @@ def test_pno_lambda_ccd():
     r_conv = 1e-12
        
     #simulation code of pno-ccd lambda
-    ccd_sim = ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
+    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccd_sim)
-    cclambda_sim = cclambda(ccd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccd_sim)
+    cclambda_sim = pycc.cclambda(ccd_sim, hbar_sim)
     l_ccd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
     
     #pno-ccd lambda
-    lccd = ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-6,it2_opt=False)
+    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-6,it2_opt=False)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccd)  
-    lcclambda = cclambda(lccd, lhbar)
+    lhbar = pycc.cchbar(lccd)  
+    lcclambda = pycc.cclambda(lccd, lhbar)
     l_lccd = lcclambda.solve_llambda(e_conv, r_conv, maxiter) 
     
     assert(abs(l_ccd_sim - l_lccd) < 1e-12)
 
-def test_pno_lambda_ccsd():
+def test_pnopp_lambda_ccd():
     """H2O PNO++-Lambda CCD Test"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
@@ -61,17 +62,17 @@ def test_pno_lambda_ccsd():
     r_conv = 1e-12
    
     #simulation code of pno++-ccd lambda
-    ccd_sim = ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
+    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=False,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccd_sim)
-    cclambda_sim = cclambda(ccd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccd_sim)
+    cclambda_sim = pycc.cclambda(ccd_sim, hbar_sim)
     l_ccd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
     
     #pno++-ccd lambda
-    lccd = ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-6,it2_opt=False)
+    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-6,it2_opt=False)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccd)
-    lcclambda = cclambda(lccd, lhbar)
+    lhbar = pycc.cchbar(lccd)
+    lcclambda = pycc.cclambda(lccd, lhbar)
     l_lccd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccd_sim - l_lccd) < 1e-12)
@@ -96,17 +97,17 @@ def test_pno_lambda_ccd_opt():
     r_conv = 1e-12
 
     #simulation code of pno-ccd lambda
-    ccd_sim = ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=True,filter=True)
+    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PNO', local_cutoff=1e-6,it2_opt=True,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccd_sim)
-    cclambda_sim = cclambda(ccd_sim, hbar_sim)
+    hbar_sim = pycc.cchbar(ccd_sim)
+    cclambda_sim = pycc.cclambda(ccd_sim, hbar_sim)
     l_ccd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
 
     #pno-ccd lambda
-    lccd = ccwfn(rhf_wfn,model='CCSD', local='PNO', local_cutoff=1e-6,it2_opt=True)
+    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-6,it2_opt=True)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccd)
-    lcclambda = cclambda(lccd, lhbar)
+    lhbar = pycc.cchbar(lccd)
+    lcclambda = pycc.cclambda(lccd, lhbar)
     l_lccd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccd_sim - l_lccd) < 1e-12)
@@ -131,17 +132,17 @@ def test_pao_lambda_ccd_opt():
     r_conv = 1e-12
 
     #simulation code of pao-ccd lambda   
-    ccd_sim = ccwfn(rhf_wfn, model='CCD',local='PAO', local_cutoff=1e-6,it2_opt=True,filter=True)
+    ccd_sim = pycc.ccwfn(rhf_wfn, model='CCD',local='PAO', local_cutoff=1e-6,it2_opt=True,filter=True)
     eccd_sim = ccd_sim.solve_cc(e_conv, r_conv, maxiter)
-    hbar_sim = cchbar(ccd_sim)  
-    cclambda_sim = cclambda(ccd_sim, hbar_sim) 
+    hbar_sim = pycc.cchbar(ccd_sim)  
+    cclambda_sim = pycc.cclambda(ccd_sim, hbar_sim) 
     l_ccd_sim = cclambda_sim.solve_lambda(e_conv, r_conv, maxiter)
 
     #pao-ccd lambda
-    lccd = ccwfn(rhf_wfn,model='CCD', local='PAO', local_cutoff=1e-6,it2_opt=True)
+    lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PAO', local_cutoff=1e-6,it2_opt=True)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
-    lhbar = cchbar(lccd)
-    lcclambda = cclambda(lccd, lhbar)
+    lhbar = pycc.cchbar(lccd)
+    lcclambda = pycc.cclambda(lccd, lhbar)
     l_lccd = lcclambda.solve_llambda(e_conv, r_conv, maxiter)
     
     assert(abs(l_ccd_sim - l_lccd) < 1e-12)

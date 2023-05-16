@@ -29,7 +29,7 @@ def test_pno_ccsd():
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, it2_opt=False)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, it2_opt=False, filter=True)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)
@@ -63,7 +63,7 @@ def test_pno_ccsd_opt():
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, filter=True)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)
