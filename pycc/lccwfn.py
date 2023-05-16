@@ -129,9 +129,7 @@ class lccwfn(object):
 
                 ii = i*self.no + i
 
-                #need to change to reshape
-                for a in range(self.Local.dim[ii]):
-                    self.t1[i][a] += r1[i][a]/(self.H.F[i,i] - self.Local.eps[ii][a])
+                self.t1[i] -= r1[i]/(self.Local.eps[ii].reshape(-1,) - self.H.F[i,i])
 
                 rms_t1 += contract('Z,Z->',r1[i],r1[i])
 
@@ -156,17 +154,6 @@ class lccwfn(object):
                 print("E(TOT)  = %20.15f" % (elcc + self.eref))
                 self.elcc = elcc
                 #print(Timer.timers)
-                #with open('t_amps.txt', 'w') as f: 
-                    #for i in range(self.no):
-                        #ii = i*self.no + i 
-                        #for a in range(self.Local.dim[ii]):
-                            #f.write(self.t1[i][a]) 
-
-                        #for j in range(self.no):
-                            #ij = i*self.no + j
-                            #for a in range(self.Local.dim[ij]): 
-                                #for b in range(self.Local.dim[ij]): 
-                                    #f.write(self.t2[ij][a][b]) 
                 return elcc
       
             #ldiis.add_error_vector(self.t1,self.t2)
@@ -615,7 +602,6 @@ class lccwfn(object):
                 for mn in range(self.no*self.no):
                     m = mn // self.no
                     n = mn % self.no
-                    imn = i*(self.no**2) + mn
                     iimn =ii*(self.no**2) + mn 
              
                     tmp4 = Sijmn[iimn] @ t2[mn]

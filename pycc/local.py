@@ -2,7 +2,6 @@ import psi4
 import numpy as np
 from opt_einsum import contract
 import time
-from debug import Debug
 
 class Local(object):
     """
@@ -77,7 +76,6 @@ class Local(object):
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
         self.r_conv = r_conv
-        self.Debug = Debug(self.no,self.nv)
         self._build()
     
     def _build(self):
@@ -723,64 +721,6 @@ class Local(object):
             ediff = emp2 - elast
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
-    
-#Debug 
-    def filter_r1amps(self, r1, name):
-       no = self.no
-       nv = self.nv
-       dim = self.dim
-
-       t1 = np.zeros((no,nv))
-       for i in range(no):
-           ii = i * no + i
-
-           X = self.Q[ii].T @ r1[i]
-           Y = self.L[ii].T @ X
-           if i == 2:
-               self.Debug._store_t1(Y, name)  
- 
-    def filter_Hvv(self,Hvv,name):
-        no = self.no
-        nv = self.nv
-        dim = self.dim
-
-        Q = self.Q
-        L = self.L
-        t2_ij = []
-        for ij in range(no*no):
-            i = ij // no
-            j = ij % no
-            ji = j*self.no + i
-
-            QL = Q[ij] @ L[ij]
-
-            Y = QL.T @ Hvv @ QL
-            t2_ij.append(Y)
-
-        ij = 0
-        self.Debug._store_t2(t2_ij[ij],name)
-
-    def filter_r2amps(self,r2,name):
-        no = self.no
-        nv = self.nv
-        dim = self.dim
-
-        Q = self.Q
-        L = self.L
-        t2_ij = []
-        t2 = np.zeros((no,no,nv,nv))
-        for ij in range(no*no):
-            i = ij // no
-            j = ij % no
-            ji = j*self.no + i
-
-            QL = Q[ij] @ L[ij]
-
-            Y = QL.T @ r2[i,j] @ QL
-            t2_ij.append(Y)
-
-        ij = 0
-        self.Debug._store_t2(t2_ij[ij],name)
 
     def filter_t2amps(self,r2):
         no = self.no
@@ -794,15 +734,15 @@ class Local(object):
 
             X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
             Y = self.L[ij].T @ X @ self.L[ij]
-            print(ij, Y)
-            #for a in range(dim[ij]):
-                #for b in range(dim[ij]):
-                    #Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
 
-            #X = self.L[ij] @ Y @ self.L[ij].T
-            #t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
+            for a in range(dim[ij]):
+                for b in range(dim[ij]):
+                    Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
 
-        #return t2
+            X = self.L[ij] @ Y @ self.L[ij].T
+            t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
+
+        return t2
 
     def filter_amps(self, r1, r2):
         no = self.no
