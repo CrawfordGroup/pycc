@@ -39,10 +39,13 @@ class cclambda(object):
     
     Notes
     -----
+    
+    For the local implementation: 
+    Eqns can be found in LocalCCSD.pdf 
+
     To do:
-    (1) clean up to make it more readable (attached document to associate implemented code with eqns) 
-    (2) need DIIS extrapolation
-    (3) time table?
+    (1) need DIIS extrapolation
+    (2) time table?
     """
     def __init__(self, ccwfn, hbar):
         """
@@ -131,7 +134,6 @@ class cclambda(object):
         Hvovv_ii = self.hbar.Hvovv_ii 
         Hvovv_imn = self.hbar.Hvovv_imn
         Hvovv_imns = self.hbar.Hvovv_imns
-        Hooov = self.hbar.Hooov
         Hmine = self.hbar.Hmine
         Himne = self.hbar.Himne
         Hjiov = self.hbar.Hjiov
@@ -142,9 +144,7 @@ class cclambda(object):
         Hovov_mi = self.hbar.Hovov_mi
         Hovov_mj = self.hbar.Hovov_mj
         Hovov_mm = self.hbar.Hovov_mm  
-        Hvvvo = self.hbar.Hvvvo
         Hvvvo_im = self.hbar.Hvvvo_im 
-        Hovoo = self.hbar.Hovoo
         Hovoo_mn = self.hbar.Hovoo_mn 
 
         lecc = self.local_pseudoenergy(self.Local.ERIoovv, l2)
@@ -164,7 +164,7 @@ class cclambda(object):
             Goo = self.build_lGoo(t2, l2)
             Gvv = self.build_lGvv(t2, l2)  
             r1 = self.lr_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo_mm, Hovov_mm, Hvvvo_im, Hovoo_mn, Hvovv_imn, Hvovv_imns, Hmine, Himne, Gvv, Goo)
-            r2 = self.lr_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvvvo, Hovoo, Hvovv_ii, Hooov, Hjiov, Hijov, Gvv, Goo)
+            r2 = self.lr_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvovv_ii, Hjiov, Hijov, Gvv, Goo)
 
             rms = 0
             rms_l1 = 0
@@ -196,8 +196,10 @@ class cclambda(object):
                 return lecc
 
     def build_lGoo(self, t2, l2):
+        #Eqn 79
         contract = self.contract
         QL = self.Local.QL
+        Sijmj = self.Local.Sijmj
         Goo = np.zeros((self.no,self.no))
         for i in range(self.no):
             for j in range(self.no): 
@@ -205,26 +207,28 @@ class cclambda(object):
                 
                 for m in range(self.no):
                     mj = m*self.no + j
-  
-                    Sijmj = QL[ij].T @ QL[mj]
-                    tmp = Sijmj @ t2[mj] 
-                    tmp = tmp @ Sijmj.T 
-                    Goo[m,i] += contract('ab,ab->',tmp,l2[ij])
+                    ijm = ij*self.no + m 
 
+                    tmp = Sijmj[ijm] @ t2[mj] 
+                    tmp = tmp @ Sijmj[ijm].T 
+                    Goo[m,i] += contract('ab,ab->',tmp,l2[ij])
         return Goo 
 
     def build_lGvv(self, t2, l2):
+        #Eqn 78
         contract = self.contract
         lGvv = []
         for ij in range(self.no*self.no): 
             Gvv = -1.0 * contract('eb,ab->ae', t2[ij], l2[ij]) 
             lGvv.append(Gvv) 
-
         return lGvv
 
     def lr_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hvovvs, Hmine, Himne, Gvv, Goo):
+        #Eqn 77
         contract = self.contract
-        QL = self.Local.QL 
+        QL = self.Local.QL
+        Sijmm = self.Local.Sijmm
+        Sijmn = self.Local.Sijmn 
         lr_l1 = []
         if self.ccwfn.model == 'CCD':
             for i in range(self.no):
@@ -239,9 +243,9 @@ class cclambda(object):
                 for m in range(self.no):
                     mm = m*self.no + m
                     im = i*self.no + m
+                    iimm = ii*(self.no) + m 
            
-                    Siimm = QL[ii].T @ QL[mm]
-                    tmp = Siimm @ l1[m]
+                    tmp = Sijmm[iimm] @ l1[m]
                     r_l1 = r_l1 - tmp * Hoo[i,m]
 
                     r_l1 = r_l1 + contract('ef,efa->a', l2[im], Hvvvo[im])
@@ -252,9 +256,9 @@ class cclambda(object):
                         mn = m*self.no + n
                         nm = n*self.no +m 
                         imn = im*self.no + n
+                        iimn = ii*(self.no**2) + mn                   
 
-                        Siimn = QL[ii].T @ QL[mn]
-                        tmp = Siimn @ l2[mn]
+                        tmp = Sijmn[iimn] @ l2[mn]
                         r_l1 = r_l1 - contract('ae,e->a', tmp, Hovoo[imn])
                                     
                         r_l1 = r_l1 - 2.0 * contract('ef,efa->a', Gvv[mn], Hvovv[imn])  
@@ -269,9 +273,16 @@ class cclambda(object):
                  
         return lr_l1
 
-    def lr_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvvvo, Hovoo, Hvovv, Hooov, Hjiov, Hijov, Gvv, Goo):
+    def lr_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvovv, Hjiov, Hijov, Gvv, Goo):
+        #Eqn 80 
         contract = self.contract
         QL = self.Local.QL
+        Sijii = self.Local.Sijii
+        Sijjj = self.Local.Sijjj
+        Sijmm = self.Local.Sijmm
+        Sijmj = self.Local.Sijmj
+        Sijmi = self.Local.Sijmi
+        Sijmn = self.Local.Sijmn
         lr_l2 = []
         nlr_l2 = []
         if self.ccwfn.model == 'CCD':
@@ -289,32 +300,30 @@ class cclambda(object):
                     mi = m*self.no + i 
                     ijm = ij*self.no + m           
           
-                    Sijmj = QL[ij].T @ QL[mj]
-                    tmp = Sijmj @ l2[mj]
-                    tmp = tmp @ Sijmj.T 
+                    tmp = Sijmj[ijm] @ l2[mj]
+                    tmp = tmp @ Sijmj[ijm].T 
                     r_l2 = r_l2 - tmp * Hoo[i,m]
           
-                    tmp = l2[mj] @ Sijmj.T 
+                    tmp = l2[mj] @ Sijmj[ijm].T 
                     r_l2 = r_l2 + contract('eb,ea->ab', tmp, 2.0 * Hovvo_mj[ijm] - Hovov_mj[ijm])               
                      
-                    Sijmi = QL[ij].T @ QL[mi]
-                    tmp = Sijmi @ l2[mi] 
+                    tmp = Sijmi[ijm] @ l2[mi] 
                     r_l2 = r_l2 - contract('be,ea->ab', tmp, Hovov_mi[ijm])  
                     
-                    tmp = l2[mi] @ Sijmi.T 
+                    tmp = l2[mi] @ Sijmi[ijm].T 
                     r_l2 = r_l2 - contract('eb,ea->ab', tmp, Hovvo_mi[ijm])
                   
                     r_l2 = r_l2 - Goo[m,i] * self.Local.Loovv[ij][m,j]
 
                     for n in range(self.no):
                         mn = m*self.no + n 
-                      
-                        Sijmn = QL[ij].T @ QL[mn] 
-                        tmp = Sijmn @ l2[mn] 
-                        tmp = tmp @ Sijmn.T 
+                        ijmn = ij*(self.no**2) + mn
+
+                        tmp = Sijmn[ijmn] @ l2[mn] 
+                        tmp = tmp @ Sijmn[ijmn].T 
                         r_l2 = r_l2 + 0.5 * tmp * Hoooo[i,j,m,n]
 
-                        tmp = Sijmn @ Gvv[mn] 
+                        tmp = Sijmn[ijmn] @ Gvv[mn] 
                         tmp1 = contract('eb, eE, bB->EB', L[i,j,v,v], QL[mn], QL[ij]) 
                         r_l2 = r_l2 + contract('ae,eb->ab', tmp, tmp1)
 
@@ -325,15 +334,13 @@ class cclambda(object):
                 j = ij % self.no 
                 ii = i*self.no + i
                 jj = j*self.no + j 
-
+                
                 r_l2 = self.Local.Loovv[ij][i,j].copy()
 
-                Sijii = QL[ij].T @ QL[ii]
-                tmp = Sijii @ l1[i]
+                tmp = Sijii[ij] @ l1[i]
                 r_l2 = r_l2 + 2.0 * contract('a,b->ab', tmp, Hov[ij][j])
               
-                Sijjj = QL[ij].T @ QL[jj]
-                tmp = Sijjj @ l1[j]
+                tmp = Sijjj[ij] @ l1[j]
                 r_l2 = r_l2 - contract('a,b->ab', tmp, Hov[ij][i])
 
                 r_l2 = r_l2 + 2.0 * contract('e,eab->ab', l1[i], Hvovv[ij][:,j,:,:])
@@ -346,44 +353,41 @@ class cclambda(object):
  
                 for m in range(self.no):
                     mm = m*self.no + m 
- 
                     mj = m*self.no + j
                     mi = m*self.no + i
                     ijm = ij*self.no + m
                    
-                    Sijmm = QL[ij].T @ QL[mm]
-                    tmp = Sijmm @ l1[m] 
+                    tmp = Sijmm[ijm] @ l1[m] 
                     r_l2 = r_l2 - 2.0 * contract('b,a->ab', tmp, Hjiov[ij][m])
 
                     r_l2 = r_l2 + contract('b,a->ab', tmp, Hijov[ij][m]) 
 
-                    Sijmj = QL[ij].T @ QL[mj]
-                    tmp = Sijmj @ l2[mj]
-                    tmp = tmp @ Sijmj.T
+                    tmp = Sijmj[ijm] @ l2[mj]
+                    tmp = tmp @ Sijmj[ijm].T
                     r_l2 = r_l2 - tmp * Hoo[i,m]
 
-                    tmp = l2[mj] @ Sijmj.T
+                    tmp = l2[mj] @ Sijmj[ijm].T
                     r_l2 = r_l2 + contract('eb,ea->ab', tmp, 2.0 * Hovvo_mj[ijm] - Hovov_mj[ijm])
 
-                    Sijmi = QL[ij].T @ QL[mi]
-                    tmp = Sijmi @ l2[mi]
+                    tmp = Sijmi[ijm] @ l2[mi]
                     r_l2 = r_l2 - contract('be,ea->ab', tmp, Hovov_mi[ijm])
 
-                    tmp = l2[mi] @ Sijmi.T
+                    tmp = l2[mi] @ Sijmi[ijm].T
                     r_l2 = r_l2 - contract('eb,ea->ab', tmp, Hovvo_mi[ijm]) 
 
                     r_l2 = r_l2 - Goo[m,i] * self.Local.Loovv[ij][m,j] 
                    
                     for n in range(self.no):
                         mn = m*self.no + n
-                        
-                        Sijmn = QL[ij].T @ QL[mn]
-                        tmp = Sijmn @ l2[mn]
-                        tmp = tmp @ Sijmn.T
+                        ijmn = ij*(self.no**2) + mn
+
+                        tmp = Sijmn[ijmn] @ l2[mn]
+                        tmp = tmp @ Sijmn[ijmn].T
                         r_l2 = r_l2 + 0.5 * tmp * Hoooo[i,j,m,n]
 
-                        tmp = Sijmn @ Gvv[mn]
-                        tmp1 = contract('eb, eE, bB->EB', L[i,j,v,v], QL[mn], QL[ij])
+                        tmp = Sijmn[ijmn] @ Gvv[mn]
+                        tmp1 = contract('eb, eE -> Eb', L[i,j,v,v], QL[mn])
+                        tmp1 = contract('Eb, bB ->EB', tmp1, QL[ij])
                         r_l2 = r_l2 + contract('ae,eb->ab', tmp, tmp1)
 
                 nlr_l2.append(r_l2)
@@ -394,7 +398,6 @@ class cclambda(object):
                 ji = j*self.no + i
 
                 lr_l2.append(nlr_l2[ij].copy() + nlr_l2[ji].copy().transpose())
-
         #self.r2_t.stop()
         return lr_l2
 
@@ -407,7 +410,6 @@ class cclambda(object):
 
                 ecc_ij = contract('ab,ab->',l2[ij],ERIoovv[ij][i,j])
                 ecc = ecc + ecc_ij
-
         return 0.5 * ecc
 
     def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=200, max_diis=8, start_diis=1):
@@ -830,10 +832,10 @@ class cclambda(object):
                 r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
                 r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
             else:
-                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv) #r_l1_6
-                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv) #r_l1_7
-                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov) #r_l1_8
-                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov) #r_l1_9
+                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
+                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv) 
+                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
+                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
         return r_l1
 
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
@@ -873,15 +875,15 @@ class cclambda(object):
                 r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
                 r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
             else:
-                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv) #r_l2_7
-                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo) #r_l2_8
-                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo) #r_l2_9 
-                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv) #r_l2_10
-                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3))) #r_l2_11
-                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov) #r_L2_12
-                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo) #r_l2_13
-                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v]) #r_l2_14
-                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v]) #r_l2_15
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
+                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo) 
+                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
+                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
+                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
 
         r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
         return r_l2

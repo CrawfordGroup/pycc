@@ -930,11 +930,17 @@ class Local(object):
         To do
         -----
         Compare the timings for the use of stored overlap terms versus "on the fly" overlap terms 
+        
+        Redundant overlap terms generated - another pull request will be made to update this with changes to
+        other object class that utilizes this (lccwfn object) 
         """
         no = self.no 
 
+        Sijii = []
+        Sijjj = []
         Sijmm = []
         Sijim = []
+        Sijmi = []
         Sijmj = []
         Sijnn = []
         Sijin = []
@@ -943,17 +949,26 @@ class Local(object):
         Sijmn = []
         
         for i in range(no):
+            ii = i*no + i
             for j in range(no):
                 ij = i*no + j
+                jj = j*no + j
+                ji = j*no + i 
+
+                Sijii.append(QL[ij].T @ QL[ii])    
+                Sijjj.append(QL[ij].T @ QL[jj])
+                                      
                 for m in range(no):
                     mm = m*no + m
                     im = i*no + m
                     mj = m*no + j
+                    mi = m*no + i
 
                     Sijmm.append(QL[ij].T @ QL[mm])
                     Sijim.append(QL[ij].T @ QL[im]) 
                     Sijmj.append(QL[ij].T @ QL[mj])  
-
+                    Sijmi.append(QL[ij].T @ QL[mi])
+         
                 for n in range(no):
                     nn = n*no + n
                     _in = i*no + n 
@@ -968,9 +983,12 @@ class Local(object):
                 for mn in range(no*no):
                     Sijmn.append(QL[ij].T @ QL[mn])
 
+        self.Sijii = Sijii
+        self.Sijjj = Sijjj
         self.Sijmj = Sijmj
         self.Sijmm = Sijmm 
         self.Sijim = Sijim
+        self.Sijmi = Sijmi
         self.Sijnn = Sijnn
         self.Sijin = Sijin
         self.Sijnj = Sijnj
