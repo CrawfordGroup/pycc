@@ -1,6 +1,5 @@
 name: p4dev
 channels:
-  - psi4/label/dev
   - conda-forge
 dependencies:
   - psi4
@@ -13,6 +12,7 @@ dependencies:
   - psutil
   - qcelemental >=0.19.0  # test minimum stated version.
   - pydantic >=1.0.0  # test minimun stated version. actually min is 1.0 but no py38 builds
+  - conda-forge/label/libint_dev::libint=2.7.3dev1
   - msgpack-python
 
     # Testing
