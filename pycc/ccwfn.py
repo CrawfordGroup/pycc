@@ -573,9 +573,9 @@ contract, WithDenom=True)
         elif self.model == 'CC2':
             return contract('mbif,jf->mbij', contract('mbef,ie->mbif', ERI[o,v,v,v], t1), t1)
         else:
+            zmbij_end = time.time()
+            self.zmbij_tl += zmbij_end - zmbij_start
             return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
-        zmbij_end = time.time()
-        self.zmbij_tl += zmbij_end - zmbij_start
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
