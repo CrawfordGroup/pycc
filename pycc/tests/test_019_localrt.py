@@ -53,7 +53,7 @@ def test_rtpno(datadir):
     r_conv = 1e-13
     max_diis = 8
 
-    cc = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5)
+    cc = pycc.ccwfn(rhf_wfn, local='PNO', local_cutoff=1e-5, filter=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
@@ -109,7 +109,7 @@ def test_rtpao(datadir):
     r_conv = 1e-13
     max_diis = 8
 
-    cc = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=1e-2)
+    cc = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=1e-2, filter=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
