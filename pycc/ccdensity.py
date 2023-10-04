@@ -62,7 +62,6 @@ class ccdensity(object):
         """
 
         time_init = time.time()
-
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.contract = self.ccwfn.contract
@@ -71,30 +70,44 @@ class ccdensity(object):
         v = ccwfn.v
         no = ccwfn.no
         nv = ccwfn.nv
-        F = ccwfn.H.F
-        ERI = ccwfn.H.ERI
-        L = ccwfn.H.L
-        t1 = ccwfn.t1
-        t2 = ccwfn.t2
-        l1 = cclambda.l1
-        l2 = cclambda.l2
 
-        self.Dov = self.build_Dov(t1, t2, l1, l2)
-        self.Dvo = self.build_Dvo(l1)
-        self.Dvv = self.build_Dvv(t1, t2, l1, l2)
-        self.Doo = self.build_Doo(t1, t2, l1, l2)
+        if ccwfn.local is not None and ccwfn.filter is not True:
+            self.lccwfn = ccwfn.lccwfn
+            self.local = ccwfn.local
+            self.model = ccwfn.model
+            self.Local = ccwfn.Local
+            self.cclambda = cclambda 
 
-        self.onlyone = onlyone
+            t2 = self.lccwfn.t2 
+            l2 = cclambda.l2
+            self.Doo = self.build_lDoo(t2, l2)
+            print(self.Doo)
+        else: 
+            F = ccwfn.H.F
+            ERI = ccwfn.H.ERI
+            L = ccwfn.H.L
+            t1 = ccwfn.t1
+            t2 = ccwfn.t2
+            l1 = cclambda.l1
+            l2 = cclambda.l2
 
-        if onlyone is False:
-            self.Doooo = self.build_Doooo(t1, t2, l2)
-            self.Dvvvv = self.build_Dvvvv(t1, t2, l2)
-            self.Dooov = self.build_Dooov(t1, t2, l1, l2)
-            self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
-            self.Dovov = self.build_Dovov(t1, t2, l1, l2)
-            self.Doovv = self.build_Doovv(t1, t2, l1, l2)
+            #self.Dov = self.build_Dov(t1, t2, l1, l2)
+            #self.Dvo = self.build_Dvo(l1)
+            #self.Dvv = self.build_Dvv(t1, t2, l1, l2)
+            self.Doo = self.build_Doo(t1, t2, l1, l2)
+            
+            print(self.Doo)
+            #self.onlyone = onlyone
 
-        print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
+            #if onlyone is False:
+                #self.Doooo = self.build_Doooo(t1, t2, l2)
+                #self.Dvvvv = self.build_Dvvvv(t1, t2, l2)
+                #self.Dooov = self.build_Dooov(t1, t2, l1, l2)
+                #self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
+                #self.Dovov = self.build_Dovov(t1, t2, l1, l2)
+                #self.Doovv = self.build_Doovv(t1, t2, l1, l2)
+
+            print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
     def compute_energy(self):
         """
@@ -238,6 +251,34 @@ class ccdensity(object):
 
         return Doo
 
+    def build_lDoo(self, t2, l2):  # beginning - implementing the ccd-density
+        if self.ccwfn.model == 'CCD': 
+            lDoo = np.zeros((self.ccwfn.no, self.ccwfn.no))
+            contract = self.contract
+            for ij in range (self.ccwfn.no * self.ccwfn.no):
+                i = ij // self.ccwfn.no 
+                j = ij % self.ccwfn.no
+                for m in range(self.ccwfn.no):
+                    im = i * self.ccwfn.no + m
+                    jm = j * self.ccwfn.no + m
+                    Q = self.ccwfn.Local.Q
+                    L = self.ccwfn.Local.L
+                    Q_im  = Q[im] @ L[im]
+                    Q_jm  = Q[jm] @ L[jm]
+                    S_jmim = (Q_im).T @ (Q_jm)
+                    temp = S_jmim @ t2[im] @ S_jmim.T  
+                    lDoo[i,j] -= contract('ef, ef-> ', temp, l2[jm])
+        # the else function below does not function because we are dealing with on the CCD
+        #else:
+            #Doo = -1.0 * contract('ie,je->ij', t1, l1)
+            #Doo -= contract('imef,jmef->ij', t2, l2)
+            # (T) contributions computed in ccwfn.t3_density()
+            #if self.ccwfn.model == 'CCSD(T)':
+                #Doo += self.ccwfn.Doo
+
+        return lDoo
+
+
 
     def build_Dvv(self, t1, t2, l1, l2):  # complete
         contract = self.contract
@@ -257,7 +298,7 @@ class ccdensity(object):
         if isinstance(l1, torch.Tensor):
             return l1.T.clone()
         else:
-            return l1.T.copy()
+            return l1.T.icopy()
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
         contract = self.contract

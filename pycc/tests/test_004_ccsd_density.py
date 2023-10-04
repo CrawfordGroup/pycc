@@ -33,7 +33,7 @@ def test_density_ccsd_h2o():
     ccsd = pycc.ccwfn(rhf_wfn)
     eccsd = ccsd.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(ccsd)
-    cclambda = pycc.cclambda(ccsd, hbar)
+    cclambda = pycc.:wqcclambda(ccsd, hbar)
     lccsd = cclambda.solve_lambda(e_conv, r_conv)
     epsi4 = -0.070616830152761
     lpsi4 = -0.068826452648939
