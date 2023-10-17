@@ -16,7 +16,7 @@ from data.molecules import *
 # Psi4 Setup
 psi4.set_memory('2 GB')
 psi4.core.set_output_file('output.dat', False)
-psi4.set_options({'basis': 'STO-3G',
+psi4.set_options({'basis': '3-21G',
                   'scf_type': 'pk',
                   'mp2_type': 'conv',
                   'freeze_core': 'true',
@@ -32,7 +32,7 @@ e_conv = 1e-12
 r_conv = 1e-12
 
 #simulation code
-ccsd = pycc.ccwfn(rhf_wfn, model = 'CCD', local = 'PNO', local_cutoff = 1e-7, filter = True)
+ccsd = pycc.ccwfn(rhf_wfn, model = 'CCD', local = 'PNO', local_cutoff = 1e-07, filter = True)
 eccsd = ccsd.solve_cc(e_conv, r_conv)
 hbar = pycc.cchbar(ccsd)
 cclambda = pycc.cclambda(ccsd, hbar)
@@ -47,7 +47,7 @@ ccdensity = pycc.ccdensity(ccsd, cclambda)
 #print(ecc_density)
 
 #pno ccd density code
-lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-7,it2_opt=False)
+lccd = pycc.ccwfn(rhf_wfn,model='CCD', local='PNO', local_cutoff=1e-07,it2_opt=False)
 elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 lhbar = pycc.cchbar(lccd)
 lcclambda = pycc.cclambda(lccd, lhbar)

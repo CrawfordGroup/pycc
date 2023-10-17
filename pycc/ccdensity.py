@@ -69,6 +69,8 @@ class ccdensity(object):
         o = ccwfn.o
         v = ccwfn.v
         no = ccwfn.no
+        #comment it out 
+        self.no = ccwfn.no
         nv = ccwfn.nv
 
         if ccwfn.local is not None and ccwfn.filter is not True:
@@ -78,10 +80,14 @@ class ccdensity(object):
             self.Local = ccwfn.Local
             self.cclambda = cclambda 
 
+            # lDvv needed
+            lDvv = []
             t2 = self.lccwfn.t2 
             l2 = cclambda.l2
             self.Doo = self.build_lDoo(t2, l2)
+            self.Dvv = self.build_lDvv(lDvv, t2, l2)
             print(self.Doo)
+            print(self.Dvv)
         else: 
             F = ccwfn.H.F
             ERI = ccwfn.H.ERI
@@ -93,10 +99,11 @@ class ccdensity(object):
 
             #self.Dov = self.build_Dov(t1, t2, l1, l2)
             #self.Dvo = self.build_Dvo(l1)
-            #self.Dvv = self.build_Dvv(t1, t2, l1, l2)
+            self.Dvv = self.build_Dvv(t1, t2, l1, l2)
             self.Doo = self.build_Doo(t1, t2, l1, l2)
             
             print(self.Doo)
+            print(self.Dvv)
             #self.onlyone = onlyone
 
             #if onlyone is False:
@@ -265,7 +272,7 @@ class ccdensity(object):
                     L = self.ccwfn.Local.L
                     Q_im  = Q[im] @ L[im]
                     Q_jm  = Q[jm] @ L[jm]
-                    S_jmim = (Q_im).T @ (Q_jm)
+                    S_jmim = (Q_jm).T @ (Q_im)
                     temp = S_jmim @ t2[im] @ S_jmim.T  
                     lDoo[i,j] -= contract('ef, ef-> ', temp, l2[jm])
         # the else function below does not function because we are dealing with on the CCD
@@ -284,6 +291,14 @@ class ccdensity(object):
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dvv = contract('mnbe,mnae->ab', t2, l2)
+
+            # collect variables needed to transform Dvv to Dvv^ij
+            if self.ccwfn.filter is True:
+                Q = self.ccwfn.Local.Q
+                L = self.ccwfn.Local.L
+                for ij in range(self.no**2):
+                    print("Dvv_ij", ij, (Q[ij] @ L[ij]).T @ Dvv @ (Q[ij] @ L[ij]))
+                
         else:
             Dvv = contract('mb,ma->ab', t1, l1)
             Dvv += contract('mnbe,mnae->ab', t2, l2)
@@ -292,13 +307,34 @@ class ccdensity(object):
                 Dvv += self.ccwfn.Dvv
 
         return Dvv
+    
+    def build_lDvv(self, lDvv, t2, l2):  # begining - implementing the ccd-density
+        if self.ccwfn.model == 'CCD':
+            contract = self.contract
+            Q = self.Local.Q
+            L = self.Local.L
+            for ij in range(self.ccwfn.no * self.ccwfn.no):
+                Dvv = np.zeros((self.Local.dim[ij], self.Local.dim[ij]))
+                #for mn in range(self.ccwfn.no * self.ccwfn.no):
+                for m in range(self.ccwfn.no):
+                    for n in range(self.ccwfn.no):
+                        mn = m*self.ccwfn.no + n
 
+                        Sijmn = (Q[ij] @ L[ij]).T @ (Q[mn] @ L[mn]) 
+                        Dvv += contract('be,ae->ab', Sijmn @ t2[mn], Sijmn @ l2[mn])
+                lDvv.append(Dvv)
+
+        return lDvv
+                 
 
     def build_Dvo(self, l1):  # complete
         if isinstance(l1, torch.Tensor):
             return l1.T.clone()
         else:
             return l1.T.icopy()
+
+    def build_lDvo(self, t2, l2):  # begining - implementing the ccd-density
+        pass
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
         contract = self.contract
@@ -327,6 +363,10 @@ class ccdensity(object):
                 del tmp
 
         return Dov
+
+    def build_lDov(self, t2, l2):  # begining - implementing the ccd-density
+        pass
+
 
     # CC3 contributions to the one electron densities
     def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov):
