@@ -431,7 +431,7 @@ contract, WithDenom=True)
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
-        fae_start =  process_time()
+        fae_start = process_time()
         contract = self.contract
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
