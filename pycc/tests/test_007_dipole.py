@@ -43,7 +43,6 @@ def test_dipole_h2_2_cc_pvdz():
 
     ref = [0, 0, 0.005371586416860086] # au
     mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
-    opdm = rtcc.ccdensity.compute_onepdm(t1, t2, l1, l2, withref = True)
 
     assert (abs(ref[0] - mu_x) < 1E-10)
     assert (abs(ref[1] - mu_y) < 1E-10)

@@ -50,7 +50,7 @@ def test_cc3_h2o():
     # Total dipole from CFOUR: [0, 0, 0.7703875967] au
     ref = [0, 0, -0.3569035158] # au
 
-    mu_x, mu_y, mu_z = rtcc.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2, withref=True)
+    mu_x, mu_y, mu_z = rtcc.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2)
 
     assert (abs(ref[0] - np.real(mu_x)) < 1E-10)
     assert (abs(ref[1] - np.real(mu_y)) < 1E-10)
