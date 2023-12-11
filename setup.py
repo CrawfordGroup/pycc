@@ -32,6 +32,7 @@ setup(
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     license='BSD-3-Clause',
+    python_requires='<3.12',
     install_requires=[
         "numpy",
         "opt_einsum",
