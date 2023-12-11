@@ -70,7 +70,7 @@ jobs:
         python -m pip install .
         python -m pip install opt_einsum
         python -m pip install scipy
-        python -m pip install torch==1.11
+        python -m pip install torch
         conda list
 
     - name: PyTest
