@@ -74,7 +74,7 @@ def test_rtcc_water_cc_pvdz():
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
    
     # Check dipole moment 
-    mu0_z_ref = -0.3489459218340155 
+    mu0_z_ref = -0.0780069121607703 # computed by removing SCF from original ref
     assert(abs(mu0_z_ref - mu0_z) < 1e-6)
     
     while t < tf:
@@ -87,6 +87,6 @@ def test_rtcc_water_cc_pvdz():
     print(mu_z)
    
     # Check the dipole value at time step 1
-    mu_z_ref = -0.3489459204749751
+    mu_z_ref = -0.0780069121607703 # computed by removing SCF from original ref
     assert (abs(mu_z_ref - mu_z.real) < 1e-6)    
 
