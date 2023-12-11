@@ -1,5 +1,6 @@
 name: p4dev
 channels:
+  - conda-forge/label/libint_dev
   - conda-forge
 dependencies:
   - psi4
