@@ -219,7 +219,7 @@ class rtcc(object):
         Returns
         -------
         x, y, z : scalars
-            Cartesian components of the dipole moment
+            Cartesian components of the correlated dipole moment
         """
         if self.ccwfn.model == 'CC3':
             (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)

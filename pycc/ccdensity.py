@@ -162,7 +162,7 @@ class ccdensity(object):
         Returns
         -------
         onepdm : NumPy array
-            the CC one-electron density as a single, full matrix
+            the CC one-electron density as a single, full matrix (only the correlated contribution)
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
