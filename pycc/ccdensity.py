@@ -152,19 +152,17 @@ class ccdensity(object):
 
         return ecc
 
-    def compute_onepdm(self, t1, t2, l1, l2, withref=False):
+    def compute_onepdm(self, t1, t2, l1, l2):
         """
         Parameters
         ----------
         t1, t2, l1, l2 : NumPy arrays
             current cluster amplitudes
-        withref : Boolean (default: False)
-            include the reference contribution if True
 
         Returns
         -------
         onepdm : NumPy array
-            the CC one-electron density as a single, full matrix
+            the CC one-electron density as a single, full matrix (only the correlated contribution)
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -186,18 +184,6 @@ class ccdensity(object):
             elif self.ccwfn.precision == 'SP':
                 opdm = np.zeros((nt, nt), dtype='complex64')
         opdm[o,o] = self.build_Doo(t1, t2, l1, l2)
-        if withref is True:
-            if isinstance(t1, torch.Tensor):
-                if self.ccwfn.precision == 'DP':
-                    opdm[o,o] += 2.0 * torch.eye(no, dtype=torch.complex128, device=self.ccwfn.device1)  # Reference contribution
-                elif self.ccwfn.precision == 'SP':
-                    opdm[o,o] += 2.0 * torch.eye(no, dtype=torch.complex64, device=self.ccwfn.device1)
-            else:
-                if self.ccwfn.precision == 'DP':
-                    opdm[o,o] += 2.0 * np.eye(no)  # Reference contribution
-                elif self.ccwfn.precision == 'SP':
-                    opdm[o,o] += 2.0 * np.eye(no, dtype=np.complex64)
-
         opdm[v,v] = self.build_Dvv(t1, t2, l1, l2)
         opdm[o,v] = self.build_Dov(t1, t2, l1, l2)
         opdm[v,o] = self.build_Dvo(l1)
