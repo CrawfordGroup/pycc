@@ -1,4 +1,4 @@
 name: p4env
 channels:
   - conda-forge
-  - nodefauts
+  - nodefaults
