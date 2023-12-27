@@ -61,9 +61,6 @@ jobs:
     - name: Install PyCC and Deps
       run: |
         python -m pip install .
-        pip install opt_einsum
-        pip install scipy
-        pip install torch
         pip install pytest
 
     - name: Test and generate coverage report
