@@ -56,16 +56,17 @@ class cchbar(object):
         time_init = time.time()
   
         self.ccwfn = ccwfn
-        
         self.contract = self.ccwfn.contract
  
-        o = ccwfn.o
-        v = ccwfn.v
         F = ccwfn.H.F
         ERI = ccwfn.H.ERI
         L = ccwfn.H.L
         t1 = ccwfn.t1
         t2 = ccwfn.t2
+        o = self.o = ccwfn.o
+        v = self.v = ccwfn.v
+        self.no = ccwfn.no
+        self.nv = ccwfn.nv
 
         self.Hov = self.build_Hov(o, v, F, L, t1)
         self.Hvv = self.build_Hvv(o, v, F, L, t1, t2)
@@ -79,20 +80,7 @@ class cchbar(object):
         self.Hvvvo = self.build_Hvvvo(o, v, ERI, L, self.Hov, self.Hvvvv, t1, t2)
         self.Hovoo = self.build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
     
-        if isinstance(t1, torch.Tensor):
-            print("Hov norm = %20.15f" % torch.linalg.norm(self.Hov))
-            print("Hvv norm = %20.15f" % torch.linalg.norm(self.Hvv))
-            print("Hoo norm = %20.15f" % torch.linalg.norm(self.Hoo))
-            print("Hoooo norm = %20.15f" % torch.linalg.norm(self.Hoooo))
-            print("Hvvvv norm = %20.15f" % torch.linalg.norm(self.Hvvvv))
-        else:
-            print("Hov norm = %20.15f" % np.linalg.norm(self.Hov))
-            print("Hvv norm = %20.15f" % np.linalg.norm(self.Hvv))
-            print("Hoo norm = %20.15f" % np.linalg.norm(self.Hoo))
-            print("Hoooo norm = %20.15f" % np.linalg.norm(self.Hoooo))
-            print("Hvvvv norm = %20.15f" % np.linalg.norm(self.Hvvvv))
-
-        print("\nHBAR constructed in %.3f seconds.\n" % (time.time() - time_init))
+        print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
 
     """
     For GPU implementation:
