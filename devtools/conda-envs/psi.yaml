@@ -1,6 +1,5 @@
 name: p4dev
 channels:
-  - psi4/label/dev
   - conda-forge
 dependencies:
   - psi4

@@ -6,10 +6,11 @@ Test CCSD electric and magnetic dipole on H2 dimer.
 import psi4
 import pycc
 import pytest
+import numpy as np
 from ..data.molecules import *
 
 def test_dipole_h2_2_cc_pvdz():
-    """He cc-pVDZ"""
+    """H4 cc-pVDZ"""
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -41,9 +42,9 @@ def test_dipole_h2_2_cc_pvdz():
     y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, ecc).astype('complex128')
     t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
 
-    ref = [0, 0, 0.005371586416860086] # au
+    ref = np.array([0, 0, -0.0007395036977002]) # computed by removing SCF from original ref
+
     mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
-    opdm = rtcc.ccdensity.compute_onepdm(t1, t2, l1, l2, withref = True)
 
     assert (abs(ref[0] - mu_x) < 1E-10)
     assert (abs(ref[1] - mu_y) < 1E-10)

@@ -82,6 +82,25 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
     else:
         return t3
 
+def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
+    t3 = contract('ij,k->ijk', Woovv[:,:,a,b], t1[:,c])
+    t3 += contract('ik,j->ijk', Woovv[:,:,a,c], t1[:,b])
+    t3 += contract('jk,i->ijk', Woovv[:,:,b,c], t1[:,a])
+    Fov = F[o,v]
+    t3 += contract('ij,k->ijk', t2[:,:,a,b], Fov[:,c])
+    t3 += contract('ik,j->ijk', t2[:,:,a,c], Fov[:,b])
+    t3 += contract('jk,i->ijk', t2[:,:,b,c], Fov[:,a])
+
+    if WithDenom is True:
+        no = o.stop
+        Fo = np.diag(F)[o]
+        denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
+        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3
+
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn):
@@ -212,7 +231,6 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     l3 += contract('b,ca->abc', Fov[j], l2[k,i]) - contract('c,ba->abc', Fov[j], l2[k,i])
     l3 += contract('c,ba->abc', Fov[k], l2[j,i]) - contract('b,ca->abc', Fov[k], l2[j,i])
 
- 
     tmp_W = 2 * Wvovv - Wvovv.swapaxes(2,3)
     W = contract('eab,ce->abc',  tmp_W[:,j,:,:], l2[k,i])
     W += contract('eac,be->abc', tmp_W[:,k,:,:], l2[j,i])
@@ -220,8 +238,8 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     W += contract('eca,be->abc', tmp_W[:,i,:,:], l2[j,k])
     W += contract('ebc,ae->abc', tmp_W[:,k,:,:], l2[i,j])
     W += contract('ecb,ae->abc', tmp_W[:,j,:,:], l2[i,k])
-    
-    W -= contract('ebc,ea->abc', Wvovv[:,i,:,:], l2[j,k,:,:])    
+
+    W -= contract('ebc,ea->abc', Wvovv[:,i,:,:], l2[j,k,:,:])
     W -= contract('ecb,ea->abc', Wvovv[:,i,:,:], l2[k,j,:,:])
     W -= contract('eba,ec->abc', Wvovv[:,k,:,:], l2[j,i,:,:])
     W -= contract('eac,eb->abc', Wvovv[:,j,:,:], l2[i,k,:,:])
@@ -242,9 +260,9 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     W += contract('mc,mab->abc', Wooov[j,i,:,:], l2[k])
     W += contract('ma,mcb->abc', Wooov[j,k,:,:], l2[i])
     W += contract('mb,mac->abc', Wooov[k,i,:,:], l2[j])
-  
+
     l3 += W
-   
+
     if WithDenom is True:
         if isinstance(l2, torch.Tensor):
             Fv = torch.diag(F)[v]
@@ -277,7 +295,7 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     l3 += contract('j,ki->ijk', Fov[:,b], l2[:,:,c,a]) - contract('j,ki->ijk', Fov[:,c], l2[:,:,b,a])
     l3 += contract('k,ji->ijk', Fov[:,c], l2[:,:,b,a]) - contract('k,ji->ijk', Fov[:,b], l2[:,:,c,a])
 
- 
+
     tmp_W = 2 * Wvovv - Wvovv.swapaxes(2,3)
     W = contract('ej,kie->ijk',  tmp_W[:,:,a,b], l2[:,:,c,:])
     W += contract('ek,jie->ijk', tmp_W[:,:,a,c], l2[:,:,b,:])
@@ -285,8 +303,8 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     W += contract('ei,jke->ijk', tmp_W[:,:,c,a], l2[:,:,b,:])
     W += contract('ek,ije->ijk', tmp_W[:,:,b,c], l2[:,:,a,:])
     W += contract('ej,ike->ijk', tmp_W[:,:,c,b], l2[:,:,a,:])
-    
-    W -= contract('ei,jke->ijk', Wvovv[:,:,b,c], l2[:,:,:,a])    
+
+    W -= contract('ei,jke->ijk', Wvovv[:,:,b,c], l2[:,:,:,a])
     W -= contract('ei,kje->ijk', Wvovv[:,:,c,b], l2[:,:,:,a])
     W -= contract('ek,jie->ijk', Wvovv[:,:,b,a], l2[:,:,:,c])
     W -= contract('ej,ike->ijk', Wvovv[:,:,a,c], l2[:,:,:,b])
@@ -307,9 +325,9 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     W += contract('jim,km->ijk', Wooov[:,:,:,c], l2[:,:,a,b])
     W += contract('jkm,im->ijk', Wooov[:,:,:,a], l2[:,:,c,b])
     W += contract('kim,jm->ijk', Wooov[:,:,:,b], l2[:,:,a,c])
-  
+
     l3 += W
-   
+
     if WithDenom is True:
         no = o.stop
         if isinstance(l2, torch.Tensor):
@@ -355,9 +373,9 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
     W -= contract('mc,mba->abc', Wooov[i,k,:,:], l2[j])
     W -= contract('mb,mac->abc', Wooov[k,j,:,:], l2[i])
     W -= contract('mc,mab->abc', Wooov[j,k,:,:], l2[i])
-    
-    l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)    
-    
+
+    l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)
+
     if WithDenom is True:
         if isinstance(l2, torch.Tensor):
             Fv = torch.diag(F)[v]
@@ -405,7 +423,7 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
     W -= contract('jkm,im->ijk', Wooov[:,:,:,c], l2[:,:,a,b])
 
     l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)
-        
+
     if WithDenom is True:
         no = o.stop
         if isinstance(l2, torch.Tensor):
@@ -423,7 +441,7 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
 # Triples drivers that are useful for density matrix calculation
 # W_bc(ijka)
 def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
-    
+
     t3 = contract('aei,kje->ijka', Wvvvo[b], t2[:,:,c])
     t3 += contract('aei,jke->ijka', Wvvvo[c], t2[:,:,b])
     t3 += contract('aek,jie->ijka', Wvvvo[:,c], t2[:,:,b])
@@ -474,7 +492,7 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
     l3 += contract('j,kia->ijka', Fov[:,b], l2[:,:,c]) - contract('j,kia->ijka', Fov[:,c], l2[:,:,b])
     l3 += contract('k,jia->ijka', Fov[:,c], l2[:,:,b]) - contract('k,jia->ijka', Fov[:,b], l2[:,:,c])
 
- 
+
     tmp_W = 2 * Wvovv - Wvovv.swapaxes(2,3)
     W = contract('eja,kie->ijka',  tmp_W[:,:,:,b], l2[:,:,c,:])
     W += contract('eka,jie->ijka', tmp_W[:,:,:,c], l2[:,:,b,:])
@@ -482,8 +500,8 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
     W += contract('eia,jke->ijka', tmp_W[:,:,c], l2[:,:,b,:])
     W += contract('ek,ijae->ijka', tmp_W[:,:,b,c], l2)
     W += contract('ej,ikae->ijka', tmp_W[:,:,c,b], l2)
-    
-    W -= contract('ei,jkea->ijka', Wvovv[:,:,b,c], l2)    
+
+    W -= contract('ei,jkea->ijka', Wvovv[:,:,b,c], l2)
     W -= contract('ei,kjea->ijka', Wvovv[:,:,c,b], l2)
     W -= contract('eka,jie->ijka', Wvovv[:,:,b], l2[:,:,:,c])
     W -= contract('eja,ike->ijka', Wvovv[:,:,:,c], l2[:,:,:,b])
@@ -504,9 +522,9 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
     W += contract('jim,kma->ijka', Wooov[:,:,:,c], l2[:,:,:,b])
     W += contract('jkma,im->ijka', Wooov, l2[:,:,c,b])
     W += contract('kim,jma->ijka', Wooov[:,:,:,b], l2[:,:,:,c])
-  
+
     l3 += W
-   
+
     if WithDenom is True:
         no = o.stop
         if isinstance(l2, torch.Tensor):

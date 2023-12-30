@@ -458,6 +458,10 @@ class cclambda(object):
             else: 
                 r_l1 = 2.0 * Hov.copy()
 
+            # Add (T) contributions to L1
+            if self.ccwfn.model == 'CCSD(T)':
+                r_l1 = r_l1 + self.ccwfn.S1
+
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
             r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
             r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
@@ -483,6 +487,7 @@ class cclambda(object):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
+
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
             r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
             r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
@@ -497,6 +502,11 @@ class cclambda(object):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
+
+            # Add (T) contributions to L2
+            if self.ccwfn.model == 'CCSD(T)':
+                r_l2 = r_l2 + 0.5 * self.ccwfn.S2
+
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
             r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
             r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
