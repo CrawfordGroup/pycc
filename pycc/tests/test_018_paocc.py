@@ -37,7 +37,7 @@ def test_pao_H8():
     r_conv = 1e-12
     max_diis = 8
     
-    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2, filter=True)
     
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
     
@@ -68,7 +68,7 @@ def test_pao_h2o():
     r_conv = 1e-7
     max_diis = 8
     
-    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2, filter=True)
     
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
     
@@ -99,7 +99,7 @@ def test_pao_h2o_frzc():
     r_conv = 1e-7
     max_diis = 8
     
-    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2)
+    ccsd = pycc.ccwfn(rhf_wfn, local='PAO', local_cutoff=2e-2, filter=True)
     
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
     

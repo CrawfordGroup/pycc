@@ -112,6 +112,7 @@ class lccwfn(object):
         #ldiis = helper_ldiis(self.t1, self.t2, max_diis)
 
         elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
+
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
 
         for niter in range(1, maxiter+1):
@@ -125,11 +126,10 @@ class lccwfn(object):
             rms_t2 = 0
 
             for i in range(self.no):
+
                 ii = i*self.no + i
 
-                #need to change to reshape
-                for a in range(self.Local.dim[ii]):
-                    self.t1[i][a] += r1[i][a]/(self.H.F[i,i] - self.Local.eps[ii][a])
+                self.t1[i] -= r1[i]/(self.Local.eps[ii].reshape(-1,) - self.H.F[i,i])
 
                 rms_t1 += contract('Z,Z->',r1[i],r1[i])
 
@@ -141,7 +141,7 @@ class lccwfn(object):
 
                     rms_t2 += contract('ZY,ZY->',r2[ij],r2[ij])
 
-            rms = np.sqrt(rms_t2)
+            rms = np.sqrt(rms_t1 + rms_t2)
             elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
             ediff = elcc - elcc_last
             print("lCC Iter %3d: lCC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, elcc, ediff, rms))
@@ -155,7 +155,7 @@ class lccwfn(object):
                 self.elcc = elcc
                 #print(Timer.timers)
                 return elcc
-
+      
             #ldiis.add_error_vector(self.t1,self.t2)
             #if niter >= start_diis:
                 #self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
@@ -203,7 +203,7 @@ class lccwfn(object):
         o = self.o
         v = self.v
         QL = self.QL
-
+        
         if self.model == 'CCD':
             for ij in range(self.no*self.no):
                 i = ij // self.no
@@ -414,6 +414,7 @@ class lccwfn(object):
                 i = ij // self.no
                 j = ij % self.no
                 jj = j*self.no + j
+
                 for m in range(self.no):
                     im = i*self.no + m
 
@@ -601,7 +602,6 @@ class lccwfn(object):
                 for mn in range(self.no*self.no):
                     m = mn // self.no
                     n = mn % self.no
-                    imn = i*(self.no**2) + mn
                     iimn =ii*(self.no**2) + mn 
              
                     tmp4 = Sijmn[iimn] @ t2[mn]
@@ -737,7 +737,7 @@ class lccwfn(object):
                         r2 += 0.5 * contract('a,b->ab',tmp2_0, tmp13) * Wmnij[m,n,i,j]
 
                 nr2.append(r2) 
-
+    
         for i in range(self.no):
             for j in range(self.no):
                 ij = i*self.no + j
@@ -755,7 +755,7 @@ class lccwfn(object):
         ecc_ii = 0
         ecc_ij = 0
         ecc = 0
-
+        
         if self.model == 'CCD':
             for i in range(self.no):
                 for j in range(self.no):
