@@ -32,17 +32,33 @@ def test_eomccsd_h2o():
     r_conv = 1e-12
     cc = pycc.ccwfn(rhf_wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
-#    epsi4 = -0.227888246840310
-#    ecfour = -0.2278882468404231
-#    assert (abs(epsi4 - ecc) < 1e-11)
-
     hbar = pycc.cchbar(cc)
-
     eom = pycc.cceom(hbar)
 
     N = 3
     maxiter = 75
     e_conv = 1e-7
     r_conv = 1e-7
-    guess = 'HBAR_SS'
-    eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    guess = 'hbar_ss'
+    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    guess = 'cis'
+    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    guess = 'unit'
+    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    psi4.set_options({
+            'e_convergence': e_conv,
+            'r_convergence': r_conv,
+            'roots_per_irrep': [N]
+            })
+    psi4.energy('eom-ccsd')
+    for i in range(N):
+        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
+        psi_E = psi4.core.variable(var_str)
+        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
+        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
+        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
+
