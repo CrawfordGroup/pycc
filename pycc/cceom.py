@@ -8,6 +8,8 @@ if __name__ == "__main__":
 import time
 import numpy as np
 
+np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
+
 
 class cceom(object):
     """
@@ -27,7 +29,7 @@ class cceom(object):
 
         self.cchbar = cchbar
 
-    def solve_eom(self, nstates=1, e_conv=1e-5, r_conv=1e-5, maxiter=100, guess='HBARSS'):
+    def solve_eom(self, N=1, e_conv=1e-5, r_conv=1e-5, maxiter=100, guess='UNIT'):
         """
 
         """
@@ -42,17 +44,8 @@ class cceom(object):
         H = hbar.ccwfn.H
         contract = hbar.contract
 
-        M = nstates * 2 # size of guess space (varies)
+        M = N * 2 # size of guess space (varies)
         maxM = M * 10 # max size of subspace (fixed)
-
-        # Initialize guess vectors
-        valid_guesses = ['CIS', 'HBARSS']
-        if guess not in valid_guesses:
-            raise Exception("%s is not a valid choice of initial guess vectors." % (guess))
-        _, C1 = self.guess(M, o, v, hbar, contract, guess)
-        # Store guess vectors as rows of a matrix
-        C = np.hstack((np.reshape(C1, (M, no*nv)), np.zeros((M, no*no*nv*nv))))
-        print("Guess vectors obtained from %s." % (guess))
 
         # Build preconditioner (energy denominator)
         hbar_occ = np.diag(hbar.Hoo)
@@ -62,8 +55,17 @@ class cceom(object):
                 hbar_vir.reshape(-1,1) - hbar_vir)
         D = np.hstack((Dia.flatten(), Dijab.flatten()))
 
+        # Initialize guess vectors
+        valid_guesses = ['UNIT', 'CIS', 'HBAR_SS']
+        if guess not in valid_guesses:
+            raise Exception("%s is not a valid choice of initial guess vectors." % (guess))
+        _, C1 = self.guess(M, o, v, hbar, D, contract, guess)
+        # Store guess vectors as rows of a matrix
+        C = np.hstack((np.reshape(C1, (M, no*nv)), np.zeros((M, no*no*nv*nv))))
+        print("Guess vectors obtained from %s." % (guess))
+
         # Array for excitation energies
-        E = np.zeros((nstates))
+        E = np.zeros((N))
 
         maxiter = 3
         for niter in range(1,maxiter+1):
@@ -73,6 +75,8 @@ class cceom(object):
             Q, _ = np.linalg.qr(C.T)
             C = Q.T.copy()
             M = C.shape[0]
+
+            print("EOM Iter %3d: M = %3d" % (niter, M))
 
             # Extract guess vectors for sigma calculation
             C1 = np.reshape(C[:,:no*nv], (M,no,nv)).copy()
@@ -88,28 +92,34 @@ class cceom(object):
             # Build and diagonalize subspace Hamiltonian
             S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
             G = C @ S.T
-            l, a = np.linalg.eigh(G)
-            E = l[:nstates]
+#print(G)
+            l, a = np.linalg.eig(G)
+            print(l)
+            idx = l.argsort()[:N]
+            l = l[idx]
+            a = a[:,idx]
+            E = l[:N]
 
             # Build correction vectors
-            # r --> (M, no*nv + no*no*nv*nv)
-            # a --> (M, M)
+            # r --> (N, no*nv + no*no*nv*nv)
+            # a --> (M, N)
             # S --> (M, no*nv + no*no*nv*nv)
             # C --> (M, no*nv + no*no*nv*nv)
-            # l --> (M) 
-            r = a @ (S - np.diag(l) @ C)
+            # l --> (N) 
+            r = a.T @ (S - np.diag(l) @ C)
+            print(r[N:].T)
             delta = r/np.subtract.outer(l,D) # element-by-element division
 
             # Add new vectors to guess space and orthonormalize
-            C = np.concatenate((C, delta[:nstates]))
+            C = np.concatenate((C, delta[:N]))
             M = C.shape[0]
 
             # Print status and check convergence and print status
             dE = E - E_old
-            r_norm = np.linalg.norm(r[:nstates], axis=1)
-            print("EOM Iter %3d: M = %3d" % (niter, M))
+            print(r[:N])
+            r_norm = np.linalg.norm(r[:N], axis=1)
             print("             E/state                   dE                 norm")
-            for state in range(nstates):
+            for state in range(N):
                 print("%20.12f %20.12f %20.12f" % (E[state], dE[state], r_norm[state]))
 
 
@@ -117,29 +127,37 @@ class cceom(object):
 
 
 
-    def guess(self, M, o, v, hbar, contract, method):
+    def guess(self, M, o, v, hbar, D, contract, method):
         """
-        Compute CIS excited states as guess vectors
+        Compute guess vectors for EOM-CC Davidson algorithm
         """
         no = o.stop - o.start
         nv = v.stop - v.start
 
-        # Use CIS for initial guesses
-        if method == 'CIS':
+        # Use unit vectors corresponding to smallest H_ii - H_aa values
+        if method == 'UNIT':
+#idx = D[:no*nv].argsort()[::-1][:M]
+            idx = D[:no*nv].argsort()[:M]
+            c = np.eye(no*nv)[:,idx]
+#eps = np.sort(D[:no*nv])[::-1]
+            eps = np.sort(D[:no*nv])
+        # Use CIS eigenvectors
+        elif method == 'CIS':
             F = hbar.ccwfn.H.F
             L = hbar.ccwfn.H.L
             H = L[v,o,o,v].swapaxes(0,1).swapaxes(0,2).copy()
             H += contract('ab,ij->iajb', F[v,v], np.eye(no))
             H -= contract('ij,ab->iajb', F[o,o], np.eye(nv))
-        # Use singles-singles block of hbar for initial guesses (mimics Psi4)
+            eps, c = np.linalg.eigh(np.reshape(H, (no*nv,no*nv)))
+        # Use eigenvectors of singles-singles block of hbar (mimics Psi4)
         elif method == 'HBARSS':
             H = (2.0 * hbar.Hovvo.swapaxes(1,2).swapaxes(2,3) - hbar.Hovov.swapaxes(1,3)).copy()
             H += contract('ab,ij->iajb', hbar.Hvv, np.eye(no))
             H -= contract('ij,ab->iajb', hbar.Hoo, np.eye(nv))
-
-        eps, c = np.linalg.eigh(np.reshape(H, (no*nv,no*nv)))
-
-        print(eps)
+            eps, c = np.linalg.eig(np.reshape(H, (no*nv,no*nv)))
+            idx = eps.argsort()
+            eps = eps[idx]
+            c = c[:,idx]
 
         # Build list of guess vectors (C1 tensors)
         guesses = np.reshape(c.T[slice(0,M),:], (M, no, nv)).copy()

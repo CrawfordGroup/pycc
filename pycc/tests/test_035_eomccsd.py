@@ -9,6 +9,8 @@ import pytest
 from ..data.molecules import *
 import numpy as np
 
+np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
+
 # H2O/cc-pVDZ
 def test_eomccsd_h2o():
     # Psi4 Setup
@@ -38,4 +40,4 @@ def test_eomccsd_h2o():
 
     eom = pycc.cceom(hbar)
 
-    eom.solve_eom(nstates=3)
+    eom.solve_eom(N=3)
