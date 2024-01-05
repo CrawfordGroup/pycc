@@ -62,4 +62,3 @@ def test_eomccsd_h2o():
         assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
         assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
         assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
-
