@@ -16,7 +16,7 @@ def test_eomccsd_h2o():
     # Psi4 Setup
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'STO-3G',
+    psi4.set_options({'basis': 'cc-pVDZ',
                       'scf_type': 'pk',
                       'mp2_type': 'conv',
                       'freeze_core': 'false',
@@ -40,4 +40,9 @@ def test_eomccsd_h2o():
 
     eom = pycc.cceom(hbar)
 
-    eom.solve_eom(N=3)
+    N = 3
+    maxiter = 75
+    e_conv = 1e-7
+    r_conv = 1e-7
+    guess = 'HBAR_SS'
+    eom.solve_eom(N, e_conv, r_conv, maxiter, guess)

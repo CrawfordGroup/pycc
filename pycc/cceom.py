@@ -6,6 +6,7 @@ if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 import time
+import psi4
 import numpy as np
 
 np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
@@ -45,7 +46,7 @@ class cceom(object):
         contract = hbar.contract
 
         M = N * 2 # size of guess space (varies)
-        maxM = M * 10 # max size of subspace (fixed)
+        maxM = N * 30 # max size of subspace (fixed)
 
         # Build preconditioner (energy denominator)
         hbar_occ = np.diag(hbar.Hoo)
@@ -67,9 +68,8 @@ class cceom(object):
         # Array for excitation energies
         E = np.zeros((N))
 
-        maxiter = 3
         for niter in range(1,maxiter+1):
-            E_old = E.copy()
+            E_old = E
 
             # Orthonormalize current guess vectors
             Q, _ = np.linalg.qr(C.T)
@@ -92,7 +92,6 @@ class cceom(object):
             # Build and diagonalize subspace Hamiltonian
             S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
             G = C @ S.T
-            print(G)
             l, a = np.linalg.eig(G)
             idx = l.argsort()[:N]
             l = l[idx]
@@ -103,15 +102,11 @@ class cceom(object):
             # a --> (M, N)
             # S --> (M, no*nv + no*no*nv*nv)
             # C --> (M, no*nv + no*no*nv*nv)
-            # l --> (M) 
+            # l --> (N) 
             # r --> (N, no*nv + no*no*nv*nv)
             r = a.T @ S - np.diag(l) @ a.T @ C
             r_norm = np.linalg.norm(r, axis=1)
-            delta = r/np.subtract.outer(l[:N],D) # element-by-element division
-
-            # Add new vectors to guess space and orthonormalize
-            C = np.concatenate((C, delta[:N]))
-            M = C.shape[0]
+            delta = r/np.subtract.outer(l,D) # element-by-element division
 
             # Print status and check convergence and print status
             dE = E - E_old
@@ -119,8 +114,24 @@ class cceom(object):
             for state in range(N):
                 print("%20.12f %20.12f %20.12f" % (E[state], dE[state], r_norm[state]))
 
-        print("\nCCEOM converged in %.3f seconds." % (time.time() - time_init))
+            if (np.abs(np.linalg.norm(dE)) <= e_conv):
+                converged = True
+                break
 
+            if M >= maxM:
+                print("\nMaximum subspace dimension reached. Collapsing to N.")
+                C = a.T @ C
+                E = E_old
+            else:
+                # Add new vectors to guess space and orthonormalize
+                C = np.concatenate((C, delta[:N]))
+        if converged:
+            print("\nCCEOM converged in %.3f seconds." % (time.time() - time_init))
+            print("\nState     E_h           eV")
+            print("-----  ------------  ------------")
+            eVconv = psi4.qcel.constants.get("hartree energy in ev")
+            for state in range(N):
+                print("  %3d  %12.10f  %12.10f" %(state, E[state], E[state]*eVconv))
 
 
     def guess(self, M, o, v, hbar, D, contract, method):
@@ -132,11 +143,9 @@ class cceom(object):
 
         # Use unit vectors corresponding to smallest H_ii - H_aa values
         if method == 'UNIT':
-#idx = D[:no*nv].argsort()[::-1][:M]
-            idx = D[:no*nv].argsort()[:M]
+            idx = D[:no*nv].argsort()[::-1][:M]
             c = np.eye(no*nv)[:,idx]
-#eps = np.sort(D[:no*nv])[::-1]
-            eps = np.sort(D[:no*nv])
+            eps = np.sort(D[:no*nv])[::-1]
         # Use CIS eigenvectors
         elif method == 'CIS':
             F = hbar.ccwfn.H.F
@@ -146,7 +155,7 @@ class cceom(object):
             H -= contract('ij,ab->iajb', F[o,o], np.eye(nv))
             eps, c = np.linalg.eigh(np.reshape(H, (no*nv,no*nv)))
         # Use eigenvectors of singles-singles block of hbar (mimics Psi4)
-        elif method == 'HBARSS':
+        elif method == 'HBAR_SS':
             H = (2.0 * hbar.Hovvo.swapaxes(1,2).swapaxes(2,3) - hbar.Hovov.swapaxes(1,3)).copy()
             H += contract('ab,ij->iajb', hbar.Hvv, np.eye(no))
             H -= contract('ij,ab->iajb', hbar.Hoo, np.eye(nv))

@@ -36,7 +36,7 @@ setup(
         "numpy",
         "opt_einsum",
         "scipy",
-        "torch<=1.11"
+        "torch"
     ],
 
     # Which Python importable modules should be included when your package is installed
