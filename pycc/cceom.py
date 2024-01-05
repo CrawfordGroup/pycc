@@ -92,23 +92,22 @@ class cceom(object):
             # Build and diagonalize subspace Hamiltonian
             S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
             G = C @ S.T
-#print(G)
+            print(G)
             l, a = np.linalg.eig(G)
-            print(l)
             idx = l.argsort()[:N]
             l = l[idx]
             a = a[:,idx]
             E = l[:N]
 
             # Build correction vectors
-            # r --> (N, no*nv + no*no*nv*nv)
             # a --> (M, N)
             # S --> (M, no*nv + no*no*nv*nv)
             # C --> (M, no*nv + no*no*nv*nv)
-            # l --> (N) 
-            r = a.T @ (S - np.diag(l) @ C)
-            print(r[N:].T)
-            delta = r/np.subtract.outer(l,D) # element-by-element division
+            # l --> (M) 
+            # r --> (N, no*nv + no*no*nv*nv)
+            r = a.T @ S - np.diag(l) @ a.T @ C
+            r_norm = np.linalg.norm(r, axis=1)
+            delta = r/np.subtract.outer(l[:N],D) # element-by-element division
 
             # Add new vectors to guess space and orthonormalize
             C = np.concatenate((C, delta[:N]))
@@ -116,12 +115,9 @@ class cceom(object):
 
             # Print status and check convergence and print status
             dE = E - E_old
-            print(r[:N])
-            r_norm = np.linalg.norm(r[:N], axis=1)
             print("             E/state                   dE                 norm")
             for state in range(N):
                 print("%20.12f %20.12f %20.12f" % (E[state], dE[state], r_norm[state]))
-
 
         print("\nCCEOM converged in %.3f seconds." % (time.time() - time_init))
 
