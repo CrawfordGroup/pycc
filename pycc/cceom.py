@@ -87,7 +87,11 @@ class cceom(object):
         contract = hbar.contract
         D = self.D
 
+        s1_len = no*nv
+        s2_len = no*no*nv*nv
+
         M = N * 2 # initial size of guess space
+        sigma_done = 0 # number of sigma vectors already computed
         maxM = N * 10 # max size of subspace
 
         # Initialize guess vectors
@@ -97,8 +101,12 @@ class cceom(object):
             raise Exception("%s is not a valid choice of initial guess vectors." % (guess))
         _, C1 = self.guess(M, o, v, guess)
         # Store guess vectors as rows of a matrix
-        C = np.hstack((np.reshape(C1, (M, no*nv)), np.zeros((M, no*no*nv*nv))))
+        C = np.hstack((np.reshape(C1, (M, s1_len)), np.zeros((M, s2_len))))
         print("Guess vectors obtained from %s." % (guess))
+
+        # Initialize sigma vector storage
+        sigma_len = s1_len + s2_len
+        S = np.empty((0,sigma_len), float)      
 
         # Array for excitation energies
         E = np.zeros((N))
@@ -114,18 +122,20 @@ class cceom(object):
             print("EOM Iter %3d: M = %3d" % (niter, M))
 
             # Extract guess vectors for sigma calculation
-            C1 = np.reshape(C[:,:no*nv], (M,no,nv)).copy()
-            C2 = np.reshape(C[:,no*nv:], (M,no,no,nv,nv)).copy()
+            vec_slice = slice(sigma_done,M)
+            nvecs = M - sigma_done
+            C1 = np.reshape(C[vec_slice,:no*nv], (nvecs,no,nv)).copy()
+            C2 = np.reshape(C[vec_slice,no*nv:], (nvecs,no,no,nv,nv)).copy()
 
             # Compute sigma vectors
-            s1 = np.zeros_like(C1)
-            s2 = np.zeros_like(C2)
-            for state in range(M):
-                s1[state] = self.s1(hbar, C1[state], C2[state])
-                s2[state] = self.s2(hbar, C1[state], C2[state])
+            for state in range(nvecs):
+                s1 = self.s1(hbar, C1[state], C2[state])
+                s2 = self.s2(hbar, C1[state], C2[state])
+                S = np.vstack((S, np.hstack((np.reshape(s1, (no*nv)), np.reshape(s2, (no*no*nv*nv))))))
+            sigma_done = M
 
             # Build and diagonalize subspace Hamiltonian
-            S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
+            #S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
             G = C @ S.T
             E, a = np.linalg.eig(G)
 
@@ -153,6 +163,8 @@ class cceom(object):
                 print("\nMaximum allowed subspace dimension (%d) reached. Collapsing to N roots." % (maxM))
                 C = a.T @ C
                 E = E_old
+                sigma_done = 0
+                S = np.empty((0,sigma_len), float)      
             else:
                 # Add new vectors to guess space
                 C = np.concatenate((C, delta[:N]))
