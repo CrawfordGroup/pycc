@@ -8,8 +8,9 @@ import pycc
 import pytest
 from ..data.molecules import *
 import numpy as np
+import sys
 
-np.set_printoptions(precision=10, linewidth=200, threshold=200, suppress=True)
+np.set_printoptions(precision=10, linewidth=300, threshold=sys.maxsize, suppress=True)
 
 # H2O/cc-pVDZ
 def test_eomccsd_h2o():
@@ -43,22 +44,22 @@ def test_eomccsd_h2o():
     guess = 'hbar_ss'
     eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
 
-#    guess = 'cis'
-#    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
-#
-#    guess = 'unit'
-#    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
-#
-#    psi4.set_options({
-#            'e_convergence': e_conv,
-#            'r_convergence': r_conv,
-#            'roots_per_irrep': [N]
-#            })
-#    psi4.energy('eom-ccsd')
-#    for i in range(N):
-#        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
-#        psi_E = psi4.core.variable(var_str)
-#        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
-#        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
-#        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
+    guess = 'cis'
+    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    guess = 'unit'
+    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+
+    psi4.set_options({
+            'e_convergence': e_conv,
+            'r_convergence': r_conv,
+            'roots_per_irrep': [N]
+            })
+    psi4.energy('eom-ccsd')
+    for i in range(N):
+        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
+        psi_E = psi4.core.variable(var_str)
+        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
+        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
+        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
 

@@ -43,7 +43,6 @@ class cceom(object):
         -------
         None
         """
-
         self.hbar = cchbar
 
         # Build preconditioner (energy denominator)
@@ -111,31 +110,35 @@ class cceom(object):
         # Array for excitation energies
         E = np.zeros((N))
 
+        converged = False
         for niter in range(1,maxiter+1):
             E_old = E
 
             # Orthonormalize current guess vectors
             Q, _ = np.linalg.qr(C.T)
+            phase = np.diag((C @ Q)[:M])
+            phase = np.append(phase, np.ones(Q.shape[1]-M))
+            Q = phase * Q
             C = Q.T.copy()
             M = C.shape[0]
 
             print("EOM Iter %3d: M = %3d" % (niter, M))
 
             # Extract guess vectors for sigma calculation
-            vec_slice = slice(sigma_done,M)
             nvecs = M - sigma_done
-            C1 = np.reshape(C[vec_slice,:no*nv], (nvecs,no,nv)).copy()
-            C2 = np.reshape(C[vec_slice,no*nv:], (nvecs,no,no,nv,nv)).copy()
+            C1 = np.reshape(C[sigma_done:M,:no*nv], (nvecs,no,nv))
+            C2 = np.reshape(C[sigma_done:M,no*nv:], (nvecs,no,no,nv,nv))
 
             # Compute sigma vectors
+            s1 = np.zeros_like(C1)
+            s2 = np.zeros_like(C2)
             for state in range(nvecs):
-                s1 = self.s1(hbar, C1[state], C2[state])
-                s2 = self.s2(hbar, C1[state], C2[state])
-                S = np.vstack((S, np.hstack((np.reshape(s1, (no*nv)), np.reshape(s2, (no*no*nv*nv))))))
+                s1[state] = self.s1(hbar, C1[state], C2[state])
+                s2[state] = self.s2(hbar, C1[state], C2[state])
             sigma_done = M
 
             # Build and diagonalize subspace Hamiltonian
-            #S = np.hstack((np.reshape(s1, (M, no*nv)), np.reshape(s2, (M, no*no*nv*nv))))
+            S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, no*nv)), np.reshape(s2, (nvecs, no*no*nv*nv))))))
             G = C @ S.T
             E, a = np.linalg.eig(G)
 
@@ -162,6 +165,7 @@ class cceom(object):
                 # Collapse to N vectors if subspace is too large
                 print("\nMaximum allowed subspace dimension (%d) reached. Collapsing to N roots." % (maxM))
                 C = a.T @ C
+                M = N
                 E = E_old
                 sigma_done = 0
                 S = np.empty((0,sigma_len), float)      
@@ -178,6 +182,7 @@ class cceom(object):
                 print("  %3d  %12.10f  %12.10f" %(state, E[state], E[state]*eVconv))
 
             return E, C
+
 
     def guess(self, M, o, v, method):
         """
@@ -197,7 +202,7 @@ class cceom(object):
         eps : NumPy array
             eigenvalues/energies associated with guess vectors
         guesses : NumPy array
-            guess vectors (
+            guess vectors (as rows of matrix)
         """
         no = o.stop - o.start
         nv = v.stop - v.start
@@ -262,7 +267,7 @@ class cceom(object):
         s1 -= contract('mnie,mnae->ia', hbar.Hooov, C2) * 2.0
         s1 += contract('nmie,mnae->ia', hbar.Hooov, C2)
 
-        return s1
+        return s1.copy()
 
 
     def s2(self, hbar, C1, C2):
@@ -280,7 +285,6 @@ class cceom(object):
         s2 : NumPy array
             the doubles components of sigma
         """
-
         contract = hbar.contract
         L = hbar.ccwfn.H.L
         t2 = hbar.ccwfn.t2
@@ -308,4 +312,4 @@ class cceom(object):
         s2 += contract('miea,mbej->ijab', C2, hbar.Hovvo) * 2.0
         s2 -= contract('miea,mbje->ijab', C2, hbar.Hovov)
 
-        return s2 + s2.swapaxes(0,1).swapaxes(2,3)
+        return (s2 + s2.swapaxes(0,1).swapaxes(2,3)).copy()
