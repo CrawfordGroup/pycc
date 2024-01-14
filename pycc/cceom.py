@@ -98,7 +98,7 @@ class cceom(object):
         guess = guess.upper()
         if guess not in valid_guesses:
             raise Exception("%s is not a valid choice of initial guess vectors." % (guess))
-        _, C1 = self.guess(M, o, v, guess)
+        _, C1 = self.guess(M, guess)
         # Store guess vectors as rows of a matrix
         C = np.hstack((np.reshape(C1, (M, s1_len)), np.zeros((M, s2_len))))
         print("Guess vectors obtained from %s." % (guess))
@@ -126,8 +126,8 @@ class cceom(object):
 
             # Extract guess vectors for sigma calculation
             nvecs = M - sigma_done
-            C1 = np.reshape(C[sigma_done:M,:no*nv], (nvecs,no,nv))
-            C2 = np.reshape(C[sigma_done:M,no*nv:], (nvecs,no,no,nv,nv))
+            C1 = np.reshape(C[sigma_done:M,:s1_len], (nvecs,no,nv))
+            C2 = np.reshape(C[sigma_done:M,s1_len:], (nvecs,no,no,nv,nv))
 
             # Compute sigma vectors
             s1 = np.zeros_like(C1)
@@ -138,7 +138,7 @@ class cceom(object):
             sigma_done = M
 
             # Build and diagonalize subspace Hamiltonian
-            S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, no*nv)), np.reshape(s2, (nvecs, no*no*nv*nv))))))
+            S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, s1_len)), np.reshape(s2, (nvecs, s2_len))))))
             G = C @ S.T
             E, a = np.linalg.eig(G)
 
@@ -184,16 +184,14 @@ class cceom(object):
             return E, C
 
 
-    def guess(self, M, o, v, method):
+    def guess(self, M, method):
         """
-        Compute guess vectors for EOM-CC Davidson algorithm
+        Compute single-excitation guess vectors for EOM-CC Davidson algorithm
 
         Parameters
         ----------
         M : int
             number of guesses to generate
-        o, v : NumPy slices
-            slices for occupied and virtual spaces, respectively
         method : str
             choice of method to generate guesses
 
@@ -204,14 +202,16 @@ class cceom(object):
         guesses : NumPy array
             guess vectors (as rows of matrix)
         """
-        no = o.stop - o.start
-        nv = v.stop - v.start
 
         hbar = self.hbar
+        o = hbar.o
+        v = hbar.v
+        no = hbar.no
+        nv = hbar.nv
         contract = hbar.contract
         D = self.D
 
-        # Use unit vectors corresponding to smallest H_ii - H_aa values
+        # Use unit vectors corresponding to smallest (not most negative) H_ii - H_aa values
         if method == 'UNIT':
             idx = D[:no*nv].argsort()[::-1][:M]
             c = np.eye(no*nv)[:,idx]
@@ -288,8 +288,8 @@ class cceom(object):
         contract = hbar.contract
         L = hbar.ccwfn.H.L
         t2 = hbar.ccwfn.t2
-        o = hbar.ccwfn.o
-        v = hbar.ccwfn.v
+        o = hbar.o
+        v = hbar.v
 
         Zvv = contract('amef,mf->ae', hbar.Hvovv, C1) * 2.0
         Zvv -= contract('amfe,mf->ae', hbar.Hvovv, C1)
