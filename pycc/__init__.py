@@ -13,8 +13,9 @@ from .ccdensity import ccdensity
 from .ccresponse import ccresponse
 from .ccresponse import pertbar
 from pycc.rt.rtcc import rtcc
+from .cceom import cceom
 
-__all__ = ['ccwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc']
+__all__ = ['ccwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
 
 # Handle versioneer
 from ._version import get_versions
