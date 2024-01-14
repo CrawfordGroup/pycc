@@ -10,15 +10,15 @@ A Python-based coupled cluster implementation.  Current capabilities include:
   - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
   - Triples-drivers for various approximate triples methods
   - RHF-CC2 and CCSD and densities
-  - Real-time (RT) CC2 and CCSD with a selection of integrators
+  - EOM-CCSD
+  - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
   - PAO-, PNO-, and PNO++-CCSD energies RT-CC
 
 Future plans:
-  - RT-CC3
   - Linear and quadratic response functions
-  - EOM-CC
+  - CC2 and CC3 excited states
   - Analytic gradients
 
 Notes on PNO-CC: 
@@ -33,9 +33,13 @@ This package requires the following:
   - [scipy](https://www.scipy.org/)
   - [pytorch](https://pytorch.org/)
 
+### Authors
+
+T. Daniel Crawford, Benjamin G. Peyton, Zhe Wang, Jose Madriaga
+
 ### Copyright
 
-Copyright (c) 2023, T. Daniel Crawford
+Copyright (c) 2024, T. Daniel Crawford
 
 
 #### Acknowledgements
