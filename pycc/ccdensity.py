@@ -8,7 +8,7 @@ if __name__ == "__main__":
 import time
 import numpy as np
 import torch
-from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc 
+from cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc 
 
 class ccdensity(object):
     """

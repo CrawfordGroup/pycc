@@ -9,9 +9,9 @@ if __name__ == "__main__":
 import numpy as np
 import time
 from opt_einsum import contract
-from .utils import helper_diis
+from utils import helper_diis
 import torch
-from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
+from cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
 
 
 class cclambda(object):
