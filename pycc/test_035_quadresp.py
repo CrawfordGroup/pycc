@@ -5,11 +5,12 @@ Test CCSD linear response functions.
 # Import package, test suite, and other packages as needed
 import psi4
 
-from ccwfn import ccwfn
-from cchbar import cchbar
-from cclambda import cclambda
-from ccdensity import ccdensity
-from ccresponse import ccresponse
+import pycc
+#from ccwfn import ccwfn
+#from cchbar import cchbar
+#from cclambda import cclambda
+#from ccdensity import ccdensity
+#from ccresponse import ccresponse
 
 geom = """
 O
@@ -42,14 +43,14 @@ rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 e_conv = 1e-12
 r_conv = 1e-12
 
-cc = ccwfn(rhf_wfn)
+cc = pycc.ccwfn(rhf_wfn)
 ecc = cc.solve_cc(e_conv, r_conv)
-hbar = cchbar(cc)
-cclambda = cclambda(cc, hbar)
+hbar = pycc.cchbar(cc)
+cclambda = pycc.cclambda(cc, hbar)
 lecc = cclambda.solve_lambda(e_conv, r_conv)
-density = ccdensity(cc, cclambda)
+density = pycc.ccdensity(cc, cclambda)
 
-resp = ccresponse(density)
+resp = pycc.ccresponse(density)
 
 omega1 = 0.0656
 omega2 = 0.0656
