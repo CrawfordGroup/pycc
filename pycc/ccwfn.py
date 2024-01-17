@@ -10,11 +10,11 @@ import psi4
 import time
 import numpy as np
 import torch
-from utils import helper_diis, cc_contract
-from hamiltonian import Hamiltonian
-from local import Local
-from cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc
-from lccwfn import lccwfn
+from .utils import helper_diis, cc_contract
+from .hamiltonian import Hamiltonian
+from .local import Local
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc
+from .lccwfn import lccwfn
 
 class ccwfn(object):
     """

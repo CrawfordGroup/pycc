@@ -7,7 +7,7 @@ if __name__ == "__main__":
 
 import numpy as np
 import time
-from utils import helper_diis
+from .utils import helper_diis
 
 class ccresponse(object):
     """
@@ -1756,12 +1756,21 @@ class ccresponse(object):
             r1 = self.r_X1(pertbar, omega)
             r2 = self.r_X2(pertbar, omega)
 
-            self.X1 += r1/(Dia + omega)
-            self.X2 += r2/(Dijab + omega)
+            if self.ccwfn.local is not None:
+                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
+                self.X1 += inc1
+                self.X2 += inc2
 
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
-            rms = np.sqrt(rms)
+                rms = contract('ia,ia->', np.conj(inc1/(Dia+omega)), inc1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(inc2/(Dijab+omega)), inc2/(Dijab+omega))
+                rms = np.sqrt(rms)
+            else:
+                self.X1 += r1/(Dia + omega)
+                self.X2 += r2/(Dijab + omega)
+
+                rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+                rms = np.sqrt(rms)
 
             pseudo = self.pseudoresponse(pertbar, self.X1, self.X2)
             pseudodiff = np.abs(pseudo - pseudo_last)
@@ -1820,14 +1829,22 @@ class ccresponse(object):
             r1 = self.r_Y1(pertbar, omega)
             r2 = self.r_Y2(pertbar, omega)
             
-            self.Y1 += r1/(Dia + omega)
-            self.Y2 += r2/(Dijab + omega)
-            
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            #print("rms for r1/energy density", rms)
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
-            rms = np.sqrt(rms)
-            
+            if self.ccwfn.local is not None:
+                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
+                self.Y1 += inc1
+                self.Y2 += inc2
+
+                rms = contract('ia,ia->', np.conj(inc1/(Dia+omega)), inc1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(inc2/(Dijab+omega)), inc2/(Dijab+omega))
+                rms = np.sqrt(rms)
+            else:
+                self.Y1 += r1/(Dia + omega)
+                self.Y2 += r2/(Dijab + omega)
+
+                rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+                rms = np.sqrt(rms)
+
             # need to undertsand this 
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
