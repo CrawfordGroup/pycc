@@ -53,7 +53,7 @@ jobs:
       run: |
         conda info
         conda list --show-channel-urls
-        conda install psi4 python=${{ matrix.python-version }} -c psi4/label/dev
+        conda install psi4 python=${{ matrix.python-version }} -c conda-forge
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
