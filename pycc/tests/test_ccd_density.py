@@ -40,7 +40,7 @@ lccsd = cclambda.solve_lambda(e_conv, r_conv)
 epsi4 = -0.070616830152761
 lpsi4 = -0.068826452648939
 ccdensity = pycc.ccdensity(ccsd, cclambda, True)
-# ecc_density = ccdensity.compute_energy()
+#ecc_density = ccdensity.compute_energy()
 #assert (abs(epsi4 - eccsd) < 1e-11)
 #assert (abs(lpsi4 - lccsd) < 1e-11)
 #assert (abs(epsi4 - ecc_density) < 1e-11)

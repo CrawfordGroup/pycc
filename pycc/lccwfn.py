@@ -631,7 +631,7 @@ class lccwfn(object):
         self.r1_t += r1_end - r1_start	
         return r1_ii
 
-    def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijnn, Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
+    def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijnn, Sijmn, t1, t2, Fae,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
         r2_start = process_time()
         v = self.v
         QL = self.QL
