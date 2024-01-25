@@ -40,4 +40,4 @@ elec_muz_scf = dpz_scf[2] - mu_n[2]
 elec_muz_tot = dpz_tot[2] - mu_n[2]
 elec_muz_cc = elec_muz_tot - elec_muz_scf
 print('electric contribution only for CC', elec_muz_tot - elec_muz_scf) 
-print(elec_muz_cc  + elec_muz_scf + mu_n[2])
+print(elec_muz_cc + elec_muz_scf + mu_n[2])

@@ -28,7 +28,7 @@ symmetry c1
 # Psi4 Setup
 psi4.set_memory('2 GB')
 psi4.core.set_output_file('output.dat', False)
-psi4.set_options({'basis': '3-21G',
+psi4.set_options({'basis': 'cc-pvdz',
                   'scf_type': 'pk',
                   'e_convergence': 1e-12,
                   'd_convergence': 1e-12,
@@ -82,17 +82,16 @@ dim = ccsd_local.Local.dim
 lmu_oo = mu[2][o,o]
 lmu_vv = []
 lmu_ov = []
-#lmu_vo = []
+lmu_vo = []
 
-# no need to convert lmoo to PNO since not possible for occupied occupied space
+# no need to convert lmoo to PNO since not possible for occupied-occupied space
 for i in range(no):
+    ii = i * no + i
+    lmu_ov.append(mu[2][i,v] @ (lQ[ii] @ lL[ii]))
+    lmu_vo.append((lQ[ii] @ lL[ii]).T @ mu[2][v,i])
     for j in range(no):
         ij = i * no + j
-        #lmu_ov = np.zeros(no, dim[ij])
-        lmu_ov.append(mu[2][o,v] @ (lQ[ij] @ lL[ij]))
-
-        #lmu_vv = np.zeros((dim[ij], dim[ij]))
-        lmu_vv.append( (lQ[ij] @ lL[ij]).T @ mu[2][v,v] @ (lQ[ij] @ lL[ij]))
+        lmu_vv.append((lQ[ij] @ lL[ij]).T @ mu[2][v, v] @ (lQ[ij] @ lL[ij]))
 
 # similar format to simulation code block 
 # simulation code 
@@ -100,15 +99,19 @@ for i in range(no):
 mu_z_oo = 0 
 mu_z_ov = 0 
 mu_z_vv = 0
+mu_z_vo = 0
 for i in range(no):
     ii = i*no + i
-    mu_z_ov += lDov[ii][i] * lmu_ov[ii][i]
+    mu_z_ov += contract('a,a->', lDov[i], lmu_ov[i])
+    mu_z_vo += contract('a,a->', l1[i], lmu_vo[i])
     for j in range(no):
-        ij =  i *no + j
-
+        ij = i * no + j
         mu_z_vv += contract('ab, ab->', lDvv[ij], lmu_vv[ij]) #lDvv[no + a,no+ b] * lmu_vv[no + a,no + b] 
-        mu_z_oo += lDoo[i,j] * lmu_oo[i,j] 
-
+        mu_z_oo += lDoo[i,j] * lmu_oo[i,j]
+print("ov", mu_z_ov)
+print("vo", mu_z_vo)
+print("vv", mu_z_vv)
+print("oo", mu_z_oo)
 #for i in range(no):
 #    for j in range(no):
 #        #print("i,j", i,j)
@@ -129,4 +132,4 @@ for i in range(no):
 #        mu_z_vv += lDvv[no + a,no+ b] * lmu_vv[no + a,no + b]
 #
 #print("added ab", mu_z_vv)
-print("total", mu_z_oo + mu_z_ov  + mu_z_vv ) #+ dpz_scf)
+print("total", mu_z_oo + mu_z_ov + mu_z_vv + mu_z_vo) #+ dpz_scf)

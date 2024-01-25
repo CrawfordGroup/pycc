@@ -339,12 +339,6 @@ class ccdensity(object):
             self.vv_energy = contract('ab,ab->', self.ccwfn.H.F[v, v], Dvv)
             print("sim vv energy", self.vv_energy)
             # collect variables needed to transform Dvv to Dvv^ij
-            if self.ccwfn.filter is True:
-                Q = self.ccwfn.Local.Q
-                L = self.ccwfn.Local.L
-                # for ij in range(self.no**2):
-                #     print("Dvv_ij", ij, (Q[ij] @ L[ij]).T @ Dvv @ (Q[ij] @ L[ij]))
-                
         else:
             Dvv = contract('mb,ma->ab', t1, l1)
             Dvv += contract('mnbe,mnae->ab', t2, l2)
@@ -423,11 +417,6 @@ class ccdensity(object):
             tmp = contract('mnef,mnaf->ea', l2, t2)
             Dov -= contract('ea,ie->ia', tmp, t1)
             self.ov_energy = contract('ia, ia -> ', self.ccwfn.H.F[o,v], Dov)
-            for i in range(0, self.ccwfn.no):
-                # for j in range(self.ccwfn.no):
-                ij = i*self.ccwfn.no + i
-                QL = self.ccwfn.Local.Q[ij] @ self.ccwfn.Local.L[ij]
-                print("Dov", i, ij, Dov[i] @ QL)
             if self.ccwfn.model == 'CCSD(T)':
                 Dov += self.ccwfn.Dov
 
@@ -441,66 +430,53 @@ class ccdensity(object):
         if self.ccwfn.model == 'CCD':
             pass
         else:
-            contract = self.contract
             ov_energy = 0.0
+            contract = self.contract
+            QL = self.ccwfn.Local.QL
             for i in range(self.ccwfn.no):
-                # temp = t1
-             # for j in range(self.ccwfn.no):
-             #    ij = i * self.no + j
-                #i = ij // self.ccwfn.no
-                #j = ij % self.ccwfn.no
-                ii = i * self.no + i
-                Q = self.ccwfn.Local.Q
-                L = self.ccwfn.Local.L
-                Q_ii = Q[ii] @ L[ii]
-                QL = Q[ii] @ L[ii]
-                lDov_1 = 2 * t1[i]
-                # lDov_1 += np.zeros((self.ccwfn.no, self.Local.dim[ij]))
-                for m in range(self.no):
+                ii = i * self.ccwfn.no + i
+
+                lDov_1 = 2 * t1[i].copy()
+
+                for m in range(self.ccwfn.no):
                     im = i * self.ccwfn.no + m
                     mi = m * self.ccwfn.no + i
                     mm = m * self.ccwfn.no + m
-                    Q = self.ccwfn.Local.Q
-                    L = self.ccwfn.Local.L
-                    Q_mm = Q[mm] @ L[mm]
-                    Q_mi = Q[mi] @ L[mi]
-                    Q_ij = Q[ii] @ L[ii]
-                    Q_im = Q[im] @ L[im]
-                    S_ijim = Q_ij.T @ Q_im
+                    S_iiim = QL[ii].T @ QL[im]
+                    S_immm = QL[im].T @ QL[mm]
+                    S_mimm = QL[mi].T @ QL[mm]
+                    S_iimi = QL[ii].T @ QL[mi]
+                    S_iimm = QL[ii].T @ QL[mm]
 
-                    S_ijmm = Q_ij.T @ Q_mm
-                    S_immm = Q_im.T @ Q_mm
-                    temp = S_ijim @ t2[im] @ S_immm
-                    lDov_1 += 2 * contract('e, ae -> a', l1[m], temp)
+                    tmp = S_iiim @ t2[im] @ S_immm
+                    lDov_1 += 2 * contract('e,ae->a', l1[m], tmp)
 
-                    S_ijmi = Q_ij.T @ Q_mi
-                    S_mimm = Q_mi.T @ Q_mm
-                    S_mmii = Q_mm.T @ Q_ii
-                    temp = S_ijmi @ t2[mi] @ S_mimm
-                    temp += contract('a,e->ae', (S_ijmm @ t1[m]), (t1[i] @ S_mmii.T))
-                    #temp += (S_ijmm @ t1[m]).T @ (t1[i] @ S_mmii.T)
-                    #temp -= S_ijmi @ (t1[m] @ t1[m])
-                    lDov_1 -= contract('e, ae -> a', l1[m], temp)
-                    for n in range(self.no):
+                    tmp = S_iimi @ t2[mi] @ S_mimm
+                    lDov_1 -= contract('e, ae-> a', l1[m], tmp)
+
+                    lDov_1 -= contract('e,a,e->a', l1[m] @ S_iimm.T, t1[m] @ S_iimm.T, t1[i])
+
+                    Xmi = np.zeros((self.ccwfn.no, self.ccwfn.no))
+                    Xea = np.zeros((self.Local.dim[ii], self.Local.dim[ii]))
+                    for n in range(self.ccwfn.no):
+                        _in = i * self.ccwfn.no + n
                         mn = m * self.ccwfn.no + n
-                        i_n = i * self.ccwfn.no + n
-                        Q_in = Q[i_n] @ L[i_n]
-                        #Q_ij = Q[ij] @ L[ij]
-                        Q_mn = Q[mn] @ L[mn]
-                        #S_ijin = Q_ij.T @ Q_in
 
+                        S_mnin = QL[mn].T @ QL[_in]
+                        S_iimn = QL[ii].T @ QL[mn]
+                        tmp = S_mnin @ t2[_in] @ S_mnin.T
+                        Xmi[m, i] += contract('ef,ef->', l2[mn], tmp)
 
-                        S_mnin = Q_mn.T @ Q_in
-                        temp = S_mnin @ t2[i_n] @ S_mnin.T
-                        temp = contract('ef, ef ->', l2[mn], temp)
-                        lDov_1 -= temp * (t1[m] @ S_ijmm.T)
+                        tmp = S_iimn @ l2[mn]
+                        tmp1 = S_iimn @ t2[mn]
+                        Xea += contract('ef,af->ea', tmp, tmp1)
 
-                        S_iimn = Q_ii.T @ Q_mn
-                        S_ijmn = Q_ij.T @ Q_mn
-                        temp = contract('ef, af -> ea', S_iimn @ l2[mn], S_ijmn @ t2[mn])
-                        lDov_1 -= contract('ea, e -> a', temp, t1[i])
+                    tmp = S_iimm @ t1[m]
+                    lDov_1 -= Xmi[m, i] * tmp
+
+                    lDov_1 -= contract('ea,e->a', Xea, t1[i])
                 lDov.append(lDov_1)
-                ov_energy += contract('a, a -> ', self.Local.Fov[ii][i], lDov[i])
+        ov_energy += contract('a, a -> ', self.Local.Fov[ii][i], lDov[i])
         return lDov, ov_energy
 
 

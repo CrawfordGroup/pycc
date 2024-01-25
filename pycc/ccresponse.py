@@ -1,13 +1,15 @@
 """
 ccresponse.py: CC Response Functions
 """
+from opt_einsum import contract
 
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 import numpy as np
 import time
-from utils import helper_diis
+from .utils import helper_diis
+from .cclambda import cclambda
 
 class ccresponse(object):
     """
@@ -44,6 +46,9 @@ class ccresponse(object):
         self.H = self.ccwfn.H
         self.hbar = self.cclambda.hbar
         self.contract = self.ccwfn.contract
+        # self.l1 = self.cclambda.l1
+        # self.l2 = self.cclambda.l2
+
 
         # Cartesian indices
         self.cart = ["X", "Y", "Z"]
@@ -284,6 +289,8 @@ class ccresponse(object):
                 pertkey = B + "_" + self.cart[axis]
                 X_key = pertkey + "_" + f"{omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
+                #X_2[pertkey] = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                check.append(polar)
                 X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check.append(polar)
                 if (omega != 0.0):
@@ -291,6 +298,70 @@ class ccresponse(object):
                     print("Solving right-hand perturbed wave function for %s:" % (X_key))
                     X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check.append(polar)
+
+
+    def linresp_asym(self, pertkey_a, pertkey_b, X1_B, X2_B, Y1_B, Y2_B):
+
+        # Defining the l1 and l2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+
+        # Grab X and Y amplitudes corresponding to perturbation B, omega1
+        # X1_B = ccpert_X_B[0]
+        # X2_B = ccpert_X_B[1]
+        # Y1_B = ccpert_Y_B[0]
+        # Y2_B = ccpert_Y_B[1]
+
+        # Please refer to eqn 78 of [Crawford:xxxx].
+        # Writing H(1)(omega) = B, T(1)(omega) = X, L(1)(omega) = y
+        # <<A;B>> = <0|Y(B) * A_bar|0> + <0| (1 + L(0))[A_bar, X(B)}|0>
+        #                 polar1                polar2
+        polar1 = 0
+        polar2 = 0
+        # <0|Y1(B) * A_bar|0>
+        pertbar_A = self.pertbar[pertkey_a]
+        pertbar_B = self.pertbar[pertkey_b]
+        Avvoo = pertbar_A.Avvoo.swapaxes(0,2).swapaxes(1,3)
+        polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
+        # <0|Y2(B) * A_bar|0>
+        polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
+        polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
+        # <0|[A_bar, X(B)]|0>
+        polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
+        # <0|L1(0) [A_bar, X2(B)]|0>
+        tmp = contract("ia, ic -> ac", l1, X1_B)
+        polar2 += contract("ac, ac -> ", tmp, pertbar_A.Avv)
+        tmp = contract("ia, ka -> ik", l1, X1_B)
+        polar2 -= contract("ik, ki -> ", tmp, pertbar_A.Aoo)
+        # <0|L1(0)[a_bar, X2(B)]|0>
+        tmp = contract("ia, jb -> ijab", l1, pertbar_A.Aov)
+        polar2 += 2.0 * contract("ijab, ijab -> ", tmp, X2_B)
+        polar2 += -1.0 * contract("ijab, ijba -> ", tmp, X2_B)
+        # <0|L2(0)[A_bar, X1(B)]|0>
+        tmp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
+        polar2 += contract("ia, ia -> ", tmp, X1_B)
+        tmp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
+        polar2 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
+        tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
+        polar2 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
+        # <0|L2(0)[A_bar, X1(B)]|0>
+        tmp = contract("ijab, kjab -> ik", l2, X2_B)
+        polar2 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
+        tmp = contract("ijab, kiba-> jk", l2, X2_B)
+        polar2 -= 0.5 * contract("jk, kj -> ", tmp, pertbar_A.Aoo)
+        tmp = contract("ijab, ijac -> bc", l2, X2_B)
+        polar2 += 0.5 * contract("bc, bc -> ", tmp, pertbar_A.Avv)
+        tmp = contract("ijab, ijcb -> ac", l2, X2_B)
+        polar2 += 0.5 * contract("ac, ac -> ", tmp, pertbar_A.Avv)
+
+        return -1.0 * (polar1 + polar2)
+
+
+
+
+
+
+
 
     def pert_quadresp(self, omega1, omega2, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
 
