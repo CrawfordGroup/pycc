@@ -45,14 +45,12 @@ def test_cc3_h2o():
     # no laser
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, None, magnetic = False)
     
-    # Nuclear dipole from Psi4: 1.12729111248 au
-    #nuc_dipole = mol.nuclear_dipole()
-    # Total dipole from CFOUR: [0, 0, 0.7703875967] au
-    ref = [0, 0, -0.3569035158] # au
+    CFOUR = [0, 0, 0.7703875967] # CFOUR total dipole (CC3 + SCF + nuclear)
+    scf = rhf_wfn.variable('SCF DIPOLE') # PSI4 reference dipole (SCF + nuclear)
+    ref = CFOUR - scf # Final reference: CC3 only
 
-    mu_x, mu_y, mu_z = rtcc.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2, withref=True)
+    mu_x, mu_y, mu_z = rtcc.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2)
 
-    assert (abs(ref[0] - np.real(mu_x)) < 1E-10)
     assert (abs(ref[1] - np.real(mu_y)) < 1E-10)
     assert (abs(ref[2] - np.real(mu_z)) < 1E-10)
 

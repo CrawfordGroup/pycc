@@ -102,7 +102,7 @@ def test_rtcc_water_cc_pvdz():
         """
         
     print(mu_z)
-    mu_z_ref = -0.34894577
+    mu_z_ref = -0.0780067603267549 # computed by removing SCF from original ref
     assert (abs(mu_z_ref - mu_z.real) < 1e-1)
     
     #return (dip_x, dip_y, dip_z, time_points)

@@ -225,8 +225,8 @@ class ccwfn(object):
                 # Storing on CPU
                 self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex64, device=self.device0)
                 self.H.L = torch.tensor(self.H.L, dtype=torch.complex64, device=self.device0)
-
-        print("CC object initialized in %.3f seconds." % (time.time() - time_init))
+                
+        print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
 
     def solve_cc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
@@ -312,7 +312,7 @@ class ccwfn(object):
             # check for convergence
             if isinstance(self.t1, torch.Tensor):
                 if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                    print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                    print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                     print("E(REF)  = %20.15f" % self.eref)
                     print("E(%s) = %20.15f" % (self.model, ecc))
                     print("E(TOT)  = %20.15f" % (ecc + self.eref))
@@ -320,7 +320,7 @@ class ccwfn(object):
                     return ecc
             else:
                 if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                    print("\nCC has converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                    print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
                     print("E(REF)  = %20.15f" % self.eref)
                     if (self.model == 'CCSD(T)'):
                         print("E(CCSD) = %20.15f" % ecc)
