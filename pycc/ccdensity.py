@@ -104,7 +104,7 @@ class ccdensity(object):
             #self.Dvo = self.build_Dvo(l1)
             self.Dvv = self.build_Dvv(t1, t2, l1, l2)
             self.Doo = self.build_Doo(t1, t2, l1, l2)
-            reg_energy = self.vv_energy + self.oo_energy #+ self.ov_energy
+            reg_energy = self.vv_energy + self.oo_energy
             print("===========Regular Energy=========\n", reg_energy)
             print("===========vv Energy=========\n", self.vv_energy)
 
@@ -114,7 +114,7 @@ class ccdensity(object):
                 L = self.ccwfn.Local.L
                 for ij in range(self.no**2):
                     print("Dvv_ij", ij, (Q[ij] @ L[ij]).T @ self.Dvv @ (Q[ij] @ L[ij]))
-            #print(self.Dvv)
+
             self.onlyone = onlyone
 
             if onlyone is False:
@@ -177,9 +177,9 @@ class ccdensity(object):
 
         print("CC Correlation Energy  = %20.15f" % ecc)
 
-        # self.ecc = ecc
-        # self.eone = eone
-        # self.etwo = etwo
+        self.ecc = ecc
+        self.eone = eone
+        self.etwo = etwo
 
         return ecc
 
