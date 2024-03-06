@@ -65,11 +65,10 @@ jobs:
 
     - name: Test and generate coverage report
       run: |
-        # pip install coverage
-        # coverage run -m pytest
-        # coverage xml
         export KMP_DUPLICATE_LIB_OK=TRUE
-        pytest -s pycc/tests/test_002_ccsd_energy.py
+        pip install coverage
+        coverage run -m pytest
+        coverage xml
         ls -l
 
     - name: Upload coverage reports to Codecov
