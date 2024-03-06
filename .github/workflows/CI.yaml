@@ -60,11 +60,12 @@ jobs:
 
     - name: Install PyCC and Deps
       run: |
-        python -m pip install .
+        pip install -e .
         pip install pytest
 
     - name: Test and generate coverage report
       run: |
+        export KMP_DUPLICATE_LIB_OK=TRUE
         pip install coverage
         coverage run -m pytest
         coverage xml
