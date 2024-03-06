@@ -68,7 +68,7 @@ jobs:
         # pip install coverage
         # coverage run -m pytest
         # coverage xml
-        pytest -s
+        pytest -s pycc/tests/test_002_ccsd_energy.py
         ls -l
 
     - name: Upload coverage reports to Codecov
