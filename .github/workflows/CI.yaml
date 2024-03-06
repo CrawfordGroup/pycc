@@ -68,7 +68,7 @@ jobs:
         # pip install coverage
         # coverage run -m pytest
         # coverage xml
-        pytest
+        pytest -s
         ls -l
 
     - name: Upload coverage reports to Codecov
