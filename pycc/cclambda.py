@@ -9,7 +9,7 @@ if __name__ == "__main__":
 import numpy as np
 import time
 from opt_einsum import contract
-from .utils import helper_diis
+from .utils import DIIS
 import torch
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
 
@@ -95,6 +95,9 @@ class cclambda(object):
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
 
+        t1len = no*nv
+        t2len = no*no*nv*nv
+
         Hov = self.hbar.Hov
         Hvv = self.hbar.Hvv
         Hoo = self.hbar.Hoo
@@ -111,7 +114,8 @@ class cclambda(object):
 
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
-        diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
+        Lambda = np.hstack((l1.flatten(), l2.flatten()))
+        diis = DIIS(Lambda, max_diis, self.ccwfn.precision)
  
         contract = self.contract
 
@@ -268,9 +272,13 @@ class cclambda(object):
                     print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
                     return lecc
 
-            diis.add_error_vector(self.l1, self.l2)
+            Lambda = np.hstack((l1.flatten(), l2.flatten()))
+            e = np.hstack(((r1/Dia).flatten(), (r2/Dijab).flatten()))
+            diis.add_error_vector(Lambda, e)
             if niter >= start_diis:
-                self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
+                Lambda = diis.extrapolate(np.hstack((self.l1.flatten(), self.l2.flatten())))
+                self.l1 = np.reshape(Lambda[:t1len], (no, nv))
+                self.l2 = np.reshape(Lambda[t1len:], (no, no, nv, nv))
 
         if isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov

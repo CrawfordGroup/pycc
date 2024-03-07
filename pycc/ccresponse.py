@@ -7,7 +7,7 @@ if __name__ == "__main__":
 
 import numpy as np
 import time
-from .utils import helper_diis
+from .utils import DIIS
 
 class ccresponse(object):
     """
@@ -304,11 +304,17 @@ class ccresponse(object):
         pseudo = self.pseudoresponse(pertbar, X1, X2)
         print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
 
-        diis = helper_diis(X1, X2, max_diis)
+        X = np.hstack((X1.flatten(), X2.flatten()))
+        diis = DIIS(X, max_diis)
         contract = self.ccwfn.contract
 
         self.X1 = X1
         self.X2 = X2
+
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+        t1len = no*nv
+        t2len = no*no*nv*nv
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
@@ -334,9 +340,13 @@ class ccresponse(object):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
                 return self.X1, self.X2, pseudo
 
-            diis.add_error_vector(self.X1, self.X2)
+            X = np.hstack((self.X1.flatten(), self.X2.flatten()))
+            e = np.hstack(((r1/(Dia + omega)).flatten(), (r2/(Dijab + omega)).flatten()))
+            diis.add_error_vector(X, e)
             if niter >= start_diis:
-                self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
+                X = diis.extrapolate(X)
+                self.X1 = np.reshape(X[:t1len], (no, nv))
+                self.X2 = np.reshape(X[t1len:], (no, no, nv, nv))
 
     def r_X1(self, pertbar, omega):
         contract = self.contract

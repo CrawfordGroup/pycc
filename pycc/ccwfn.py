@@ -10,7 +10,7 @@ import psi4
 import time
 import numpy as np
 import torch
-from .utils import helper_diis, cc_contract
+from .utils import DIIS, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc
@@ -257,12 +257,17 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
+        no = self.no
+        nv = self.nv
+        t1len = no*nv
+        t2len = no*no*nv*nv
+
         contract = self.contract
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
 
-        diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
+        diis = DIIS(np.hstack((self.t1.flatten(), self.t2.flatten())), max_diis, self.precision)
 
         for niter in range(1, maxiter+1):
 
@@ -321,9 +326,13 @@ class ccwfn(object):
                     print("E(TOT)  = %20.15f" % (ecc + self.eref))
                     return ecc
 
-            diis.add_error_vector(self.t1, self.t2)
+            T = np.hstack((self.t1.flatten(), self.t2.flatten()))
+            e = np.hstack(((r1/Dia).flatten(), (r2/Dijab).flatten()))
+            diis.add_error_vector(T, e)
             if niter >= start_diis:
-                self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+                T = diis.extrapolate(T)
+                self.t1 = np.reshape(T[:t1len], (no, nv))
+                self.t2 = np.reshape(T[t1len:], (no, no, nv, nv))
 
     def residuals(self, F, t1, t2):
         """
