@@ -207,26 +207,24 @@ class rtcc(object):
 
         return t1, t2, l1, l2, phase
 
-    def dipole(self, t1, t2, l1, l2, withref = True, magnetic = False):
+    def dipole(self, t1, t2, l1, l2, magnetic = False):
         """
         Parameters
         ----------
         t1, t2, l1, l2 : NumPy arrays
             current cluster amplitudes
-        withref        : Bool (default = True)
-            include reference contribution to the OPDM
         magnetic       : Bool (default = False)
             compute magnetic dipole rather than electric
 
         Returns
         -------
         x, y, z : scalars
-            Cartesian components of the dipole moment
+            Cartesian components of the correlated dipole moment
         """
         if self.ccwfn.model == 'CC3':
-            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
         else:
-            opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2, withref=withref)
+            opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
 
         if magnetic:
             ints = self.m
@@ -423,12 +421,12 @@ class rtcc(object):
         ret = {}
         t1, t2, l1, l2, phase = self.extract_amps(y)
         ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
-        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
+        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,magnetic=False)
         ret['mu_x'] = mu_x
         ret['mu_y'] = mu_y
         ret['mu_z'] = mu_z
         if self.magnetic:
-            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=True)
+            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,magnetic=True)
             ret['m_x'] = m_x
             ret['m_y'] = m_y
             ret['m_z'] = m_z
@@ -509,12 +507,12 @@ class rtcc(object):
         # initial properties
         t1, t2, l1, l2, phase = self.extract_amps(yi)
         ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
-        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=False)
+        mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,magnetic=False)
         ret[key]['mu_x'] = mu_x
         ret[key]['mu_y'] = mu_y
         ret[key]['mu_z'] = mu_z
         if self.magnetic:
-            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,withref=ref,magnetic=True)
+            m_x, m_y, m_z = self.dipole(t1,t2,l1,l2,magnetic=True)
             ret[key]['m_x'] = m_x
             ret[key]['m_y'] = m_y
             ret[key]['m_z'] = m_z

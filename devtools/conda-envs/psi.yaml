@@ -1,21 +1,4 @@
-name: p4dev
+name: p4env
 channels:
   - conda-forge
-dependencies:
-  - psi4
-  - intel-openmp!=2019.5
-
-    # Core
-  - python
-  - pyyaml
-  - py-cpuinfo
-  - psutil
-  - qcelemental >=0.19.0  # test minimum stated version.
-  - pydantic >=1.0.0  # test minimun stated version. actually min is 1.0 but no py38 builds
-  - conda-forge/label/libint_dev::libint=2.7.3dev1
-  - msgpack-python
-
-    # Testing
-  - pytest
-  - pytest-cov
-  - codecov
+  - nodefaults

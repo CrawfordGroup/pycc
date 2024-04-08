@@ -22,7 +22,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [macOS-latest, ubuntu-latest]
-        python-version: ['3.8', '3.9', '3.10']
+        python-version: ['3.11']
 
     steps:
     - uses: actions/checkout@v2
@@ -37,22 +37,17 @@ jobs:
     - name: Create Psi4 Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
-        activate-environment: p4dev
+        activate-environment: p4env
         environment-file: devtools/conda-envs/psi.yaml
         python-version: ${{ matrix.python-version }}
         auto-activate-base: true
-
-    - name: Environment Information
-      run: |
-        conda info
-        conda list --show-channel-urls
-        hash -r
-        env
 
     - name: Install Psi4
       run: |
         conda info
         conda list --show-channel-urls
+        hash -r
+        env
         conda install psi4 python=${{ matrix.python-version }} -c conda-forge
         ls -l $CONDA
 
@@ -60,26 +55,23 @@ jobs:
       run: |
         export PATH=$CONDA_PREFIX/bin:$PATH
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
+        conda env list
         python -c 'import psi4'
 
     - name: Install PyCC and Deps
       run: |
-        env
-        export PATH=$CONDA_PREFIX/bin:$PATH
-        export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
-        python -m pip install .
-        python -m pip install opt_einsum
-        python -m pip install scipy
-        python -m pip install torch==1.11
-        conda list
+        pip install -e .
+        pip install pytest
 
-    - name: PyTest
+    - name: Test and generate coverage report
       run: |
-        pytest -v --cov=pycc --cov-report=xml --color=yes pycc/tests/
+        export KMP_DUPLICATE_LIB_OK=TRUE
+        pip install coverage
+        coverage run -m pytest
+        coverage xml
+        ls -l
 
-    - name: CodeCov
-      uses: codecov/codecov-action@v1
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-pycc
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v3
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

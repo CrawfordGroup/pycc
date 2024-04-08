@@ -65,7 +65,7 @@ def test_pnopp_ccd():
 
     assert(abs(eccd_sim - elccd) < 1e-12) 
 
-def test_pno_cdd_opt():
+def test_pno_ccd_opt():
     """H2O PNO-CCD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
