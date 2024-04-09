@@ -17,10 +17,18 @@ class ccresponse(object):
     -------
     linresp():
         Compute a CC linear response function.
+    quadresp():
+        Compute a CC quadratic response function.
+    hyperpolar():
+        Compute a first electric dipole hyperpolarizability average. 
     solve_right():
         Solve the right-hand perturbed wave function equations.
+    solve_left(): 
+        Solve the left-hand perturbed wave function equations.
     pertcheck():
         Check first-order perturbed wave functions for all available perturbation operators.
+    pert_quadresp():
+        Obtain the solutions of the right- and left-hand perturbed wave function equations for the CC quadritc response function. 
     """
 
     def __init__(self, ccdensity, omega1 = 0, omega2 = 0):
@@ -92,6 +100,14 @@ class ccresponse(object):
         eps_vir = np.diag(self.hbar.Hvv)
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
+
+        #HBAR-based denominators for simulation code 
+        if self.ccwfn.local is not None:
+            self.eps_occ = np.diag(self.hbar.Hoo)
+            self.eps_vir = []
+            for ij in range(self.ccwfn.no*self.ccwfn.no):
+                tmp = self.ccwfn.Local.Q[ij].T @ self.hbar.Hvv @ self.ccwfn.Local.Q[ij]
+                self.eps_vir.append(np.diag(self.ccwfn.Local.L[ij].T @ tmp @ self.ccwfn.Local.L[ij])) 
 
     def pertcheck(self, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         """
@@ -293,7 +309,32 @@ class ccresponse(object):
                     check.append(polar)
 
     def pert_quadresp(self, omega1, omega2, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+        """
+        Build first-order perturbed wave functions (left- and right-hand) for the electric dipole operator (Mu)
 
+        Parameters
+        ----------
+        omega1: float
+            First external field frequency.
+        omega2: float
+            Second external field frequency.
+        e_conv : float
+            convergence condition for the pseudoresponse value (default if 1e-13)
+        r_conv : float
+            convergence condition for perturbed wave function rmsd (default if 1e-13)
+        maxiter : int
+            maximum allowed number of iterations of the wave function equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        To Do
+        -----
+        Organize to only compute the neccesary perturbed wave functions. For example, 
+        """
+
+        #dictionaries for perturbed waves functions
         self.ccpert_om1_X = {}
         self.ccpert_om2_X = {}
         self.ccpert_om_sum_X = {}
@@ -315,8 +356,7 @@ class ccresponse(object):
         for axis in range(0, 3):
             
             pertkey = "MU_" + self.cart[axis]
-            #X_key = pertkey + "_" + f"{omega1:0.6f}"
-             
+            
             print("Solving right-hand perturbed wave function for omega1 %s:" % (pertkey)) 
             self.ccpert_om1_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
 
@@ -331,12 +371,9 @@ class ccresponse(object):
 
             print("Solving right-hand perturbed wave function for omega_sum %s:" % (pertkey))
             self.ccpert_om_sum_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
-            #print("solved X", self.ccpert_om_sum_X[pertkey][0]) 
             
             print("Solving left-hand perturbed wave function for %s:" % (pertkey))
             self.ccpert_om_sum_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
-            #self.ccpert_om_sum_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega_sum, self.ccpert_om_sum_X[pertkey][0], self.ccpert_om_sum_X[pertkey][1], e_conv, r_conv, maxiter, max_diis, start_diis)
-            #print("solved Y", self.ccpert_om_sum_Y[pertkey][0])
 
             print("Solving right-hand perturbed wave function for -omega1 %s:" % (pertkey))
             self.ccpert_om1_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
@@ -356,23 +393,39 @@ class ccresponse(object):
             print("Solving left-hand perturbed wave function for %s:" % (pertkey))
             self.ccpert_om_sum_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-       # self.ccpert_om1_X = ccpert_om1_X
-       # self.ccpert_om2_X = ccpert_om2_X
-       # self.ccpert_om_sum_X =ccpert_om_sum_X
-
-       # self.ccpert_om1_2nd_X = ccpert_om1_2nd_X
-       # self.ccpert_om2_2nd_X = ccpert_om2_2nd_X
-       # self.ccpert_om_sum_2nd_X = ccpert_om_sum_2nd_X
-    
-       # self.ccpert_om1_Y = ccpert_om1_Y
-       # self.ccpert_om2_Y = ccpert_om2_Y
-       # self.ccpert_om_sum_Y =ccpert_om_sum_Y
-
-       # self.ccpert_om1_2nd_Y = ccpert_om1_2nd_Y
-       # self.ccpert_om2_2nd_Y = ccpert_om2_2nd_Y
-       # self.ccpert_om_sum_2nd_Y = ccpert_om_sum_2nd_Y
-
     def quadraticresp(self, pertkey_a, pertkey_b, pertkey_c, ccpert_X_A, ccpert_X_B, ccpert_X_C, ccpert_Y_A, ccpert_Y_B, ccpert_Y_C):
+        """
+        Calculate the CC quadratic-response function for one-electron perturbations A,B and C at field-frequency omega1(w1) and omega2(w2).
+        
+        The quadratic response function, <<A;B,C>>w1, generally requires the following perturbed wave functions and frequencies:
+            A(-w1-w2), A*(w1+w2), B(w1), B*(-w1), C(w2), C*(w2)
+
+        Parameters
+        ----------
+        pertkey_a: string
+            String identifying the one-electron perturbation, A, along a cartesian axis
+        pertkey_b: string 
+            String identifying the one-electron perturbation, B, along a cartesian axis
+        pertkey_c: string
+            String identifying the one-electron perturbation, C, along a cartesian axis
+        ccpert_X_A: 
+            Perturbed right-hand wave functions for A along a cartesian axis
+        ccpert_X_B: 
+       
+        Return
+        ------
+        hyper: float 
+            A value of the chosen quadratic response function corresponding to a specified cartesian direction. For example, Beta_xyz.   
+        
+        Notes
+        -----
+        Only the electric dipole is used for computing second harmonic generation (SHG) where w1 and w2 are identical and optical refractivity (OR) 
+        where w1 = -w2
+
+        To Do
+        -----
+        - Expand to include all avaiable one-electron perturbations
+        """
         contract = self.contract
 
         o = self.ccwfn.o
@@ -391,7 +444,7 @@ class ccresponse(object):
         X2_B = ccpert_X_B[1]
         Y1_B = ccpert_Y_B[0]
         Y2_B = ccpert_Y_B[1]
-        # Grab X and Y amplitudes corresponding to perturbation C
+        # Grab X and Y amplitudes corresponding to perturbation C, omega2
         X1_C = ccpert_X_C[0]
         X2_C = ccpert_X_C[1]
         Y1_C = ccpert_Y_C[0]
@@ -418,7 +471,7 @@ class ccresponse(object):
         self.LHX1X2 = 0.0
         self.LHX2Y2 = 0.0
 
-        # <0|L1(B)[A_bar, X1(C)]|0> good
+        # <0|L1(B)[A_bar, X1(C)]|0> 
         tmp = contract('ia,ic->ac', Y1_B, X1_C)
         self.LAX += contract('ac,ac->',tmp, pertbar_A.Avv)
         tmp = contract('ia,ka->ik', Y1_B, X1_C)
@@ -442,9 +495,9 @@ class ccresponse(object):
         tmp = contract('ijab,ijac->bc', Y2_B, X2_C)
         self.LAX += contract('bc,bc->', tmp, pertbar_A.Avv)
 
-        self.hyper += self.LAX # good
+        self.hyper += self.LAX
 
-        # <0|L1(C)[A_bar, X1(B)]|0> good
+        # <0|L1(C)[A_bar, X1(B)]|0>
         tmp = contract('ia,ic->ac', Y1_C, X1_B)
         self.LAX2 += contract('ac,ac->', tmp, pertbar_A.Avv)
         tmp = contract('ia,ka->ik', Y1_C, X1_B)
@@ -469,7 +522,7 @@ class ccresponse(object):
         tmp = contract('ijab,ijac->bc', Y2_C, X2_B)
         self.LAX2 += contract('bc,bc->', tmp, pertbar_A.Avv)
 
-        self.hyper += self.LAX2 #good
+        self.hyper += self.LAX2 
 
         # <0|L1(A)[B_bar,X1(C)]|0>
         tmp = contract('ia,ic->ac', Y1_A, X1_C)
@@ -517,7 +570,7 @@ class ccresponse(object):
         tmp = contract('ijab,ijac->bc', Y2_C, X2_A)
         self.LAX4 += contract('bc,bc->', tmp, pertbar_B.Avv)
 
-        self.hyper += self.LAX4 #good
+        self.hyper += self.LAX4
 
         # <0|L1(A)[C_bar,X1(B)]|0>
         tmp = contract('ia,ic->ac', Y1_A, X1_B)
@@ -565,7 +618,7 @@ class ccresponse(object):
         tmp = contract('ijab,ijac->bc', Y2_B, X2_A)
         self.LAX6 += contract('bc,bc->', tmp, pertbar_C.Avv)
 
-        self.hyper += self.LAX6 #good
+        self.hyper += self.LAX6
 
         self.Fz1 = 0
         self.Fz2 = 0
@@ -778,7 +831,6 @@ class ccresponse(object):
         tmp2 = contract('ld,lkda->ka', X1_C, L[o,o,v,v])
         self.G -= contract('ka,ka->', tmp, tmp2)
 
-        # Goovv -> ERIoovv
         tmp = contract('ijab,klab->ijkl',X2_A, ERI[o,o,v,v])
         tmp2 = contract('kc,ijcd->ijkd', X1_B, l2)
         tmp2 = contract('ld,ijkd->ijkl', X1_C, tmp2)
@@ -931,7 +983,7 @@ class ccresponse(object):
         tmp2 = contract('ijab,klab->ijkl', X2_C, l2)
         self.G += contract('ijkl,ijkl->', tmp, tmp2)
 
-        self.hyper += self.G #good
+        self.hyper += self.G
 
         self.Bcon1 = 0
         # <O|L1(A)[[Hbar(0),X1(B),X1(C)]]|0>
@@ -1684,6 +1736,12 @@ class ccresponse(object):
         return self.hyper
 
     def hyperpolar(self):
+        """
+        Return
+        ------
+        Beta_avg: float
+            Hyperpolarizability average 
+        """
         solver_start = time.time()
         
         ccpert_om1_X = self.ccpert_om1_X
@@ -1717,16 +1775,14 @@ class ccresponse(object):
                     hyper_AB_2nd[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, ccpert_om_sum_2nd_X[pertkey_a], ccpert_om1_2nd_X[pertkey_b], ccpert_om2_2nd_X[pertkey_c],  ccpert_om_sum_2nd_Y[pertkey_a], ccpert_om1_2nd_Y[pertkey_b], ccpert_om2_2nd_Y[pertkey_c])
                     hyper_AB[a,b,c] = (hyper_AB_1st[a,b,c] + hyper_AB_2nd[a,b,c] )/2
 
-        self.hyper_AB = hyper_AB
-    
-        print("\Beta_zxx = %10.12lf" %(hyper_AB[2,0,0]))
-        print("\Beta_xzx = %10.12lf" %(hyper_AB[0,2,0]))
-        print("\Beta_xxz = %10.12lf" %(hyper_AB[0,0,2]))
-        print("\Beta_zyy = %10.12lf" %(hyper_AB[2,1,1]))
-        print("\Beta_yzy = %10.12lf" %(hyper_AB[1,2,1]))
-        print("\Beta_yyz = %10.12lf" %(hyper_AB[1,1,2]))
-        print("\Beta_zzz = %10.12lf" %(hyper_AB[2,2,2]))
+        Beta_avg = 0 
+        for i in range(0,3): 
+            Beta_avg += (hyper_AB[2,i,i] + hyper_AB[i,2,i] + hyper_AB[i,i,2])/5
+         
+        print("Beta_avg = %10.12lf" %(Beta_avg)) 
         print("\n First Dipole Hyperpolarizability computed in %.3f seconds.\n" % (time.time() - solver_start))
+
+        return Beta_avg
 
     def solve_right(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
         solver_start = time.time()
@@ -1757,7 +1813,7 @@ class ccresponse(object):
             r2 = self.r_X2(pertbar, omega)
 
             if self.ccwfn.local is not None:
-                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
+                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir)
                 self.X1 += inc1
                 self.X2 += inc2
 
@@ -1785,6 +1841,13 @@ class ccresponse(object):
                 self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
 
     def solve_left(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+        '''
+        Notes
+        -----
+        The first-order lambda equations are partition into to two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2), 
+        the inhomogenous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. Therefore, it is 
+        computed only once and is called when solving for the homogenous terms.         
+        '''
         solver_start = time.time()
 
         Dia = self.Dia
@@ -1793,18 +1856,12 @@ class ccresponse(object):
         # initial guess
         X1_guess = pertbar.Avo.T/(Dia + omega)
         X2_guess = pertbar.Avvoo/(Dijab + omega)
-        #print("guess X1", X1_guess)
-        #print("guess X2", X2_guess)
-        #print("X1 used for inital Y1", self.X1)
-        #print("X2 used for initial Y2", self.X2)
 
         # initial guess
         Y1 = 2.0 * X1_guess.copy()
         Y2 = 4.0 * X2_guess.copy()
         Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)              
-        #print("initial Y1", Y1)
-        #print("inital Y2", Y2) 
-        # need to understand this
+
         pseudo = self.pseudoresponse(pertbar, Y1, Y2)
         print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
         
@@ -1817,9 +1874,7 @@ class ccresponse(object):
         # uses updated X1 and X2
         self.im_Y1 = self.in_Y1(pertbar, self.X1, self.X2)
         self.im_Y2 = self.in_Y2(pertbar, self.X1, self.X2)
-        print("Im_y1 density", np.sqrt(np.einsum('ia, ia ->', self.im_Y1, self.im_Y1)))
-        #print("im_Y1", self.im_Y1)
-        #print("im_Y2", self.im_Y2)  
+ 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
             
@@ -1830,7 +1885,7 @@ class ccresponse(object):
             r2 = self.r_Y2(pertbar, omega)
             
             if self.ccwfn.local is not None:
-                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
+                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir)
                 self.Y1 += inc1
                 self.Y2 += inc2
 
@@ -1844,8 +1899,7 @@ class ccresponse(object):
                 rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
                 rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
                 rms = np.sqrt(rms)
-
-            # need to undertsand this 
+ 
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
             print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
@@ -1915,8 +1969,6 @@ class ccresponse(object):
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
-        #X1 = self.X1
-        #X2 = self.X2
         Y1 = self.Y1
         
         Y2 = self.Y2
@@ -1927,10 +1979,6 @@ class ccresponse(object):
         hbar = self.hbar
         L = self.H.L
 
-        # Inhomogenous terms appearing in Y1 equations
-        #seems like these imhomogenous terms are computing at the beginning and not involve in the iteration itself
-        #may require moving to a sperate function
- 
         # <O|A_bar|phi^a_i> good
         r_Y1 = 2.0 * pertbar.Aov.copy()
         # <O|L1(0)|A_bar|phi^a_i> good
@@ -1973,8 +2021,6 @@ class ccresponse(object):
         tmp  = 2.0 * contract('mnef,nf->me', X2, l1)
         tmp  -= contract('mnfe,nf->me', X2, l1)
         r_Y1 += contract('imae,me->ia', L[o,o,v,v], tmp)
-        #print("Goo denisty", np.sqrt(np.einsum('ij, ij ->', cclambda.build_Goo(X2, L[o,o,v,v]), cclambda.build_Goo(X2, L[o,o,v,v]))))
-        #print("l1 density", np.sqrt(np.einsum('ia, ia ->', l1, l1)))
         r_Y1 -= contract('ni,na->ia', cclambda.build_Goo(X2, L[o,o,v,v]), l1)
         r_Y1 += contract('ie,ea->ia', l1, cclambda.build_Gvv(L[o,o,v,v], X2))
 
@@ -1995,7 +2041,6 @@ class ccresponse(object):
         tmp  += 0.5 * contract('mino,noea->iema', hbar.Hoooo, l2)
         r_Y1 += contract('iema,me->ia', tmp, X1)
 
-       #contains regular Gvv as well as Goo, think about just calling it from cclambda instead of generating it
         tmp  =  contract('nb,fb->nf', X1, cclambda.build_Gvv(l2, t2))
         r_Y1 += contract('inaf,nf->ia', L[o,o,v,v], tmp)
         tmp  =  contract('me,fa->mefa', X1, cclambda.build_Gvv(l2, t2))
@@ -2055,7 +2100,6 @@ class ccresponse(object):
 
         #imhomogenous terms
         r_Y1 = self.im_Y1.copy()
-        #homogenous terms appearing in Y1 equations
         r_Y1 += omega * Y1
         r_Y1 += contract('ie,ea->ia', Y1, hbar.Hvv)
         r_Y1 -= contract('im,ma->ia', hbar.Hoo, Y1)
@@ -2090,7 +2134,6 @@ class ccresponse(object):
         L = self.H.L
         ERI = self.H.ERI
 
-        # Inhomogenous terms appearing in Y2 equations
         # <O|L1(0)|A_bar|phi^ab_ij> good
 
         #next two turn to swapaxes contraction
@@ -2172,8 +2215,6 @@ class ccresponse(object):
         tmp   = 2.0 * contract('njfb,mnef->jbme', l2, X2)
         r_Y2 += contract('imae,jbme->ijab', L[o,o,v,v], tmp)
 
-#        r_Y2 = r_Y2 + r_Y2.swapaxes(0,1).swapaxes(2,3)        
-
         return r_Y2
 
     def r_Y2(self, pertbar, omega):
@@ -2192,10 +2233,7 @@ class ccresponse(object):
 
         #inhomogenous terms
         r_Y2 = self.im_Y2.copy()
-
         # Homogenous terms now!
-        # a factor of 0.5 because of the relation/comment just above
-        # and due to the fact that Y2_ijab = Y2_jiba
         r_Y2 += 0.5 * omega * self.Y2.copy()
         r_Y2 += 2.0 * contract('ia,jb->ijab', Y1, hbar.Hov)
         r_Y2 -= contract('ja,ib->ijab', Y1, hbar.Hov)

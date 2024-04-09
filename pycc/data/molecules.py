@@ -26,6 +26,16 @@ lih="""
         symmetry c1
         """
 
+# CO
+co = """
+C  0.000000  0.000000  0.000000
+O  0.000000  0.000000  -2.132000
+noreorient
+nocom
+units au
+symmetry c1
+"""
+
 # Håkon's H2O test case
 h2o_hek="""
         units au
@@ -43,12 +53,21 @@ H -1.638036840407   1.136548822547  -0.000000000000
 symmetry c1
 units bohr
 """
-### Water molecule
 
+### Water molecule
 h2o = """
 O
 H 1 1.1
 H 1 1.1 2 104
+symmetry c1
+"""
+
+### Water molecule from Dalton
+h2o_dalton = """
+O 0.000000000000     0.000000000000     0.000000000000
+H 0.000000000000    -0.756689920000     0.585891940000
+H 0.000000000000     0.756689920000     0.585891940000
+units Angstrom
 symmetry c1
 """
 
@@ -269,10 +288,12 @@ moldict = {}
 moldict["He"] = he
 moldict["Be"] = be
 moldict["LiH"] = lih
+moldict["CO"] = co
 moldict["H2"] = h2
 moldict["H2O_HEK"] = h2o_hek
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
+moldict["H2O_D"] = h2o_dalton
 moldict["(H2O)_2"] = h2o_2
 moldict["(H2O)_3"] = h2o_3
 moldict["(H2O)_4"] = h2o_4
