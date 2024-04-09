@@ -843,7 +843,7 @@ class Local(object):
 
         return t1, t2
 
-    def filter_pertamps(self, r1, r2, eps_occ, eps_vir):
+    def filter_pertamps(self, r1, r2, eps_occ, eps_vir, omega):
         no = self.no
         nv = self.nv
         dim = self.dim
@@ -856,7 +856,7 @@ class Local(object):
             Y = self.L[ii].T @ X
   
             for a in range(dim[ii]):
-                Y[a] = Y[a]/(eps_occ[i] - eps_vir[ii][a])
+                Y[a] = Y[a]/(eps_occ[i] - eps_vir[ii][a] + omega)
 
             X = self.L[ii] @ Y
             t1[i] = self.Q[ii] @ X
@@ -871,7 +871,7 @@ class Local(object):
 
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
-                    Y[a,b] = Y[a,b]/(eps_occ[i] + eps_occ[j] - eps_vir[ij][a] - eps_vir[ij][b])
+                    Y[a,b] = Y[a,b]/(eps_occ[i] + eps_occ[j] - eps_vir[ij][a] - eps_vir[ij][b] + omega)
 
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T

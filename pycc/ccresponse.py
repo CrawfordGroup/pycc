@@ -1813,7 +1813,7 @@ class ccresponse(object):
             r2 = self.r_X2(pertbar, omega)
 
             if self.ccwfn.local is not None:
-                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir)
+                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir, omega)
                 self.X1 += inc1
                 self.X2 += inc2
 
@@ -1885,7 +1885,7 @@ class ccresponse(object):
             r2 = self.r_Y2(pertbar, omega)
             
             if self.ccwfn.local is not None:
-                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir)
+                inc1, inc2 = self.ccwfn.Local.filter_pertamps(r1, r2, self.eps_occ, self.eps_vir, omega)
                 self.Y1 += inc1
                 self.Y2 += inc2
 
