@@ -49,6 +49,7 @@ class Local(object):
     _build_PAO(): build PAO orbital rotation tensors
     _build_PNO(): build PNO orbital rotation tensors   
     _build_PNOpp(): build PNO++ orbital rotation tensors
+    _build_cPNOpp(): build cPNO++ orbital rotation tensors 
     trans_integrals(): transform Fock matrix and ERI from the MO basis to a local basis 
 
     Notes
@@ -86,6 +87,8 @@ class Local(object):
             self._build_PAO()
         elif self.local.upper() in ["PNO++"]:
             self._build_PNOpp()
+        elif self.local.upper() in ["CPNO++"]:
+            self._build_cPNOpp()
         else:
             raise Exception("Not a valid local type!")
 
@@ -326,14 +329,14 @@ class Local(object):
         # MP2 loop (optional)
         if self.it2_opt:
             self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
-         
+
         print("Computing PNOs.  Canonical VMO dim: %d" % (self.nv))
         
         #Constructing the PNO density
         D = self._pairdensity(t2) 
-
+        
         # Now obtain the Q and L
-        Q, L, eps, dim = self.QL_tensors(v,self.local,t2,D)
+        Q, L, eps, dim = self.QL_tensors(v,t2,D,local ='PNO')
         
         self.Q = Q  # transform between canonical VMO and local spaces
         self.L = L  # transform between local and semicanonical local spaces      
@@ -385,7 +388,7 @@ class Local(object):
         D = self._pert_pairdensity(t2)
 
         # Now obtain Q and L 
-        Q, L, eps, dim = self.QL_tensors(v,self.local,t2,D)       
+        Q, L, eps, dim = self.QL_tensors(v,t2,D,local ='PNO++')       
     
         self.Q = Q  # transform between canonical VMO and local spaces
         self.L = L  # transform between local and semicanonical local spaces 
@@ -401,6 +404,66 @@ class Local(object):
                 self.Q[ji] = self.Q[ij]
                 self.L[ji] = self.L[ij]
 
+    def _build_cPNOpp(self):  
+        """
+        Perform MP2 loop in non-canonical MO basis, then construct pair density based on t2 amplitudes
+        then build MP2-level PNO
+
+        Attributes
+        ----------
+        Q: transform between canonical VMO and PNO++ spaces
+        L: transform between LPNO and semicanonical PNO++ spaces
+        dim: dimension of cPNO++ space
+        eps: semicananonical cPNO++ energies
+        
+        Notes
+        -----
+        Equations from D'Cunha & Crawford 2021 [10.1021/acs.jctc.0c01086]
+        """ 
+        v = slice(self.no, self.no+self.nv)
+
+        self._build_PNO()
+        Q_PNO = self.Q
+     
+        self._build_PNOpp()
+        Q_PNOpp = self.Q 
+
+        self.Q = []  # truncated PNO list
+        self.dim = np.zeros((self.no*self.no), dtype=int)  # dimension of local space for each pair
+        self.L = [] # semicanonical PNO list
+        self.eps = [] # approximated virtual orbital energies
+        T2_local = 0
+        for ij in range(self.no*self.no):
+            i = ij // self.no
+            j = ij % self.no
+ 
+            Q_comb = np.hstack((Q_PNO[ij], Q_PNOpp[ij]))
+            Q_ortho, trash = np.linalg.qr(Q_comb)
+            self.Q.append(Q_ortho)
+            # Compute semicanonical virtual space
+            F = Q_ortho.T @ self.H.F[v,v] @ Q_ortho  # Fock matrix in local basis
+            eval, evec = np.linalg.eigh(F)
+            self.eps.append(eval)
+            self.L.append(evec)
+            self.dim[ij] = Q_ortho.shape[1] 
+            T2_local += self.dim[ij] * self.dim[ij]
+            print(self.local + " dimension of pair %d = %d" % (ij, self.dim[ij]))
+
+        print("Average " + self.local + " dimension: %2.3f" % (np.average(self.dim)))
+        print("T2 " +  self.local + ": %d" % (T2_local))
+        T2_full = (self.no*self.no)*(self.nv*self.nv)
+        print("T2 full: %d" % (T2_full))
+        print("T2 Ratio: %3.12f" % (T2_local/T2_full))
+
+        #temporary way to generate make sure the phase factor of Q_ij and L_ij matches with Q_ji and L_ji
+        for i in range(self.no):
+            for j in range(0,i):
+                ij = i*self.no + j
+                ji = j*self.no + i
+
+                self.Q[ji] = self.Q[ij]
+                self.L[ji] = self.L[ij]
+                
     def _pert_pairdensity(self,t2):
         '''
          Constructing the approximated perturbed pair density
@@ -483,7 +546,7 @@ class Local(object):
             D[ij] *= 0.5
         return D
 
-    def QL_tensors(self,v,local,t2,D):
+    def QL_tensors(self,v,t2,D,local):
         # Create list for Q, L and eps
         Q_full = np.zeros_like(t2.copy().reshape((self.no*self.no,self.nv,self.nv)))
         Q = []  # truncated PNO list
@@ -496,7 +559,7 @@ class Local(object):
         for ij in range(self.no*self.no):
             i = ij // self.no
             j = ij % self.no
-  
+ 
             # Compute local and truncate
             occ[ij], Q_full[ij] = np.linalg.eigh(D[ij])
             if (occ[ij] < 0).any(): # Check for negative occupation numbers
@@ -505,7 +568,7 @@ class Local(object):
                       Using absolute values - please check if your input is correct.".format(neg))
             dim[ij] = (np.abs(occ[ij]) > self.cutoff).sum()
             Q.append(Q_full[ij, :, (self.nv-dim[ij]):])
-
+            
             # Compute semicanonical virtual space
             F = Q[ij].T @ self.H.F[v,v] @ Q[ij]  # Fock matrix in local basis
             eval, evec = np.linalg.eigh(F)

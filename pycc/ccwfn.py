@@ -87,7 +87,7 @@ class ccwfn(object):
 
         self.make_t3_density = kwargs.pop('make_t3_density', False)
 
-        valid_local_models = [None, 'PNO', 'PAO','PNO++']
+        valid_local_models = [None, 'PNO', 'PAO','CPNO++','PNO++']
         local = kwargs.pop('local', None)
         # TODO: case-protect this kwarg
         if local not in valid_local_models:
