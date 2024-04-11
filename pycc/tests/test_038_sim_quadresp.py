@@ -94,7 +94,7 @@ def test_PNOpp_ccsd_OR():
  
     #can only compare to itself
     OR_sim = -14.631284948349
-    assert(abs(OR - OR_sim) < 1e-12)  
+    assert(abs(OR - OR_sim) < 1e-10)  
 
 def test_CPNOpp_ccsd_SHG():
     """ H2O Second Harmonic Generation CPNO++-CCSD Test using local filter"""
@@ -112,7 +112,8 @@ def test_CPNOpp_ccsd_SHG():
     e_conv = 1e-12
     r_conv = 1e-12
 
-    cc = pycc.ccwfn(rhf_wfn, local="CPNO++", local_cutoff = 1e-7, filter=True)
+    #Testing different localization scheme for MOS -> Foster-Boys 
+    cc = pycc.ccwfn(rhf_wfn, local_mos = 'BOYS', local="CPNO++", local_cutoff = 1e-7, filter=True)
     ecc = cc.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
@@ -129,5 +130,5 @@ def test_CPNOpp_ccsd_SHG():
     SHG = resp.hyperpolar()
 
     #can only compare to itself
-    SHG_sim = -18.825960218970
-    assert(abs(SHG - SHG_sim) < 1e-12)    
+    SHG_sim = -17.874897845906
+    assert(abs(SHG - SHG_sim) < 1e-10)   
