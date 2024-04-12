@@ -1,7 +1,6 @@
 """
 ccresponse.py: CC Response Functions
 """
-from opt_einsum import contract
 
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
@@ -286,7 +285,7 @@ class ccresponse(object):
                 pertkey = B + "_" + self.cart[axis]
                 X_key = pertkey + "_" + f"{omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                #X_2[pertkey] = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X_2[pertkey] = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check.append(polar)
                 X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check.append(polar)
@@ -298,12 +297,28 @@ class ccresponse(object):
 
 
     def linresp_asym(self, pertkey_a, X1_B, X2_B, Y1_B, Y2_B):
+	"""
+	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
+
+	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
+	
+	Parameters
+	----------
+	pertkey_a: string
+		String identifying the one-electron perturbation, A along a cartesian axis
+	
+
+	Return
+	------
+	polar: float
+	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
+	"""
 
         # Defining the l1 and l2
         l1 = self.cclambda.l1
         l2 = self.cclambda.l2
 
-        # Please refer to eqn 78 of [Crawford:xxxx].
+        # Please refer to eqn 78 of [Crawford: https://crawford.chem.vt.edu/wp-content/uploads/2022/06/cc_response.pdf].
         # Writing H(1)(omega) = B, T(1)(omega) = X, L(1)(omega) = y
         # <<A;B>> = <0|Y(B) * A_bar|0> + <0| (1 + L(0))[A_bar, X(B)}|0>
         #                 polar1                polar2
@@ -395,6 +410,14 @@ class ccresponse(object):
                 self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
 
     def solve_left(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+	"""
+	Notes
+	-----
+	The first-order lambda equations are partition into two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2),
+	the inhomogeneous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. 
+	Therefore, it is computed only once and is called when solving for the homogeneous terms.
+	"""
+ 
         solver_start = time.time()
 
         Dia = self.Dia
@@ -514,10 +537,6 @@ class ccresponse(object):
         t2 = self.ccwfn.t2
         hbar = self.hbar
         L = self.H.L
-
-        # Inhomogenous terms appearing in Y1 equations
-        #seems like these imhomogenous terms are computing at the beginning and not involve in the iteration itself
-        #may require moving to a sperate function
  
         # <O|A_bar|phi^a_i> good
         r_Y1 = 2.0 * pertbar.Aov.copy()
