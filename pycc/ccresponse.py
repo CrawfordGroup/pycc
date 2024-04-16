@@ -331,7 +331,7 @@ class ccresponse(object):
 
         To Do
         -----
-        Organize to only compute the neccesary perturbed wave functions. For example, 
+        Organize to only compute the neccesary perturbed wave functions.  
         """
 
         #dictionaries for perturbed waves functions
@@ -1844,7 +1844,7 @@ class ccresponse(object):
         '''
         Notes
         -----
-        The first-order lambda equations are partition into to two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2), 
+        The first-order lambda equations are partition into two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2), 
         the inhomogenous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. Therefore, it is 
         computed only once and is called when solving for the homogenous terms.         
         '''

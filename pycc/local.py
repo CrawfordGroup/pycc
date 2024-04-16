@@ -59,7 +59,7 @@ class Local(object):
      to run local MP2, uncomment the necessary lines within the _build_"local" functions which are at the end 
     """
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt,
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt, omega, 
             core_cut=5E-2,
             lindep_cut=1E-6,
             e_conv=1e-12,
@@ -73,6 +73,7 @@ class Local(object):
         self.C = C.to_array()
         self.local = local
         self.it2_opt = it2_opt
+        self.omega = omega
         self.core_cut = core_cut
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
@@ -378,11 +379,12 @@ class Local(object):
         Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
         
         # initial guess amplitudes
-        t2 = self.H.ERI[o,o,v,v]/Dijab
+        t2 = self.H.ERI[o,o,v,v]/(Dijab + self.omega)
+        
         
         # MP2 loop (optional) 
         if self.it2_opt:
-            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
+            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab + self.omega)
         
         # Construct the perturbed pair density, Eqn. 10  
         D = self._pert_pairdensity(t2)

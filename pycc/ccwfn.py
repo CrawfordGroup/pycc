@@ -94,6 +94,7 @@ class ccwfn(object):
             raise Exception("%s is not an allowed local-CC model." % (local))
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
+        self.ed_omega = kwargs.pop('omega', 0) 
 
         valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
         local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
@@ -151,7 +152,7 @@ class ccwfn(object):
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
         if local is not None:
-            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
+            self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt, self.ed_omega)
             if filter is not True:
                 self.Local.trans_integrals(self.o, self.v)
                 self.Local.overlaps(self.Local.QL)
