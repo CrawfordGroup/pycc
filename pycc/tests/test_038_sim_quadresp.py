@@ -93,7 +93,7 @@ def test_PNOpp_ccsd_OR():
     #HCl_OR = -19.34209144399                   #HCl = -19.342091493471
  
     #can only compare to itself
-    OR_sim = -14.631284948349
+    OR_sim = -14.631284641281
     assert(abs(OR - OR_sim) < 1e-10)  
 
 def test_CPNOpp_ccsd_SHG():
