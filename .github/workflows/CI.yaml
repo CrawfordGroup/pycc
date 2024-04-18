@@ -57,6 +57,7 @@ jobs:
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
         conda env list
         python -c 'import psi4'
+        python -c 'import pytorch'
 
     - name: Install PyCC and Deps
       run: |

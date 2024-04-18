@@ -35,9 +35,9 @@ setup(
     install_requires=[
         "numpy",
         "opt_einsum",
-        "scipy",
-        "torch"
-    ],
+        "scipy"],
+    #    "torch"
+    #],
 
     # Which Python importable modules should be included when your package is installed
     # Handled automatically by setuptools. Use 'exclude' to prevent some specific
