@@ -49,6 +49,7 @@ jobs:
         hash -r
         env
         conda install psi4 python=${{ matrix.python-version }} -c conda-forge
+        conda install pytorch
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
@@ -57,7 +58,6 @@ jobs:
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
         conda env list
         python -c 'import psi4'
-        python -c 'import pytorch'
 
     - name: Install PyCC and Deps
       run: |
