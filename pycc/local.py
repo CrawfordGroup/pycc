@@ -59,7 +59,7 @@ class Local(object):
      to run local MP2, uncomment the necessary lines within the _build_"local" functions which are at the end 
     """
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt,
+    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt, omega, 
             core_cut=5E-2,
             lindep_cut=1E-6,
             e_conv=1e-12,
@@ -73,6 +73,7 @@ class Local(object):
         self.C = C.to_array()
         self.local = local
         self.it2_opt = it2_opt
+        self.omega = omega
         self.core_cut = core_cut
         self.lindep_cut = lindep_cut
         self.e_conv = e_conv
@@ -378,11 +379,12 @@ class Local(object):
         Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
         
         # initial guess amplitudes
-        t2 = self.H.ERI[o,o,v,v]/Dijab
+        t2 = self.H.ERI[o,o,v,v]/(Dijab + self.omega)
+        
         
         # MP2 loop (optional) 
         if self.it2_opt:
-            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab)
+            self._MP2_loop(t2,self.H.F,self.H.ERI,self.H.L,Dijab + self.omega)
         
         # Construct the perturbed pair density, Eqn. 10  
         D = self._pert_pairdensity(t2)
@@ -837,6 +839,41 @@ class Local(object):
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
                     Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+
+            X = self.L[ij] @ Y @ self.L[ij].T
+            t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
+
+        return t1, t2
+
+    def filter_pertamps(self, r1, r2, eps_occ, eps_vir, omega):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        t1 = np.zeros((no,nv))
+        for i in range(no):
+            ii = i * no + i
+
+            X = self.Q[ii].T @ r1[i]
+            Y = self.L[ii].T @ X
+  
+            for a in range(dim[ii]):
+                Y[a] = Y[a]/(eps_occ[i] - eps_vir[ii][a] + omega)
+
+            X = self.L[ii] @ Y
+            t1[i] = self.Q[ii] @ X
+
+        t2 = np.zeros((no,no,nv,nv))
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+
+            X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
+            Y = self.L[ij].T @ X @ self.L[ij]
+
+            for a in range(dim[ij]):
+                for b in range(dim[ij]):
+                    Y[a,b] = Y[a,b]/(eps_occ[i] + eps_occ[j] - eps_vir[ij][a] - eps_vir[ij][b] + omega)
 
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T

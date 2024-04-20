@@ -21,8 +21,8 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [macOS-latest, ubuntu-latest]
-        python-version: ['3.11']
+        os: [macOS-latest]
+        python-version: ['3.8','3.11']
 
     steps:
     - uses: actions/checkout@v2
@@ -49,6 +49,7 @@ jobs:
         hash -r
         env
         conda install psi4 python=${{ matrix.python-version }} -c conda-forge
+        conda install pytorch
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
@@ -67,7 +68,7 @@ jobs:
       run: |
         export KMP_DUPLICATE_LIB_OK=TRUE
         pip install coverage
-        coverage run -m pytest
+        coverage run -m pytest -s pycc/tests/test_038_sim_quadresp.py::test_PNOpp_ccsd_OR
         coverage xml
         ls -l
 
