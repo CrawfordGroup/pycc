@@ -68,7 +68,7 @@ jobs:
       run: |
         export KMP_DUPLICATE_LIB_OK=TRUE
         pip install coverage
-        coverage run -m pytest -s test_038_sim_quadresp.py::test_PNOpp_ccsd_OR
+        coverage run -m pytest -s tests/test_038_sim_quadresp.py::test_PNOpp_ccsd_OR
         coverage xml
         ls -l
 
