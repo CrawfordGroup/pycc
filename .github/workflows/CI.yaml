@@ -35,8 +35,9 @@ jobs:
         ulimit -a
 
     - name: Create Psi4 Environment
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v3
       with:
+        miniconda-version: "latest"
         activate-environment: p4env
         environment-file: devtools/conda-envs/psi.yaml
         python-version: ${{ matrix.python-version }}
