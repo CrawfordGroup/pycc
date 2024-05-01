@@ -8,7 +8,7 @@ if __name__ == "__main__":
 import time
 import numpy as np
 import torch
-from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc 
+from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc 
 
 class ccdensity(object):
     """
@@ -152,7 +152,7 @@ class ccdensity(object):
 
         return ecc
 
-    def compute_onepdm(self, t1, t2, l1, l2):
+    def compute_onepdm(self, t1, t2, l1, l2, real_time=False):
         """
         Parameters
         ----------
@@ -196,7 +196,7 @@ class ccdensity(object):
             Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
             Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
 
-            opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov)
+            opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov, real_time=real_time)
 
             # Density matrix blocks in contractions with T1-transformed dipole integrals
             if isinstance(t1, torch.Tensor):
@@ -274,7 +274,7 @@ class ccdensity(object):
         return Dov
 
     # CC3 contributions to the one electron densities
-    def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov):
+    def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov, real_time=False):
         contract = self.contract  
         if isinstance(t1, torch.Tensor):
             Dov = torch.zeros_like(t1)   
@@ -290,13 +290,19 @@ class ccdensity(object):
                     Zlmdi[i,j] += contract('def,ife->di', l3, t2[k])
                     # Dov_1
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+		    if real_time is True:
+                        if isinstance(t1, torch.Tensor):
+                            V = F - self.ccwfn.H.F.clone()
+                        else:
+                            V = F - self.ccwfn.H.F.copy()
+                        t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
                     Dov[i] +=  contract('abc,bc->a', t3 - t3.swapaxes(0,1), l2[j,k])
         # Dov_2
         Dov -= contract('lmdi, lmda->ia', Zlmdi, t2)
 
         return Dov
                                     
-    def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov):
+    def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         contract = self.contract
         if isinstance(l1, torch.Tensor):
             Doo = torch.zeros_like(l1[:,:no])
@@ -305,12 +311,18 @@ class ccdensity(object):
         for b in range(nv): 
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
+		if real_time is True:
+                    if isinstance(t2, torch.Tensor):
+                        V = F - self.ccwfn.H.F.clone()
+                    else:
+                        V = F - self.ccwfn.H.F.copy()
+                    t3 -= t3_pert_bc(o, v, b, c, t2, V, F, contract)
                 l3 = l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
                 Doo -= 0.5 * contract('lmia,lmja->ij', t3, l3)        
 
         return Doo        
 
-    def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov):
+    def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         contract = self.contract
         if isinstance(l1, torch.Tensor):
             Dvv = torch.zeros_like(l1)
@@ -322,6 +334,12 @@ class ccdensity(object):
             for j in range(no):
                 for k in range(no):
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+		    if real_time is True:
+                        if isinstance(t2, torch.Tensor):
+                            V = F - self.ccwfn.H.F.clone()
+                        else:
+                            V = F - self.ccwfn.H.F.copy()
+                        t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
                     l3 = l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
                     Dvv += 0.5 * contract('bdc,adc->ab', t3, l3)
 
@@ -380,6 +398,9 @@ class ccdensity(object):
                 Dooov += contract('jake,ie->ijka', tmp, t1)
                 tmp = contract('imea,kmef->iakf', t2, l2)
                 Dooov += contract('iakf,jf->ijka', tmp, t1)
+	
+	        if isinstance(tmp, torch.Tensor):
+                    del tmp, Goo
 
             tmp = contract('kmef,jf->kmej', l2, t1)
             tmp = contract('kmej,ie->kmij', tmp, t1)
@@ -391,7 +412,6 @@ class ccdensity(object):
             
             if isinstance(tmp, torch.Tensor):
                 del tmp
-                del Goo
 
         return Dooov
 
@@ -431,6 +451,9 @@ class ccdensity(object):
                 Dvvvo -= contract('iamc,mb->abci', tmp, t1)
                 tmp = contract('mibe,nmce->ibnc', t2, l2)
                 Dvvvo -= contract('ibnc,na->abci', tmp, t1)
+		
+		if isinstance(tmp, torch.Tensor):
+                    del tmp, Gvv
 
             tmp = contract('nmce,ie->nmci', l2, t1)
             tmp = contract('nmci,na->amci', tmp, t1)
@@ -441,8 +464,7 @@ class ccdensity(object):
                 Dvvvo += self.ccwfn.Gvvvo
 
             if isinstance(tmp, torch.Tensor):
-                del tmp
-                del Gvv
+                del tmp               
 
         return Dvvvo
 
@@ -550,6 +572,9 @@ class ccdensity(object):
                 tmp = contract('if,mnef->mnei', t1, l2)
                 tmp = contract('mnei,njae->mija', tmp, t2)
                 Doovv += contract('mb,mija->ijab', t1, tmp)
+		
+		if isinstance(tmp, torch.Tensor):
+                    del tmp, tmp1, tmp2, Goo, Gvv
 
             tmp = contract('jf,mnef->mnej', t1, l2)
             tmp = contract('ie,mnej->mnij', t1, tmp)
@@ -561,7 +586,7 @@ class ccdensity(object):
                 Doovv += self.ccwfn.Goovv
 
             if isinstance(tmp, torch.Tensor):
-                del tmp, tmp1, tmp2, Goo, Gvv
+                del tmp
 
         return Doovv
 

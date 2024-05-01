@@ -542,3 +542,60 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
     else:
         return l3
 
+# Useful for RT-CC3
+# Additional term in T3 equation when an external perturbation is present
+def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
+    tmp = contract('ld,ad->al', V[o,v], t2[i,j])
+    t3 = contract('al,lcb->abc', tmp, t2[k])
+
+    if WithDenom is True:
+        if isinstance(t2, torch.Tensor):
+            Fv = torch.diag(F)[v]
+            denom = torch.zeros_like(t3)
+        else:
+            Fv = np.diag(F)[v]
+            denom = np.zeros_like(t3)
+        denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
+        denom += F[i,i] + F[j,j] + F[k,k]
+        return t3/denom
+    else:
+        return t3
+
+def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
+    tmp = contract('ld,ijd->ijl', V[o,v], t2[:,:,a])
+    t3 = contract('ijl,kl->ijk', tmp, t2[:,:,c,b])
+
+    if WithDenom is True:
+        no = o.stop
+        if isinstance(t2, torch.Tensor):
+            Fo = torch.diag(F)[o]
+            denom = torch.zeros_like(t3)
+        else:
+            Fo = np.diag(F)[o]
+            denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
+        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3
+
+def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
+    tmp = contract('ld,ijad->ijal', V[o,v], t2)
+    t3 = contract('ijal,kl->ijka', tmp, t2[:,:,c,b])
+
+    if WithDenom is True:
+        no = o.stop
+        if isinstance(t2, torch.Tensor):
+            Fo = torch.diag(F)[o]
+            Fv = torch.diag(F)[v]
+            denom = torch.zeros_like(t3)
+        else:
+            Fo = np.diag(F)[o]
+            Fv = np.diag(F)[v]
+            denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
+        denom -= Fv.reshape(1,1,1,-1)
+        denom -= F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3

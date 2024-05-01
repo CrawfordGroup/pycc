@@ -11,7 +11,7 @@ import time
 from opt_einsum import contract
 from .utils import helper_diis
 import torch
-from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt
+from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
 
 
 class cclambda(object):
@@ -346,6 +346,12 @@ class cclambda(object):
                 for n in range(no):
                     for l in range(no):
                         t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+			if self.ccwfn.real_time is True:
+                            if isinstance(t1, torch.Tensor):
+                                V = F - self.ccwfn.H.F.clone()
+                            else:
+                                V = F - self.ccwfn.H.F.copy()
+                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
                         Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
                         Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
                         Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
@@ -386,7 +392,13 @@ class cclambda(object):
             for l in range(no):
                 for m in range(no):
                     for n in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)        
+                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+			if self.ccwfn.real_time is True:
+                            if isinstance(t1, torch.Tensor):
+                                V = F - self.ccwfn.H.F.clone()
+                            else:
+                                V = F - self.ccwfn.H.F.copy()
+                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
                         Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
             for m in range(no):
                 Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])

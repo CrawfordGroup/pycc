@@ -13,7 +13,7 @@ import torch
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
 
 class ccwfn(object):
@@ -86,6 +86,9 @@ class ccwfn(object):
         self.need_t1_transform = ['CC3']
 
         self.make_t3_density = kwargs.pop('make_t3_density', False)
+
+        # RT-CC3 calculations requiring additional terms when an external perturbation is present 
+	self.real_time = kwargs.pop('real_time', False)
 
         valid_local_models = [None, 'PNO', 'PAO','CPNO++','PNO++']
         local = kwargs.pop('local', None)
@@ -325,7 +328,7 @@ class ccwfn(object):
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
 
-    def residuals(self, F, t1, t2):
+    def residuals(self, F, t1, t2, real_time=False):
         """
         Parameters
         ----------
@@ -382,9 +385,13 @@ class ccwfn(object):
             for i in range(no):
                 for j in range(no):
                     for k in range(no):
-                        t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F,
-contract, WithDenom=True)
-
+                        t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                        if real_time is True:
+                            if isinstance(t1, torch.Tensor):
+                                V = F - self.H.F.clone()
+                            else:
+                                V = F - self.H.F.copy()
+                            t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
                         X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
                         X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
                         X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
