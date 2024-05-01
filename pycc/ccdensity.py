@@ -290,7 +290,7 @@ class ccdensity(object):
                     Zlmdi[i,j] += contract('def,ife->di', l3, t2[k])
                     # Dov_1
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-		    if real_time is True:
+                    if real_time is True:
                         if isinstance(t1, torch.Tensor):
                             V = F - self.ccwfn.H.F.clone()
                         else:
@@ -311,7 +311,7 @@ class ccdensity(object):
         for b in range(nv): 
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
-		if real_time is True:
+                if real_time is True:
                     if isinstance(t2, torch.Tensor):
                         V = F - self.ccwfn.H.F.clone()
                     else:
@@ -334,7 +334,7 @@ class ccdensity(object):
             for j in range(no):
                 for k in range(no):
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-		    if real_time is True:
+                    if real_time is True:
                         if isinstance(t2, torch.Tensor):
                             V = F - self.ccwfn.H.F.clone()
                         else:
@@ -399,7 +399,7 @@ class ccdensity(object):
                 tmp = contract('imea,kmef->iakf', t2, l2)
                 Dooov += contract('iakf,jf->ijka', tmp, t1)
 	
-	        if isinstance(tmp, torch.Tensor):
+                if isinstance(tmp, torch.Tensor):
                     del tmp, Goo
 
             tmp = contract('kmef,jf->kmej', l2, t1)
@@ -452,7 +452,7 @@ class ccdensity(object):
                 tmp = contract('mibe,nmce->ibnc', t2, l2)
                 Dvvvo -= contract('ibnc,na->abci', tmp, t1)
 		
-		if isinstance(tmp, torch.Tensor):
+                if isinstance(tmp, torch.Tensor):
                     del tmp, Gvv
 
             tmp = contract('nmce,ie->nmci', l2, t1)
@@ -573,7 +573,7 @@ class ccdensity(object):
                 tmp = contract('mnei,njae->mija', tmp, t2)
                 Doovv += contract('mb,mija->ijab', t1, tmp)
 		
-		if isinstance(tmp, torch.Tensor):
+                if isinstance(tmp, torch.Tensor):
                     del tmp, tmp1, tmp2, Goo, Gvv
 
             tmp = contract('jf,mnef->mnej', t1, l2)
