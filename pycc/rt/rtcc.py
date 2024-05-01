@@ -240,6 +240,10 @@ class rtcc(object):
             else:
                 ints_cc3 = np.zeros_like(ints)
             for i in range(3):
+                if isinstance(t1, torch.Tensor):                    
+                    ints_cc3 = ints_cc3.type_as(t1)
+                else:
+                    ints_cc3 = ints_cc3.astype(t1.dtype)
                 ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
                 ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
      
