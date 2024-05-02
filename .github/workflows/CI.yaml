@@ -35,10 +35,6 @@ jobs:
         df -h
         ulimit -a
 
-    - name: Set up Miniconda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniconda-version: "latest"
 
     - name: Create Psi4 Environment
       uses: conda-incubator/setup-miniconda@v3
