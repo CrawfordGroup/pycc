@@ -58,3 +58,34 @@ class delta_pulse_laser:
             pulse = 0
         return pulse
 
+# ramped continuous wave (RCW)
+# set nr=0 for a regular cosine wave
+class lrcw_laser:
+    def __init__(self, F_str, omega, nr):
+        self.F_str = F_str
+        self.omega = omega
+        self.nr = nr
+    def __call__(self, t):
+        tc = 2 * np.pi / self.omega * self.nr
+        if t <= tc:            
+            pulse = t / tc * self.F_str * np.cos(self.omega * t)
+        else:
+            pulse = self.F_str * np.cos(self.omega * t)
+        return pulse
+
+class qrcw_laser:
+    def __init__(self, F_str, omega, nr):
+        self.F_str = F_str
+        self.omega = omega
+        self.nr = nr
+    def __call__(self, t):
+        tc = 2 * np.pi / self.omega * self.nr
+        if t <= 0.5 * tc:            
+            pulse = 2 * t ** 2 / tc ** 2 * self.F_str * np.cos(self.omega * t)
+        elif t <= tc:
+            pulse = (1 - 2 * (t - tc) ** 2 / tc ** 2)* self.F_str * np.cos(self.omega * t)
+        else:
+            pulse = self.F_str * np.cos(self.omega * t)
+        return pulse
+
+

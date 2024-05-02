@@ -122,7 +122,7 @@ class rtcc(object):
             F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 
         # Compute the current residuals
-        rt1, rt2 = self.ccwfn.residuals(F, t1, t2)
+        rt1, rt2 = self.ccwfn.residuals(F, t1, t2, real_time=True)
         rt1 = rt1 * (-1.0j)
         rt2 = rt2 * (-1.0j)
         if self.ccwfn.local is not None:
@@ -207,7 +207,7 @@ class rtcc(object):
 
         return t1, t2, l1, l2, phase
 
-    def dipole(self, t1, t2, l1, l2, magnetic = False):
+    def dipole(self, t1, t2, l1, l2, magnetic = False, real_time=False):
         """
         Parameters
         ----------
@@ -222,7 +222,7 @@ class rtcc(object):
             Cartesian components of the correlated dipole moment
         """
         if self.ccwfn.model == 'CC3':
-            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2, real_time=real_time)
         else:
             opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
 
@@ -240,6 +240,10 @@ class rtcc(object):
             else:
                 ints_cc3 = np.zeros_like(ints)
             for i in range(3):
+                if isinstance(t1, torch.Tensor):                    
+                    ints_cc3 = ints_cc3.type_as(t1)
+                else:
+                    ints_cc3 = ints_cc3.astype(t1.dtype)
                 ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
                 ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
      
