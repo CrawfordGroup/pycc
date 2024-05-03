@@ -64,7 +64,11 @@ def test_linresp():
             X1_B, X2_B, _ = X_2[string_b]
             polar_AB[a,b] = resp.linresp_asym(string_a, X1_B, X2_B, Y1_B, Y2_B)
 
+    print("Dynamic Polarizability Tensor @ w=0.0656 a.u.:")
+    print(polar_AB)
+    print("Average Dynamic Polarizability:")
     polar_AB_avg = np.average([polar_AB[0,0], polar_AB[1,1], polar_AB[2,2]])
+    print(polar_AB_avg)
 
     #validating from psi4
     polar_XX = 9.92992070420665
