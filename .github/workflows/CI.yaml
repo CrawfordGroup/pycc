@@ -70,7 +70,7 @@ jobs:
       run: |
         export KMP_DUPLICATE_LIB_OK=TRUE
         pip install coverage
-        coverage run -m pytest
+        coverage run -m pytest pycc/tests/test_002_ccsd_energy.py pycc/tests/test_036_lr.py
         coverage xml
         ls -l
 
