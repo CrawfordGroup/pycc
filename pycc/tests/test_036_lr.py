@@ -14,6 +14,7 @@ def test_linresp():
     psi4.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'aug-cc-pvdz',
                       'scf_type': 'pk',
+                      'freeze_core': 'false',
                       'e_convergence': 1e-12,
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12
