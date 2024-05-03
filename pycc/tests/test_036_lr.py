@@ -10,11 +10,12 @@ import pycc
 from ..data.molecules import *
 
 def test_linresp():
+    psi4.core.clean_options()
     psi4.set_memory('2 GiB')
     psi4.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'aug-cc-pvdz',
                       'scf_type': 'pk',
-                      'freeze_core': 'false',
+#                      'freeze_core': 'false',
                       'e_convergence': 1e-12,
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12
