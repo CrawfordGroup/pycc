@@ -51,7 +51,7 @@ jobs:
         conda list --show-channel-urls
         hash -r
         env
-        conda install psi4 python=${{ matrix.python-version }} -c conda-forge
+        conda install psi4 python=${{ matrix.python-version }} numpy=1 -c conda-forge
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
