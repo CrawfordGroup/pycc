@@ -112,6 +112,8 @@ for a in range(0, 3):
     string_a = "MU_" + resp.cart[a]
     X1_A, X2_A, _ = X_A[string_a]
     for b in range(0, 3):
+        # string_a = "MU_" + resp.cart[a]
+        # X1_A, X2_A, _ = X_A[string_a]
         string_b = "MU_" + resp.cart[b]
         # Y1_B, Y2_B, _ = Y_2[string_b]
         # X1_B, X2_B, _ = X_2[string_b]
