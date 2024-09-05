@@ -265,6 +265,14 @@ H -2.607593  0.389884  0.025191
 symmetry c1
 """
 
+h2o2 = """
+    O -0.182400 -0.692195 -0.031109
+    O 0.182400 0.692195 -0.031109
+    H 0.533952 -1.077444 0.493728
+    H -0.533952 1.077444 0.493728
+    symmetry c1
+    """
+
 moldict = {}
 moldict["He"] = he
 moldict["Be"] = be
@@ -285,3 +293,4 @@ moldict["(H2)_2"] = h2_2
 moldict["(S)-dimethylallene"] = sdma
 moldict["(S)-2-chloropropionitrile"] = s2cpn
 moldict["(R)-methylthiirane"] = rmt
+moldict["hydrogenperoxide"] = h2o2
