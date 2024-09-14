@@ -77,10 +77,10 @@ omega1 = 0.0
 # Y_1 = Y(-omega); Y_2 = Y(omega)
 # X_neg = X1(-omega) , X2(-omega)
 # X_pos, Y_neg, Y_pos
-X_1 = {}
-X_2 = {}
-Y_1 = {}
-Y_2 = {}
+# X_1 = {}
+# X_2 = {}
+# Y_1 = {}
+# Y_2 = {}
 X_A = {}
 X_B = {}
 
@@ -96,10 +96,10 @@ for axis in range(0, 3):
     X_A[string] = resp.solve_right(A, omega1)
     X_B[string] = resp.solve_right(A, -omega1)
 
-    X_2[string] = resp.solve_right(A, omega1)
-    Y_2[string] = resp.solve_left(A, omega1)
-    X_1[string] = resp.solve_right(A, -omega1)
-    Y_1[string] = resp.solve_left(A, -omega1)
+    # X_2[string] = resp.solve_right(A, omega1)
+    # Y_2[string] = resp.solve_left(A, omega1)
+    # X_1[string] = resp.solve_right(A, -omega1)
+    # Y_1[string] = resp.solve_left(A, -omega1)
 
 #resp.polar(omega1)
 # Grabbing X, Y and declaring the matrix space for LR
@@ -115,10 +115,10 @@ for a in range(0, 3):
         # string_a = "MU_" + resp.cart[a]
         # X1_A, X2_A, _ = X_A[string_a]
         string_b = "MU_" + resp.cart[b]
-        Y1_B, Y2_B, _ = Y_2[string_b]
-        X1_B, X2_B, _ = X_2[string_b]
+        # Y1_B, Y2_B, _ = Y_2[string_b]
+        # X1_B, X2_B, _ = X_2[string_b]
         X_1B, X_2B, _ = X_B[string_b]
-        polar_AB_pos[a,b] = resp.linresp_asym(string_a, X1_B, X2_B, Y1_B, Y2_B)
+        polar_AB_pos[a,b] = resp.sym_linresp(string_a, string_b, X1_A, X2_A, X_1B, X_2B)
         polar_AB_neg[a, b] = resp.linresp_sym(string_a, string_b, X1_A, X2_A, X_1B, X_2B)
         # polar_AB_neg[a, b] = resp.linresp_sym(string_a, string_b, X1_A, X2_A, X_1B, X_2B)
 
