@@ -297,23 +297,10 @@ class ccresponse(object):
                     check.append(polar)
 
     def sym_linresp(self, pertkey_a, pertkey_b, X1_A, X2_A, X1_B, X2_B):
-        contract = self.ccwfn.contract
-        o = self.ccwfn.o
-        v = self.ccwfn.v
-
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        L = self.ccwfn.H.L
-        t2 = self.ccwfn.t2
-        ERI = self.ccwfn.H.ERI
-
-
-    def sym_linresp(self, pertkey_a, pertkey_b, X1_A, X2_A, X1_B, X2_B):
         """
-        	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
+        	Calculate the CC symmetric linear response function for polarizability at field-frequency omega(w1).
 
-        	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
+        	The linear response function, <<A;B(w1)>> generally requires the following perturbed wave functions and frequencies:
 
         	Parameters
         	----------
@@ -326,712 +313,265 @@ class ccresponse(object):
         	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
         """
 
-        contract = self.ccwfn.contract
-        o = self.ccwfn.o
-        v = self.ccwfn.v
-
-        # Defining the l1 and l2
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        L = self.ccwfn.H.L
-        F = self.ccwfn.H.F
-        t2 = self.ccwfn.t2
-        ERI = self.ccwfn.H.ERI
-
-        # Please refer to eqn 45 of [Crawford: 10.1002/wcms.1406].
+        # Please refer to eqn 94 of [Koch and Jørgensen, “Coupled Cluster Response Functions.”].
         # Writing H(1)(omega) = B, T^(1)(omega) = X, Lambda = L^(0)
         # <<A;B>> = <0|(1 + L^(0)) { [\bar{A}^(0), X^(1)(B)] + [\bar{B}^(1), X^(1)(B)] + [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] } |0>
 
-        # <0|(1 + L^(0)) [\bar{A}^(0), X^(1)(B)] |0>
-        # <0| [\bar{A}^(0), X^(1)(B)] |0> + <0| L^(0) [\bar{A}^(0), X^(1)(B)] |0>
-        #           First term                      Second term
+        contract = self.ccwfn.contract
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        L = self.ccwfn.H.L
 
         polar1 = 0.0
+
+        polar1 += self.LCX(pertkey_a, X1_B, X2_B)
+        polar1 += self.LCX(pertkey_b, X1_A, X2_A)
+
+        # <0|(HX1Y1)|0>
+        LHX1Y1 = 2.0 * contract('ijab, ia, jb', L[o, o, v, v], X1_B, X1_A)
+        Goo = contract('mjab,ijab->mi', t2, l2)
+        Gvv = -1.0 * contract('ijeb,ijab->ae', t2, l2)
+        r2_Gvv = contract('ae,ijeb->ijab', Gvv, L[o, o, v, v])
+        r2_Goo = -1.0 * contract('mi,mjab->ijab', Goo, L[o, o, v, v])
+        r2_Gvv = r2_Gvv + r2_Gvv.swapaxes(0, 1).swapaxes(2, 3)
+        r2_Goo = r2_Goo + r2_Goo.swapaxes(0, 1).swapaxes(2, 3)
+        LHX1Y1 += contract('ijab,ia,jb', r2_Gvv, X1_A, X1_B)  # Gvv
+        LHX1Y1 += contract('ijab,ia,jb', r2_Goo, X1_A, X1_B)  # Goo
+        polar1 += self.LHX1Y1(X1_B, X1_A)
+        polar1 += self.LHX1Y1(X1_A, X1_B)
+
+        # <0|L2[[H, X2], Y2]|0>
+        temp = contract("ikac, ijab -> kjbc", L[o, o, v, v], X2_A)
+        temp = contract("kjbc, klcd -> jlbd", temp, X2_B)
+        LHX2Y2 = 2 * contract("jlbd, jlbd -> ", temp, l2)
+        polar1 += self.LHX2Y2(X2_A, X2_B)
+        polar1 += self.LHX2Y2(X2_B, X2_A)
+
+        polar1 += self.LHX1Y2(X1_B, X2_A)
+        polar1 += self.LHX1Y2(X1_A, X2_B)
+
+        polar1 += LHX1Y1 + LHX2Y2
+
+        return -1.0 * polar1
+
+    def LCX(self, pertkey_a, X1_B, X2_B):
+        """
+        LCX: Is the first second term contributions to the linear response symmetric function.
+        <0|(1 + L^(0)){ [\bar{A}^(0), X^(1)(B)] + [\bar{B}^(1), X^(1)(B)]}|0>
+        """
+
+        contract = self.ccwfn.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+
+        LCX = 0.0
         pertbar_A = self.pertbar[pertkey_a]
-        pertbar_B = self.pertbar[pertkey_b]
-        Aoovv = pertbar_B.Avvoo.swapaxes(0, 2).swapaxes(1, 3)
 
+        Aov = pertbar_A.Aov
+        Aoo = pertbar_A.Aoo
+        Avv = pertbar_A.Avv
+        Avvvo = pertbar_A.Avvvo
+        Aovoo = pertbar_A.Aovoo
 
-        polar1 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
+        # <0|[A_bar, X1]|0>
+        LCX += 2.0 * contract("ia, ia -> ", Aov, X1_B)
 
-        temp_ov = contract('ab, ib -> ia', pertbar_A.Avv, X1_B)
-        temp_ov -= contract('ji, ja -> ia', pertbar_A.Aoo, X1_B)
-        polar1 += contract('ia, ia', temp_ov, l1)
+        # <0|L1 [A_bar, X1]|0>
+        temp_ov = contract('ab, ib -> ia', Avv, X1_B)
+        temp_ov -= contract('ji, ja -> ia', Aoo, X1_B)
+        LCX += contract('ia, ia', temp_ov, l1)
 
-        temp_ov = -1.0 * contract('ja, ijab -> ib', pertbar_A.Aov, X2_B)
-        temp_ov += 2.0 * contract('ja, jiab -> ib', pertbar_A.Aov, X2_B)
-        polar1 += contract("ib, ib -> ", temp_ov, l1)
+        temp_ov = -1.0 * contract('ja, ijab -> ib', Aov, X2_B)
+        temp_ov += 2.0 * contract('ja, jiab -> ib', Aov, X2_B)
+        LCX += contract("ib, ib -> ", temp_ov, l1)
 
-        # Still need to get the derivation right
-        tmp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
-        polar1 += contract("ia, ia -> ", tmp, X1_B)
-        tmp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
-        polar1 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
-        tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
-        polar1 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
+        # <0|L2 [A_bar, X1]|0>
+        tmp = contract("ijbc, bcaj -> ia", l2, Avvvo)
+        LCX += contract("ia, ia -> ", tmp, X1_B)
+        tmp = contract("ijab, kbij -> ak", l2, Aovoo)
+        LCX -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
+        tmp = contract("ijab, kaji -> bk", l2, Aovoo)
+        LCX -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
 
         tmp = contract("ijab, kjab -> ik", l2, X2_B)
-        polar1 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
+        LCX -= 0.5 * contract("ik, ki -> ", tmp, Aoo)
         tmp = contract("ijab, kiba-> jk", l2, X2_B)
-        polar1 -= 0.5 * contract("jk, kj -> ", tmp, pertbar_A.Aoo)
+        LCX -= 0.5 * contract("jk, kj -> ", tmp, Aoo)
         tmp = contract("ijab, ijac -> bc", l2, X2_B)
-        polar1 += 0.5 * contract("bc, bc -> ", tmp, pertbar_A.Avv)
+        LCX += 0.5 * contract("bc, bc -> ", tmp, Avv)
         tmp = contract("ijab, ijcb -> ac", l2, X2_B)
-        polar1 += 0.5 * contract("ac, ac -> ", tmp, pertbar_A.Avv)
+        LCX += 0.5 * contract("ac, ac -> ", tmp, Avv)
 
-        polar1 += 2.0 * contract("ia, ia -> ", pertbar_B.Aov, X1_A)
+        return LCX
 
-        temp_ov = contract('ab, ib -> ia', pertbar_B.Avv, X1_A)
-        temp_ov -= contract('ji, ja -> ia', pertbar_B.Aoo, X1_A)
-        polar1 += contract('ia, ia', temp_ov, l1)
+    def LHX1Y1(self, X1_B, X1_A):
+        """
+        LHX1Y1: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where both perturbed amplitudes are first order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
+        """
 
-        temp_ov = -1.0 * contract('ja, ijab -> ib', pertbar_B.Aov, X2_A)
-        temp_ov += 2.0 * contract('ja, jiab -> ib', pertbar_B.Aov, X2_A)
-        polar1 += contract("ib, ib -> ", temp_ov, l1)
+        contract = self.ccwfn.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        L = self.ccwfn.H.L
 
-        # Still need to get the derivation right
-        tmp = contract("ijbc, bcaj -> ia", l2, pertbar_B.Avvvo)
-        polar1 += contract("ia, ia -> ", tmp, X1_A)
-        tmp = contract("ijab, kbij -> ak", l2, pertbar_B.Aovoo)
-        polar1 -= 0.5 * contract("ak, ka -> ", tmp, X1_A)
-        tmp = contract("ijab, kaji -> bk", l2, pertbar_B.Aovoo)
-        polar1 -= 0.5 * contract("bk, kb -> ", tmp, X1_A)
+        LHX1Y1 = 0.0
 
-        tmp = contract("ijab, kjab -> ik", l2, X2_A)
-        polar1 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_B.Aoo)
-        tmp = contract("ijab, kiba-> jk", l2, X2_A)
-        polar1 -= 0.5 * contract("jk, kj -> ", tmp, pertbar_B.Aoo)
-        tmp = contract("ijab, ijac -> bc", l2, X2_A)
-        polar1 += 0.5 * contract("bc, bc -> ", tmp, pertbar_B.Avv)
-        tmp = contract("ijab, ijcb -> ac", l2, X2_A)
-        polar1 += 0.5 * contract("ac, ac -> ", tmp, pertbar_B.Avv)
-
-        polar1 += 2.0 * contract('ijab, ia, jb', L[o, o, v, v], X1_B, X1_A)
-
+        # <0|L1[[H, X1], Y1]|0>
         tmp = contract('ja, ia -> ij', hbar.Hov, X1_A)
         tmp = contract('ij, jb -> ib', tmp, X1_B)
-        polar1 -= contract('ib, ib', tmp, l1)
-        tmp = contract('ja, ia -> ij', hbar.Hov, X1_B)
-        tmp = contract('ij, jb -> ib', tmp, X1_A)
-        polar1 -= contract('ib, ib', tmp, l1)
+        LHX1Y1 -= contract('ib, ib', tmp, l1)
 
         tmp = contract('jika, ia -> jk', 2 * hbar.Hooov, X1_B)
         tmp = contract('jk, jb -> kb', tmp, X1_A)
-        polar1 -= contract('kb, kb', tmp, l1)
+        LHX1Y1 -= contract('kb, kb', tmp, l1)
         tmp = contract('jika, ia -> jk', hbar.Hooov.swapaxes(0, 1), X1_B)
         tmp = contract('jk, jb -> kb', tmp, X1_A)
-        polar1 += contract('kb, kb', tmp, l1)
-        tmp = contract('jika, ia -> jk', 2 * hbar.Hooov, X1_A)
-        tmp = contract('jk, jb -> kb', tmp, X1_B)
-        polar1 -= contract('kb, kb', tmp, l1)
-        tmp = contract('jika, ia -> jk', hbar.Hooov.swapaxes(0, 1), X1_A)
-        tmp = contract('jk, jb -> kb', tmp, X1_B)
-        polar1 += contract('kb, kb', tmp, l1)
+        LHX1Y1 += contract('kb, kb', tmp, l1)
 
         tmp = contract('cjab, jb -> ac', 2 * hbar.Hvovv, X1_A)
         tmp = contract('ac, ia -> ic', tmp, X1_B)
-        polar1 += contract('ic, ic -> ', tmp, l1)
+        LHX1Y1 += contract('ic, ic -> ', tmp, l1)
         tmp = contract('cjab, jb -> ac', hbar.Hvovv.swapaxes(2, 3), X1_A)
         tmp = contract('ac, ia -> ic', tmp, X1_B)
-        polar1 -= contract('ic, ic -> ', tmp, l1)
-        tmp = contract('cjab, jb -> ac', 2 * hbar.Hvovv, X1_B)
-        tmp = contract('ac, ia -> ic', tmp, X1_A)
-        polar1 += contract('ic, ic -> ', tmp, l1)
-        tmp = contract('cjab, jb -> ac', hbar.Hvovv.swapaxes(2, 3), X1_B)
-        tmp = contract('ac, ia -> ic', tmp, X1_A)
-        polar1 -= contract('ic, ic -> ', tmp, l1)
+        LHX1Y1 -= contract('ic, ic -> ', tmp, l1)
 
+        # <0|L2[[H, X1], Y1]|0>
         temp = contract("jcka, ia -> ijkc", hbar.Hovov, X1_A)
         temp = contract("ijkc, jb -> kibc", temp, X1_B)
-        polar1 -= contract("kibc, kibc -> ", temp, l2)
-        temp = contract("jcka, ia -> ijkc", hbar.Hovov, X1_B)
-        temp = contract("ijkc, jb -> kibc", temp, X1_A)
-        polar1 -= contract("kibc, kibc -> ", temp, l2)
+        LHX1Y1 -= contract("kibc, kibc -> ", temp, l2)
         temp = contract("jcak, ia -> ijkc", hbar.Hovvo, X1_A)
         temp = contract("ijkc, jb -> kicb", temp, X1_B)
-        polar1 -= contract("kicb, kicb -> ", temp, l2)
-        temp = contract("jcak, ia -> ijkc", hbar.Hovvo, X1_B)
-        temp = contract("ijkc, jb -> kicb", temp, X1_A)
-        polar1 -= contract("kicb, kicb -> ", temp, l2)
+        LHX1Y1 -= contract("kicb, kicb -> ", temp, l2)
         temp = contract('cdab, ia -> ibcd', hbar.Hvvvv, X1_B)
         temp = contract('ibcd, jb -> ijcd', temp, X1_A)
-        polar1 += 0.5 * contract('ijcd, ijcd', temp, l2)
-        temp = contract('cdab, ia -> ibcd', hbar.Hvvvv, X1_A)
-        temp = contract('ibcd, jb -> ijcd', temp, X1_B)
-        polar1 += 0.5 * contract('ijcd, ijcd', temp, l2)
+        LHX1Y1 += 0.5 * contract('ijcd, ijcd', temp, l2)
         temp = contract('ijkl, ia -> klaj', hbar.Hoooo, X1_B)
         temp = contract('klaj, jb -> klab', temp, X1_A)
-        polar1 += 0.5 * contract('klab, klab', temp, l2)
-        temp = contract('ijkl, ia -> klaj', hbar.Hoooo, X1_A)
-        temp = contract('klaj, jb -> klab', temp, X1_B)
-        polar1 += 0.5 * contract('klab, klab', temp, l2)
-        # I might re-index the three-body term for consistency
-        Goo = contract('mjab,ijab->mi', t2, l2)
-        Gvv = -1.0 * contract('ijeb,ijab->ae', t2, l2)
-        r2_Gvv = contract('ae,ijeb->ijab', Gvv, L[o, o, v, v])
-        r2_Goo = -1.0 * contract('mi,mjab->ijab', Goo, L[o, o, v, v])
-        r2_Gvv = r2_Gvv + r2_Gvv.swapaxes(0, 1).swapaxes(2, 3)
-        r2_Goo = r2_Goo + r2_Goo.swapaxes(0, 1).swapaxes(2, 3)
-        polar1 += contract('ijab,ia,jb', r2_Gvv, X1_A, X1_B)     #Gvv
-        polar1 += contract('ijab,ia,jb', r2_Goo, X1_A, X1_B)     #Goo
+        LHX1Y1 += 0.5 * contract('klab, klab', temp, l2)
 
-        temp = contract("ikac, ijab -> kjbc", L[o, o, v, v], X2_A)
-        temp = contract("kjbc, klcd -> jlbd", temp, X2_B)
-        polar1 += 2 * contract("jlbd, jlbd -> ", temp, l2)
-        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
-        temp = contract("bc, klcd -> klbd", temp, X2_B)
-        polar1 -= contract("klbd, klbd -> ", temp, l2)
-        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
-        temp = contract("jk, jlbd -> klbd", temp, X2_B)
-        polar1 -= contract("klbd, klbd -> ", temp, l2)
-        temp = contract("ijac, jkbc -> ikab", L[o, o, v, v], X2_A)
-        temp = contract("ikab, ilad -> klbd", temp, X2_B)
-        polar1 -= contract("klbd, klbd -> ", temp, l2)
-        temp = contract("ikad, klcd -> ilac", L[o, o, v, v], X2_B)
-        temp = contract("ilac, ijab -> jlbc", temp, X2_A)
-        polar1 -= contract("jlbc, jlbc -> ", temp, l2)
-        temp = contract("ikad, ikac -> cd", L[o, o, v, v], X2_B)
-        temp = contract("cd, jlbd -> jlbc", temp, X2_A)
-        polar1 -= contract("jlbc, jlbc -> ", temp, l2)
-        temp = contract("ikad, ilad -> kl", L[o, o, v, v], X2_B)
-        temp = contract("kl, jkbc -> jlbc", temp, X2_A)
-        polar1 -= contract("jlbc, jlbc -> ", temp, l2)
-        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("klij, klcd -> ijcd", temp, X2_B)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("klij, klcd -> ijcd", temp, X2_A)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("ilbc, jlbd -> ijcd", temp, X2_B)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("ilbc, jlbd -> ijcd", temp, X2_A)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("ikbd, jkbc -> ijcd", temp, X2_B)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("ikbd, jkbc -> ijcd", temp, X2_A)
-        polar1 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+        return LHX1Y1
 
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_A)
-        temp = contract("jc, jkbc -> kb", temp, X2_B)
-        polar1 -= contract("kb, kb", temp, l1)
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
-        temp = contract("jc, jkbc -> kb", temp, X2_A)
-        polar1 -= contract("kb, kb", temp, l1)
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_A)
-        temp = contract("jc, jkcb -> kb", temp, X2_B)
-        polar1 += 2.0 * contract("kb, kb", temp, l1)
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
-        temp = contract("jc, jkcb -> kb", temp, X2_A)
-        polar1 += 2.0 * contract("kb, kb", temp, l1)
-        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_B)
-        temp = contract("jk, jb -> kb", temp, X1_A)
-        polar1 -= contract("kb, kb -> ", temp, l1)
-        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
-        temp = contract("jk, jb -> kb", temp, X1_B)
-        polar1 -= contract("kb, kb -> ", temp, l1)
-        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_B)
-        temp = contract("bc, kc -> kb", temp, X1_A)
-        polar1 -= contract("kb, kb -> ", temp, l1)
-        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
-        temp = contract("bc, kc -> kb", temp, X1_B)
-        polar1 -= contract("kb, kb -> ", temp, l1)
-
-        # <O|L2(A)[[Hbar(0),X2(B)],X1(C)]]|0>
-        tmp = contract("klcd,lkdb->cb", X2_B, l2)
-        tmp = contract("jb,cb->jc", X1_A, tmp)
-        polar1 -= contract("jc,jc->", tmp, hbar.Hov)
-        tmp = contract("klcd,ljdc->kj", X2_B, l2)
-        tmp = contract("kj,jb->kb", tmp, X1_A)
-        polar1 -= contract("kb,kb->", tmp, hbar.Hov)
-        # down
-        tmp = contract('lkda,klcd->ac', l2, X2_B)
-        tmp2 = contract('jb,ajcb->ac', X1_A, hbar.Hvovv)
-        polar1 += 2.0 * contract('ac,ac->', tmp, tmp2)
-        tmp = contract('lkda,klcd->ac', l2, X2_B)
-        tmp2 = contract('jb,ajbc->ac', X1_A, hbar.Hvovv)
-        polar1 -= contract('ac,ac->', tmp, tmp2)
-        tmp = contract('jb,ljda->lbda', X1_A, l2)
-        # swapaxes
-        tmp2 = 2.0 * contract('klcd,akbc->ldab', X2_B, hbar.Hvovv)
-        tmp2 -= contract('klcd,akcb->ldab', X2_B, hbar.Hvovv)
-        polar1 += contract('lbda,ldab->', tmp, tmp2)
-        tmp = contract('ia,fkba->fkbi', X1_A, hbar.Hvovv)
-        tmp = contract('fkbi,jifc->kjbc', tmp, l2)
-        polar1 -= contract('jkbc,kjbc->', X2_B, tmp)
-        tmp = contract('ia,fjac->fjic', X1_A, hbar.Hvovv)
-        tmp = contract('fjic,ikfb->jkbc', tmp, l2)
-        polar1 -= contract('jkbc,jkbc->', X2_B, tmp)
-        tmp = contract('ia,jkfa->jkfi', X1_A, l2)
-        tmp2 = contract('jkbc,fibc->jkfi', X2_B, hbar.Hvovv)
-        polar1 -= contract('jkfi,jkfi->', tmp2, tmp)
-        tmp = contract('jb,kjib->ki', X1_A, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_B, l2)
-        polar1 -= 2.0 * contract('ki,ki->', tmp, tmp2)
-        tmp = contract('jb,jkib->ki', X1_A, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_B, l2)
-        polar1 += contract('ki,ki->', tmp, tmp2)
-        tmp = 2.0 * contract('jkic,klcd->jild', hbar.Hooov, X2_B)
-        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_B)
-        tmp = contract('jild,jb->bild', tmp, X1_A)
-        polar1 -= contract('bild,ilbd->', tmp, l2)
-        tmp = contract('ia,jkna->jkni', X1_A, hbar.Hooov)
-        tmp2 = contract('jkbc,nibc->jkni', X2_B, l2)
-        polar1 += contract('jkni,jkni->', tmp2, tmp)
-        tmp = contract('ia,nkab->nkib', X1_A, l2)
-        tmp = contract('jkbc,nkib->jnic', X2_B, tmp)
-        polar1 += contract('jnic,ijnc->', tmp, hbar.Hooov)
-        tmp = contract('ia,nkba->nkbi', X1_A, l2)
-        tmp = contract('jkbc,nkbi->jnci', X2_B, tmp)
-        polar1 += contract('jnci,jinc->', tmp, hbar.Hooov)
-        tmp = contract("klcd,lkdb->cb", X2_A, l2)
-        tmp = contract("jb,cb->jc", X1_B, tmp)
-        polar1 -= contract("jc,jc->", tmp, hbar.Hov)
-        tmp = contract("klcd,ljdc->kj", X2_A, l2)
-        tmp = contract("kj,jb->kb", tmp, X1_B)
-        polar1 -= contract("kb,kb->", tmp, hbar.Hov)
-        # down
-        tmp = contract('lkda,klcd->ac', l2, X2_A)
-        tmp2 = contract('jb,ajcb->ac', X1_B, hbar.Hvovv)
-        polar1 += 2.0 * contract('ac,ac->', tmp, tmp2)
-        tmp = contract('lkda,klcd->ac', l2, X2_A)
-        tmp2 = contract('jb,ajbc->ac', X1_B, hbar.Hvovv)
-        polar1 -= contract('ac,ac->', tmp, tmp2)
-        tmp = contract('jb,ljda->lbda', X1_B, l2)
-        # swapaxes
-        tmp2 = 2.0 * contract('klcd,akbc->ldab', X2_A, hbar.Hvovv)
-        tmp2 -= contract('klcd,akcb->ldab', X2_A, hbar.Hvovv)
-        polar1 += contract('lbda,ldab->', tmp, tmp2)
-        tmp = contract('ia,fkba->fkbi', X1_B, hbar.Hvovv)
-        tmp = contract('fkbi,jifc->kjbc', tmp, l2)
-        polar1 -= contract('jkbc,kjbc->', X2_A, tmp)
-        tmp = contract('ia,fjac->fjic', X1_B, hbar.Hvovv)
-        tmp = contract('fjic,ikfb->jkbc', tmp, l2)
-        polar1 -= contract('jkbc,jkbc->', X2_A, tmp)
-        tmp = contract('ia,jkfa->jkfi', X1_B, l2)
-        tmp2 = contract('jkbc,fibc->jkfi', X2_A, hbar.Hvovv)
-        polar1 -= contract('jkfi,jkfi->', tmp2, tmp)
-        tmp = contract('jb,kjib->ki', X1_B, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_A, l2)
-        polar1 -= 2.0 * contract('ki,ki->', tmp, tmp2)
-        tmp = contract('jb,jkib->ki', X1_B, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_A, l2)
-        polar1 += contract('ki,ki->', tmp, tmp2)
-        tmp = 2.0 * contract('jkic,klcd->jild', hbar.Hooov, X2_A)
-        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_A)
-        tmp = contract('jild,jb->bild', tmp, X1_B)
-        polar1 -= contract('bild,ilbd->', tmp, l2)
-        tmp = contract('ia,jkna->jkni', X1_B, hbar.Hooov)
-        tmp2 = contract('jkbc,nibc->jkni', X2_A, l2)
-        polar1 += contract('jkni,jkni->', tmp2, tmp)
-        tmp = contract('ia,nkab->nkib', X1_B, l2)
-        tmp = contract('jkbc,nkib->jnic', X2_A, tmp)
-        polar1 += contract('jnic,ijnc->', tmp, hbar.Hooov)
-        tmp = contract('ia,nkba->nkbi', X1_B, l2)
-        tmp = contract('jkbc,nkbi->jnci', X2_A, tmp)
-        polar1 += contract('jnci,jinc->', tmp, hbar.Hooov)
-
-
-        return polar1
-
-    def linresp_sym(self, pertkey_a, pertkey_b, X1_A, X2_A, X1_B, X2_B):
+    def LHX2Y2(self, X2_A, X2_B):
         """
-        	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
-
-        	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
-
-        	Parameters
-        	----------
-        	pertkey_a: string
-        		String identifying the one-electron perturbation, A along a cartesian axis
-
-        	Return
-        	------
-        	polar: float
-        	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
+        LHX2Y2: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where both perturbed amplitudes are second order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
         """
 
         contract = self.ccwfn.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        L = self.ccwfn.H.L
+        ERI = self.ccwfn.H.ERI
 
-        # Defining the l1 and l2
+        LHX2Y2 = 0.0
+        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
+        temp = contract("bc, klcd -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
+        temp = contract("jk, jlbd -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("ijac, jkbc -> ikab", L[o, o, v, v], X2_A)
+        temp = contract("ikab, ilad -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("klij, klcd -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("ilbc, jlbd -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("ikbd, jkbc -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+
+        return LHX2Y2
+
+    def LHX1Y2(self, X1_B, X2_A):
+        """
+        LHX1Y2: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where perturbed amplitudes is a first order and a second order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
+        """
+
+        contract = self.ccwfn.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
         l1 = self.cclambda.l1
         l2 = self.cclambda.l2
         hbar = self.hbar
         L = self.ccwfn.H.L
-        F = self.ccwfn.H.F
-        t2 = self.ccwfn.t2
-        ERI = self.ccwfn.H.ERI
 
-        # Please refer to eqn 45 of [Crawford: 10.1002/wcms.1406].
-        # Writing H(1)(omega) = B, T^(1)(omega) = X, Lambda = L^(0)
-        # <<A;B>> = <0|(1 + L^(0)) { [\bar{A}^(0), X^(1)(B)] + [\bar{B}^(1), X^(1)(B)] + [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] } |0>
-
-        # <0|(1 + L^(0)) [\bar{A}^(0), X^(1)(B)] |0>
-        # <0| [\bar{A}^(0), X^(1)(B)] |0> + <0| L^(0) [\bar{A}^(0), X^(1)(B)] |0>
-        #           First term                      Second term
-
-        polar = 0.0
-        pertbar_A = self.pertbar[pertkey_a]
-        pertbar_B = self.pertbar[pertkey_b]
-        Aoovv = pertbar_B.Avvoo.swapaxes(0, 2).swapaxes(1, 3)
-
-
-        # First term (The contribution is only from the X1 amplitude and no contribution for the X2 amplitudes)
-        polar += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
-        # Second term (contributions from the L1 and X1)
-        temp = contract("ia, ic -> ac", l1, X1_B)
-        polar += contract("ac, ac -> ", temp, pertbar_A.Avv)
-        temp = contract("ia, ka -> ik", l1, X1_B)
-        polar -= contract("ik, ki -> ", temp, pertbar_A.Aoo)
-        # Second term (contributions from the L1 and X2)
-        temp = contract("ia, jb -> ijab", l1, pertbar_A.Aov)
-        polar += 2.0 * contract("ijab, ijab -> ", temp, X2_B)
-        polar += -1.0 * contract("ijab, ijba -> ", temp, X2_B)
-        # Second term (contributions from the L2 and X1)
-        temp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
-        polar += contract("ia, ia -> ", temp, X1_B)
-        temp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
-        polar -= 0.5 * contract("ak, ka -> ", temp, X1_B)
-        temp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
-        polar -= 0.5 * contract("bk, kb -> ", temp, X1_B)
-        # Second term (contributions from the L2 and X2)
-        temp = contract("ijab, kjab -> ik", l2, X2_B)
-        polar -= 0.5 * contract("ik, ki -> ", temp, pertbar_A.Aoo)
-        temp = contract("ijab, kiba-> jk", l2, X2_B)
-        polar -= 0.5 * contract("jk, kj -> ", temp, pertbar_A.Aoo)
-        temp = contract("ijab, ijac -> bc", l2, X2_B)
-        polar += 0.5 * contract("bc, bc -> ", temp, pertbar_A.Avv)
-        temp = contract("ijab, ijcb -> ac", l2, X2_B)
-        polar += 0.5 * contract("ac, ac -> ", temp, pertbar_A.Avv)
-
-        # <0|(1 + L^(0)) [\bar{B}^(1), X^(1)(B)] |0>
-        # <0| [\bar{B}^(1), X^(1)(B)] |0> + <0| L^(0) [\bar{B}^(0), X^(1)(B)] |0>
-        #           Third term                      Fourth term
-
-        # Third term (The contribution is only from the X1 amplitude and no contribution for the X2 amplitudes)
-        polar += 2.0 * contract("ia, ia -> ", pertbar_B.Aov, X1_A)
-        # Fourth term (contributions from the L1 and X1)
-        temp = contract("ia, ic -> ac", l1, X1_A)
-        polar += contract("ac, ac -> ", temp, pertbar_B.Avv)
-        temp = contract("ia, ka -> ik", l1, X1_A)
-        polar -= contract("ik, ki -> ", temp, pertbar_B.Aoo)
-        # Fourth term (contributions from the L1 and X2)
-        temp = contract("ia, jb -> ijab", l1, pertbar_B.Aov)
-        polar += 2.0 * contract("ijab, ijab -> ", temp, X2_A)
-        polar += -1.0 * contract("ijab, ijba -> ", temp, X2_A)
-        # Fourth term (contributions from the L2 and X1)
-        temp = contract("ijbc, bcaj -> ia", l2, pertbar_B.Avvvo)
-        polar += contract("ia, ia -> ", temp, X1_A)
-        temp = contract("ijab, kbij -> ak", l2, pertbar_B.Aovoo)
-        polar -= 0.5 * contract("ak, ka -> ", temp, X1_A)
-        temp = contract("ijab, kaji -> bk", l2, pertbar_B.Aovoo)
-        polar -= 0.5 * contract("bk, kb -> ", temp, X1_A)
-        # Fourth term (contributions from the L2 and X2)
-        temp = contract("ijab, kjab -> ik", l2, X2_A)
-        polar -= 0.5 * contract("ik, ki -> ", temp, pertbar_B.Aoo)
-        temp = contract("ijab, kiba-> jk", l2, X2_A)
-        polar -= 0.5 * contract("jk, kj -> ", temp, pertbar_B.Aoo)
-        temp = contract("ijab, ijac -> bc", l2, X2_A)
-        polar += 0.5 * contract("bc, bc -> ", temp, pertbar_B.Avv)
-        temp = contract("ijab, ijcb -> ac", l2, X2_A)
-        polar += 0.5 * contract("ac, ac -> ", temp, pertbar_B.Avv)
-
-        # # <0|(1 + L^(0))[[\bar{B}^(0), X^(1)(B)], X^(1)(B)]|0>
-        # # <0|[[\bar{B}^(0), X^(1)(B)], X^(1)(B)]|0> + <0| L^(0) [[\bar{B}^(0), X^(1)(B)], X^(1)(B)]|0>
-        # #               Fifth term                          Sixth term
-        #
-        # # Expanding the permutational operator and implementing it explicitly
-        temp = contract("ijab, ia -> jb", L[o, o, v, v], X1_A)
-        polar += 2.0 * contract("jb, jb -> ", temp, X1_B)
-        # # # #
-        temp = contract("je, ja -> ea", X1_A, hbar.Hov)
-        temp = contract("ea, ma -> me", temp, X1_B)
-        polar -= contract("me, me -> ", temp, l1)
-        temp = contract("je, ja -> ea", X1_B, hbar.Hov)
-        temp = contract("ea, ma -> me", temp, X1_A)
-        polar -= contract("me, me -> ", temp, l1)
-        # #
-        temp = contract("jima, je -> ieam", (2 * hbar.Hooov), X1_A)
-        temp = contract("ieam, ia -> me", temp, X1_B)
-        polar -= contract("me, me -> ", temp, l1)
-        temp = contract("jima, je -> ieam", (2 * hbar.Hooov), X1_B)
-        temp = contract("ieam, ia -> me", temp, X1_A)
-        polar -= contract("me, me -> ", temp, l1)
-        temp = contract("jiem, ia -> ajem", hbar.Hooov.swapaxes(2, 3), X1_A)
-        temp = contract("ajem, je -> ma", temp, X1_B)
-        polar += contract("ma, ma -> ", temp, l1)
-        temp = contract("jiem, ia -> ajem", hbar.Hooov.swapaxes(2, 3), X1_B)
-        temp = contract("ajem, je -> ma", temp, X1_A)
-        polar += contract("ma, ma -> ", temp, l1)
-        # # #
-        temp = contract("ejab, jb -> ea", (2.0 * hbar.Hvovv), X1_A)
-        temp = contract("ea, ma -> me", temp, X1_B)
-        polar += contract("me, me -> ", temp, l1)
-        temp = contract("ejab, jb -> ea", hbar.Hvovv.swapaxes(2, 3), X1_A)
-        temp = contract("ea, ma -> me", temp, X1_B)
-        polar -= contract("me, me -> ", temp, l1)
-        temp = contract("ejba, ja -> be", (2.0 * hbar.Hvovv), X1_B)
-        temp = contract("be, mb -> me", temp, X1_A)
-        polar += contract("me, me -> ", temp, l1)
-        temp = contract("ejba, ja -> be", hbar.Hvovv.swapaxes(2, 3), X1_B)
-        temp = contract("be, mb -> me", temp, X1_A)
-        polar -= contract("me, me -> ", temp, l1)
-        #
-        temp = contract("jfma, je -> amef", hbar.Hovov, X1_A)
-        temp = contract("amef, na -> mnef", temp, X1_B)
-        polar -= contract("mnef, mnef -> ", temp, l2)
-
-        temp = contract("jfma, je -> amef", hbar.Hovov, X1_B)
-        temp = contract("amef, na -> mnef", temp, X1_A)
-        polar -= contract("mnef, mnef -> ", temp, l2)
-
-        temp = contract("jeam, na -> mnej", hbar.Hovvo, X1_A)
-        temp = contract("mnej, jc -> mnec", temp, X1_B)
-        polar -= contract("mnec, mnec -> ", temp, l2)
-
-        temp = contract("jeam, na -> mnej", hbar.Hovvo, X1_B)
-        temp = contract("mnej, jc -> mnec", temp, X1_A)
-        polar -= contract("mnec, mnec -> ", temp, l2)
-
-        temp = contract("abef, jf -> abej", hbar.Hvvvv, X1_A)
-        temp = contract("abej, ie -> ijab", temp, X1_B)
-        polar += 0.5 * contract("ijab, ijab  -> ", temp, l2)
-
-        temp = contract("abef, jf -> abej", hbar.Hvvvv, X1_B)
-        temp = contract("abej, ie -> ijab", temp, X1_A)
-        polar += 0.5 * contract("ijab, ijab  -> ", temp, l2)
-
-        temp = contract("mnij, ma -> anij", hbar.Hoooo, X1_A)
-        temp = contract("anij, nb -> ijab", temp, X1_B)
-        polar += 0.5 * contract("ijab, ijab -> ", temp, l2)
-
-        temp = contract("mnij, ma -> anij", hbar.Hoooo, X1_B)
-        temp = contract("anij, nb -> ijab", temp, X1_A)
-        polar += 0.5 * contract("ijab, ijab -> ", temp, l2)
-        #
-        Goo = contract('mjab,ijab->mi', t2, l2)
-        Gvv = -1.0 * contract('ijeb,ijab->ae', t2, l2)
-        r2_Gvv = contract('ae,ijeb->ijab', Gvv, L[o, o, v, v])
-        r2_Goo = -1.0 * contract('mi,mjab->ijab', Goo, L[o, o, v, v])
-        r2_Gvv = r2_Gvv + r2_Gvv.swapaxes(0, 1).swapaxes(2, 3)
-        r2_Goo = r2_Goo + r2_Goo.swapaxes(0, 1).swapaxes(2, 3)
-        polar += contract('ijab,ia,jb', r2_Gvv, X1_A, X1_B)     #Gvv
-        # print("Gvv\n", polar_Gvv)
-        polar += contract('ijab,ia,jb', r2_Goo, X1_A, X1_B)     #Goo
-        # print("Goo\n", polar_Goo)
-
-        # # Begin HX_2Y_2
-        temp = contract("ikac, ijab -> kjbc", L[o, o, v, v], X2_A)
-        temp = contract("kjbc, klcd -> jlbd", temp, X2_B)
-        polar += 2 * contract("jlbd, jlbd -> ", temp, l2)
-
-        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
-        temp = contract("bc, klcd -> klbd", temp, X2_B)
-        polar -= contract("klbd, klbd -> ", temp, l2)
-        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
-        temp = contract("jk, jlbd -> klbd", temp, X2_B)
-        polar -= contract("klbd, klbd -> ", temp, l2)
-        temp = contract("ijac, jkbc -> ikab", L[o, o, v, v], X2_A)
-        temp = contract("ikab, ilad -> klbd", temp, X2_B)
-        polar -= contract("klbd, klbd -> ", temp, l2)
-
-        temp = contract("ikad, klcd -> ilac", L[o, o, v, v], X2_B)
-        temp = contract("ilac, ijab -> jlbc", temp, X2_A)
-        polar -= contract("jlbc, jlbc -> ", temp, l2)
-        temp = contract("ikad, ikac -> cd", L[o, o, v, v], X2_B)
-        temp = contract("cd, jlbd -> jlbc", temp, X2_A)
-        polar -= contract("jlbc, jlbc -> ", temp, l2)
-        temp = contract("ikad, ilad -> kl", L[o, o, v, v], X2_B)
-        temp = contract("kl, jkbc -> jlbc", temp, X2_A)
-        polar -= contract("jlbc, jlbc -> ", temp, l2)
-
-
-        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("klij, klcd -> ijcd", temp, X2_B)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-
-        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("klij, klcd -> ijcd", temp, X2_A)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-
-        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("ilbc, jlbd -> ijcd", temp, X2_B)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-
-        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("ilbc, jlbd -> ijcd", temp, X2_A)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-
-        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_A)
-        temp = contract("ikbd, jkbc -> ijcd", temp, X2_B)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-
-        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_B)
-        temp = contract("ikbd, jkbc -> ijcd", temp, X2_A)
-        polar += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
-        # # End HX_{2}Y_{2}
-
-        # Begin L_{1}HX_{1}Y_{2}
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_A)
-        temp = contract("jc, jkbc -> kb", temp, X2_B)
-        polar -= contract("kb, kb", temp, l1)
+        LHX1Y2 = 0.0
+        # <O|L1(0)[[Hbar(0),X1(B)],X2(A)]]|0>
         temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
         temp = contract("jc, jkbc -> kb", temp, X2_A)
-        polar -= contract("kb, kb", temp, l1)
-        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_A)
-        temp = contract("jc, jkcb -> kb", temp, X2_B)
-        polar += 2.0 * contract("kb, kb", temp, l1)
+        LHX1Y2 -= contract("kb, kb", temp, l1)
         temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
         temp = contract("jc, jkcb -> kb", temp, X2_A)
-        polar += 2.0 * contract("kb, kb", temp, l1)
-
-        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_B)
-        temp = contract("jk, jb -> kb", temp, X1_A)
-        polar -= contract("kb, kb -> ", temp, l1)
+        LHX1Y2 += 2.0 * contract("kb, kb", temp, l1)
         temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
         temp = contract("jk, jb -> kb", temp, X1_B)
-        polar -= contract("kb, kb -> ", temp, l1)
-
-        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_B)
-        temp = contract("bc, kc -> kb", temp, X1_A)
-        polar -= contract("kb, kb -> ", temp, l1)
+        LHX1Y2 -= contract("kb, kb -> ", temp, l1)
         temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
         temp = contract("bc, kc -> kb", temp, X1_B)
-        polar -= contract("kb, kb -> ", temp, l1)
-        # End L_{1}HX_{1}Y_{2}
+        LHX1Y2 -= contract("kb, kb -> ", temp, l1)
 
-        # Begin L_{2}HX_{1}Y_{2}
         # <O|L2(A)[[Hbar(0),X2(B)],X1(C)]]|0>
-        tmp = contract("klcd,lkdb->cb", X2_B, l2)
-        tmp = contract("jb,cb->jc", X1_A, tmp)
-        polar -= contract("jc,jc->", tmp, hbar.Hov)
+        temp = contract('ja, ia -> ij', hbar.Hov, X1_B)
+        temp = contract('ij, jkbc -> ikbc', temp, X2_A)
+        LHX1Y2 -= contract('ikbc, ikbc', temp, l2)
+        temp = contract('ja, jb -> ab', hbar.Hov, X1_B)
+        temp = contract('ab, ikac -> ikbc', temp, X2_A)
+        LHX1Y2 -= contract('ikbc, ikbc', temp, l2)
 
-        tmp = contract("klcd,ljdc->kj", X2_B, l2)
-        tmp = contract("kj,jb->kb", tmp, X1_A)
-        polar -= contract("kb,kb->", tmp, hbar.Hov)
+        temp = contract('jima, ia -> jm', (2*hbar.Hooov - hbar.Hooov.swapaxes(0, 1)), X1_B)
+        temp = contract('jm, jkbc -> kmcb', temp, X2_A)
+        LHX1Y2 -= contract('kmcb, kmcb -> ', temp, l2)
+        temp = contract('jima, jb -> imab', (2*hbar.Hooov - hbar.Hooov.swapaxes(0, 1)), X1_B)
+        temp = contract('imab, ikac -> kmcb', temp, X2_A)
+        LHX1Y2 -= contract('kmcb, kmcb', temp, l2)
 
-        # down
-        tmp = contract('lkda,klcd->ac', l2, X2_B)
-        tmp2 = contract('jb,ajcb->ac', X1_A, hbar.Hvovv)
-        polar += 2.0 * contract('ac,ac->', tmp, tmp2)
+        temp = contract('djab, ia -> djib', (2*hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)), X1_B)
+        temp = contract('djib, jkbc -> kicd', temp, X2_A)
+        LHX1Y2 += contract('kicd, kicd', temp, l2)
+        temp = contract('djab, jb -> ad', (2 * hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)), X1_B)
+        temp = contract('ad, ikac -> kicd', temp, X2_A)
+        LHX1Y2 += contract('kicd, kicd', temp, l2)
 
-        tmp = contract('lkda,klcd->ac', l2, X2_B)
-        tmp2 = contract('jb,ajbc->ac', X1_A, hbar.Hvovv)
-        polar -= contract('ac,ac->', tmp, tmp2)
+        temp = contract('kdab, ia -> ikdb', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('ikdb, jkbc -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
+        temp = contract('kdab, jb -> kjad', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('kjad, ikac -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
+        temp = contract('kdab, kc -> abcd', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('abcd, ijab -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
 
-        tmp = contract('jb,ljda->lbda', X1_A, l2)
+        temp = contract('jkla, ia -> ijkl', hbar.Hooov, X1_B)
+        temp = contract('ijkl, jkbc -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc', temp, l2)
+        temp = contract('jkla, jb -> klab', hbar.Hooov, X1_B)
+        temp = contract('klab, ikac -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc -> ', temp, l2)
+        temp = contract('jkla, kc -> jlac', hbar.Hooov, X1_B)
+        temp = contract('jlac, ijab -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc -> ', temp, l2)
 
-        # swapaxes
-        tmp2 = 2.0 * contract('klcd,akbc->ldab', X2_B, hbar.Hvovv)
-        tmp2 -= contract('klcd,akcb->ldab', X2_B, hbar.Hvovv)
-        polar += contract('lbda,ldab->', tmp, tmp2)
 
-        tmp = contract('ia,fkba->fkbi', X1_A, hbar.Hvovv)
-        tmp = contract('fkbi,jifc->kjbc', tmp, l2)
-        polar -= contract('jkbc,kjbc->', X2_B, tmp)
-
-        tmp = contract('ia,fjac->fjic', X1_A, hbar.Hvovv)
-        tmp = contract('fjic,ikfb->jkbc', tmp, l2)
-        polar -= contract('jkbc,jkbc->', X2_B, tmp)
-
-        tmp = contract('ia,jkfa->jkfi', X1_A, l2)
-        tmp2 = contract('jkbc,fibc->jkfi', X2_B, hbar.Hvovv)
-        polar -= contract('jkfi,jkfi->', tmp2, tmp)
-
-        tmp = contract('jb,kjib->ki', X1_A, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_B, l2)
-        polar -= 2.0 * contract('ki,ki->', tmp, tmp2)
-
-        tmp = contract('jb,jkib->ki', X1_A, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_B, l2)
-        polar += contract('ki,ki->', tmp, tmp2)
-
-        tmp = 2.0 * contract('jkic,klcd->jild', hbar.Hooov, X2_B)
-        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_B)
-        tmp = contract('jild,jb->bild', tmp, X1_A)
-        polar -= contract('bild,ilbd->', tmp, l2)
-
-        tmp = contract('ia,jkna->jkni', X1_A, hbar.Hooov)
-        tmp2 = contract('jkbc,nibc->jkni', X2_B, l2)
-        polar += contract('jkni,jkni->', tmp2, tmp)
-
-        tmp = contract('ia,nkab->nkib', X1_A, l2)
-        tmp = contract('jkbc,nkib->jnic', X2_B, tmp)
-        polar += contract('jnic,ijnc->', tmp, hbar.Hooov)
-
-        tmp = contract('ia,nkba->nkbi', X1_A, l2)
-        tmp = contract('jkbc,nkbi->jnci', X2_B, tmp)
-        polar += contract('jnci,jinc->', tmp, hbar.Hooov)
-
-        tmp = contract("klcd,lkdb->cb", X2_A, l2)
-        tmp = contract("jb,cb->jc", X1_B, tmp)
-        polar -= contract("jc,jc->", tmp, hbar.Hov)
-
-        tmp = contract("klcd,ljdc->kj", X2_A, l2)
-        tmp = contract("kj,jb->kb", tmp, X1_B)
-        polar -= contract("kb,kb->", tmp, hbar.Hov)
-
-        # down
-        tmp = contract('lkda,klcd->ac', l2, X2_A)
-        tmp2 = contract('jb,ajcb->ac', X1_B, hbar.Hvovv)
-        polar += 2.0 * contract('ac,ac->', tmp, tmp2)
-
-        tmp = contract('lkda,klcd->ac', l2, X2_A)
-        tmp2 = contract('jb,ajbc->ac', X1_B, hbar.Hvovv)
-        polar -= contract('ac,ac->', tmp, tmp2)
-
-        tmp = contract('jb,ljda->lbda', X1_B, l2)
-
-        # swapaxes
-        tmp2 = 2.0 * contract('klcd,akbc->ldab', X2_A, hbar.Hvovv)
-        tmp2 -= contract('klcd,akcb->ldab', X2_A, hbar.Hvovv)
-        polar += contract('lbda,ldab->', tmp, tmp2)
-
-        tmp = contract('ia,fkba->fkbi', X1_B, hbar.Hvovv)
-        tmp = contract('fkbi,jifc->kjbc', tmp, l2)
-        polar -= contract('jkbc,kjbc->', X2_A, tmp)
-
-        tmp = contract('ia,fjac->fjic', X1_B, hbar.Hvovv)
-        tmp = contract('fjic,ikfb->jkbc', tmp, l2)
-        polar -= contract('jkbc,jkbc->', X2_A, tmp)
-
-        tmp = contract('ia,jkfa->jkfi', X1_B, l2)
-        tmp2 = contract('jkbc,fibc->jkfi', X2_A, hbar.Hvovv)
-        polar -= contract('jkfi,jkfi->', tmp2, tmp)
-
-        tmp = contract('jb,kjib->ki', X1_B, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_A, l2)
-        polar -= 2.0 * contract('ki,ki->', tmp, tmp2)
-
-        tmp = contract('jb,jkib->ki', X1_B, hbar.Hooov)
-        tmp2 = contract('klcd,ilcd->ki', X2_A, l2)
-        polar += contract('ki,ki->', tmp, tmp2)
-
-        tmp = 2.0 * contract('jkic,klcd->jild', hbar.Hooov, X2_A)
-        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_A)
-        tmp = contract('jild,jb->bild', tmp, X1_B)
-        polar -= contract('bild,ilbd->', tmp, l2)
-
-        tmp = contract('ia,jkna->jkni', X1_B, hbar.Hooov)
-        tmp2 = contract('jkbc,nibc->jkni', X2_A, l2)
-        polar += contract('jkni,jkni->', tmp2, tmp)
-
-        tmp = contract('ia,nkab->nkib', X1_B, l2)
-        tmp = contract('jkbc,nkib->jnic', X2_A, tmp)
-        polar += contract('jnic,ijnc->', tmp, hbar.Hooov)
-
-        tmp = contract('ia,nkba->nkbi', X1_B, l2)
-        tmp = contract('jkbc,nkbi->jnci', X2_A, tmp)
-        polar += contract('jnci,jinc->', tmp, hbar.Hooov)
-        # End L_{2}HX_{1}Y_{2}
-
-        return polar#-1.0 * polar
+        return LHX1Y2
 
     def linresp_asym(self, pertkey_a, X1_B, X2_B, Y1_B, Y2_B):
         """
@@ -1065,11 +605,11 @@ class ccresponse(object):
         polar2 = 0
         pertbar_A = self.pertbar[pertkey_a]
         Avvoo = pertbar_A.Avvoo.swapaxes(0, 2).swapaxes(1, 3)
-        # # # <0|Y1(B) * A_bar|0>
-        # polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
-        # # <0|Y2(B) * A_bar|0>
-        # polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
-        # polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
+        # <0|Y1(B) * A_bar|0>
+        polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
+        # <0|Y2(B) * A_bar|0>
+        polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
+        polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
         # <0|[A_bar, X(B)]|0>
         polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
         # <0|L1(0) [A_bar, X1(B)]|0>
@@ -1077,18 +617,18 @@ class ccresponse(object):
         polar2 += contract("ac, ac -> ", tmp, pertbar_A.Avv)
         tmp = contract("ia, ka -> ik", l1, X1_B)
         polar2 -= contract("ik, ki -> ", tmp, pertbar_A.Aoo)
-        # # <0|L1(0)[a_bar, X2(B)]|0>
+        # <0|L1(0)[a_bar, X2(B)]|0>
         tmp = contract("ia, jb -> ijab", l1, pertbar_A.Aov)
         polar2 += 2.0 * contract("ijab, ijab -> ", tmp, X2_B)
         polar2 += -1.0 * contract("ijab, ijba -> ", tmp, X2_B)
-        # # <0|L2(0)[A_bar, X1(B)]|0>
+        # <0|L2(0)[A_bar, X1(B)]|0>
         tmp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
         polar2 += contract("ia, ia -> ", tmp, X1_B)
         tmp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
         polar2 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
         tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
         polar2 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
-        # # <0|L2(0)[A_bar, X2(B)]|0>
+        # <0|L2(0)[A_bar, X2(B)]|0>
         tmp = contract("ijab, kjab -> ik", l2, X2_B)
         polar2 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
         tmp = contract("ijab, kiba-> jk", l2, X2_B)
@@ -1098,7 +638,7 @@ class ccresponse(object):
         tmp = contract("ijab, ijcb -> ac", l2, X2_B)
         polar2 += 0.5 * contract("ac, ac -> ", tmp, pertbar_A.Avv)
 
-        return (polar1 + polar2)
+        return -1.0 * (polar1 + polar2)
 
 
     def solve_right(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
