@@ -16,7 +16,7 @@ from pycc.rt.rtcc import rtcc
 from .cceom import cceom
 from .eom_combined import eom_combined
 
-__all__ = ['ccwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
+__all__ = ['ccwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'eom_combined']
 
 # Handle versioneer
 from ._version import get_versions
