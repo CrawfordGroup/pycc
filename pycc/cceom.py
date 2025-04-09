@@ -1,14 +1,10 @@
-"""
-cceom.py: Computes excited-state CC wave functions and energies
-"""
-
-if __name__ == "__main__":
-    raise Exception("This file cannot be invoked on its own.")
-
 import time
 import psi4
+import pycc
+import pytest
+from pycc.data.molecules import *
 import numpy as np
-
+import scipy.linalg
 
 class cceom(object):
     """
@@ -17,23 +13,28 @@ class cceom(object):
     Attributes
     ----------
     cchbar : PyCC cchbar object
+    ccwfn : PyCC ccwfn object
     D : NumPy array
         orbital energy difference array (only needed for unit-vector guesses)
 
     Methods
     -------
     solve_eom()
-        Solves the right-hand EOM-CC eigenvalue problem using the Davidson algorithm
+        Solves the right and left-hand EOM-CC eigenvalue problem using the Davidson algorithm
 
     guess()
         Generate initial guesses to eigenvalue problem using various single-excitation methods
-    s1()
+    s_r1()
         Build the singles components of the sigma = HBAR * C vector
-    s2()
+    s_r2()
         Build the doubles components of the sigma = HBAR * C vector
+    s_l1()
+        Build the singles components of the sigma = C * HBAR vector
+    s_l2()
+        Build the doubles components of the sigma = C * HBAR vector
     """
 
-    def __init__(self, cchbar):
+    def __init__(self, ccwfn, cchbar):
         """
         Parameters
         ----------
@@ -44,18 +45,25 @@ class cceom(object):
         None
         """
         self.hbar = cchbar
+        self.ccwfn = ccwfn
+        self.contract = self.ccwfn.contract
 
         # Build preconditioner (energy denominator)
         hbar_occ = np.diag(cchbar.Hoo)
         hbar_vir = np.diag(cchbar.Hvv)
+
         Dia = hbar_occ.reshape(-1,1) - hbar_vir
         Dijab = (hbar_occ.reshape(-1,1,1,1) + hbar_occ.reshape(-1,1,1) - 
                 hbar_vir.reshape(-1,1) - hbar_vir)
         self.D = np.hstack((Dia.flatten(), Dijab.flatten()))
 
-    def solve_eom(self, N=1, e_conv=1e-5, r_conv=1e-5, maxiter=100, guess='HBAR_SS'):
+        # Get the initial guess for l1 and l2
+        self.l1 = 2.0 * self.ccwfn.t1
+        self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
+
+    def solve_eom(self, N=1, e_conv=1e-5, r_conv=1e-5, maxiter=100, guess='HBAR_SS', eom_type = 'RIGHT'):
         """
-        Solves the right-hand EOM-CC eigenvalue problem using the Davidson algorithm
+        Solves the left and right-hand EOM-CC eigenvalue problem using the Davidson algorithm
 
         Parameters
         ----------
@@ -69,6 +77,8 @@ class cceom(object):
             maximum allowed number of iterations in the Davidson algorithm (default is 100)
         guess : str
             method to use for computing guess vectors
+        eom_type : str
+            type of the eienvalue problem to solve, left or right
 
         Returns
         -------
@@ -85,6 +95,11 @@ class cceom(object):
         H = hbar.ccwfn.H
         contract = hbar.contract
         D = self.D
+
+        t1 = self.ccwfn.t1
+        t2 = self.ccwfn.t2
+        l1 = self.l1
+        l2 = self.l2
 
         s1_len = no*nv
         s2_len = no*no*nv*nv
@@ -132,15 +147,25 @@ class cceom(object):
             # Compute sigma vectors
             s1 = np.zeros_like(C1)
             s2 = np.zeros_like(C2)
-            for state in range(nvecs):
-                s1[state] = self.s1(hbar, C1[state], C2[state])
-                s2[state] = self.s2(hbar, C1[state], C2[state])
+            eom_type = eom_type.upper()
+            if eom_type == 'RIGHT':
+                for state in range(nvecs):
+                    s1[state] = self.s_r1(hbar, C1[state], C2[state])
+                    s2[state] = self.s_r2(hbar, C1[state], C2[state])
+            elif eom_type == 'LEFT':
+                for state in range(nvecs): # make sure to include the updated lambdas for each state while computing Goo and Gvv
+                    s1[state] = self.s_l1(hbar, C1[state], C2[state], self.build_Goo(t2, C2[state]), self.build_Gvv(t2, C2[state]))
+                    s2[state] = self.s_l2(hbar, C1[state], C2[state], self.build_Goo(t2, C2[state]), self.build_Gvv(t2, C2[state]))
             sigma_done = M
 
             # Build and diagonalize subspace Hamiltonian
             S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, s1_len)), np.reshape(s2, (nvecs, s2_len))))))
-            G = C @ S.T
-            E, a = np.linalg.eig(G)
+            if eom_type == 'RIGHT':
+                G = C @ S.T
+                E, a = np.linalg.eig(G) 
+            elif eom_type == 'LEFT':
+                G = S @ C.T
+                E, a = scipy.linalg.eig(G, left=True,right=False)
 
             # Sort eigenvalues and corresponding eigenvectors into ascending order
             idx = E.argsort()[:N]
@@ -239,7 +264,7 @@ class cceom(object):
         return eps[:M], guesses
 
 
-    def s1(self, hbar, C1, C2):
+    def s_r1(self, hbar, C1, C2):
         """
         Build the singles components of the sigma = HBAR * C vector
 
@@ -270,7 +295,7 @@ class cceom(object):
         return s1.copy()
 
 
-    def s2(self, hbar, C1, C2):
+    def s_r2(self, hbar, C1, C2):
         """
         Build the doubles components of the sigma = HBAR * C vector
 
@@ -313,3 +338,85 @@ class cceom(object):
         s2 -= contract('miea,mbje->ijab', C2, hbar.Hovov)
 
         return (s2 + s2.swapaxes(0,1).swapaxes(2,3)).copy()
+    
+
+    def build_Goo(self, t2, l2):
+        contract = self.contract
+        return contract('mjab,ijab->mi', t2, l2)
+
+
+    def build_Gvv(self, t2, l2):
+        contract = self.contract 
+        return -1.0 * contract('ijeb,ijab->ae', t2, l2)
+
+
+    def s_l1(self, hbar, C1, C2, Goo, Gvv):
+        """
+        Build the singles components of the sigma = C * HBAR vector
+
+        Parameters
+        ----------
+        hbar : PyCC cchbar object
+        C1, C2 : NumPy arrays
+            the singles and doubles vectors for the current guess
+
+        Returns
+        -------
+        s1 : NumPy array
+            the singles components of sigma
+        """
+        contract = hbar.contract
+        #s1 = 2.0 * hbar.Hov.copy()
+
+        s1 = contract('ie,ea->ia', C1, hbar.Hvv)
+        s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)          
+        s1 = s1 + contract('imef,efam->ia', C2, hbar.Hvvvo)
+        s1 = s1 - contract('mnae,iemn->ia', C2, hbar.Hovoo)
+        s1 = s1 + contract('me,ieam->ia', C1, (2.0 * hbar.Hovvo - hbar.Hovov.swapaxes(2,3)))
+        s1 = s1 - 2.0 * contract('ef,eifa->ia', Gvv, hbar.Hvovv)
+        s1 = s1 + contract('ef,eiaf->ia', Gvv, hbar.Hvovv)
+        s1 = s1 - 2.0 * contract('mn,mina->ia', Goo, hbar.Hooov)
+        s1 = s1 + contract('mn,imna->ia', Goo, hbar.Hooov)
+        return s1.copy()
+
+
+    def s_l2(self, hbar, C1, C2, Goo, Gvv):
+        """
+        Build the doubles components of the sigma = C * HBAR vector
+
+        Parameters
+        ----------
+        hbar : PyCC cchbar object
+        C1, C2 : NumPy arrays
+            the singles and doubles vectors for the current guess
+
+        Returns
+        -------
+        s2 : NumPy array
+            the doubles components of sigma
+        """
+        contract = hbar.contract
+        L = hbar.ccwfn.H.L
+        t2 = hbar.ccwfn.t2
+        o = hbar.o
+        v = hbar.v
+        #s2 = L[o,o,v,v].copy()
+
+        s2 = 2.0 * contract('ia,jb->ijab', C1, hbar.Hov)
+        s2 = s2 - contract('ja,ib->ijab', C1, hbar.Hov)
+        s2 = s2 + 2.0 * contract('ie,ejab->ijab', C1, hbar.Hvovv)
+        s2 = s2 - contract('ie,ejba->ijab', C1, hbar.Hvovv)
+        s2 = s2 - 2.0 * contract('mb,jima->ijab', C1, hbar.Hooov)
+        s2 = s2 + contract('mb,ijma->ijab', C1, hbar.Hooov)
+        s2 = s2 + contract('ijeb,ea->ijab', C2, hbar.Hvv)
+        s2 = s2 - contract('mjab,im->ijab', C2, hbar.Hoo)
+        s2 = s2 + 0.5 * contract('mnab,ijmn->ijab', C2, hbar.Hoooo)
+        s2 = s2 + 0.5 * contract('ijef,efab->ijab', C2, hbar.Hvvvv)
+        s2 = s2 + contract('mjeb,ieam->ijab', C2, (2.0 * hbar.Hovvo - hbar.Hovov.swapaxes(2,3)))
+        s2 = s2 - contract('mibe,jema->ijab', C2, hbar.Hovov)
+        s2 = s2 - contract('mieb,jeam->ijab', C2, hbar.Hovvo)
+        s2 = s2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+        s2 = s2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+        s2 = s2 + s2.swapaxes(0,1).swapaxes(2,3)
+
+        return s2.copy()
