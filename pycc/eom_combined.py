@@ -13,6 +13,7 @@ class eom_combined(object):
     Attributes
     ----------
     cchbar : PyCC cchbar object
+    ccwfn : PyCC ccwfn object
     D : NumPy array
         orbital energy difference array (only needed for unit-vector guesses)
 
@@ -50,6 +51,7 @@ class eom_combined(object):
         # Build preconditioner (energy denominator)
         hbar_occ = np.diag(cchbar.Hoo)
         hbar_vir = np.diag(cchbar.Hvv)
+
         Dia = hbar_occ.reshape(-1,1) - hbar_vir
         Dijab = (hbar_occ.reshape(-1,1,1,1) + hbar_occ.reshape(-1,1,1) - 
                 hbar_vir.reshape(-1,1) - hbar_vir)
@@ -75,6 +77,8 @@ class eom_combined(object):
             maximum allowed number of iterations in the Davidson algorithm (default is 100)
         guess : str
             method to use for computing guess vectors
+        eom_type : str
+            type of the eienvalue problem to solve, left or right
 
         Returns
         -------
@@ -158,7 +162,7 @@ class eom_combined(object):
             S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, s1_len)), np.reshape(s2, (nvecs, s2_len))))))
             if eom_type == 'RIGHT':
                 G = C @ S.T
-                E, a = np.linalg.eig(G)
+                E, a = np.linalg.eig(G) 
             elif eom_type == 'LEFT':
                 G = S @ C.T
                 E, a = scipy.linalg.eig(G, left=True,right=False)
