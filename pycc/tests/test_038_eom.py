@@ -60,6 +60,7 @@ def test_eomccsd_h2o():
 #NH3/cc-pvdz
 def test_eomccsd_ammonia():
     # Psi4 Setup
+    psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output_l.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
@@ -71,6 +72,7 @@ def test_eomccsd_ammonia():
                       'r_convergence': 1e-12,
                       'diis': 1})
     mol = psi4.geometry("pubchem:ammonia")
+
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     maxiter = 70
