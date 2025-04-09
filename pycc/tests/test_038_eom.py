@@ -1,7 +1,6 @@
 # Import package, test suite, and other packages as needed
 import psi4
 import pycc
-import pycc.leom
 import pytest
 from pycc.data.molecules import *
 import numpy as np
