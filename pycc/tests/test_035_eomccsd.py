@@ -34,7 +34,7 @@ def test_eomccsd_h2o():
     cc = pycc.ccwfn(rhf_wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
-    eom = pycc.cceom(hbar)
+    eom = pycc.cceom(cc, hbar)
 
     N = 3
     maxiter = 75
@@ -42,13 +42,13 @@ def test_eomccsd_h2o():
     r_conv = 1e-7
 
     guess = 'hbar_ss'
-    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     guess = 'cis'
-    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     guess = 'unit'
-    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     psi4.set_options({'cceom__e_convergence': e_conv,
                       'cceom__r_convergence': r_conv,
@@ -83,7 +83,7 @@ def test_eomccsd_h2o_fc():
     cc = pycc.ccwfn(rhf_wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
-    eom = pycc.cceom(hbar)
+    eom = pycc.cceom(cc, hbar)
 
     N = 3
     maxiter = 75
@@ -91,13 +91,13 @@ def test_eomccsd_h2o_fc():
     r_conv = 1e-7
 
     guess = 'hbar_ss'
-    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "left")
 
     guess = 'cis'
-    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "left")
 
     guess = 'unit'
-    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "left")
 
     psi4.set_options({'cceom__e_convergence': e_conv,
                       'cceom__r_convergence': r_conv,
@@ -134,7 +134,7 @@ def test_eomccsd_c2h4_fc():
     cc = pycc.ccwfn(rhf_wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
-    eom = pycc.cceom(hbar)
+    eom = pycc.cceom(cc, hbar)
 
     N = 3
     maxiter = 75
@@ -142,13 +142,13 @@ def test_eomccsd_c2h4_fc():
     r_conv = 1e-7
 
     guess = 'hbar_ss'
-    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_1, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     guess = 'cis'
-    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_2, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     guess = 'unit'
-    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess)
+    eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
     psi4.set_options({'cceom__e_convergence': e_conv,
                       'cceom__r_convergence': r_conv,
