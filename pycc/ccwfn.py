@@ -10,11 +10,13 @@ import psi4
 import time
 import numpy as np
 import torch
-from .utils import helper_diis, cc_contract
+from .utils import helper_diis, cc_contract, cc_contract_einsums
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
+
+import einsums as ein
 
 class ccwfn(object):
     """
@@ -198,6 +200,7 @@ class ccwfn(object):
         # Initiate the object for a generalized contraction function 
         # for GPU or CPU.  
         self.contract = cc_contract(device=self.device)
+        self.contract_einsums = cc_contract_einsums(device=self.device)
 
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
@@ -261,6 +264,7 @@ class ccwfn(object):
         Dijab = self.Dijab
 
         contract = self.contract
+        contract_einsums = self.contract_einsums
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
@@ -277,8 +281,10 @@ class ccwfn(object):
                 inc1, inc2 = self.Local.filter_amps(r1, r2)
                 self.t1 += inc1
                 self.t2 += inc2
-                rms = contract('ia,ia->', inc1, inc1)
-                rms += contract('ijab,ijab->', inc2, inc2)
+                #rms = contract('ia,ia->', inc1, inc1)
+                rms = contract_einsums(("ia","ia",""), (inc1, inc1, np.array([0.0]))).item(0) # Note: Einsums return scalar as 1D vector.
+                #rms += contract('ijab,ijab->', inc2, inc2)
+                rms += contract_einsums(("ijab","ijab",""), (inc2, inc2, np.array([0.0]))).item(0)
                 if isinstance(r1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else:
@@ -286,8 +292,10 @@ class ccwfn(object):
             else:
                 self.t1 += r1/Dia
                 self.t2 += r2/Dijab
-                rms = contract('ia,ia->', r1/Dia, r1/Dia)
-                rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                #rms = contract('ia,ia->', r1/Dia, r1/Dia)
+                rms = contract_einsums(("ia","ia",""), (r1/Dia, r1/Dia, np.array([0.0]))).item(0)
+                #rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
+                rms += contract_einsums(("ijab","ijab",""), (r2/Dijab,r2/Dijab, np.array([0.0]))).item(0)
                 if isinstance(r1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else:
@@ -346,12 +354,15 @@ class ccwfn(object):
         """
 
         contract = self.contract
+        contract_einsums = self.contract_einsums
 
         o = self.o
         v = self.v
         no = self.no
         nv = self.nv
         ERI = self.H.ERI
+        #print(ERI[o,o,v,v].flags)
+        #print(t2.flags)
         L = self.H.L
 
         Fae = self.build_Fae(o, v, F, L, t1, t2)
@@ -407,11 +418,36 @@ class ccwfn(object):
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
         contract = self.contract
-        return fact1 * t2 + fact2 * contract('ia,jb->ijab', t1, t1)
+        contract_einsums = self.contract_einsums
+        
+        # Note: error from BLAS (GER), it considers contiguous tensor t2 to have Fortran layout.
+        #       Insert zeros and take slice for original elements to create a non-contiguous view of t2.
+        #       Only for testing. 
+        A, B, C, D = t2.shape
+        padded_shape = (2 * A - 1, B, C, D)
+        # Create the padded tensor with zeros
+        t2_padded = np.zeros(padded_shape, dtype=t2.dtype)
+        # Fill every other slice with the original data
+        t2_padded[::2] = t2
+        # Get the view that recovers the original data
+        t2_view = t2_padded[::2]
 
+        tmp = contract_einsums(("ia","jb","ijab"), (t1, t1, t2_view))
+
+        return fact1 * t2 + fact2 * tmp
+        
+        # Note: alternative fix - If using t2, reorder axes and use the transpose for the tensors. 
+        """
+        t2_tmp = t2.copy()
+        t2_T = np.transpose(t2_tmp, (3,2,1,0))
+        tau = contract_einsums(("ai","bj","baji"), (t1.T,t1.T,t2_T), fact1, fact2)
+
+        return np.transpose(tau, (3,2,1,0))
+        """
 
     def build_Fae(self, o, v, F, L, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 Fae = F[v,v].clone()
@@ -423,33 +459,43 @@ class ccwfn(object):
                 Fae = F[v,v].clone()
             else:
                 Fae = F[v,v].copy()
-            Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
-            Fae = Fae + contract('mf,mafe->ae', t1, L[o,v,v,v])
-            Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+            #Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
+            Fae = contract_einsums(("me","ma","ae"), (F[o,v], t1, Fae), -0.5, 1.0)
+            #Fae = Fae + contract('mf,mafe->ae', t1, L[o,v,v,v])
+            Fae = contract_einsums(("mf","mafe","ae"), (t1, L[o,v,v,v], Fae), 1.0, 1.0)
+            #Fae = Fae - contract('mnaf,mnef->ae', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+            Fae = contract_einsums(("mnaf","mnef","ae"), (self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v], Fae), -1.0, 1.0)
         return Fae
 
 
     def build_Fmi(self, o, v, F, L, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 Fmi = F[o,o].clone()
             else:
                 Fmi = F[o,o].copy()
-            Fmi = Fmi + contract('inef,mnef->mi', t2, L[o,o,v,v])
+            #Fmi = Fmi + contract('inef,mnef->mi', t2, L[o,o,v,v])
+            Fmi = contract_einsums(("inef","mnef","mi"), (t2, L[o,o,v,v], Fmi), 1.0, 1.0)
         else:
             if isinstance(t1, torch.Tensor):
                 Fmi = F[o,o].clone()
             else:
                 Fmi = F[o,o].copy()
-            Fmi = Fmi + 0.5 * contract('ie,me->mi', t1, F[o,v])
-            Fmi = Fmi + contract('ne,mnie->mi', t1, L[o,o,o,v])
-            Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+            #Fmi = Fmi + 0.5 * contract('ie,me->mi', t1, F[o,v])
+            #Fmi = Fmi + contract('ne,mnie->mi', t1, L[o,o,o,v])
+            #Fmi = Fmi + contract('inef,mnef->mi', self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v])
+            Fmi = contract_einsums(("ie","me","mi"), (t1, F[o,v], Fmi), 0.5, 1.0)
+            Fmi = contract_einsums(("ne","mnie","mi"), (t1, L[o,o,o,v], Fmi), 1.0, 1.0)
+            Fmi = contract_einsums(("inef","mnef","mi"), (self.build_tau(t1, t2, 1.0, 0.5), L[o,o,v,v], Fmi), 1.0, 1.0)
+
         return Fmi
 
 
     def build_Fme(self, o, v, F, L, t1):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             return
         else:
@@ -457,12 +503,14 @@ class ccwfn(object):
                 Fme = F[o,v].clone()
             else:
                 Fme = F[o,v].copy()
-            Fme = Fme + contract('nf,mnef->me', t1, L[o,o,v,v])
+            #Fme = Fme + contract('nf,mnef->me', t1, L[o,o,v,v])
+            Fme = contract_einsums(("nf","mnef","me"), (t1, L[o,o,v,v], Fme), 1.0, 1.0)
         return Fme
 
 
     def build_Wmnij(self, o, v, ERI, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 Wmnij = ERI[o,o,o,o].clone().to(self.device1)
@@ -474,17 +522,21 @@ class ccwfn(object):
                 Wmnij = ERI[o,o,o,o].clone().to(self.device1)
             else:
                 Wmnij = ERI[o,o,o,o].copy()
-            Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
-            Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
+            #Wmnij = Wmnij + contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+            #Wmnij = Wmnij + contract('ie,mnej->mnij', t1, ERI[o,o,v,o])
+            Wmnij = contract_einsums(("je","mnie","mnij"), (t1, ERI[o,o,o,v], Wmnij), 1.0, 1.0)
+            Wmnij = contract_einsums(("ie","mnej","mnij"), (t1, ERI[o,o,v,o], Wmnij), 1.0, 1.0)
             if self.model == 'CC2':
                 Wmnij = Wmnij + contract('jf, mnif->mnij', t1, contract('ie,mnef->mnif', t1, ERI[o,o,v,v]))
             else:
-                Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
+                #Wmnij = Wmnij + contract('ijef,mnef->mnij', self.build_tau(t1, t2), ERI[o,o,v,v])
+                Wmnij = contract_einsums(("ijef","mnef","mnij"), (self.build_tau(t1, t2), ERI[o,o,v,v], Wmnij), 1.0, 1.0)
         return Wmnij
 
 
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 Wmbej = ERI[o,v,v,o].clone().to(self.device1)
@@ -499,15 +551,20 @@ class ccwfn(object):
                 Wmbej = ERI[o,v,v,o].clone().to(self.device1)
            else:
                 Wmbej = ERI[o,v,v,o].copy()
-           Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
-           Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
-           Wmbej = Wmbej - contract('jnfb,mnef->mbej', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
-           Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
+           #Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+           #Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+           #Wmbej = Wmbej - contract('jnfb,mnef->mbej', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+           #Wmbej = Wmbej + 0.5 * contract('njfb,mnef->mbej', t2, L[o,o,v,v])
+           Wmbej = contract_einsums(("jf","mbef","mbej"), (t1, ERI[o,v,v,v], Wmbej), 1.0, 1.0)
+           Wmbej = contract_einsums(("nb","mnej","mbej"), (t1, ERI[o,o,v,o], Wmbej), -1.0, 1.0)
+           Wmbej = contract_einsums(("jnfb","mnef","mbej"), (self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v], Wmbej), -1.0, 1.0)
+           Wmbej = contract_einsums(("njfb","mnef","mbej"), (t2, L[o,o,v,v], Wmbej), 0.5, 1.0)
         return Wmbej
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 Wmbje = -1.0 * ERI[o,v,o,v].clone().to(self.device1)
@@ -521,24 +578,30 @@ class ccwfn(object):
                 Wmbje = -1.0 * ERI[o,v,o,v].clone().to(self.device1)
            else:
                 Wmbje = -1.0 * ERI[o,v,o,v].copy()
-           Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
-           Wmbje = Wmbje + contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
-           Wmbje = Wmbje + contract('jnfb,mnfe->mbje', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+           #Wmbje = Wmbje - contract('jf,mbfe->mbje', t1, ERI[o,v,v,v])
+           #Wmbje = Wmbje + contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
+           #Wmbje = Wmbje + contract('jnfb,mnfe->mbje', self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v])
+           Wmbje = contract_einsums(("jf","mbfe","mbje"), (t1, ERI[o,v,v,v], Wmbje), -1.0, 1.0)
+           Wmbje = contract_einsums(("nb","mnje","mbje"), (t1, ERI[o,o,o,v], Wmbje), 1.0, 1.0)
+           Wmbje = contract_einsums(("jnfb","mnfe","mbje"), (self.build_tau(t1, t2, 0.5, 1.0), ERI[o,o,v,v], Wmbje), 1.0, 1.0)
         return Wmbje
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             return
         elif self.model == 'CC2':
             return contract('mbif,jf->mbij', contract('mbef,ie->mbif', ERI[o,v,v,v], t1), t1)
         else:
-            return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
+            #return contract('mbef,ijef->mbij', ERI[o,v,v,v], self.build_tau(t1, t2))
+            return contract_einsums(("mbef","ijef","mbij"), (ERI[o,v,v,v], self.build_tau(t1, t2), np.zeros_like(ERI[o,v,o,o], dtype=float)))
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 r_T1 = torch.zero_like(t1)
@@ -549,17 +612,30 @@ class ccwfn(object):
                 r_T1 = F[o,v].clone()
             else:
                 r_T1 = F[o,v].copy()
-            r_T1 = r_T1 + contract('ie,ae->ia', t1, Fae)
-            r_T1 = r_T1 - contract('ma,mi->ia', t1, Fmi)
-            r_T1 = r_T1 + contract('imae,me->ia', (2.0*t2 - t2.swapaxes(2,3)), Fme)
-            r_T1 = r_T1 + contract('nf,nafi->ia', t1, L[o,v,v,o])
-            r_T1 = r_T1 + contract('mief,maef->ia', (2.0*t2 - t2.swapaxes(2,3)), ERI[o,v,v,v])
-            r_T1 = r_T1 - contract('mnae,nmei->ia', t2, L[o,o,v,o])
+            #r_T1 = r_T1 + contract('ie,ae->ia', t1, Fae)
+            r_T1 = contract_einsums(("ie","ae","ia"), (t1, Fae, r_T1), 1.0, 1.0)
+
+            # Note: need to reorder the indices to fit the requirement of BLAS (DGEMM).
+            #      fixed leading dimension error thrown by DGEMM.
+            #r_T1 = r_T1 - contract('ma,mi->ia', t1, Fmi)
+            r_T1 = contract_einsums(("mi","ma", "ia"), (Fmi, t1, r_T1), -1.0, 1.0)
+            # Or
+            #r_T1 = contract_einsums(("ma","im","ia"), (t1, Fmi.T, r_T1), -1.0, 1.0) 
+
+            #r_T1 = r_T1 + contract('imae,me->ia', (2.0*t2 - t2.swapaxes(2,3)), Fme)
+            r_T1 = contract_einsums(("imae","me","ia"),((2.0*t2 - t2.swapaxes(2,3)), Fme, r_T1), 1.0, 1.0)
+            #r_T1 = r_T1 + contract('nf,nafi->ia', t1, L[o,v,v,o])
+            r_T1 = contract_einsums(("nf","nafi","ia"), (t1, L[o,v,v,o], r_T1), 1.0, 1.0)
+            #r_T1 = r_T1 + contract('mief,maef->ia', (2.0*t2 - t2.swapaxes(2,3)), ERI[o,v,v,v])
+            r_T1 = contract_einsums(("mief","maef","ia"), ((2.0*t2 - t2.swapaxes(2,3)), ERI[o,v,v,v], r_T1), 1.0, 1.0)
+            #r_T1 = r_T1 - contract('mnae,nmei->ia', t2, L[o,o,v,o])
+            r_T1 = contract_einsums(("mnae","nmei","ia"), (t2, L[o,o,v,o], r_T1), -1.0, 1.0)
         return r_T1
 
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         contract = self.contract
+        contract_einsums = self.contract_einsums
         if self.model == 'CCD':
             if isinstance(t1, torch.Tensor):
                 r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
@@ -597,23 +673,42 @@ class ccwfn(object):
                 r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
             else:
                 r_T2 = 0.5 * ERI[o,o,v,v].copy()
-            r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
-            tmp = contract('mb,me->be', t1, Fme)
-            r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
-            r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
-            tmp = contract('je,me->jm', t1, Fme)
-            r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
-            r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
-            r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
-            r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
-            tmp = contract('ie,ma->imea', t1, t1)
-            r_T2 = r_T2 - contract('imea,mbej->ijab', tmp, ERI[o,v,v,o])
-            r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
-            r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+            # Note: need to reorder the indices to fit BLAS calls. 
+            #       "ia,ja->ij", A, B" ----> "ia,aj->ij", A.B.T (making sure the shared index is the first index in B)
+            #r_T2 = r_T2 + contract('ijae,be->ijab', t2, Fae)
+            r_T2 = contract_einsums(("ijae","eb","ijab"), (t2,Fae.T,r_T2), 1.0, 1.0)
+            #tmp = contract('mb,me->be', t1, Fme)
+            tmp = contract_einsums(("mb","em","be"), (t1, Fme.T, np.zeros_like(Fae)))
+            #r_T2 = r_T2 - 0.5 * contract('ijae,be->ijab', t2, tmp)
+            r_T2 = contract_einsums(("ijae","eb","ijab"), (t2,tmp.T,r_T2), -0.5, 1.0)
+            #r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
+            r_T2 = contract_einsums(("imab","mj","ijab"), (t2, Fmi, r_T2), -1.0, 1.0)
+            #tmp = contract('je,me->jm', t1, Fme)
+            tmp = contract_einsums(("je","em","jm"), (t1, Fme.T, np.zeros_like(Fmi)))
+            #r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
+            r_T2 = contract_einsums(("imab","mj","ijab"), (t2, tmp.T, r_T2), -0.5, 1.0)
+            #r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
+            r_T2 = contract_einsums(("mnij","mnab","ijab"), (Wmnij, self.build_tau(t1,t2), r_T2), 0.5, 1.0)
+            #r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
+            r_T2 = contract_einsums(("ijef","abef","ijab"), (self.build_tau(t1,t2), ERI[v,v,v,v], r_T2), 0.5, 1.0)
+            #r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
+            r_T2 = contract_einsums(("ma","mbij","ijab"), (t1, Zmbij, r_T2), -1.0, 1.0)
+            #r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
+            r_T2 = contract_einsums(("imae","mbej","ijab"), ((t2 - t2.swapaxes(2,3)), Wmbej, r_T2), 1.0, 1.0)
+            #r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
+            r_T2 = contract_einsums(("imae","mbej","ijab"), (t2, Wmbej + Wmbje.swapaxes(2,3), r_T2), 1.0, 1.0)
+            #r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+            r_T2 = contract_einsums(("mjae","mbie","ijab"), (t2, Wmbje, r_T2), 1.0, 1.0)
+            #tmp = contract('ie,ma->imea', t1, t1)
+            tmp = contract_einsums(("ie","ma","imea"), (t1, t1, np.zeros_like(ERI[o,o,v,v], dtype=float)))
+            #r_T2 = r_T2 - contract('imea,mbej->ijab', tmp, ERI[o,v,v,o])
+            r_T2 = contract_einsums(("imea","mbej","ijab"), (tmp, ERI[o,v,v,o], r_T2), -1.0, 1.0)
+            #r_T2 = r_T2 - contract('imeb,maje->ijab', tmp, ERI[o,v,o,v])
+            r_T2 = contract_einsums(("imeb","maje","ijab"), (tmp, ERI[o,v,o,v], r_T2), -1.0, 1.0)
+            #r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
+            r_T2 = contract_einsums(("ie","abej","ijab"), (t1, ERI[v,v,v,o], r_T2), 1.0, 1.0)
+            #r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+            r_T2 = contract_einsums(("am","mbij","ijab"), (t1.T, ERI[o,v,o,o], r_T2), -1.0, 1.0)
 
             if isinstance(tmp, torch.Tensor):
                 del tmp
