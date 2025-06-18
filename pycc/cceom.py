@@ -210,13 +210,16 @@ class cceom(object):
             R_full = a.T @ C  # shape (N, s1_len + s2_len)
             s1_len = no * nv
             s2_len = no * no * nv * nv
+            norm_eigvec = []
 
-            r1 = R_full[:, :s1_len]
-            r2 = R_full[:, s1_len:]
-            r2 = np.reshape(r2, (no,no,nv,nv))
+            for itm in range(len(R_full)):
+                r1 = R_full[itm, :s1_len]
+                r2 = R_full[itm, s1_len:]
+                r2 = np.reshape(r2, (no,no,nv,nv))
+                norm = 1/np.sqrt(2*np.sum(r1**2) + contract('ijab,ijab->', (2*r2-r2.swapaxes(2,3)), r2))
+                norm_eigvec.append(R_full[itm]*norm)
 
-            norm = 1/np.sqrt(2*np.sum(r1**2) + contract('ijab,ijab->', (2*r2-r2.swapaxes(2,3)), r2))
-            return E, R_full*norm
+            return E, norm_eigvec
 
 
     def guess(self, M, method):
