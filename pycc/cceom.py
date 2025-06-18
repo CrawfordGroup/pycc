@@ -100,7 +100,6 @@ class cceom(object):
         t2 = self.ccwfn.t2
         l1 = self.l1
         l2 = self.l2
-        print("Normalization : ")
 
         s1_len = no*nv
         s2_len = no*no*nv*nv
