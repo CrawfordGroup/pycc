@@ -100,6 +100,7 @@ class cceom(object):
         t2 = self.ccwfn.t2
         l1 = self.l1
         l2 = self.l2
+        print("Normalization : ")
 
         s1_len = no*nv
         s2_len = no*no*nv*nv
@@ -206,7 +207,17 @@ class cceom(object):
             for state in range(N):
                 print("  %3d  %12.10f  %12.10f" %(state, E[state], E[state]*eVconv))
 
-            return E, C
+            # Build converged eigenvectors (R vectors) from Krylov basis
+            R_full = a.T @ C  # shape (N, s1_len + s2_len)
+            s1_len = no * nv
+            s2_len = no * no * nv * nv
+
+            r1 = R_full[:, :s1_len]
+            r2 = R_full[:, s1_len:]
+            r2 = np.reshape(r2, (no,no,nv,nv))
+
+            norm = 1/np.sqrt(2*np.sum(r1**2) + contract('ijab,ijab->', (2*r2-r2.swapaxes(2,3)), r2))
+            return E, R_full*norm
 
 
     def guess(self, M, method):
