@@ -13,7 +13,7 @@ import torch
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk, t3_ijkabc_alt, t3_ijkabc
 from .lccwfn import lccwfn
 
 class ccwfn(object):
@@ -381,21 +381,52 @@ class ccwfn(object):
             else:
                 X1 = np.zeros_like(t1)
                 X2 = np.zeros_like(t2)
-
-            for i in range(no):
-                for j in range(no):
-                    for k in range(no):
-                        t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
-                        if real_time is True:
-                            if isinstance(t1, torch.Tensor):
-                                V = F - self.H.F.clone()
-                            else:
-                                V = F - self.H.F.copy()
-                            t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
-                        X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
-                        X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
-                        X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
-                        X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])
+            
+            """            
+            if real_time is True:
+                t3_full = np.zeros((no,no,no,nv,nv,nv))
+                for i in range(no):
+                    for j in range(no):
+                        for k in range(no):
+                            for a in range(nv):
+                                for b in range(nv):
+                                    for c in range(nv):
+                                        t3_full[i,j,k,a,b,c] = t3_ijkabc(o, v, i, j, k, a, b, c, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True) 
+            """
+            if real_time is True:
+                if isinstance(t1, torch.Tensor):
+                    V = F - self.H.F.clone()
+                else:
+                    V = F - self.H.F.copy()
+                if abs(V[0,0]) >= 1E-6:
+                    t3_full = t3_ijkabc_alt(o, v, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                    for i in range(no):
+                        for j in range(no):
+                            for k in range(no):
+                                t3 = t3_full[i,j,k]
+                                t3 -= t3_pert_ijk(o, v, i, j, k, t2, t3_full, V, F, contract)
+                                X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
+                                X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+                                X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
+                                X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])
+                else:
+                    for i in range(no):
+                        for j in range(no):
+                            for k in range(no):
+                                t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                                X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
+                                X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+                                X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
+                                X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])    
+            else:
+                for i in range(no):
+                    for j in range(no):
+                        for k in range(no):
+                            t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+                            X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
+                            X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+                            X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
+                            X2[i] -= contract('abc,lc->lab', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wmnie_cc3[j,k])
 
             r1 += X1
             r2 += X2 + X2.swapaxes(0,1).swapaxes(2,3)
