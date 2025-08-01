@@ -366,37 +366,37 @@ class ccresponse(object):
             print("Solving right-hand perturbed wave function for omega1 %s:" % (pertkey))
             self.ccpert_om1_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for omega1%s:" % (pertkey))
             self.ccpert_om1_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
 
             print("Solving right-hand perturbed wave function for omega2 %s:" % (pertkey))
             self.ccpert_om2_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for omega2 %s:" % (pertkey))
             self.ccpert_om2_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
 
             print("Solving right-hand perturbed wave function for omega_sum %s:" % (pertkey))
             self.ccpert_om_sum_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for omega_sum %s:" % (pertkey))
             self.ccpert_om_sum_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
 
             print("Solving right-hand perturbed wave function for -omega1 %s:" % (pertkey))
             self.ccpert_om1_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for -omega1 %s:" % (pertkey))
             self.ccpert_om1_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
 
             print("Solving right-hand perturbed wave function for -omega2 %s:" % (pertkey))
             self.ccpert_om2_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for -omega2 %s:" % (pertkey))
             self.ccpert_om2_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
 
             print("Solving right-hand perturbed wave function for -omega_sum %s:" % (pertkey))
             self.ccpert_om_sum_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
 
-            print("Solving left-hand perturbed wave function for %s:" % (pertkey))
+            print("Solving left-hand perturbed wave function for -omega_sum %s:" % (pertkey))
             self.ccpert_om_sum_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
 
     def quadraticresp(self, pertkey_a, pertkey_b, pertkey_c, ccpert_X_A, ccpert_X_B, ccpert_X_C, ccpert_Y_A, ccpert_Y_B, ccpert_Y_C):
@@ -1070,8 +1070,14 @@ class ccresponse(object):
                 for c in range(0, 3):
                     pertkey_c = "MU_" + self.cart[c]
 
-                    hyper_AB_1st[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, ccpert_om_sum_X[pertkey_a], ccpert_om1_X[pertkey_b], ccpert_om2_X[pertkey_c],  ccpert_om_sum_Y[pertkey_a], ccpert_om1_Y[pertkey_b], ccpert_om2_Y[pertkey_c] )
-                    hyper_AB_2nd[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, ccpert_om_sum_2nd_X[pertkey_a], ccpert_om1_2nd_X[pertkey_b], ccpert_om2_2nd_X[pertkey_c],  ccpert_om_sum_2nd_Y[pertkey_a], ccpert_om1_2nd_Y[pertkey_b], ccpert_om2_2nd_Y[pertkey_c])
+                    hyper_AB_1st[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    ccpert_om_sum_X[pertkey_a], ccpert_om1_X[pertkey_b], ccpert_om2_X[pertkey_c], 
+                    ccpert_om_sum_Y[pertkey_a], ccpert_om1_Y[pertkey_b], ccpert_om2_Y[pertkey_c] )
+                    
+                    hyper_AB_2nd[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    ccpert_om_sum_2nd_X[pertkey_a], ccpert_om1_2nd_X[pertkey_b], ccpert_om2_2nd_X[pertkey_c], 
+                    ccpert_om_sum_2nd_Y[pertkey_a], ccpert_om1_2nd_Y[pertkey_b], ccpert_om2_2nd_Y[pertkey_c])
+                    
                     hyper_AB[a,b,c] = (hyper_AB_1st[a,b,c] + hyper_AB_2nd[a,b,c] )/2
 
         Beta_avg = 0
@@ -1420,7 +1426,6 @@ class ccresponse(object):
         tmp += 0.5 * contract('mino,noea->iema', hbar.Hoooo, l2)
         r_Y1 += contract('iema,me->ia', tmp, X1)
 
-       #contains regular Gvv as well as Goo, think about just calling it from cclambda instead of generating it
         tmp = contract('nb,fb->nf', X1, cclambda.build_Gvv(l2, t2))
         r_Y1 += contract('inaf,nf->ia', L[o,o,v,v], tmp)
         tmp = contract('me,fa->mefa', X1, cclambda.build_Gvv(l2, t2))

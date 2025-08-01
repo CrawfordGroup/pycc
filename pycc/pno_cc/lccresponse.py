@@ -1005,14 +1005,10 @@ class lccresponse(object):
                         tmp2 = contract('bc, bc ->', Sijmn[jkni].T @ X2_B[jk] @ Sijmn[jkni], Y2_A[ni])
                         Bcon = Bcon + (tmp2 * tmp) 
 
-                        #Hooov = contract('c, cC -> C', ERI[i,j,n,v], QL[jk]) 
-                        #Hooov = Hooov + contract('f, cf -> c', t1[n], QL[jk].T @ ERI[j,i,v,v] @ QL[nn])
                         tmp = contract('a, ab -> b', X1_C[i] @ Sijmn[iink], Y2_A[nk]) 
                         tmp = contract('bc, b -> c', Sijmn[jknk].T @ X2_B[jk], tmp) 
                         Bcon = Bcon + contract('c, c ->', tmp, hbar.Hooov[jk][i,j,n]) 
 
-                        #Hooov = contract('c, cC -> C', ERI[j,i,n,v], QL[jk])
-                        #Hooov = Hooov + contract('f, cf -> c', t1[n], QL[jk].T @ ERI[i,j,v,v] @ QL[nn])
                         tmp = contract('a, ba -> b', X1_C[i] @ Sijmn[iink], Y2_A[nk])
                         tmp = contract('bc, b -> c', Sijmn[jknk].T @ X2_B[jk], tmp)
                         Bcon = Bcon + contract('c, c ->', tmp, hbar.Hooov[jk][j,i,n]) 
@@ -1136,7 +1132,7 @@ class lccresponse(object):
 
     def comp_LHXYZ(self, X2_A, X1_B, X1_C): 
         L = self.H.L
-        ERI = self.H. ERI
+        ERI = self.H.ERI
         l2 = self.cclambda.l2
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -1264,39 +1260,33 @@ class lccresponse(object):
         return self.lhyper_AB, Beta_avg
 
     def local_solve_right(self, lpertbar, omega, conv_hbar, e_conv=1e-12, r_conv=1e-12, maxiter=200):#max_diis=7, start_diis=1):
-        """
-        For X1, only contains the first term -> requires implementation to the local basis
-        """
         solver_start = time.time()
 
         no = self.no
-
         contract =self.contract
 
         Avo = lpertbar.Avo.copy()
         Avvoo = lpertbar.Avvoo.copy()
 
-        print("only keeping the numerator terms")
         self.X1 = []
         self.X2 = []
         for i in range(no):
             ii = i * no + i
 
-            #Xv{ii}
             lX1 = Avo[ii].copy()
-            lX1 = lX1/ (self.Local.eps[ii].reshape(-1,) - self.H.F[i,i] + omega)#(self.eps_occ[i] - self.eps_lvir[ii].reshape(-1,) + omega)
+            lX1 = lX1/ (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
             self.X1.append(2.0 *lX1)
+
             for j in range(no):
                 ij = i * no + j
                 lX2 = Avvoo[ij].copy()
-                lX2 = lX2/(self.Local.eps[ij].reshape(1,-1) + self.Local.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j] + omega)#(self.eps_occ[i] + self.eps_occ[j] - self.eps_lvir[ij].reshape(1,-1) - self.eps_lvir[ij].reshape(-1,1) + omega) #- eps_lvir[ij][a,a] - eps_lvir[ij][b,b] + omega)
+                lX2 = lX2/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1) + omega)
                 self.X2.append(2.0 *lX2)
 
         pseudo = self.local_pseudoresponse(lpertbar, self.X1, self.X2)
         print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
 
         #diis = helper_diis(X1, X2, max_diis)
-        contract = self.ccwfn.contract
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
@@ -1304,28 +1294,21 @@ class lccresponse(object):
             r1 = self.lr_X1(lpertbar, omega)
             r2 = self.lr_X2(lpertbar, conv_hbar, omega)
 
-            #start loop
             rms = 0
             for i in range(no):
                 ii = i * no + i
 
-                #swap the sign
-                #for a in range(self.Local.dim[ii]):
-                self.X1[i] -= r1[i] / (self.Local.eps[ii].reshape(-1,) - self.H.F[i,i] + omega)
-
-                #(self.eps_occ[i] - self.eps_lvir[ii].reshape(-1,) + omega)#- eps_lvir[ii][a,a] + omega)#(eps_occ[i] - eps_lvir[ii].reshape(-1,) + omega)
-                rms += contract('a,a->', np.conj(r1[i] / (self.eps_occ[i])), (r1[i] / (self.eps_occ[i])))
+                self.X1[i] += r1[i] / (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
+                rms += contract('a,a->', np.conj(r1[i] /(self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)), (r1[i] / (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)))
 
                 for j in range(no):
                     ij = i*no + j
 
-                    self.X2[ij] -= r2[ij] / (self.Local.eps[ij].reshape(1,-1) + self.Local.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j] + omega)
-
-#(self.eps_occ[i] + self.eps_occ[j] - self.eps_lvir[ij].reshape(1,-1) - self.eps_lvir[ij].reshape(-1,1) + omega)# - eps_lvir[ij][a,a] - eps_lvir[ij][b,b] + omega)#(eps_occ[i] + eps_occ[j] - eps_lvir[ij].reshape(1,-1) - eps_lvir[ij].reshape(-1,1) + omega)
-                    rms += contract('ab,ab->', np.conj(r2[ij]/(self.eps_occ[i] + self.eps_occ[j])), r2[ij]/(self.eps_occ[i] + self.eps_occ[j]))
+                    self.X2[ij] += r2[ij] / (self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1)  + omega)
+                    rms += contract('ab,ab->', np.conj(r2[ij]/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1)  + omega)), 
+                    r2[ij]/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1)  + omega))
 
             rms = np.sqrt(rms)
-            #end loop
 
             pseudo = self.local_pseudoresponse(lpertbar, self.X1, self.X2)
             pseudodiff = np.abs(pseudo - pseudo_last)
@@ -1368,16 +1351,14 @@ class lccresponse(object):
             ii = i * no + i
             QL_ii = Q[ii] @ L[ii]
 
-            #Xv{ii}
             lX1 = Avo[ii].copy()
-            lX1 /= (self.Local.eps[ii].reshape(-1,) - self.H.F[i,i] + omega)#(eps_occ[i] - eps_lvir[ii].reshape(-1,) + omega)
+            lX1 /= (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
             self.Y1.append(2.0 * lX1.copy())
 
             for j in range(no):
                 ij = i * no + j
 
-                #temporary removing the virtual orbital energies
-                lX2 = Avvoo[ij].copy()/(self.Local.eps[ij].reshape(1,-1) + self.Local.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j] + omega)#(eps_occ[i] + eps_occ[j] - eps_lvir[ij].reshape(1,-1) - eps_lvir[ij].reshape(-1,1) + omega)
+                lX2 = Avvoo[ij].copy()/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1) + omega)
                 self.Y2.append((4.0 * lX2.copy()) - (2.0 * lX2.copy().swapaxes(0,1)))
 
         pseudo = self.local_pseudoresponse(lpertbar, self.Y1, self.Y2)
@@ -1387,12 +1368,7 @@ class lccresponse(object):
         self.im_Y1 = self.in_lY1(lpertbar, self.X1, self.X2)
         self.im_Y2 = self.in_lY2(lpertbar, self.X1, self.X2)
 
-        #adding to validate imhomogenous terms
-        pseudo = self.local_pseudoresponse(lpertbar, self.im_Y1, self.im_Y2)
-        print(f"Iter {0:3d}: CC Psuedoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
-
         #diis = helper_diis(X1, X2, max_diis)
-        contract = self.ccwfn.contract
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
@@ -1400,23 +1376,21 @@ class lccresponse(object):
             r1 = self.lr_Y1(lpertbar, omega)
             r2 = self.lr_Y2(lpertbar, omega)
 
-            #start loop
             rms = 0
             for i in range(no):
                 ii = i * no + i
 
-                #commented out error prone component
-                self.Y1[i] -= r1[i] / (self.Local.eps[ii].reshape(-1,) - self.H.F[i,i] + omega)#(eps_occ[i] - eps_lvir[ii].reshape(-1,) + omega)
-                rms += contract('a,a->', np.conj(r1[i]), (r1[i]))
+                self.Y1[i] += r1[i] / ( self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
+                rms += contract('a,a->', np.conj(r1[i]/(self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)), (r1[i]/(self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)))
 
                 for j in range(no):
                     ij = i*no + j
 
-                    self.Y2[ij] -= r2[ij] / (self.Local.eps[ij].reshape(1,-1) + self.Local.eps[ij].reshape(-1,1) - self.H.F[i,i] - self.H.F[j,j] + omega)#(eps_occ[i] + eps_occ[j] - eps_lvir[ij].reshape(1,-1) - eps_lvir[ij].reshape(-1,1) + omega)
-                    rms += contract('ab,ab->', np.conj(r2[ij]), r2[ij])
+                    self.Y2[ij] += r2[ij] / (self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1) + omega)
+                    rms += contract('ab,ab->', np.conj(r2[ij]/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1) + omega)), 
+                    r2[ij]/(self.H.F[i,i] + self.H.F[j,j] - self.Local.eps[ij].reshape(1,-1) - self.Local.eps[ij].reshape(-1,1) + omega))
 
             rms = np.sqrt(rms)
-            #end loop
 
             pseudo = self.local_pseudoresponse(lpertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
@@ -1873,7 +1847,7 @@ class lccresponse(object):
 
                     #g_im e_mn
                     tmp = contract('fg,ef->ge', Sijmn[immn].T @ l2[im], X2[mn]) 
-                    r_Y1 = r_Y1 - contract('ge, gea -> a', tmp, hbar.Hgnea[imn]) #hbar.Hfobe[nim][:,n,:,:]) 
+                    r_Y1 = r_Y1 - contract('ge, gea -> a', tmp, hbar.Hgnea[imn])  
                      
                     #g_mi e_mn
                     tmp = contract('fg,ef->ge', Sijmn[mimn].T @ l2[mi], X2[mn])        

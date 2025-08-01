@@ -198,7 +198,6 @@ class lcclambda(object):
                 return lecc
 
     def build_lGoo(self, t2, l2):
-        #Eqn 79
         contract = self.contract
         QL = self.Local.QL
         Sijmj = self.Local.Sijmj
@@ -217,7 +216,6 @@ class lcclambda(object):
         return Goo 
 
     def build_lGvv(self, t2, l2):
-        #Eqn 78
         contract = self.contract
         lGvv = []
         for ij in range(self.no*self.no): 
@@ -228,7 +226,6 @@ class lcclambda(object):
     def lr_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hvovvs, Hmine, Himne, Gvv, Goo):
         lr1_start = process_time() 
 
-        #Eqn 77
         contract = self.contract
         QL = self.Local.QL
         Sijmm = self.Local.Sijmm
@@ -282,7 +279,6 @@ class lcclambda(object):
 
     def lr_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo_mj, Hovvo_mi, Hovov_mj, Hovov_mi, Hvovv, Hjiov, Hijov, Gvv, Goo):
         lr2_start = process_time()
-        #Eqn 80 
         contract = self.contract
         QL = self.Local.QL
         Sijii = self.Local.Sijii
