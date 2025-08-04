@@ -237,6 +237,16 @@ H 3 0.75 2 90.0 1 60.0
 symmetry c1
 """
 
+h2_3 = """
+H 0.000000 0.000000 0.000000
+H 0.750000 0.000000 0.000000
+H 0.000000 1.500000 0.000000
+H 0.375000 1.500000 -0.649520
+H 0.000000 3.000000 0.000000
+H -0.375000 3.000000 -0.649520
+symmetry c1
+"""
+
 # (S)-1,3-dimethylallene
 sdma = """
 C  0.000000  0.000000  0.414669
@@ -303,6 +313,7 @@ moldict["(H2O)_7"] = h2o_7
 moldict["uracil"] = uracil
 moldict["benzene"] = benzene
 moldict["(H2)_2"] = h2_2
+moldict["(H2)_3"] = h2_3
 moldict["(S)-dimethylallene"] = sdma
 moldict["(S)-2-chloropropionitrile"] = s2cpn
 moldict["(R)-methylthiirane"] = rmt

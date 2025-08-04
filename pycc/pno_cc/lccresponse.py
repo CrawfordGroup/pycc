@@ -19,19 +19,15 @@ class lccresponse(object):
 
     Methods
     -------
-    linresp():
-        Compute a CC linear response function.
-    quadresp():
+    lquadresp():
         Compute a CC quadratic response function.
-    hyperpolar():
+    lhyperpolar():
         Compute a first electric dipole hyperpolarizability average. 
-    solve_right():
+    local_solve_right():
         Solve the right-hand perturbed wave function equations.
-    solve_left(): 
+    local_solve_left(): 
         Solve the left-hand perturbed wave function equations.
-    pertcheck():
-        Check first-order perturbed wave functions for all available perturbation operators.
-    pert_quadresp():
+    pert_lquadresp():
         Obtain the solutions of the right- and left-hand perturbed wave function equations for the CC quadritc response function. 
     Note
     ------
@@ -44,8 +40,10 @@ class lccresponse(object):
         """
         Parameters
         ----------
-        ccdensity : PyCC ccdensity object
-            Contains all components of the CC one- and two-electron densities, as well as references to the underlying ccwfn, cchbar, and cclambda objects
+        ccwfn: PyCC ccwfn object
+            contains references to the one- and two- electron integrals as well as Local and lccwfn object 
+        cclambda: PyCC lcclambda object
+            contains the references to the amplitudes and hbar terms
         omega1 : scalar
             The first external field frequency (for linear and quadratic response functions)
         omega2 : scalar
@@ -1208,6 +1206,8 @@ class lccresponse(object):
         ------
         Beta_avg: float
             Hyperpolarizability average
+        lhyper_AB: 3x3x3 tensor 
+            Hyperpolarizability elements 
         """
         solver_start = time.time()
 
@@ -1238,8 +1238,14 @@ class lccresponse(object):
                 for c in range(0, 3):
                     pertkey_c = "MU_" + self.cart[c]
 
-                    lhyper_AB_1st[a,b,c] = self.lquadraticresp(pertkey_a, pertkey_b, pertkey_c, lccpert_om_sum_X[pertkey_a], lccpert_om1_X[pertkey_b], lccpert_om2_X[pertkey_c],  lccpert_om_sum_Y[pertkey_a], lccpert_om1_Y[pertkey_b], lccpert_om2_Y[pertkey_c] )
-                    lhyper_AB_2nd[a,b,c] = self.lquadraticresp(pertkey_a, pertkey_b, pertkey_c, lccpert_om_sum_2nd_X[pertkey_a], lccpert_om1_2nd_X[pertkey_b], lccpert_om2_2nd_X[pertkey_c],  lccpert_om_sum_2nd_Y[pertkey_a], lccpert_om1_2nd_Y[pertkey_b], lccpert_om2_2nd_Y[pertkey_c])
+                    lhyper_AB_1st[a,b,c] = self.lquadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    lccpert_om_sum_X[pertkey_a], lccpert_om1_X[pertkey_b], lccpert_om2_X[pertkey_c], 
+                    lccpert_om_sum_Y[pertkey_a], lccpert_om1_Y[pertkey_b], lccpert_om2_Y[pertkey_c] )
+                    
+                    lhyper_AB_2nd[a,b,c] = self.lquadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    lccpert_om_sum_2nd_X[pertkey_a], lccpert_om1_2nd_X[pertkey_b], lccpert_om2_2nd_X[pertkey_c], 
+                    lccpert_om_sum_2nd_Y[pertkey_a], lccpert_om1_2nd_Y[pertkey_b], lccpert_om2_2nd_Y[pertkey_c])
+                    
                     self.lhyper_AB[a,b,c] = (lhyper_AB_1st[a,b,c] + lhyper_AB_2nd[a,b,c] )/2
 
         Beta_avg = 0
@@ -1329,9 +1335,6 @@ class lccresponse(object):
             #    self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)    
 
     def local_solve_left(self, lpertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200): #, max_diis=7, start_diis=1):
-        """
-        For Y1, only evaluates the first term of inhomogenous terms as well as the first term of homogenous terms
-        """
         solver_start = time.time()
         no = self.no
         contract =self.contract
