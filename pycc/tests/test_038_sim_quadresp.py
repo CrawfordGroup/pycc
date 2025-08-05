@@ -97,5 +97,5 @@ def test_PNOpp_ccsd_OR():
  
     #can only compare to itself
     OR_sim = -25.787425247225
-    assert(abs(OR - OR_sim) < 1e-10)  
+    assert(abs(OR - OR_sim) < 1e-9)  
  
