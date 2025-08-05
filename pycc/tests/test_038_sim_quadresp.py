@@ -61,7 +61,9 @@ def test_PNOpp_ccsd_OR():
                       'freeze_core': 'false',
                       'e_convergence': 1e-12,
                       'd_convergence': 1e-12,
-                      'r_convergence': 1e-12})
+                      'r_convergence': 1e-12,
+                      'local_maxiter': 10000
+    })
     mol = psi4.geometry(moldict["CO"])
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
     
@@ -94,6 +96,6 @@ def test_PNOpp_ccsd_OR():
     #HCl_OR = -19.34209144399                   #HCl = -19.342091493471
  
     #can only compare to itself
-    OR_sim = -25.787425247224956
+    OR_sim = -25.787425247225
     assert(abs(OR - OR_sim) < 1e-10)  
  
