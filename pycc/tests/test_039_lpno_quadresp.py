@@ -33,7 +33,7 @@ def test_PNO_ccsd_SHG():
     maxiter = 1000
 
     #simulation code
-    cc = pycc.ccwfn(rhf_wfn, local="PNO++", local_mos = 'BOYS',  local_cutoff=1e-05, filter=True)
+    cc = pycc.ccwfn(rhf_wfn, local="PNO++", local_mos = 'BOYS',  local_cutoff=1e-07, filter=True)
     ecc = cc.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
@@ -50,14 +50,14 @@ def test_PNO_ccsd_SHG():
     SHG = resp.hyperpolar()
 
     #PNO
-    lcc = pycc.ccwfn(rhf_wfn, local = 'PNO++', local_mos = 'BOYS', local_cutoff = 1e-05, filter=False)
+    lcc = pycc.ccwfn(rhf_wfn, local = 'PNO++', local_mos = 'BOYS', local_cutoff = 1e-07, filter=False)
     lecc = lcc.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
     lhbar = pycc.lcchbar(lcc)
     lcc_lambda = pycc.lcclambda(lcc, lhbar)
     llecc = lcc_lambda.solve_llambda(e_conv, r_conv)
 
-    omega1 = 0.0656
-    omega2 = 0.0656
+    omega1 = 0.0428
+    omega2 = 0.0428
     
     lresp = pycc.lccresponse(lcc, lcc_lambda)
     lresp.pert_lquadresp(omega1, omega2, e_conv, r_conv, maxiter)
