@@ -26,8 +26,8 @@ def test_PNO_ccsd_SHG():
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     #Convergence and maximum iteration  
-    e_conv = 1e-10
-    r_conv = 1e-10
+    e_conv = 1e-12
+    r_conv = 1e-12
     maxiter = 1000
 
     #simulation code
