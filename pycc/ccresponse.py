@@ -1084,13 +1084,13 @@ class ccresponse(object):
         for i in range(0,3):
             Beta_avg += (hyper_AB[2,i,i] + hyper_AB[i,2,i] + hyper_AB[i,i,2])/5
 
-        print("\Beta_zxx = %10.12lf" %(hyper_AB[2,0,0]))
-        print("\Beta_xzx = %10.12lf" %(hyper_AB[0,2,0]))
-        print("\Beta_xxz = %10.12lf" %(hyper_AB[0,0,2]))
-        print("\Beta_zyy = %10.12lf" %(hyper_AB[2,1,1]))
-        print("\Beta_yzy = %10.12lf" %(hyper_AB[1,2,1]))
-        print("\Beta_yyz = %10.12lf" %(hyper_AB[1,1,2]))
-        print("\Beta_zzz = %10.12lf" %(hyper_AB[2,2,2]))
+        print("Beta_zxx = %10.12lf" %(hyper_AB[2,0,0]))
+        print("Beta_xzx = %10.12lf" %(hyper_AB[0,2,0]))
+        print("Beta_xxz = %10.12lf" %(hyper_AB[0,0,2]))
+        print("Beta_zyy = %10.12lf" %(hyper_AB[2,1,1]))
+        print("Beta_yzy = %10.12lf" %(hyper_AB[1,2,1]))
+        print("Beta_yyz = %10.12lf" %(hyper_AB[1,1,2]))
+        print("Beta_zzz = %10.12lf" %(hyper_AB[2,2,2]))
 
         print("Beta_avg = %10.12lf" %(Beta_avg))
         print("\n First Dipole Hyperpolarizability computed in %.3f seconds.\n" % (time.time() - solver_start))
