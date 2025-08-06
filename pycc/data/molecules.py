@@ -26,6 +26,16 @@ lih="""
         symmetry c1
         """
 
+# CO
+co = """
+C  0.000000  0.000000  0.000000
+O  0.000000  0.000000  -2.132000
+noreorient
+nocom
+units au
+symmetry c1
+"""
+
 # Håkon's H2O test case
 h2o_hek="""
         units au
@@ -49,6 +59,15 @@ h2o = """
 O
 H 1 1.1
 H 1 1.1 2 104
+symmetry c1
+"""
+
+### Water molecule from Dalton
+h2o_dalton = """
+O 0.000000000000     0.000000000000     0.000000000000
+H 0.000000000000    -0.756689920000     0.585891940000
+H 0.000000000000     0.756689920000     0.585891940000
+units Angstrom
 symmetry c1
 """
 
@@ -218,6 +237,16 @@ H 3 0.75 2 90.0 1 60.0
 symmetry c1
 """
 
+h2_3 = """
+H 0.000000 0.000000 0.000000
+H 0.750000 0.000000 0.000000
+H 0.000000 1.500000 0.000000
+H 0.375000 1.500000 -0.649520
+H 0.000000 3.000000 0.000000
+H -0.375000 3.000000 -0.649520
+symmetry c1
+"""
+
 # (S)-1,3-dimethylallene
 sdma = """
 C  0.000000  0.000000  0.414669
@@ -269,10 +298,12 @@ moldict = {}
 moldict["He"] = he
 moldict["Be"] = be
 moldict["LiH"] = lih
+moldict["CO"] = co
 moldict["H2"] = h2
 moldict["H2O_HEK"] = h2o_hek
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
+moldict["H2O_D"] = h2o_dalton
 moldict["(H2O)_2"] = h2o_2
 moldict["(H2O)_3"] = h2o_3
 moldict["(H2O)_4"] = h2o_4
@@ -282,6 +313,7 @@ moldict["(H2O)_7"] = h2o_7
 moldict["uracil"] = uracil
 moldict["benzene"] = benzene
 moldict["(H2)_2"] = h2_2
+moldict["(H2)_3"] = h2_3
 moldict["(S)-dimethylallene"] = sdma
 moldict["(S)-2-chloropropionitrile"] = s2cpn
 moldict["(R)-methylthiirane"] = rmt

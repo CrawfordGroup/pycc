@@ -808,7 +808,7 @@ class Local(object):
 
         return t2
 
-    def filter_amps(self, r1, r2):
+    def filter_amps(self, r1, r2, omega = 0):
         no = self.no
         nv = self.nv
         dim = self.dim
@@ -821,7 +821,7 @@ class Local(object):
             Y = self.L[ii].T @ X
 
             for a in range(dim[ii]):
-                Y[a] = Y[a]/(self.H.F[i,i] - self.eps[ii][a])
+                Y[a] = Y[a]/(self.H.F[i,i] - self.eps[ii][a] + omega)
 
             X = self.L[ii] @ Y
             t1[i] = self.Q[ii] @ X
@@ -836,7 +836,42 @@ class Local(object):
 
             for a in range(dim[ij]):
                 for b in range(dim[ij]):
-                    Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b])
+                    Y[a,b] = Y[a,b]/(self.H.F[i,i] + self.H.F[j,j] - self.eps[ij][a] - self.eps[ij][b] + omega)
+
+            X = self.L[ij] @ Y @ self.L[ij].T
+            t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
+
+        return t1, t2
+
+    def filter_pertamps(self, r1, r2, eps_occ, eps_vir, omega):
+        no = self.no
+        nv = self.nv
+        dim = self.dim
+
+        t1 = np.zeros((no,nv))
+        for i in range(no):
+            ii = i * no + i
+
+            X = self.Q[ii].T @ r1[i]
+            Y = self.L[ii].T @ X
+
+            for a in range(dim[ii]):
+                Y[a] = Y[a]/(eps_occ[i] - eps_vir[ii][a] + omega)
+
+            X = self.L[ii] @ Y
+            t1[i] = self.Q[ii] @ X
+
+        t2 = np.zeros((no,no,nv,nv))
+        for ij in range(no*no):
+            i = ij // no
+            j = ij % no
+
+            X = self.Q[ij].T @ r2[i,j] @ self.Q[ij]
+            Y = self.L[ij].T @ X @ self.L[ij]
+
+            for a in range(dim[ij]):
+                for b in range(dim[ij]):
+                    Y[a,b] = Y[a,b]/(eps_occ[i] + eps_occ[j] - eps_vir[ij][a] - eps_vir[ij][b] + omega)
 
             X = self.L[ij] @ Y @ self.L[ij].T
             t2[i,j] = self.Q[ij] @ X @ self.Q[ij].T
@@ -882,19 +917,22 @@ class Local(object):
         #Initializing the transformation matrices
         Q = self.Q
         L = self.L
-        
+
         QL = []
         Fov = []
         Fvv = []
         ERIoovo = []
         ERIooov = []
         ERIovvv = []
+        ERIvovv = []
         ERIvvvv = []
         ERIoovv = []
         ERIovvo = []
         ERIvvvo = []
         ERIovov = []
         ERIovoo = []
+        ERIvoov = []
+        ERIvovo = []
         Loovv = []
         Lovvv = []
         Looov = []
@@ -922,33 +960,38 @@ class Local(object):
 
             ERIovvo.append(ERIoovv[ij].swapaxes(1,3))
 
+            ERIvoov.append(ERIovvo[ij].swapaxes(0,1).swapaxes(2,3))
+
             tmp1 = contract('iajb,aA->iAjb',self.H.ERI[o,v,o,v], QL[ij])
             ERIovov.append(contract('iAjb,bB->iAjB',tmp1, QL[ij]))
+
+            ERIvovo.append(ERIovov[ij].swapaxes(0,1).swapaxes(2,3))
 
             tmp2 = contract('iabc,aA->iAbc',self.H.ERI[o,v,v,v], QL[ij])
             tmp2 = contract('iAbc,bB->iABc',tmp2, QL[ij])
             ERIovvv.append(contract('iABc,cC->iABC',tmp2, QL[ij]))
 
-            tmp3 = ERIovvv[ij].swapaxes(0,1).swapaxes(2,3)
-            ERIvvvo.append(tmp3.swapaxes(1,3))
+            ERIvovv.append(ERIovvv[ij].swapaxes(0,1).swapaxes(2,3))
 
-            tmp4 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
-            tmp4 = contract('Abcd,bB->ABcd',tmp4, QL[ij])
-            tmp4 = contract('ABcd,cC->ABCd',tmp4, QL[ij])
-            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp4, QL[ij]))
-            
+            ERIvvvo.append(ERIvovv[ij].swapaxes(1,3))
+
+            tmp3 = contract('abcd,aA->Abcd',self.H.ERI[v,v,v,v], QL[ij])
+            tmp3 = contract('Abcd,bB->ABcd',tmp3, QL[ij])
+            tmp3 = contract('ABcd,cC->ABCd',tmp3, QL[ij])
+            ERIvvvv.append(contract('ABCd,dD->ABCD',tmp3, QL[ij]))
+
             Loovo.append(contract('ijak,aA->ijAk', self.H.L[o,o,v,o],QL[ij]))
 
             Looov.append(Loovo[ij].swapaxes(0,1).swapaxes(2,3))
 
-            tmp5 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
-            Loovv.append(contract('ijAb,bB->ijAB',tmp5,QL[ij]))
+            tmp4 = contract('ijab,aA->ijAb',self.H.L[o,o,v,v], QL[ij])
+            Loovv.append(contract('ijAb,bB->ijAB',tmp4,QL[ij]))
 
             Lovvo.append(Loovv[ij].swapaxes(1,3))
 
-            tmp6 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
-            tmp6 = contract('iAbc,bB->iABc',tmp6, QL[ij])
-            Lovvv.append(contract('iABc,cC->iABC',tmp6, QL[ij]))
+            tmp5 = contract('iabc,aA->iAbc',self.H.L[o,v,v,v], QL[ij])
+            tmp5 = contract('iAbc,bB->iABc',tmp5, QL[ij])
+            Lovvv.append(contract('iABc,cC->iABC',tmp5, QL[ij]))
 
             self.QL = QL
             self.Fov = Fov
@@ -956,12 +999,15 @@ class Local(object):
             self.ERIoovo = ERIoovo
             self.ERIooov = ERIooov
             self.ERIovvv = ERIovvv
+            self.ERIvovv = ERIvovv
             self.ERIvvvv = ERIvvvv
             self.ERIoovv = ERIoovv
             self.ERIovvo = ERIovvo
             self.ERIvvvo = ERIvvvo
             self.ERIovov = ERIovov
             self.ERIovoo = ERIovoo
+            self.ERIvoov = ERIvoov
+            self.ERIvovo = ERIvovo
             self.Loovv = Loovv
             self.Lovvv = Lovvv
             self.Looov = Looov
@@ -984,46 +1030,61 @@ class Local(object):
         -----
         Compare the timings for the use of stored overlap terms versus "on the fly" overlap terms 
         """
-        no = self.no 
+        no = self.no
 
+        Sijii = []
+        Sijjj = []
         Sijmm = []
         Sijim = []
+        Sijmi = []
         Sijmj = []
         Sijnn = []
         Sijin = []
         Sijnj = []
         Sijjn = []
         Sijmn = []
-        
+
         for i in range(no):
+            ii = i*no + i
             for j in range(no):
                 ij = i*no + j
+                jj = j*no + j
+                ji = j*no + i
+
+                Sijii.append(QL[ij].T @ QL[ii])
+                Sijjj.append(QL[ij].T @ QL[jj])
+
                 for m in range(no):
                     mm = m*no + m
                     im = i*no + m
                     mj = m*no + j
+                    mi = m*no + i
 
                     Sijmm.append(QL[ij].T @ QL[mm])
-                    Sijim.append(QL[ij].T @ QL[im]) 
-                    Sijmj.append(QL[ij].T @ QL[mj])  
+                    Sijim.append(QL[ij].T @ QL[im])
+                    Sijmj.append(QL[ij].T @ QL[mj])
+                    Sijmi.append(QL[ij].T @ QL[mi])
 
                 for n in range(no):
                     nn = n*no + n
-                    _in = i*no + n 
-                    nj = n*no + j 
+                    _in = i*no + n
+                    nj = n*no + j
                     jn = j*no + n
 
                     Sijnn.append(QL[ij].T @ QL[nn])
-                    Sijin.append(QL[ij].T @ QL[_in]) 
+                    Sijin.append(QL[ij].T @ QL[_in])
                     Sijnj.append(QL[ij].T @ QL[nj])
                     Sijjn.append(QL[ij].T @ QL[jn])
 
                 for mn in range(no*no):
                     Sijmn.append(QL[ij].T @ QL[mn])
 
+        self.Sijii = Sijii
+        self.Sijjj = Sijjj
         self.Sijmj = Sijmj
-        self.Sijmm = Sijmm 
+        self.Sijmm = Sijmm
         self.Sijim = Sijim
+        self.Sijmi = Sijmi
         self.Sijnn = Sijnn
         self.Sijin = Sijin
         self.Sijnj = Sijnj
