@@ -1281,6 +1281,10 @@ class lccresponse(object):
 
             lX1 = Avo[ii].copy()
             lX1 = lX1/ (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
+
+            #testing out the pertamps preconditioner
+            #lX1 = lX1/ (self.H.F[i,i] - self.Local.eps[ii].reshape(-1,) + omega)
+
             self.X1.append(2.0 *lX1)
 
             for j in range(no):
