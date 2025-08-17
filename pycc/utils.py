@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import opt_einsum
 
+import einsums as ein
 
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
@@ -186,3 +187,24 @@ class cc_contract(object):
             del input_list
             return output
 
+class cc_contract_einsums(object):
+    def __init__(self, device="CPU"):
+        self.device = device
+        # TODO
+        #if self.device == 'GPU':
+
+    def __call__(self, subscript_list, tensor_list, fact1=1, fact2=0):
+        """
+        Parameters
+        ----------
+        subscript_list: list of string ("ij,jk->ik"==("ij","jk","ik"))
+        tensor_list: list of NumPy array ((A,B,C) for C = fact1 * A@B + fact2 * C)
+        
+        Returns
+        -------
+        updated C: NumPy array 
+        """
+        plan = ein.core.compile_plan(subscript_list[2], subscript_list[0], subscript_list[1]) # order in Einsums (out, int1, in2)
+        plan.execute(fact2, tensor_list[2], fact1, tensor_list[0], tensor_list[1])
+
+        return tensor_list[2]
