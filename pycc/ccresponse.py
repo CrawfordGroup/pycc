@@ -9,6 +9,7 @@ import numpy as np
 import time
 from .utils import helper_diis
 from .cclambda import cclambda
+from .hamiltonian import Hamiltonian
 
 class ccresponse(object):
     """
@@ -295,6 +296,282 @@ class ccresponse(object):
                     X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check.append(polar)
 
+    def sym_linresp(self, pertkey_a, pertkey_b, X1_A, X2_A, X1_B, X2_B):
+        """
+        	Calculate the CC symmetric linear response function for polarizability at field-frequency omega(w1).
+
+        	The linear response function, <<A;B(w1)>> generally requires the following perturbed wave functions and frequencies:
+
+        	Parameters
+        	----------
+        	pertkey_a: string
+        		String identifying the one-electron perturbation, A along a cartesian axis
+
+        	Return
+        	------
+        	polar: float
+        	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
+        """
+
+        # Please refer to eqn 94 of [Koch and Jørgensen, “Coupled Cluster Response Functions.”].
+        # Writing H(1)(omega) = B, T^(1)(omega) = X, Lambda = L^(0)
+        # <<A;B>> = <0|(1 + L^(0)) { [\bar{A}^(0), X^(1)(B)] + [\bar{B}^(1), X^(1)(B)] + [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] } |0>
+
+        contract = self.ccwfn.contract
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        L = self.ccwfn.H.L
+
+        polar1 = 0.0
+
+        polar1 += self.LCX(pertkey_a, X1_B, X2_B)
+        polar1 += self.LCX(pertkey_b, X1_A, X2_A)
+
+        # <0|(HX1Y1)|0>
+        LHX1Y1 = 2.0 * contract('ijab, ia, jb', L[o, o, v, v], X1_B, X1_A)
+        Goo = contract('mjab,ijab->mi', t2, l2)
+        Gvv = -1.0 * contract('ijeb,ijab->ae', t2, l2)
+        r2_Gvv = contract('ae,ijeb->ijab', Gvv, L[o, o, v, v])
+        r2_Goo = -1.0 * contract('mi,mjab->ijab', Goo, L[o, o, v, v])
+        r2_Gvv = r2_Gvv + r2_Gvv.swapaxes(0, 1).swapaxes(2, 3)
+        r2_Goo = r2_Goo + r2_Goo.swapaxes(0, 1).swapaxes(2, 3)
+        LHX1Y1 += contract('ijab,ia,jb', r2_Gvv, X1_A, X1_B)  # Gvv
+        LHX1Y1 += contract('ijab,ia,jb', r2_Goo, X1_A, X1_B)  # Goo
+        polar1 += self.LHX1Y1(X1_B, X1_A)
+        polar1 += self.LHX1Y1(X1_A, X1_B)
+
+        # <0|L2[[H, X2], Y2]|0>
+        temp = contract("ikac, ijab -> kjbc", L[o, o, v, v], X2_A)
+        temp = contract("kjbc, klcd -> jlbd", temp, X2_B)
+        LHX2Y2 = 2 * contract("jlbd, jlbd -> ", temp, l2)
+        polar1 += self.LHX2Y2(X2_A, X2_B)
+        polar1 += self.LHX2Y2(X2_B, X2_A)
+
+        polar1 += self.LHX1Y2(X1_B, X2_A)
+        polar1 += self.LHX1Y2(X1_A, X2_B)
+
+        polar1 += LHX1Y1 + LHX2Y2
+
+        return -1.0 * polar1
+
+    def LCX(self, pertkey_a, X1_B, X2_B):
+        """
+        LCX: Is the first second term contributions to the linear response symmetric function.
+        <0|(1 + L^(0)){ [\bar{A}^(0), X^(1)(B)] + [\bar{B}^(1), X^(1)(B)]}|0>
+        """
+
+        contract = self.ccwfn.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+
+        LCX = 0.0
+        pertbar_A = self.pertbar[pertkey_a]
+
+        Aov = pertbar_A.Aov
+        Aoo = pertbar_A.Aoo
+        Avv = pertbar_A.Avv
+        Avvvo = pertbar_A.Avvvo
+        Aovoo = pertbar_A.Aovoo
+
+        # <0|[A_bar, X1]|0>
+        LCX += 2.0 * contract("ia, ia -> ", Aov, X1_B)
+
+        # <0|L1 [A_bar, X1]|0>
+        temp_ov = contract('ab, ib -> ia', Avv, X1_B)
+        temp_ov -= contract('ji, ja -> ia', Aoo, X1_B)
+        LCX += contract('ia, ia', temp_ov, l1)
+
+        temp_ov = -1.0 * contract('ja, ijab -> ib', Aov, X2_B)
+        temp_ov += 2.0 * contract('ja, jiab -> ib', Aov, X2_B)
+        LCX += contract("ib, ib -> ", temp_ov, l1)
+
+        # <0|L2 [A_bar, X1]|0>
+        tmp = contract("ijbc, bcaj -> ia", l2, Avvvo)
+        LCX += contract("ia, ia -> ", tmp, X1_B)
+        tmp = contract("ijab, kbij -> ak", l2, Aovoo)
+        LCX -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
+        tmp = contract("ijab, kaji -> bk", l2, Aovoo)
+        LCX -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
+
+        tmp = contract("ijab, kjab -> ik", l2, X2_B)
+        LCX -= 0.5 * contract("ik, ki -> ", tmp, Aoo)
+        tmp = contract("ijab, kiba-> jk", l2, X2_B)
+        LCX -= 0.5 * contract("jk, kj -> ", tmp, Aoo)
+        tmp = contract("ijab, ijac -> bc", l2, X2_B)
+        LCX += 0.5 * contract("bc, bc -> ", tmp, Avv)
+        tmp = contract("ijab, ijcb -> ac", l2, X2_B)
+        LCX += 0.5 * contract("ac, ac -> ", tmp, Avv)
+
+        return LCX
+
+    def LHX1Y1(self, X1_B, X1_A):
+        """
+        LHX1Y1: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where both perturbed amplitudes are first order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
+        """
+
+        contract = self.ccwfn.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        L = self.ccwfn.H.L
+
+        LHX1Y1 = 0.0
+
+        # <0|L1[[H, X1], Y1]|0>
+        tmp = contract('ja, ia -> ij', hbar.Hov, X1_A)
+        tmp = contract('ij, jb -> ib', tmp, X1_B)
+        LHX1Y1 -= contract('ib, ib', tmp, l1)
+
+        tmp = contract('jika, ia -> jk', 2 * hbar.Hooov, X1_B)
+        tmp = contract('jk, jb -> kb', tmp, X1_A)
+        LHX1Y1 -= contract('kb, kb', tmp, l1)
+        tmp = contract('jika, ia -> jk', hbar.Hooov.swapaxes(0, 1), X1_B)
+        tmp = contract('jk, jb -> kb', tmp, X1_A)
+        LHX1Y1 += contract('kb, kb', tmp, l1)
+
+        tmp = contract('cjab, jb -> ac', 2 * hbar.Hvovv, X1_A)
+        tmp = contract('ac, ia -> ic', tmp, X1_B)
+        LHX1Y1 += contract('ic, ic -> ', tmp, l1)
+        tmp = contract('cjab, jb -> ac', hbar.Hvovv.swapaxes(2, 3), X1_A)
+        tmp = contract('ac, ia -> ic', tmp, X1_B)
+        LHX1Y1 -= contract('ic, ic -> ', tmp, l1)
+
+        # <0|L2[[H, X1], Y1]|0>
+        temp = contract("jcka, ia -> ijkc", hbar.Hovov, X1_A)
+        temp = contract("ijkc, jb -> kibc", temp, X1_B)
+        LHX1Y1 -= contract("kibc, kibc -> ", temp, l2)
+        temp = contract("jcak, ia -> ijkc", hbar.Hovvo, X1_A)
+        temp = contract("ijkc, jb -> kicb", temp, X1_B)
+        LHX1Y1 -= contract("kicb, kicb -> ", temp, l2)
+        temp = contract('cdab, ia -> ibcd', hbar.Hvvvv, X1_B)
+        temp = contract('ibcd, jb -> ijcd', temp, X1_A)
+        LHX1Y1 += 0.5 * contract('ijcd, ijcd', temp, l2)
+        temp = contract('ijkl, ia -> klaj', hbar.Hoooo, X1_B)
+        temp = contract('klaj, jb -> klab', temp, X1_A)
+        LHX1Y1 += 0.5 * contract('klab, klab', temp, l2)
+
+        return LHX1Y1
+
+    def LHX2Y2(self, X2_A, X2_B):
+        """
+        LHX2Y2: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where both perturbed amplitudes are second order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
+        """
+
+        contract = self.ccwfn.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        L = self.ccwfn.H.L
+        ERI = self.ccwfn.H.ERI
+
+        LHX2Y2 = 0.0
+        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
+        temp = contract("bc, klcd -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
+        temp = contract("jk, jlbd -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("ijac, jkbc -> ikab", L[o, o, v, v], X2_A)
+        temp = contract("ikab, ilad -> klbd", temp, X2_B)
+        LHX2Y2 -= contract("klbd, klbd -> ", temp, l2)
+        temp = contract("klab, ijab -> klij", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("klij, klcd -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+        temp = contract("klab, ikac -> ilbc", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("ilbc, jlbd -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+        temp = contract("klab, ilad -> ikbd", ERI[o, o, v, v].copy(), X2_A)
+        temp = contract("ikbd, jkbc -> ijcd", temp, X2_B)
+        LHX2Y2 += 0.5 * contract("ijcd, ijcd -> ", temp, l2)
+
+        return LHX2Y2
+
+    def LHX1Y2(self, X1_B, X2_A):
+        """
+        LHX1Y2: Is a function for the second term (quadratic term) contribution to the linear response
+        function, where perturbed amplitudes is a first order and a second order.
+        # <0|(1 + L^(0)){ [[\bar{B}^(0), X^(1)(B)], X^(1)(B)] }|0>
+        """
+
+        contract = self.ccwfn.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        L = self.ccwfn.H.L
+
+        LHX1Y2 = 0.0
+        # <O|L1(0)[[Hbar(0),X1(B)],X2(A)]]|0>
+        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
+        temp = contract("jc, jkbc -> kb", temp, X2_A)
+        LHX1Y2 -= contract("kb, kb", temp, l1)
+        temp = contract("ijac, ia -> jc", L[o, o, v, v], X1_B)
+        temp = contract("jc, jkcb -> kb", temp, X2_A)
+        LHX1Y2 += 2.0 * contract("kb, kb", temp, l1)
+        temp = contract("ijac, ikac -> jk", L[o, o, v, v], X2_A)
+        temp = contract("jk, jb -> kb", temp, X1_B)
+        LHX1Y2 -= contract("kb, kb -> ", temp, l1)
+        temp = contract("ijac, ijab -> bc", L[o, o, v, v], X2_A)
+        temp = contract("bc, kc -> kb", temp, X1_B)
+        LHX1Y2 -= contract("kb, kb -> ", temp, l1)
+
+        # <O|L2(A)[[Hbar(0),X2(B)],X1(C)]]|0>
+        temp = contract('ja, ia -> ij', hbar.Hov, X1_B)
+        temp = contract('ij, jkbc -> ikbc', temp, X2_A)
+        LHX1Y2 -= contract('ikbc, ikbc', temp, l2)
+        temp = contract('ja, jb -> ab', hbar.Hov, X1_B)
+        temp = contract('ab, ikac -> ikbc', temp, X2_A)
+        LHX1Y2 -= contract('ikbc, ikbc', temp, l2)
+
+        temp = contract('jima, ia -> jm', (2*hbar.Hooov - hbar.Hooov.swapaxes(0, 1)), X1_B)
+        temp = contract('jm, jkbc -> kmcb', temp, X2_A)
+        LHX1Y2 -= contract('kmcb, kmcb -> ', temp, l2)
+        temp = contract('jima, jb -> imab', (2*hbar.Hooov - hbar.Hooov.swapaxes(0, 1)), X1_B)
+        temp = contract('imab, ikac -> kmcb', temp, X2_A)
+        LHX1Y2 -= contract('kmcb, kmcb', temp, l2)
+
+        temp = contract('djab, ia -> djib', (2*hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)), X1_B)
+        temp = contract('djib, jkbc -> kicd', temp, X2_A)
+        LHX1Y2 += contract('kicd, kicd', temp, l2)
+        temp = contract('djab, jb -> ad', (2 * hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)), X1_B)
+        temp = contract('ad, ikac -> kicd', temp, X2_A)
+        LHX1Y2 += contract('kicd, kicd', temp, l2)
+
+        temp = contract('kdab, ia -> ikdb', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('ikdb, jkbc -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
+        temp = contract('kdab, jb -> kjad', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('kjad, ikac -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
+        temp = contract('kdab, kc -> abcd', hbar.Hvovv.swapaxes(0, 1), X1_B)
+        temp = contract('abcd, ijab -> ijdc', temp, X2_A)
+        LHX1Y2 -= contract('ijdc, ijdc', temp, l2)
+
+        temp = contract('jkla, ia -> ijkl', hbar.Hooov, X1_B)
+        temp = contract('ijkl, jkbc -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc', temp, l2)
+        temp = contract('jkla, jb -> klab', hbar.Hooov, X1_B)
+        temp = contract('klab, ikac -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc -> ', temp, l2)
+        temp = contract('jkla, kc -> jlac', hbar.Hooov, X1_B)
+        temp = contract('jlac, ijab -> libc', temp, X2_A)
+        LHX1Y2 += contract('libc, libc -> ', temp, l2)
+
+
+        return LHX1Y2
 
     def linresp_asym(self, pertkey_a, X1_B, X2_B, Y1_B, Y2_B):
         """
@@ -335,7 +612,7 @@ class ccresponse(object):
         polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
         # <0|[A_bar, X(B)]|0>
         polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
-        # <0|L1(0) [A_bar, X2(B)]|0>
+        # <0|L1(0) [A_bar, X1(B)]|0>
         tmp = contract("ia, ic -> ac", l1, X1_B)
         polar2 += contract("ac, ac -> ", tmp, pertbar_A.Avv)
         tmp = contract("ia, ka -> ik", l1, X1_B)
@@ -351,7 +628,7 @@ class ccresponse(object):
         polar2 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
         tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
         polar2 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
-        # <0|L2(0)[A_bar, X1(B)]|0>
+        # <0|L2(0)[A_bar, X2(B)]|0>
         tmp = contract("ijab, kjab -> ik", l2, X2_B)
         polar2 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
         tmp = contract("ijab, kiba-> jk", l2, X2_B)
