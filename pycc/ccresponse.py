@@ -201,9 +201,9 @@ class ccresponse(object):
                     print("Solving right-hand perturbed wave function for %s:" % (X_key))
                     X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check[X_key] = polar
-        
 
         return check
+
 
     def linresp(self, A, B, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         """
@@ -511,7 +511,7 @@ class ccresponse(object):
         Zoo = -1.0*contract('mnie,ne->mi', (2.0*hbar.Hooov - hbar.Hooov.swapaxes(0,1)), X1)
         Zoo -= contract('mnef,inef->mi', L[o,o,v,v], X2)
 
-        r_X2 = pertbar.Avvoo - 0.5 * omega*X2
+        r_X2 = 0.5 * (pertbar.Avvoo - omega * X2)
         r_X2 += contract('ie,abej->ijab', X1, hbar.Hvvvo)
         r_X2 -= contract('ma,mbij->ijab', X1, hbar.Hovoo)
         r_X2 += contract('mi,mjab->ijab', Zoo, t2)
@@ -825,7 +825,7 @@ class ccresponse(object):
     def pseudoresponse(self, pertbar, X1, X2):
         contract = self.ccwfn.contract
         polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
-        polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
+        polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
         return -2.0*(polar1 + polar2) 
         
@@ -858,4 +858,4 @@ class pertbar(object):
         # Note that Avvoo is permutationally symmetric, unlike the implementation in ugacc
         self.Avvoo = contract('ijeb,ae->ijab', t2, self.Avv)
         self.Avvoo -= contract('mjab,mi->ijab', t2, self.Aoo)
-        self.Avvoo = 0.5*(self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3))
+        self.Avvoo = self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3)
