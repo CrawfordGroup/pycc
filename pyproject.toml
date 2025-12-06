@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+homepage = "https://github.com/CrawfordGroup/pycc"
+issues = "https://github.com/CrawfordGroup/pycc/issues"
+
+[project]
+name = "pycc"
+dynamic = ["version"]
+requires-python = ">=3.11"
+description = "A Python-based coupled cluster implementation."
+authors = [
+  { name="T Daniel Crawford", email="crawdad@vt.edu" },
+]
+license = { file="LICENSE" }
+readme = "README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "numpy",
+    "opt_einsum",
+    "scipy",
+    "torch",
+    # example: "numpy >=2.3.3; python_version >='3.14'",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+#    "pytest-cov",
+#    "codecov",
+]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/tests/*", "*site-packages*", "*__init__.py"]
+
+[tool.setuptools]
+packages = ["pycc"]
+
+# [tool.setuptools.aliases]
+# can't be done in pyproject.toml so use `pytest` itself
+# test = "pytest"
+
+[tool.setuptools.package-data]
+
+[tool.setuptools_scm]
+
+[tool.versioningit.vcs]
+default-tag = "0.0.99" # useful for CI/shallow clones
+
