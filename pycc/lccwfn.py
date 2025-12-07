@@ -2,7 +2,7 @@ import time
 #from timer import Timer
 import numpy as np
 from opt_einsum import contract
-
+from utils_Bij import helper_ldiis
 
 class lccwfn(object):
     """
@@ -109,7 +109,8 @@ class lccwfn(object):
         #self.r2_t = Timer("r2")
         #self.energy_t = Timer("energy")
 
-        #ldiis = helper_ldiis(self.t1, self.t2, max_diis)
+        ldiis = helper_ldiis(self.no, self.t1, self.t2, max_diis, self.Local)
+
 
         elcc = self.lcc_energy(self.Local.Fov,self.Local.Loovv,self.t1, self.t2)
         print("CC Iter %3d: lCC Ecorr = %.15f dE = % .5E MP2" % (0,elcc,-elcc))
@@ -156,9 +157,9 @@ class lccwfn(object):
                 #print(Timer.timers)
                 return elcc
 
-            #ldiis.add_error_vector(self.t1,self.t2)
-            #if niter >= start_diis:
-                #self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
+            ldiis.add_error_vector(self.t1,self.t2)
+            if niter >= start_diis:
+                self.t1, self.t2 = ldiis.extrapolate(self.t1, self.t2)
 
     def local_residuals(self, t1, t2):
         """
