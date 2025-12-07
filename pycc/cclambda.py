@@ -11,7 +11,7 @@ import time
 from opt_einsum import contract
 from .utils import helper_diis
 import torch
-from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
+from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk, t3_ijkabc_alt
 
 
 class cclambda(object):
@@ -342,20 +342,51 @@ class cclambda(object):
                 Zmndi = np.zeros_like(t2[:,:,:,:no])
                 Zmdfa = np.zeros_like(t2)
                 Zmdfa = np.pad(Zmdfa, ((0,0), (0,nv-no), (0,0), (0,0)))
-            for m in range(no):
-                for n in range(no):
-                    for l in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
-                        if self.ccwfn.real_time is True:
-                            if isinstance(t1, torch.Tensor):
-                                V = F - self.ccwfn.H.F.clone()
-                            else:
-                                V = F - self.ccwfn.H.F.copy()
-                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
-                        Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
-                        Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
-                        Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
-                        Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])                                                
+            """
+            if self.ccwfn.real_time is True:
+                t3_full = np.zeros((no,no,no,nv,nv,nv))
+                for i in range(no):
+                    for j in range(no):
+                        for k in range(no):
+                            for a in range(nv):
+                                for b in range(nv):
+                                    for c in range(nv):
+                                        t3_full[i,j,k,a,b,c] = t3_ijkabc(o, v, i, j, k, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+            """
+            if self.ccwfn.real_time is True:
+                if isinstance(t1, torch.Tensor):
+                    V = F - self.ccwfn.H.F.clone()
+                else:
+                    V = F - self.ccwfn.H.F.copy()
+                if abs(V[0,0]) >= 1E-6:
+                    t3_full = t3_ijkabc_alt(o, v, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)                
+                    for m in range(no):
+                        for n in range(no):
+                            for l in range(no):
+                                t3_lmn = t3_full[l,m,n]
+                                t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, t3_full, V, F, contract)
+                                Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
+                                Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
+                                Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
+                                Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])  
+                else:
+                    for m in range(no):
+                        for n in range(no):
+                            for l in range(no):
+                                t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                                Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
+                                Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
+                                Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
+                                Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v]) 
+            else:
+                for m in range(no):
+                    for n in range(no):
+                        for l in range(no):
+                            t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                            Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
+                            Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
+                            Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
+                            Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])                                                
             if isinstance(t1, torch.Tensor):
                 Y1 = torch.zeros_like(l1)
                 Y2 = torch.zeros_like(l2)
@@ -389,17 +420,26 @@ class cclambda(object):
                 Zjlid_1 = np.zeros_like(l2[:,:,:no,:])
                 Zjlid_2 = np.zeros_like(l2[:,:,:no,:])            
             # t3l1
-            for l in range(no):
-                for m in range(no):
-                    for n in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
-                        if self.ccwfn.real_time is True:
-                            if isinstance(t1, torch.Tensor):
-                                V = F - self.ccwfn.H.F.clone()
-                            else:
-                                V = F - self.ccwfn.H.F.copy()
-                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
-                        Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
+            if self.ccwfn.real_time is True:
+                if abs(V[0,0]) >= 1E-6:
+                    for l in range(no):
+                        for m in range(no):
+                            for n in range(no):
+                                t3_lmn = t3_full[l,m,n]
+                                t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, t3_full, V, F, contract)
+                                Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2))) 
+                else:
+                    for l in range(no):
+                        for m in range(no):
+                            for n in range(no):
+                                t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                                Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2))) 
+            else:
+                for l in range(no):
+                    for m in range(no):
+                        for n in range(no):
+                            t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                            Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
             for m in range(no):
                 Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
                 Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])  
