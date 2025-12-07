@@ -8,7 +8,6 @@ if __name__ == "__main__":
 import numpy as np
 import time
 from .utils import helper_diis
-from .cclambda import cclambda
 
 class ccresponse(object):
     """
@@ -18,10 +17,18 @@ class ccresponse(object):
     -------
     linresp():
         Compute a CC linear response function.
+    quadresp():
+        Compute a CC quadratic response function.
+    hyperpolar():
+        Compute a first electric dipole hyperpolarizability average.
     solve_right():
         Solve the right-hand perturbed wave function equations.
+    solve_left(): 
+        Solve the left-hand perturbed wave function equations.
     pertcheck():
         Check first-order perturbed wave functions for all available perturbation operators.
+    pert_quadresp():
+        Obtain the solutions of the right- and left-hand perturbed wave function equations for the CC quadritc response function.
     """
 
     def __init__(self, ccdensity, omega1 = 0, omega2 = 0):
@@ -93,6 +100,14 @@ class ccresponse(object):
         eps_vir = np.diag(self.hbar.Hvv)
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
+
+        #HBAR-based denominators for simulation code 
+        if self.ccwfn.local is not None:
+            self.eps_occ = np.diag(self.hbar.Hoo)
+            self.eps_vir = []
+            for ij in range(self.ccwfn.no*self.ccwfn.no):
+                tmp = self.ccwfn.Local.Q[ij].T @ self.hbar.Hvv @ self.ccwfn.Local.Q[ij]
+                self.eps_vir.append(self.ccwfn.Local.L[ij].T @ tmp @ self.ccwfn.Local.L[ij])
 
     def pertcheck(self, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
         """
@@ -295,6 +310,792 @@ class ccresponse(object):
                     X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check.append(polar)
 
+    def pert_quadresp(self, omega1, omega2, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+        """
+        Build first-order perturbed wave functions (left- and right-hand) for the electric dipole operator (Mu)
+
+        Parameters
+        ----------
+        omega1: float
+            First external field frequency.
+        omega2: float
+            Second external field frequency.
+        e_conv : float
+            convergence condition for the pseudoresponse value (default if 1e-13)
+        r_conv : float
+            convergence condition for perturbed wave function rmsd (default if 1e-13)
+        maxiter : int
+            maximum allowed number of iterations of the wave function equations (default is 100)
+        max_diis : int
+            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
+        start_diis : int
+            earliest iteration to start DIIS extrapolations (default is 1)
+
+        To Do
+        -----
+        Organize to only compute the neccesary perturbed wave functions.  
+        """
+
+        #Timings for the right and left-hand equations
+        self.time_solve_X = 0
+        self.time_solve_Y = 0
+
+        #dictionaries for perturbed waves functions
+        self.ccpert_om1_X = {}
+        self.ccpert_om2_X = {}
+        self.ccpert_om_sum_X = {}
+
+        self.ccpert_om1_2nd_X = {}
+        self.ccpert_om2_2nd_X = {}
+        self.ccpert_om_sum_2nd_X = {}
+
+        self.ccpert_om1_Y = {}
+        self.ccpert_om2_Y = {}
+        self.ccpert_om_sum_Y = {}
+
+        self.ccpert_om1_2nd_Y = {}
+        self.ccpert_om2_2nd_Y = {}
+        self.ccpert_om_sum_2nd_Y = {}
+
+        omega_sum = -(omega1 + omega2)
+
+        for axis in range(0, 3):
+
+            pertkey = "MU_" + self.cart[axis]
+
+            print("Solving right-hand perturbed wave function for omega1 %s:" % (pertkey))
+            self.ccpert_om1_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for omega1%s:" % (pertkey))
+            self.ccpert_om1_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving right-hand perturbed wave function for omega2 %s:" % (pertkey))
+            self.ccpert_om2_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for omega2 %s:" % (pertkey))
+            self.ccpert_om2_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving right-hand perturbed wave function for omega_sum %s:" % (pertkey))
+            self.ccpert_om_sum_X[pertkey] = self.solve_right(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for omega_sum %s:" % (pertkey))
+            self.ccpert_om_sum_Y[pertkey] = self.solve_left(self.pertbar[pertkey], omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving right-hand perturbed wave function for -omega1 %s:" % (pertkey))
+            self.ccpert_om1_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for -omega1 %s:" % (pertkey))
+            self.ccpert_om1_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega1, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving right-hand perturbed wave function for -omega2 %s:" % (pertkey))
+            self.ccpert_om2_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for -omega2 %s:" % (pertkey))
+            self.ccpert_om2_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega2, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving right-hand perturbed wave function for -omega_sum %s:" % (pertkey))
+            self.ccpert_om_sum_2nd_X[pertkey] = self.solve_right(self.pertbar[pertkey], -omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+            print("Solving left-hand perturbed wave function for -omega_sum %s:" % (pertkey))
+            self.ccpert_om_sum_2nd_Y[pertkey] = self.solve_left(self.pertbar[pertkey], -omega_sum, e_conv, r_conv, maxiter, max_diis, start_diis)
+
+    def quadraticresp(self, pertkey_a, pertkey_b, pertkey_c, ccpert_X_A, ccpert_X_B, ccpert_X_C, ccpert_Y_A, ccpert_Y_B, ccpert_Y_C):
+        """
+        Calculate the CC quadratic-response function for one-electron perturbations A,B and C at field-frequency omega1(w1) and omega2(w2).
+        
+        The quadratic response function, <<A;B,C>>w1, generally requires the following perturbed wave functions and frequencies:
+            A(-w1-w2), A*(w1+w2), B(w1), B*(-w1), C(w2), C*(w2)
+
+        Parameters
+        ----------
+        pertkey_a: string
+            String identifying the one-electron perturbation, A, along a cartesian axis
+        pertkey_b: string 
+            String identifying the one-electron perturbation, B, along a cartesian axis
+        pertkey_c: string
+            String identifying the one-electron perturbation, C, along a cartesian axis
+        ccpert_X_A: 
+            Perturbed right-hand wave functions for A along a cartesian axis
+        ccpert_X_B: 
+       
+        Return
+        ------
+        hyper: float 
+            A value of the chosen quadratic response function corresponding to a specified cartesian direction. For example, Beta_xyz.   
+        
+        Notes
+        -----
+        Only the electric dipole is used for computing second harmonic generation (SHG) where w1 and w2 are identical and optical refractivity (OR) 
+        where w1 = -w2
+
+        To Do
+        -----
+        - Expand to include all avaiable one-electron perturbations
+        """
+        contract = self.contract
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        t1 = self.ccwfn.t1
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        # Grab X and Y amplitudes corresponding to perturbation A, omega_sum
+        X1_A = ccpert_X_A[0]
+        X2_A = ccpert_X_A[1]
+        Y1_A = ccpert_Y_A[0]
+        Y2_A = ccpert_Y_A[1]
+        # Grab X and Y amplitudes corresponding to perturbation B, omega1
+        X1_B = ccpert_X_B[0]
+        X2_B = ccpert_X_B[1]
+        Y1_B = ccpert_Y_B[0]
+        Y2_B = ccpert_Y_B[1]
+        # Grab X and Y amplitudes corresponding to perturbation C, omega2
+        X1_C = ccpert_X_C[0]
+        X2_C = ccpert_X_C[1]
+        Y1_C = ccpert_Y_C[0]
+        Y2_C = ccpert_Y_C[1]
+        # Grab pert integrals
+        pertbar_A = self.pertbar[pertkey_a]
+        pertbar_B = self.pertbar[pertkey_b]
+        pertbar_C = self.pertbar[pertkey_c]
+
+        #Grab H_bar, L and ERI
+        hbar = self.hbar
+        L = self.H.L
+        ERI = self.H. ERI
+
+        self.hyper = 0.0
+        self.LAX = 0.0
+        self.LAX2 = 0.0
+        self.LAX3 = 0.0
+        self.LAX4 = 0.0
+        self.LAX5 = 0.0
+        self.LAX6 = 0.0
+        self.LHX1Y1 = 0.0
+        self.LHX1Y2 = 0.0
+        self.LHX1X2 = 0.0
+        self.LHX2Y2 = 0.0
+
+        #LAX expressions
+        # BAC
+        self.LAX = self.comp_LAX(X1_C, X2_C, Y1_B, Y2_B, pertbar_A)
+        # CAB
+        self.LAX2 = self.comp_LAX(X1_B, X2_B, Y1_C, Y2_C, pertbar_A)
+        # ABC
+        self.LAX3 = self.comp_LAX(X1_C, X2_C, Y1_A, Y2_A, pertbar_B)
+        # CBA
+        self.LAX4 = self.comp_LAX(X1_A, X2_A, Y1_C, Y2_C, pertbar_B)
+        # ACB
+        self.LAX5 = self.comp_LAX(X1_B, X2_B, Y1_A, Y2_A, pertbar_C)
+        # BCA
+        self.LAX6 = self.comp_LAX(X1_A, X2_A, Y1_B, Y2_B, pertbar_C)
+
+        self.hyper += self.LAX + self.LAX2 + self.LAX3 + self.LAX4 + self.LAX5 + self.LAX6
+
+        self.Fz1 = 0
+        self.Fz2 = 0
+        self.Fz3 = 0
+
+        #Fz expressions
+        #L1, X1, X1
+        self.Fz1 = self.comp_Fz(X1_B, X1_C, X2_B, X2_C, pertbar_A)
+        #L2, X1, X2
+        self.Fz2 = self.comp_Fz(X1_A, X1_C, X2_A, X2_C, pertbar_B)
+        #L2, X2, X1 
+        self.Fz3 = self.comp_Fz(X1_A, X1_B, X2_A, X2_B, pertbar_C)
+
+        self.hyper += self.Fz1 + self.Fz2 + self.Fz3
+
+        self.Bcon1 = 0
+        self.Bcon2 = 0
+        self.Bcon3 = 0
+
+        #Bcon expressions
+        #ABC
+        self.Bcon1 = self.comp_Bcon(Y1_A, X1_B, X1_C, Y2_A, X2_B, X2_C, hbar)
+        #BAC
+        self.Bcon2 = self.comp_Bcon(Y1_B, X1_A, X1_C, Y2_B, X2_A, X2_C, hbar)
+        #CAB
+        self.Bcon3 = self.comp_Bcon(Y1_C, X1_A, X1_B, Y2_C, X2_A, X2_B, hbar)
+        self.hyper += self.Bcon1 + self.Bcon2 + self.Bcon3
+
+        self.G = 0
+        # <L1(0)|[[[H_bar,X1(A)],X1(B)],X1(C)]|0>
+        tmp = contract('ia,ijac->jc', X1_A, L[o,o,v,v])
+        tmp = contract('kc,jc->jk', X1_C, tmp)
+        tmp2 = contract('jb,kb->jk', X1_B, l1)
+        self.G -= contract('jk,jk->', tmp2, tmp)
+
+        tmp = contract('ia,ikab->kb', X1_A, L[o,o,v,v])
+        tmp = contract('jb,kb->jk', X1_B, tmp)
+        tmp2 = contract('jc,kc->jk', l1, X1_C)
+        self.G -= contract('jk,jk->', tmp2, tmp)
+
+        tmp = contract('jb,jkba->ka', X1_B, L[o,o,v,v])
+        tmp = contract('ia,ka->ki', X1_A, tmp)
+        tmp2 = contract('kc,ic->ki', X1_C, l1)
+        self.G -= contract('ki,ki->', tmp2, tmp)
+
+        tmp = contract('jb,jibc->ic', X1_B, L[o,o,v,v])
+        tmp = contract('kc,ic->ki', X1_C, tmp)
+        tmp2 = contract('ka,ia->ki', l1, X1_A)
+        self.G -= contract('ki,ki->', tmp2, tmp)
+
+        tmp = contract('kc,kicb->ib', X1_C, L[o,o,v,v])
+        tmp = contract('jb,ib->ji', X1_B, tmp)
+        tmp2 = contract('ja,ia->ji', l1, X1_A)
+        self.G -= contract('ji,ji->', tmp2, tmp)
+
+        tmp = contract('kc,kjca->ja', X1_C, L[o,o,v,v])
+        tmp = contract('ia,ja->ji', X1_A, tmp)
+        tmp2 = contract('jb,ib->ji', X1_B, l1)
+        self.G -= contract('ji,ji->', tmp2, tmp)
+
+        # <L2(0)|[[[H_bar,X1(A)],X1(B)],X1(C)]|0>
+        tmp = contract('jb,klib->klij', X1_A, hbar.Hooov)
+        tmp2  = contract('ld,ijcd->ijcl', X1_C, l2)
+        tmp2  = contract('kc,ijcl->ijkl', X1_B, tmp2)
+        self.G += contract('ijkl,klij->', tmp2, tmp)
+
+        tmp = contract('jb,lkib->lkij', X1_A, hbar.Hooov)
+        tmp2 = contract('ld,ijdc->ijlc', X1_C, l2)
+        tmp2 = contract('kc,ijlc->ijlk', X1_B, tmp2)
+        self.G += contract('ijlk,lkij->', tmp2, tmp)
+
+        tmp = contract('kc,jlic->jlik', X1_B, hbar.Hooov)
+        tmp2  = contract('jb,ikbd->ikjd', X1_A, l2)
+        tmp2  = contract('ld,ikjd->ikjl', X1_C, tmp2)
+        self.G += contract('ikjl,jlik->', tmp2, tmp)
+
+        tmp = contract('kc,ljic->ljik', X1_B, hbar.Hooov)
+        tmp2  = contract('jb,ikdb->ikdj', X1_A, l2)
+        tmp2  = contract('ld,ikdj->iklj', X1_C, tmp2)
+        self.G += contract('iklj,ljik->', tmp2, tmp)
+
+        tmp = contract('ld,jkid->jkil', X1_C, hbar.Hooov)
+        tmp2  = contract('jb,ilbc->iljc', X1_A, l2)
+        tmp2  = contract('kc,iljc->iljk', X1_B, tmp2)
+        self.G += contract('iljk,jkil->', tmp2, tmp)
+
+        tmp = contract('ld,kjid->kjil', X1_C, hbar.Hooov)
+        tmp2  = contract('jb,ilcb->ilcj', X1_A, l2)
+        tmp2  = contract('kc,ilcj->ilkj', X1_B, tmp2)
+        self.G += contract('ilkj,kjil->', tmp2, tmp)
+
+        tmp = contract('jb,albc->aljc', X1_A, hbar.Hvovv)
+        tmp = contract('kc,aljc->aljk', X1_B, tmp)
+        tmp2  = contract('ld,jkad->jkal', X1_C, l2)
+        self.G -= contract('jkal,aljk->', tmp2, tmp)
+
+        tmp = contract('jb,alcb->alcj', X1_A, hbar.Hvovv)
+        tmp = contract('kc,alcj->alkj', X1_B, tmp)
+        tmp2  = contract('ld,jkda->jkla', X1_C, l2)
+        self.G -= contract('jkla,alkj->', tmp2, tmp)
+
+        tmp = contract('jb,akbd->akjd', X1_A, hbar.Hvovv)
+        tmp = contract('ld,akjd->akjl', X1_C, tmp)
+        tmp2  = contract('kc,jlac->jlak', X1_B, l2)
+        self.G -= contract('jlak,akjl->', tmp2, tmp)
+
+        tmp = contract('jb,akdb->akdj', X1_A, hbar.Hvovv)
+        tmp = contract('ld,akdj->aklj', X1_C, tmp)
+        tmp2  = contract('kc,jlca->jlka', X1_B, l2)
+        self.G -= contract('jlka,aklj->', tmp2, tmp)
+
+        tmp = contract('kc,ajcd->ajkd', X1_B, hbar.Hvovv)
+        tmp = contract('ld,ajkd->ajkl', X1_C, tmp)
+        tmp2  = contract('jb,klab->klaj', X1_A, l2)
+        self.G -= contract('klaj,ajkl->', tmp2, tmp)
+
+        tmp = contract('kc,ajdc->ajdk', X1_B, hbar.Hvovv)
+        tmp = contract('ld,ajdk->ajlk', X1_C, tmp)
+        tmp2  = contract('jb,klba->klja', X1_A, l2)
+        self.G -= contract('klja,ajlk->', tmp2, tmp)
+
+        #LHX2Y1Z1
+        self.G += self.comp_LHXYZ(X2_A, X1_B, X1_C)
+        #LHX1Y2Z1
+        self.G += self.comp_LHXYZ(X2_B, X1_A, X1_C)
+        #LHX1Y1Z2
+        self.G += self.comp_LHXYZ(X2_C, X1_A, X1_B)
+
+        self.hyper += self.G
+
+        return self.hyper
+
+    def comp_LAX(self, X1_C, X2_C, Y1_B, Y2_B, pertbar_A):
+        contract = self.contract
+
+        LAX = 0
+        # <0|L1(B)[A_bar, X1(C)]|0> 
+        tmp = contract('ia,ic->ac', Y1_B, X1_C)
+        LAX += contract('ac,ac->',tmp, pertbar_A.Avv)
+        tmp = contract('ia,ka->ik', Y1_B, X1_C)
+        LAX -= contract('ik,ki->', tmp, pertbar_A.Aoo)
+
+        # <0|L1(B)[A_bar, X2(C)]|0>
+        tmp = contract('ia,jb->ijab', Y1_B, pertbar_A.Aov)
+
+        #swapaxes
+        LAX += 2.0 * contract('ijab,ijab->', tmp, X2_C)
+        LAX -= contract('ijab,ijba->',tmp, X2_C)
+
+        # <0|L2(B)[A_bar, X1(C)]|0>
+        tmp = contract('ijbc,bcaj->ia', Y2_B, pertbar_A.Avvvo)
+        LAX += contract('ia,ia->', tmp, X1_C)
+        tmp = contract('ijab,kbij->ak', Y2_B, pertbar_A.Aovoo)
+        LAX -= contract('ak,ka->', tmp, X1_C)
+        ## <0|L2(B)[A_bar, X2(C)]|0>
+        tmp = contract('ijab,kjab->ik', Y2_B, X2_C)
+        LAX -= contract('ik,ki->', tmp, pertbar_A.Aoo)
+        tmp = contract('ijab,ijac->bc', Y2_B, X2_C)
+        LAX += contract('bc,bc->', tmp, pertbar_A.Avv)
+
+        return LAX
+
+    def comp_Fz(self, X1_B, X1_C, X2_B, X2_C, pertbar_A):
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+
+        Fz = 0
+        # <0|L1(0)[[A_bar,X1(B)],X1(C)]|0>
+        tmp = contract('ia,ja->ij', X1_B, pertbar_A.Aov)
+        tmp2 = contract('ib,jb->ij', l1, X1_C)
+        Fz -= contract('ij,ij->', tmp2, tmp)
+
+        tmp = contract('jb,ib->ij', X1_C, pertbar_A.Aov)
+        tmp2 = contract('ia,ja->ij', X1_B, l1)
+        Fz -= contract('ij,ij->', tmp2, tmp)
+
+        # <0|L2(0)[[A_bar,X1(B)],X2(C)]|0>
+        tmp = contract('ia,ja->ij', X1_B, pertbar_A.Aov)
+        tmp2 = contract('jkbc,ikbc->ij', X2_C, l2)
+        Fz -= contract('ij,ij->',tmp2,tmp)
+
+        tmp = contract('ia,jkac->jkic', X1_B, l2)
+        tmp = contract('jkbc,jkic->ib', X2_C, tmp)
+        Fz -= contract('ib,ib->', tmp, pertbar_A.Aov)
+
+        # <0|L2(0)[[A_bar,X2(B)],X1(C)]|0>
+        tmp = contract('ia,ja->ij', X1_C, pertbar_A.Aov)
+        tmp2 = contract('jkbc,ikbc->ij', X2_B, l2)
+        Fz -= contract('ij,ij->', tmp2, tmp)
+
+        tmp = contract('ia,jkac->jkic', X1_C, l2)
+        tmp = contract('jkbc,jkic->ib', X2_B, tmp)
+        Fz -= contract('ib,ib->', tmp, pertbar_A.Aov)
+
+        return Fz
+
+    def comp_Bcon(self, Y1_A, X1_B, X1_C, Y2_A, X2_B, X2_C, hbar):
+        contract = self.contract
+        #Q = self.ccwfn.Local.Q
+        #L = self.ccwfn.Local.L 
+        no = self.ccwfn.no
+        t2 = self.ccwfn.t2
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+        L = self.H.L
+        ERI = self.H.ERI
+        Bcon = 0
+
+        #skipping hbar components
+        #first_tmp = 0 
+        # <O|L1(A)[[Hbar(0),X1(B),X1(C)]]|0>
+        tmp  = -1.0* contract('jc,kb->jkcb', hbar.Hov, Y1_A)
+        tmp -= contract('jc,kb->jkcb', Y1_A, hbar.Hov)
+
+        #swapaxes
+        tmp -= 2.0* contract('kjib,ic->jkcb', hbar.Hooov , Y1_A)
+        tmp += contract('jkib,ic->jkcb', hbar.Hooov, Y1_A)
+
+        #swapaxes
+        tmp -= 2.0* contract('jkic,ib->jkcb', hbar.Hooov, Y1_A)
+        tmp += contract('kjic,ib->jkcb', hbar.Hooov, Y1_A)
+
+        # swapaxes 
+        tmp += 2.0* contract('ajcb,ka->jkcb', hbar.Hvovv, Y1_A)
+        tmp -= contract('ajbc,ka->jkcb', hbar.Hvovv, Y1_A)
+
+        # swapaxes
+        tmp += 2.0* contract('akbc,ja->jkcb', hbar.Hvovv, Y1_A)
+        tmp -= contract('akcb,ja->jkcb', hbar.Hvovv, Y1_A)
+
+        tmp2 = contract('miae,me->ia', tmp, X1_B)
+        Bcon += contract('ia,ia->', tmp2, X1_C)
+
+        # # <O|L2(A)|[[Hbar(0),X1(B)],X1(C)]|0>
+        tmp   = -1.0* contract('janc,nkba->jckb', hbar.Hovov, Y2_A)
+        tmp  -= contract('kanb,njca->jckb', hbar.Hovov, Y2_A)
+        tmp  -= contract('jacn,nkab->jckb', hbar.Hovvo, Y2_A)
+        tmp  -= contract('kabn,njac->jckb', hbar.Hovvo, Y2_A)
+        tmp  += 0.5* contract('fabc,jkfa->jckb', hbar.Hvvvv, Y2_A)
+        tmp  += 0.5* contract('facb,kjfa->jckb', hbar.Hvvvv, Y2_A)
+        tmp  += 0.5* contract('kjin,nibc->jckb', hbar.Hoooo, Y2_A)
+        tmp  += 0.5* contract('jkin,nicb->jckb', hbar.Hoooo, Y2_A)
+        tmp2 = contract('iema,me->ia', tmp, X1_B)
+        Bcon += contract('ia,ia->', tmp2, X1_C)
+
+        #double check work so far
+        tmp = contract('ijab,ijdb->ad', t2, Y2_A)
+        tmp = contract('ld,ad->la', X1_C, tmp)
+        tmp = contract('la,klca->kc', tmp, L[o,o,v,v])
+        Bcon -= contract('kc,kc->', tmp, X1_B)
+
+        tmp = contract('ijab,jlba->il', t2, Y2_A)
+        tmp2 = contract('kc,kicd->id', X1_B, L[o,o,v,v])
+        tmp2 = contract('id,ld->il', tmp2, X1_C)
+        Bcon -= contract('il,il->', tmp2, tmp)
+
+        tmp = contract('ijab,jkba->ik', t2, Y2_A)
+        tmp2 = contract('ld,lidc->ic', X1_C, L[o,o,v,v])
+        tmp2 = contract('ic,kc->ik', tmp2, X1_B)
+        Bcon -= contract('ik,ik->', tmp2, tmp)
+
+        tmp = contract('ijab,ijcb->ac', t2, Y2_A)
+        tmp = contract('kc,ac->ka', X1_B, tmp)
+        tmp2 = contract('ld,lkda->ka', X1_C, L[o,o,v,v])
+        Bcon -= contract('ka,ka->', tmp2, tmp)
+
+        # <O|L2(A)[[Hbar(0),X2(B)],X2(C)]|0>
+        tmp = contract("klcd,ijcd->ijkl", X2_C, Y2_A)
+        tmp = contract("ijkl,ijab->klab", tmp, X2_B)
+        Bcon += 0.5* contract('klab,klab->', tmp, ERI[o,o,v,v])
+
+        tmp = contract("ijab,ikbd->jkad", X2_B, Y2_A)
+        tmp = contract("jkad,klcd->jlac", tmp, X2_C)
+        Bcon += contract('jlac,jlac->',tmp, ERI[o,o,v,v])
+
+        tmp = contract("klcd,ikdb->licb", X2_C, Y2_A)
+        tmp = contract("licb,ijab->ljca", tmp, X2_B)
+        Bcon += contract('ljca,ljac->', tmp, ERI[o,o,v,v])
+
+        tmp = contract("ijab,klab->ijkl", X2_B, Y2_A)
+        tmp = contract("ijkl,klcd->ijcd", tmp, X2_C)
+        Bcon += 0.5* contract('ijcd,ijcd->',tmp, ERI[o,o,v,v])
+
+        tmp = contract("ijab,ijac->bc", X2_B, L[o,o,v,v])
+        tmp = contract("bc,klcd->klbd", tmp, X2_C)
+        Bcon -= contract("klbd,klbd->", tmp, Y2_A)
+
+        tmp = contract("ijab,ikab->jk", X2_B, L[o,o,v,v])
+        tmp = contract("jk,klcd->jlcd", tmp, X2_C)
+        Bcon -= contract("jlcd,jlcd->", tmp, Y2_A)
+
+        #close??? 
+        tmp = contract("ikbc,klcd->ilbd", L[o,o,v,v], X2_C)
+        tmp = contract("ilbd,ijab->jlad", tmp, X2_B)
+        Bcon -= contract("jlad,jlad->", tmp, Y2_A)
+
+        tmp = contract("ijab,jlbc->ilac", X2_B, Y2_A)
+        tmp = contract("ilac,klcd->ikad", tmp, X2_C)
+        Bcon -= contract("ikad,ikad->", tmp, L[o,o,v,v])
+
+        tmp = contract("klca,klcd->ad", L[o,o,v,v], X2_C)
+        tmp = contract("ad,ijdb->ijab", tmp, Y2_A)
+        Bcon -= contract("ijab,ijab->", tmp, X2_B)
+
+        tmp = contract("kicd,klcd->il",L[o,o,v,v], X2_C)
+        tmp = contract("ijab,il->ljab", X2_B, tmp)
+        Bcon -= contract("ljab,ljab->", tmp, Y2_A)
+
+        tmp = contract("klcd,ikac->lida", X2_C, Y2_A)
+        tmp = contract("lida,jlbd->ijab", tmp, L[o,o,v,v])
+        Bcon += 2.0* contract("ijab,ijab->", tmp, X2_B)
+
+        # <O|L1(A)[[Hbar(0),X1(B)],X2(C)]]|0>
+        tmp  = 2.0* contract("jkbc,kc->jb", X2_C, Y1_A)
+        tmp -= contract("jkcb,kc->jb", X2_C, Y1_A)
+        tmp = contract('ijab,jb->ia', L[o,o,v,v], tmp)
+        Bcon += contract("ia,ia->", tmp, X1_B)
+
+        tmp = contract("jkbc,jkba->ca", X2_C, L[o,o,v,v])
+        tmp = contract("ia,ca->ic", X1_B, tmp)
+        Bcon -= contract("ic,ic->", tmp, Y1_A)
+
+        tmp = contract("jkbc,jibc->ki", X2_C, L[o,o,v,v])
+        tmp = contract("ki,ia->ka", tmp, X1_B)
+        Bcon -= contract("ka,ka->", tmp, Y1_A)
+
+        # <O|L2(A)[[Hbar(0),X1(B)],X2(C)]]|0>
+        tmp = contract("klcd,lkdb->cb", X2_C, Y2_A)
+        tmp = contract("jb,cb->jc", X1_B, tmp)
+        Bcon -= contract("jc,jc->", tmp, hbar.Hov)
+
+        tmp = contract("klcd,ljdc->kj", X2_C, Y2_A)
+        tmp = contract("kj,jb->kb", tmp, X1_B)
+        Bcon -= contract("kb,kb->", tmp, hbar.Hov)
+
+        #Hvovv
+        tmp = contract('lkda,klcd->ac', Y2_A, X2_C)
+        tmp2 = contract('jb,ajcb->ac', X1_B, hbar.Hvovv)
+        Bcon += 2.0* contract('ac,ac->', tmp, tmp2)
+
+        #Hvovv
+        #swapaxes
+        tmp = contract('lkda,klcd->ac', Y2_A, X2_C)
+        tmp2 = contract('jb,ajbc->ac', X1_B, hbar.Hvovv)
+        Bcon -= contract('ac,ac->', tmp, tmp2)
+
+        #Hvovv
+        tmp = contract('jb,ljda->lbda', X1_B, Y2_A)
+        tmp2 = 2.0* contract('klcd,akbc->ldab', X2_C, hbar.Hvovv)
+        tmp2 -= contract('klcd,akcb->ldab', X2_C, hbar.Hvovv)
+        Bcon += contract('lbda,ldab->', tmp, tmp2)
+
+        tmp = contract('ia,fkba->fkbi', X1_B, hbar.Hvovv)
+        tmp = contract('fkbi,jifc->kjbc', tmp, Y2_A)
+        Bcon -= contract('jkbc,kjbc->', X2_C, tmp)
+
+        tmp = contract('ia,fjac->fjic', X1_B, hbar.Hvovv)
+        tmp = contract('fjic,ikfb->jkbc', tmp, Y2_A)
+        Bcon -= contract('jkbc,jkbc->', X2_C, tmp)
+
+        ###double check 
+        tmp = contract('ia,jkfa->jkfi', X1_B, Y2_A)
+        tmp2 = contract('jkbc,fibc->jkfi', X2_C, hbar.Hvovv)
+        Bcon -= contract('jkfi,jkfi->', tmp2, tmp)
+
+        tmp = contract('jb,kjib->ki', X1_B, hbar.Hooov)
+        tmp2 = contract('klcd,ilcd->ki', X2_C, Y2_A)
+        Bcon -= 2.0*contract('ki,ki->', tmp, tmp2)
+
+        tmp = contract('jb,jkib->ki', X1_B, hbar.Hooov)
+        tmp2 = contract('klcd,ilcd->ki', X2_C, Y2_A)
+        Bcon += contract('ki,ki->', tmp, tmp2)
+
+        tmp  = 2.0* contract('jkic,klcd->jild', hbar.Hooov, X2_C)
+        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_C)
+        tmp  = contract('jild,jb->bild', tmp, X1_B)
+        Bcon -= contract('bild,ilbd->', tmp, Y2_A)
+
+        tmp  = contract('ia,jkna->jkni', X1_B, hbar.Hooov)
+        tmp2  = contract('jkbc,nibc->jkni', X2_C, Y2_A)
+        Bcon += contract('jkni,jkni->', tmp2, tmp)
+
+        tmp  = contract('ia,nkab->nkib', X1_B, Y2_A)
+        tmp  = contract('jkbc,nkib->jnic', X2_C, tmp)
+        Bcon += contract('jnic,ijnc->', tmp, hbar.Hooov)
+
+        tmp  = contract('ia,nkba->nkbi', X1_B, Y2_A)
+        tmp  = contract('jkbc,nkbi->jnci', X2_C, tmp)
+        Bcon += contract('jnci,jinc->', tmp, hbar.Hooov)
+
+        # <O|L1(A)[[Hbar(0),X2(B)],X1(C)]]|0>
+        #swapaxes
+        tmp  = 2.0* contract("jkbc,kc->jb", X2_B, Y1_A)
+        tmp -= contract("jkcb,kc->jb", X2_B, Y1_A)
+        tmp = contract('ijab,jb->ia', L[o,o,v,v], tmp)
+        Bcon += contract("ia,ia->", tmp, X1_C)
+
+        tmp = contract("jkbc,jkba->ca", X2_B, L[o,o,v,v])
+        tmp = contract("ia,ca->ic", X1_C, tmp)
+        Bcon -= contract("ic,ic->", tmp, Y1_A)
+
+        tmp = contract("jkbc,jibc->ki", X2_B, L[o,o,v,v])
+        tmp = contract("ki,ia->ka", tmp, X1_C)
+        Bcon -= contract("ka,ka->", tmp, Y1_A)
+
+        # <O|L2(A)[[Hbar(0),X2(B)],X1(C)]]|0>
+        tmp = contract("klcd,lkdb->cb", X2_B, Y2_A)
+        tmp = contract("jb,cb->jc", X1_C, tmp)
+        Bcon -= contract("jc,jc->", tmp, hbar.Hov)
+
+        tmp = contract("klcd,ljdc->kj", X2_B, Y2_A)
+        tmp = contract("kj,jb->kb", tmp, X1_C)
+        Bcon -= contract("kb,kb->", tmp, hbar.Hov)
+
+        #down
+        tmp = contract('lkda,klcd->ac', Y2_A, X2_B)
+        tmp2 = contract('jb,ajcb->ac', X1_C, hbar.Hvovv)
+        Bcon += 2.0* contract('ac,ac->', tmp, tmp2)
+
+        tmp = contract('lkda,klcd->ac', Y2_A, X2_B)
+        tmp2 = contract('jb,ajbc->ac', X1_C, hbar.Hvovv)
+        Bcon -= contract('ac,ac->', tmp, tmp2)
+
+        tmp = contract('jb,ljda->lbda', X1_C, Y2_A)
+
+        #swapaxes
+        tmp2 = 2.0* contract('klcd,akbc->ldab', X2_B, hbar.Hvovv)
+        tmp2 -= contract('klcd,akcb->ldab', X2_B, hbar.Hvovv)
+        Bcon += contract('lbda,ldab->', tmp, tmp2)
+
+        tmp = contract('ia,fkba->fkbi', X1_C, hbar.Hvovv)
+        tmp = contract('fkbi,jifc->kjbc', tmp, Y2_A)
+        Bcon -= contract('jkbc,kjbc->', X2_B, tmp)
+
+        tmp = contract('ia,fjac->fjic', X1_C, hbar.Hvovv)
+        tmp = contract('fjic,ikfb->jkbc', tmp, Y2_A)
+        Bcon -= contract('jkbc,jkbc->', X2_B, tmp)
+
+        tmp = contract('ia,jkfa->jkfi', X1_C, Y2_A)
+        tmp2 = contract('jkbc,fibc->jkfi', X2_B, hbar.Hvovv)
+        Bcon -= contract('jkfi,jkfi->', tmp2, tmp)
+
+        tmp = contract('jb,kjib->ki', X1_C, hbar.Hooov)
+        tmp2 = contract('klcd,ilcd->ki', X2_B, Y2_A)
+        Bcon -= 2.0* contract('ki,ki->', tmp, tmp2)
+
+        tmp = contract('jb,jkib->ki', X1_C, hbar.Hooov)
+        tmp2 = contract('klcd,ilcd->ki', X2_B, Y2_A)
+        Bcon += contract('ki,ki->', tmp, tmp2)
+
+        tmp  = 2.0* contract('jkic,klcd->jild', hbar.Hooov, X2_B)
+        tmp -= contract('kjic,klcd->jild', hbar.Hooov, X2_B)
+        tmp  = contract('jild,jb->bild', tmp, X1_C)
+        Bcon -= contract('bild,ilbd->', tmp, Y2_A)
+
+        tmp  = contract('ia,jkna->jkni', X1_C, hbar.Hooov)
+        tmp2  = contract('jkbc,nibc->jkni', X2_B, Y2_A)
+        Bcon += contract('jkni,jkni->', tmp2, tmp)
+
+        tmp  = contract('ia,nkab->nkib', X1_C, Y2_A)
+        tmp  = contract('jkbc,nkib->jnic', X2_B, tmp)
+        Bcon += contract('jnic,ijnc->', tmp, hbar.Hooov)
+
+        tmp  = contract('ia,nkba->nkbi', X1_C, Y2_A)
+        tmp  = contract('jkbc,nkbi->jnci', X2_B, tmp)
+        Bcon += contract('jnci,jinc->', tmp, hbar.Hooov)
+
+        return Bcon
+
+    def comp_LHXYZ(self, X2_A, X1_B, X1_C):
+        contract = self.contract
+        L = self.H.L
+        ERI = self.H. ERI
+        l2 = self.cclambda.l2
+        o = self.ccwfn.o
+        v = self.ccwfn.v
+
+        G = 0
+
+        # <L2(0)|[[[H_bar,X2(A)],X1(B)],X1(C)]|0>
+        tmp = contract('kc,jlbc->jlbk', X1_B, l2)
+        tmp2 = contract('ld,ikad->ikal', X1_C, L[o,o,v,v])
+        tmp2 = contract('ijab,ikal->jlbk', X2_A, tmp2)
+        G -= contract('jlbk,jlbk->', tmp, tmp2)
+
+        tmp = contract('ld,jkbd->jkbl', X1_C, l2)
+        tmp2 = contract('kc,ilac->ilak', X1_B, L[o,o,v,v])
+        tmp2 = contract('ijab,ilak->jkbl', X2_A, tmp2)
+        G -= contract('jkbl,jkbl->',tmp,tmp2)
+
+        tmp = contract('ijab,jibd->ad', X2_A, l2)
+        tmp = contract('ld,ad->la', X1_C, tmp)
+        tmp2 = contract('klca,kc->la', L[o,o,v,v], X1_B)
+        G -= contract('la,la->', tmp, tmp2)
+
+        tmp = contract('ijab,jlba->il', X2_A, l2)
+        tmp2 = contract('kc,kicd->id', X1_B, L[o,o,v,v])
+        tmp2 = contract('ld,id->il', X1_C, tmp2)
+        G -= contract('il,il->', tmp, tmp2)
+
+        tmp = contract('ijab,jkba->ik', X2_A, l2)
+        tmp2 = contract('ld,lidc->ic', X1_C, L[o,o,v,v])
+        tmp2 = contract('kc,ic->ik', X1_B, tmp2)
+        G -= contract('ik,ik->', tmp, tmp2)
+
+        tmp = contract('ijab,jibc->ac', X2_A, l2)
+        tmp = contract('ac,kc->ka', tmp, X1_B)
+        tmp2 = contract('ld,lkda->ka', X1_C, L[o,o,v,v])
+        G -= contract('ka,ka->', tmp, tmp2)
+
+        tmp = contract('ijab,klab->ijkl',X2_A, ERI[o,o,v,v])
+        tmp2 = contract('kc,ijcd->ijkd', X1_B, l2)
+        tmp2 = contract('ld,ijkd->ijkl', X1_C, tmp2)
+        G += contract('ijkl,ijkl->',tmp,tmp2)
+
+        tmp = contract('kc,jlac->jlak', X1_B, ERI[o,o,v,v])
+        tmp = contract('ijab,jlak->ilbk', X2_A, tmp)
+        tmp2 = contract('ikbd,ld->ilbk', l2, X1_C)
+        G += contract('ilbk,ilbk->', tmp, tmp2)
+
+        tmp = contract('kc,ljac->ljak', X1_B, ERI[o,o,v,v])
+        tmp = contract('ijab,ljak->ilbk', X2_A, tmp)
+        tmp2 = contract('ikdb,ld->ilbk', l2, X1_C)
+        G += contract('ilbk,ilbk->', tmp, tmp2)
+
+        tmp = contract('ld,jkad->jkal', X1_C, ERI[o,o,v,v])
+        tmp = contract('ijab,jkal->ikbl', X2_A, tmp)
+        tmp2 = contract('kc,ilbc->ilbk', X1_B, l2)
+        G += contract('ikbl,ilbk->', tmp, tmp2)
+
+        tmp = contract('ld,kjad->kjal', X1_C, ERI[o,o,v,v])
+        tmp = contract('ijab,kjal->iklb', X2_A, tmp)
+        tmp2 = contract('kc,ilcb->ilkb', X1_B, l2)
+        G += contract('iklb,ilkb->', tmp, tmp2)
+
+        tmp = contract('kc,ijcd->ijkd', X1_B, ERI[o,o,v,v])
+        tmp = contract('ld,ijkd->ijkl', X1_C, tmp)
+        tmp2 = contract('ijab,klab->ijkl', X2_A, l2)
+        G += contract('ijkl,ijkl->', tmp, tmp2)
+
+        return G
+
+    def hyperpolar(self):
+        """
+        Return
+        ------
+        Beta_avg: float
+            Hyperpolarizability average
+        """
+        solver_start = time.time()
+
+        ccpert_om1_X = self.ccpert_om1_X
+        ccpert_om2_X = self.ccpert_om2_X
+        ccpert_om_sum_X = self.ccpert_om_sum_X
+
+        ccpert_om1_2nd_X = self.ccpert_om1_2nd_X
+        ccpert_om2_2nd_X = self.ccpert_om2_2nd_X
+        ccpert_om_sum_2nd_X = self.ccpert_om_sum_2nd_X
+
+        ccpert_om1_Y = self.ccpert_om1_Y
+        ccpert_om2_Y = self.ccpert_om2_Y
+        ccpert_om_sum_Y = self.ccpert_om_sum_Y
+
+        ccpert_om1_2nd_Y = self.ccpert_om1_2nd_Y
+        ccpert_om2_2nd_Y = self.ccpert_om2_2nd_Y
+        ccpert_om_sum_2nd_Y = self.ccpert_om_sum_2nd_Y
+
+        hyper_AB_1st = np.zeros((3,3,3))
+        hyper_AB_2nd = np.zeros((3,3,3))
+        hyper_AB = np.zeros((3,3,3))
+
+        for a in range(0, 3):
+            pertkey_a = "MU_" + self.cart[a]
+            for b in range(0, 3):
+                pertkey_b = "MU_" + self.cart[b]
+                for c in range(0, 3):
+                    pertkey_c = "MU_" + self.cart[c]
+
+                    hyper_AB_1st[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    ccpert_om_sum_X[pertkey_a], ccpert_om1_X[pertkey_b], ccpert_om2_X[pertkey_c], 
+                    ccpert_om_sum_Y[pertkey_a], ccpert_om1_Y[pertkey_b], ccpert_om2_Y[pertkey_c] )
+                    
+                    hyper_AB_2nd[a,b,c] = self.quadraticresp(pertkey_a, pertkey_b, pertkey_c, 
+                    ccpert_om_sum_2nd_X[pertkey_a], ccpert_om1_2nd_X[pertkey_b], ccpert_om2_2nd_X[pertkey_c], 
+                    ccpert_om_sum_2nd_Y[pertkey_a], ccpert_om1_2nd_Y[pertkey_b], ccpert_om2_2nd_Y[pertkey_c])
+                    
+                    hyper_AB[a,b,c] = (hyper_AB_1st[a,b,c] + hyper_AB_2nd[a,b,c] )/2
+
+        Beta_avg = 0
+        for i in range(0,3):
+            Beta_avg += (hyper_AB[2,i,i] + hyper_AB[i,2,i] + hyper_AB[i,i,2])/5
+
+        print("Beta_zxx = %10.12lf" %(hyper_AB[2,0,0]))
+        print("Beta_xzx = %10.12lf" %(hyper_AB[0,2,0]))
+        print("Beta_xxz = %10.12lf" %(hyper_AB[0,0,2]))
+        print("Beta_zyy = %10.12lf" %(hyper_AB[2,1,1]))
+        print("Beta_yzy = %10.12lf" %(hyper_AB[1,2,1]))
+        print("Beta_yyz = %10.12lf" %(hyper_AB[1,1,2]))
+        print("Beta_zzz = %10.12lf" %(hyper_AB[2,2,2]))
+
+        print("Beta_avg = %10.12lf" %(Beta_avg))
+        print("\n First Dipole Hyperpolarizability computed in %.3f seconds.\n" % (time.time() - solver_start))
+
+        return Beta_avg
 
     def linresp_asym(self, pertkey_a, X1_B, X2_B, Y1_B, Y2_B):
         """
@@ -371,8 +1172,11 @@ class ccresponse(object):
         Dijab = self.Dijab
 
         # initial guess
-        X1 = pertbar.Avo.T/(Dia + omega)
-        X2 = pertbar.Avvoo/(Dijab + omega)
+        if self.ccwfn.local is not None:
+            X1, X2 = self.ccwfn.Local.filter_amps(pertbar.Avo.T, pertbar.Avvoo, omega)
+        else:        
+            X1 = pertbar.Avo.T/(Dia + omega)
+            X2 = pertbar.Avvoo/(Dijab + omega)
 
         pseudo = self.pseudoresponse(pertbar, X1, X2)
         print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
@@ -392,12 +1196,21 @@ class ccresponse(object):
             r1 = self.r_X1(pertbar, omega)
             r2 = self.r_X2(pertbar, omega)
 
-            self.X1 += r1/(Dia + omega)
-            self.X2 += r2/(Dijab + omega)
+            if self.ccwfn.local is not None:
+                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2, omega)
+                self.X1 += inc1
+                self.X2 += inc2
 
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
-            rms = np.sqrt(rms)
+                rms = contract('ia,ia->', np.conj(inc1), inc1)
+                rms += contract('ijab,ijab->', np.conj(inc2), inc2)
+                rms = np.sqrt(rms)
+            else:
+                self.X1 += r1/(Dia + omega)
+                self.X2 += r2/(Dijab + omega)
+
+                rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+                rms = np.sqrt(rms)
 
             pseudo = self.pseudoresponse(pertbar, self.X1, self.X2)
             pseudodiff = np.abs(pseudo - pseudo_last)
@@ -426,8 +1239,11 @@ class ccresponse(object):
         Dijab = self.Dijab
 
         # initial guess
-        X1_guess = pertbar.Avo.T/(Dia + omega)
-        X2_guess = pertbar.Avvoo/(Dijab + omega)
+        if self.ccwfn.local is not None: 
+            X1_guess, X2_guess = self.ccwfn.Local.filter_amps(pertbar.Avo.T,pertbar.Avvoo, omega)
+        else: 
+            X1_guess = pertbar.Avo.T/(Dia + omega)
+            X2_guess = pertbar.Avvoo/(Dijab + omega)
 
         # initial guess
         Y1 = 2.0 * X1_guess.copy()
@@ -456,13 +1272,22 @@ class ccresponse(object):
             
             r1 = self.r_Y1(pertbar, omega)
             r2 = self.r_Y2(pertbar, omega)
-            
-            self.Y1 += r1/(Dia + omega)
-            self.Y2 += r2/(Dijab + omega)
-            
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
-            rms = np.sqrt(rms)
+
+            if self.ccwfn.local is not None:
+                inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2, omega)
+                self.Y1 += inc1
+                self.Y2 += inc2
+
+                rms = contract('ia,ia->', np.conj(inc1), inc1)
+                rms += contract('ijab,ijab->', np.conj(inc2), inc2)
+                rms = np.sqrt(rms)
+            else:
+                self.Y1 += r1/(Dia + omega)
+                self.Y2 += r2/(Dijab + omega)
+
+                rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
+                rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+                rms = np.sqrt(rms)
             
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
@@ -601,7 +1426,6 @@ class ccresponse(object):
         tmp += 0.5 * contract('mino,noea->iema', hbar.Hoooo, l2)
         r_Y1 += contract('iema,me->ia', tmp, X1)
 
-       #contains regular Gvv as well as Goo, think about just calling it from cclambda instead of generating it
         tmp = contract('nb,fb->nf', X1, cclambda.build_Gvv(l2, t2))
         r_Y1 += contract('inaf,nf->ia', L[o,o,v,v], tmp)
         tmp = contract('me,fa->mefa', X1, cclambda.build_Gvv(l2, t2))

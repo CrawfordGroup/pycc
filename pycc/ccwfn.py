@@ -14,7 +14,7 @@ from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
-from .lccwfn import lccwfn
+from .pno_cc.lccwfn import lccwfn
 
 class ccwfn(object):
     """
