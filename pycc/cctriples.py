@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import time
 
 # Various triples drivers; useful for (T) corrections and CC3
 
@@ -544,9 +545,17 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
 
 # Useful for RT-CC3
 # Additional term in T3 equation when an external perturbation is present
-def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
+def t3_pert_ijk(o, v, i, j, k, t2, t3_full, V, F, contract, WithDenom=True):
+   
+    #time1 = time.time() 
+    t3 = -0.5 * contract('ad,dbc->abc', V[v,v], t3_full[i,j,k])
+    t3 -= -0.5 * contract('l,labc->abc', V[o,i], t3_full[:,j,k])
+    #print("Time(term1): ", time.time() - time1)
+
+    #time1 = time.time()
     tmp = contract('ld,ad->al', V[o,v], t2[i,j])
-    t3 = contract('al,lcb->abc', tmp, t2[k])
+    t3 -= contract('al,lcb->abc', tmp, t2[k])
+    #print("Time(term2): ", time.time() - time1)
 
     if WithDenom is True:
         if isinstance(t2, torch.Tensor):
@@ -561,9 +570,13 @@ def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
     else:
         return t3
 
-def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
+def t3_pert_abc(o, v, a, b, c, t2, t3_full, V, F, contract, WithDenom=True):
+    
+    t3 = -0.5 * contract('d,ijkd->ijk', V[a,v], t3_full[:,:,:,:,b,c])
+    t3 -= -0.5 * contract('li,ljk->ijk', V[o,o], t3_full[:,:,:,a,b,c])
+    
     tmp = contract('ld,ijd->ijl', V[o,v], t2[:,:,a])
-    t3 = contract('ijl,kl->ijk', tmp, t2[:,:,c,b])
+    t3 -= contract('ijl,kl->ijk', tmp, t2[:,:,c,b])
 
     if WithDenom is True:
         no = o.stop
@@ -579,9 +592,13 @@ def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
     else:
         return t3
 
-def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
+def t3_pert_bc(o, v, b, c, t2, t3_full, V, F, contract, WithDenom=True):
+
+    t3 = -0.5 * contract('ad,ijkd->ijka', V[v,v], t3_full[:,:,:,:,b,c])
+    t3 -= -0.5 * contract('li,ljka->ijka', V[o,o], t3_full[:,:,:,:,b,c])
+
     tmp = contract('ld,ijad->ijal', V[o,v], t2)
-    t3 = contract('ijal,kl->ijka', tmp, t2[:,:,c,b])
+    t3 -= contract('ijal,kl->ijka', tmp, t2[:,:,c,b])
 
     if WithDenom is True:
         no = o.stop
@@ -599,3 +616,64 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
         return t3/denom
     else:
         return t3
+
+def t3_ijkabc(o, v, i, j, k, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
+
+    time0 = time.time()
+
+    t3 = contract('e,e->', Wvvvo[b,a,:,i], t2[k,j,c])
+    t3 += contract('e,e->', Wvvvo[c,a,:,i], t2[j,k,b])
+    t3 += contract('e,e->', Wvvvo[a,c,:,k], t2[j,i,b])
+    t3 += contract('e,e->', Wvvvo[b,c,:,k], t2[i,j,a])
+    t3 += contract('e,e->', Wvvvo[c,b,:,j], t2[i,k,a])
+    t3 += contract('e,e->', Wvvvo[a,b,:,j], t2[k,i,c])
+
+    t3 -= contract('m,m->', Wovoo[:,c,j,k], t2[i,:,a,b])
+    t3 -= contract('m,m->', Wovoo[:,b,k,j], t2[i,:,a,c])
+    t3 -= contract('m,m->', Wovoo[:,b,i,j], t2[k,:,c,a])
+    t3 -= contract('m,m->', Wovoo[:,a,j,i], t2[k,:,c,b])
+    t3 -= contract('m,m->', Wovoo[:,a,k,i], t2[j,:,b,c])
+    t3 -= contract('m,m->', Wovoo[:,c,i,k], t2[j,:,b,a])
+
+    if WithDenom is True:
+        no = o.stop
+        denom = F[i,i] + F[j,j] + F[k,k]
+        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        return t3/denom
+    else:
+        return t3
+
+def t3_ijkabc_alt(o, v, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
+    time0 = time.time()
+
+    t3 = contract('baei,kjce->ijkabc', Wvvvo, t2)
+    t3 += contract('caei,jkbe->ijkabc', Wvvvo, t2)
+    t3 += contract('acek,jibe->ijkabc', Wvvvo, t2)
+    t3 += contract('bcek,ijae->ijkabc', Wvvvo, t2)
+    t3 += contract('cbej,ikae->ijkabc', Wvvvo, t2)
+    t3 += contract('abej,kice->ijkabc', Wvvvo, t2)
+
+    t3 -= contract('mcjk,imab->ijkabc', Wovoo, t2)
+    t3 -= contract('mbkj,imac->ijkabc', Wovoo, t2)
+    t3 -= contract('mbij,kmca->ijkabc', Wovoo, t2)
+    t3 -= contract('maji,kmcb->ijkabc', Wovoo, t2)
+    t3 -= contract('maki,jmbc->ijkabc', Wovoo, t2)
+    t3 -= contract('mcik,jmba->ijkabc', Wovoo, t2)
+
+    if WithDenom is True:
+        if isinstance(t2, torch.Tensor):
+            Fv = torch.diag(F)[v]
+            Fo = torch.diag(F)[o]
+            denom = torch.zeros_like(t3)
+        else:
+            Fv = np.diag(F)[v]
+            Fo = np.diag(F)[o]
+            denom = np.zeros_like(t3)
+        denom += Fo.reshape(-1,1,1,1,1,1) + Fo.reshape(1,-1,1,1,1,1) + Fo.reshape(1,1,-1,1,1,1)
+        denom -= Fv.reshape(1,1,1,-1,1,1) + Fv.reshape(1,1,1,1,-1,1) + Fv.reshape(1,1,1,1,1,-1)
+
+        print("t3(full): ", time.time() - time0)
+        return t3/denom
+    else:
+        return t3
+
