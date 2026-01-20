@@ -10,7 +10,7 @@ import psi4
 import time
 import numpy as np
 import torch
-from .utils import helper_diis, cc_contract
+from .utils_Bij import helper_diis, cc_contract #in progress 
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
