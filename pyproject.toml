@@ -29,11 +29,11 @@ dependencies = [
     "numpy",
     "opt_einsum",
     "scipy",
-    "torch",
     # example: "numpy >=2.3.3; python_version >='3.14'",
 ]
 
 [project.optional-dependencies]
+ml = ["torch"]
 test = [
     "pytest",
 #    "pytest-cov",
