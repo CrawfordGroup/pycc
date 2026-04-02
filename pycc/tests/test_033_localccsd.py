@@ -7,6 +7,7 @@ import pycc
 import pytest
 from ..data.molecules import *
 
+@pytest.mark.slow
 def test_pno_ccsd():
     """H2O PNO-CCSD Test"""
     psi4.set_memory('2 GB')
@@ -36,6 +37,7 @@ def test_pno_ccsd():
 
     assert(abs(eccsd_sim - elccsd) < 1e-12) 
 
+@pytest.mark.slow
 def test_pnopp_ccsd():
     """H2O PNO++ CCSD Test"""
     psi4.set_memory('2 GB')
@@ -65,6 +67,7 @@ def test_pnopp_ccsd():
 
     assert(abs(eccsd_sim - elccsd) < 1e-12) 
 
+@pytest.mark.slow
 def test_pno_ccsd_opt():
     """H2O PNO-CCSD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
@@ -94,6 +97,7 @@ def test_pno_ccsd_opt():
 
     assert(abs(eccsd_sim - elccsd) < 1e-12)
 
+@pytest.mark.slow
 def test_pao_ccsd_opt():
     """H2O PAO-CCSD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')

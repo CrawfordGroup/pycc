@@ -7,7 +7,7 @@ if __name__ == "__main__":
 
 import time
 import numpy as np
-import torch
+from pycc.ccwfn import HAS_TORCH
 from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc 
 
 class ccdensity(object):
@@ -173,7 +173,7 @@ class ccdensity(object):
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
  
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             if self.ccwfn.precision == 'DP':
                 opdm = torch.zeros((nt, nt), dtype=torch.complex128, device=self.ccwfn.device1)
             elif self.ccwfn.precision == 'SP':
@@ -199,7 +199,7 @@ class ccdensity(object):
             opdm[o,v] += self.build_cc3_Dov(o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov, real_time=real_time)
 
             # Density matrix blocks in contractions with T1-transformed dipole integrals
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 opdm_cc3 = torch.zeros_like(opdm)
             else:
                 opdm_cc3 = np.zeros_like(opdm)
@@ -240,7 +240,7 @@ class ccdensity(object):
 
 
     def build_Dvo(self, l1):  # complete
-        if isinstance(l1, torch.Tensor):
+        if HAS_TORCH and isinstance(l1, torch.Tensor):
             return l1.T.clone()
         else:
             return l1.T.copy()
@@ -248,12 +248,12 @@ class ccdensity(object):
     def build_Dov(self, t1, t2, l1, l2):  # complete
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 Dov = torch.zeros_like(t1)
             else:
                 Dov = np.zeros_like(t1)
         else:
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 Dov = 2.0 * t1.clone()
             else:
                 Dov = 2.0 * t1.copy()
@@ -268,7 +268,7 @@ class ccdensity(object):
             if self.ccwfn.model == 'CCSD(T)':
                 Dov += self.ccwfn.Dov
 
-            if isinstance(tmp, torch.Tensor):
+            if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
 
         return Dov
@@ -276,7 +276,7 @@ class ccdensity(object):
     # CC3 contributions to the one electron densities
     def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov, real_time=False):
         contract = self.contract  
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             Dov = torch.zeros_like(t1)   
             Zlmdi = torch.zeros_like(t2[:,:,:,:no])
         else:
@@ -291,7 +291,7 @@ class ccdensity(object):
                     # Dov_1
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                     if real_time is True:
-                        if isinstance(t1, torch.Tensor):
+                        if HAS_TORCH and isinstance(t1, torch.Tensor):
                             V = F - self.ccwfn.H.F.clone()
                         else:
                             V = F - self.ccwfn.H.F.copy()
@@ -304,7 +304,7 @@ class ccdensity(object):
                                     
     def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         contract = self.contract
-        if isinstance(l1, torch.Tensor):
+        if HAS_TORCH and isinstance(l1, torch.Tensor):
             Doo = torch.zeros_like(l1[:,:no])
         else:
             Doo = np.zeros_like(l1[:,:no])        
@@ -312,7 +312,7 @@ class ccdensity(object):
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
                 if real_time is True:
-                    if isinstance(t2, torch.Tensor):
+                    if HAS_TORCH and isinstance(t2, torch.Tensor):
                         V = F - self.ccwfn.H.F.clone()
                     else:
                         V = F - self.ccwfn.H.F.copy()
@@ -324,7 +324,7 @@ class ccdensity(object):
 
     def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         contract = self.contract
-        if isinstance(l1, torch.Tensor):
+        if HAS_TORCH and isinstance(l1, torch.Tensor):
             Dvv = torch.zeros_like(l1)
             Dvv = torch.nn.functional.pad(Dvv, (0,0,0,nv-no))
         else:
@@ -335,7 +335,7 @@ class ccdensity(object):
                 for k in range(no):
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                     if real_time is True:
-                        if isinstance(t2, torch.Tensor):
+                        if HAS_TORCH and isinstance(t2, torch.Tensor):
                             V = F - self.ccwfn.H.F.clone()
                         else:
                             V = F - self.ccwfn.H.F.copy()
@@ -368,7 +368,7 @@ class ccdensity(object):
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 if self.ccwfn.precision == 'DP':
                     Dooov = torch.zeros((no,no,no,nv), dtype=torch.complex128, device=self.ccwfn.device1)
                 elif self.ccwfn.precision == 'SP':                    
@@ -399,7 +399,7 @@ class ccdensity(object):
                 tmp = contract('imea,kmef->iakf', t2, l2)
                 Dooov += contract('iakf,jf->ijka', tmp, t1)
 	
-                if isinstance(tmp, torch.Tensor):
+                if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, Goo
 
             tmp = contract('kmef,jf->kmej', l2, t1)
@@ -410,7 +410,7 @@ class ccdensity(object):
             if self.ccwfn.model == 'CCSD(T)':
                 Dooov += self.ccwfn.Gooov
             
-            if isinstance(tmp, torch.Tensor):
+            if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
 
         return Dooov
@@ -421,7 +421,7 @@ class ccdensity(object):
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 if self.ccwfn.precision == 'DP':
                     Dvvvo = torch.zeros((nv,nv,nv,no), dtype=torch.complex128, device=self.ccwfn.device1)
                 if self.ccwfn.precision == 'SP':
@@ -452,7 +452,7 @@ class ccdensity(object):
                 tmp = contract('mibe,nmce->ibnc', t2, l2)
                 Dvvvo -= contract('ibnc,na->abci', tmp, t1)
 		
-                if isinstance(tmp, torch.Tensor):
+                if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, Gvv
 
             tmp = contract('nmce,ie->nmci', l2, t1)
@@ -463,7 +463,7 @@ class ccdensity(object):
             if self.ccwfn.model == 'CCSD(T)':
                 Dvvvo += self.ccwfn.Gvvvo
 
-            if isinstance(tmp, torch.Tensor):
+            if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp               
 
         return Dvvvo
@@ -513,7 +513,7 @@ class ccdensity(object):
             Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
             Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
             
-            if isinstance(tmp1, torch.Tensor):
+            if HAS_TORCH and isinstance(tmp1, torch.Tensor):
                 del tmp_oooo, tmp1, Gvv, Goo
 
         else:
@@ -573,7 +573,7 @@ class ccdensity(object):
                 tmp = contract('mnei,njae->mija', tmp, t2)
                 Doovv += contract('mb,mija->ijab', t1, tmp)
 		
-                if isinstance(tmp, torch.Tensor):
+                if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, tmp1, tmp2, Goo, Gvv
 
             tmp = contract('jf,mnef->mnej', t1, l2)
@@ -585,7 +585,7 @@ class ccdensity(object):
             if self.ccwfn.model == 'CCSD(T)':
                 Doovv += self.ccwfn.Goovv
 
-            if isinstance(tmp, torch.Tensor):
+            if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
 
         return Doovv
@@ -593,7 +593,7 @@ class ccdensity(object):
     # T1-transformed dipole integrals needed in CC3
     def build_Moo(self, no, nv, ints, t1):
         contract = self.contract
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             Moo = ints[:no,:no].clone()
         else:
             Moo = ints[:no,:no].copy()
@@ -603,7 +603,7 @@ class ccdensity(object):
 
     def build_Mvv(self, no, nv, ints, t1):
         contract = self.contract
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             Mvv = ints[-nv:,-nv:].clone()
         else:
             Mvv = ints[-nv:,-nv:].copy()

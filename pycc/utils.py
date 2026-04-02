@@ -1,11 +1,11 @@
 import numpy as np
-import torch
+from pycc.ccwfn import HAS_TORCH
 import opt_einsum
 
 
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             self.device0 = torch.device('cpu')
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
             self.oldt1 = t1.clone()
@@ -24,7 +24,7 @@ class helper_diis(object):
         self.precision = precision
 
     def add_error_vector(self, t1, t2):
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             # Add DIIS vectors
             self.diis_vals_t1.append(t1.clone())
             self.diis_vals_t2.append(t2.clone())
@@ -58,7 +58,7 @@ class helper_diis(object):
 
         self.diis_size = len(self.diis_errors)
 
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             # Build error matrix B
             if self.precision == 'DP':
                 B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.float64, device=self.device1) * -1

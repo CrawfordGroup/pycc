@@ -10,9 +10,10 @@ import pytest
 from pycc.rt.integrators import rk4 
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
-import torch 
+from pycc.ccwfn import HAS_TORCH
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="tests for GPU only")
+@pytest.mark.gpu
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_rtcc_water_cc_pvdz():
     """H2O cc-pVDZ"""
     psi4.set_memory('2 GiB')
