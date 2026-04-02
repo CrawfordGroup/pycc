@@ -31,15 +31,17 @@ This package requires the following:
   - [numpy](https://numpy.org/)
   - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
   - [scipy](https://www.scipy.org/)
+
+Optional packages:
   - [pytorch](https://pytorch.org/)
 
 ### Authors
 
-T. Daniel Crawford, Benjamin G. Peyton, Zhe Wang, Jose Madriaga
+T. Daniel Crawford, Benjamin G. Peyton, Zhe Wang, Jose Madriaga, Aparna Krishnan
 
 ### Copyright
 
-Copyright (c) 2025, T. Daniel Crawford
+Copyright (c) 2026, T. Daniel Crawford
 
 
 #### Acknowledgements
