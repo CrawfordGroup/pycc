@@ -10,7 +10,7 @@ import numpy as np
 import time
 from opt_einsum import contract
 from .utils import helper_diis
-import torch
+from pycc.ccwfn import HAS_TORCH
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
 
 
@@ -129,7 +129,7 @@ class cclambda(object):
             Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
 
             # Building intermediates in t3l1
-            if isinstance(t1, torch.Tensor):                
+            if HAS_TORCH and isinstance(t1, torch.Tensor):                
                 Zmndi = torch.zeros_like(t2[:,:,:,:no])
                 Zmdfa = torch.zeros_like(t2)
                 Zmdfa = torch.nn.functional.pad(Zmdfa, (0, 0, 0, 0, 0, nv-no))
@@ -158,7 +158,7 @@ class cclambda(object):
             r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
    
             if self.ccwfn.model == 'CC3':                                       
-                if isinstance(t1, torch.Tensor):
+                if HAS_TORCH and isinstance(t1, torch.Tensor):
                     Y1 = torch.zeros_like(l1)
                     Y2 = torch.zeros_like(l2)
                     # Z intermediates in CC3 l1, l2 equations
@@ -241,7 +241,7 @@ class cclambda(object):
                 self.l2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                if isinstance(l1, torch.Tensor):
+                if HAS_TORCH and isinstance(l1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else: 
                     rms = np.sqrt(rms)
@@ -250,7 +250,7 @@ class cclambda(object):
                 self.l2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                if isinstance(l1, torch.Tensor):
+                if HAS_TORCH and isinstance(l1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else:
                     rms = np.sqrt(rms)
@@ -259,7 +259,7 @@ class cclambda(object):
             ediff = lecc - lecc_last
             print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
             
-            if isinstance(self.l1, torch.Tensor):
+            if HAS_TORCH and isinstance(self.l1, torch.Tensor):
                 if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
                     print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
                     return lecc
@@ -272,10 +272,10 @@ class cclambda(object):
             if niter >= start_diis:
                 self.l1, self.l2 = diis.extrapolate(self.l1, self.l2)
 
-        if isinstance(r1, torch.Tensor):
+        if HAS_TORCH and isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
 
-        if (isinstance(r1, torch.Tensor)) & (self.ccwfn.model == 'CC3'):
+        if (HAS_TORCH and isinstance(r1, torch.Tensor)) & (self.ccwfn.model == 'CC3'):
             del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
            
     def residuals(self, F, t1, t2, l1, l2):
@@ -334,7 +334,7 @@ class cclambda(object):
             Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
 
             # Building intermediates in t3l1
-            if isinstance(t1, torch.Tensor):                
+            if HAS_TORCH and isinstance(t1, torch.Tensor):                
                 Zmndi = torch.zeros_like(t2[:,:,:,:no])
                 Zmdfa = torch.zeros_like(t2)
                 Zmdfa = torch.nn.functional.pad(Zmdfa, (0, 0, 0, 0, 0, nv-no))
@@ -347,7 +347,7 @@ class cclambda(object):
                     for l in range(no):
                         t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                         if self.ccwfn.real_time is True:
-                            if isinstance(t1, torch.Tensor):
+                            if HAS_TORCH and isinstance(t1, torch.Tensor):
                                 V = F - self.ccwfn.H.F.clone()
                             else:
                                 V = F - self.ccwfn.H.F.copy()
@@ -356,7 +356,7 @@ class cclambda(object):
                         Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
                         Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
                         Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])                                                
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 Y1 = torch.zeros_like(l1)
                 Y2 = torch.zeros_like(l2)
                 # Z intermediates in CC3 l1, l2 equations
@@ -394,7 +394,7 @@ class cclambda(object):
                     for n in range(no):
                         t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                         if self.ccwfn.real_time is True:
-                            if isinstance(t1, torch.Tensor):
+                            if HAS_TORCH and isinstance(t1, torch.Tensor):
                                 V = F - self.ccwfn.H.F.clone()
                             else:
                                 V = F - self.ccwfn.H.F.copy()
@@ -439,10 +439,10 @@ class cclambda(object):
             r1 += Y1
             r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
 
-            if isinstance(r1, torch.Tensor):
+            if HAS_TORCH and isinstance(r1, torch.Tensor):
                 del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
        
-        if isinstance(r1, torch.Tensor):
+        if HAS_TORCH and isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
                                              
         return r1, r2
@@ -460,12 +460,12 @@ class cclambda(object):
     def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            if isinstance(l1, torch.Tensor):
+            if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l1 = torch.zeros_like(l1)
             else:
                 r_l1 = np.zeros_like(l1)
         else:
-            if isinstance(l1, torch.Tensor):
+            if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l1 = 2.0 * Hov.clone()
             else: 
                 r_l1 = 2.0 * Hov.copy()
@@ -495,7 +495,7 @@ class cclambda(object):
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         contract = self.contract 
         if self.ccwfn.model == 'CCD':
-            if isinstance(l1, torch.Tensor):
+            if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
@@ -510,7 +510,7 @@ class cclambda(object):
             r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
-            if isinstance(l1, torch.Tensor):
+            if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
             else:
                 r_l2 = L[o,o,v,v].copy()
@@ -545,7 +545,7 @@ class cclambda(object):
     # Additional intermediates needed for CC3 lambda equations
     def build_cc3_Wmbje(self, o, v, ERI, t1):
         contract = self.contract
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
         else:
             W = ERI[o,v,o,v].copy()
@@ -556,7 +556,7 @@ class cclambda(object):
 
     def build_cc3_Wmbej(self, o, v, ERI, t1):
         contract = self.contract
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
         else:
             W = ERI[o,v,v,o].copy()
@@ -567,7 +567,7 @@ class cclambda(object):
 
     def build_cc3_Wabef(self, o, v, ERI, t1):
         contract = self.contract
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
         else:
             W = ERI[v,v,v,v].copy()

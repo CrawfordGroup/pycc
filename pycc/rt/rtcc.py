@@ -4,7 +4,7 @@ rtcc.py: Real-time coupled object that provides data for an ODE propagator
 
 import psi4
 import numpy as np
-import torch
+from pycc.ccwfn import HAS_TORCH
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -73,7 +73,7 @@ class rtcc(object):
         else:
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
   
-        if isinstance(self.ccwfn.t1, torch.Tensor):
+        if HAS_TORCH and isinstance(self.ccwfn.t1, torch.Tensor):
             if self.ccwfn.precision == 'DP':
                 self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
             elif self.ccwfn.precision == 'SP':
@@ -90,7 +90,7 @@ class rtcc(object):
             self.m = self.ccwfn.H.m
             if self.ccwfn.precision == 'SP':
                 self.m = np.complex64(self.m)
-            if isinstance(self.ccwfn.t1, torch.Tensor):
+            if HAS_TORCH and isinstance(self.ccwfn.t1, torch.Tensor):
                 if self.ccwfn.precision == 'DP':
                     self.m = torch.tensor(self.m, dtype=torch.complex128, device=self.ccwfn.device1)
                 elif self.ccwfn.precision == 'SP':
@@ -116,7 +116,7 @@ class rtcc(object):
         t1, t2, l1, l2, phase = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
         else:
             F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
@@ -156,7 +156,7 @@ class rtcc(object):
         NumPy array
             amplitudes or residuals and phase as a vector (flattened array)
         """
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             t1 = torch.flatten(t1)
             t2 = torch.flatten(t2)
             l1 = torch.flatten(l1)
@@ -191,7 +191,7 @@ class rtcc(object):
         # Extract the amplitudes
         len1 = no*nv
         len2 = no*no*nv*nv
-        if isinstance(y, torch.Tensor):
+        if HAS_TORCH and isinstance(y, torch.Tensor):
             t1 = torch.reshape(y[:len1], (no, nv))
             t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
             l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
@@ -235,12 +235,12 @@ class rtcc(object):
             # Calculating T1-transformed dipole integral  
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if isinstance(t1, torch.Tensor):
+            if HAS_TORCH and isinstance(t1, torch.Tensor):
                 ints_cc3 = torch.zeros_like(ints)
             else:
                 ints_cc3 = np.zeros_like(ints)
             for i in range(3):
-                if isinstance(t1, torch.Tensor):                    
+                if HAS_TORCH and isinstance(t1, torch.Tensor):                    
                     ints_cc3 = ints_cc3.type_as(t1)
                 else:
                     ints_cc3 = ints_cc3.astype(t1.dtype)
@@ -294,7 +294,7 @@ class rtcc(object):
         Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
         contract = self.contract
         
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
     
             eref = 2.0 * torch.trace(F[o,o])
@@ -340,7 +340,7 @@ class rtcc(object):
         v = self.ccwfn.v
         L = self.ccwfn.H.L
 
-        if isinstance(t1, torch.Tensor):
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
             eref = 2.0 * torch.trace(F[o,o])
             tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
             eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
@@ -391,7 +391,7 @@ class rtcc(object):
         B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
         B *= np.exp(-phase_r) * np.exp(phase_l)
         
-        if isinstance(A, torch.Tensor):
+        if HAS_TORCH and isinstance(A, torch.Tensor):
             return 0.5*A + 0.5*torch.conj(B)
         else:
             return 0.5*A + 0.5*np.conj(B)

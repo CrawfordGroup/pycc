@@ -7,6 +7,7 @@ import pycc
 import pytest
 from ..data.molecules import *
 
+@pytest.mark.slow
 def test_pno_ccd():
     """H2O PNO-CCD Test"""
     psi4.set_memory('2 GB')
@@ -36,6 +37,7 @@ def test_pno_ccd():
 
     assert(abs(eccd_sim - elccd) < 1e-12) 
 
+@pytest.mark.slow
 def test_pnopp_ccd():
     """H2O PNO++ CCD Test"""
     psi4.set_memory('2 GB')
@@ -65,6 +67,7 @@ def test_pnopp_ccd():
 
     assert(abs(eccd_sim - elccd) < 1e-12) 
 
+@pytest.mark.slow
 def test_pno_ccd_opt():
     """H2O PNO-CCD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
@@ -94,6 +97,7 @@ def test_pno_ccd_opt():
 
     assert(abs(eccd_sim - elccd) < 1e-12)
 
+@pytest.mark.slow
 def test_pao_ccd_opt():
     """H2O PAO-CCD with Optimized Initial T2 Amplitudes"""
     psi4.set_memory('2 GB')
