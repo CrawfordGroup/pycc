@@ -104,6 +104,10 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn):
+    contract = ccwfn.contract
+    if ccwfn.einsums:
+        contract = ccwfn.ec.contract
+
     o = ccwfn.o
     v = ccwfn.v
     no = ccwfn.no
@@ -112,7 +116,6 @@ def t_tjl(ccwfn):
     ERI = ccwfn.H.ERI
     t1 = ccwfn.t1
     t2 = ccwfn.t2
-    contract = ccwfn.contract
 
     ET = 0.0
     for i in range(no):
@@ -155,6 +158,9 @@ def t_tjl(ccwfn):
 # Vikings' formulation
 def t_vikings(ccwfn):
     contract = ccwfn.contract
+    if ccwfn.einsums:
+        contract = ccwfn.ec.contract
+
     o = ccwfn.o
     v = ccwfn.v
     no = ccwfn.no
@@ -173,12 +179,20 @@ def t_vikings(ccwfn):
     for i in range(no):
         for j in range(no):
             for k in range(no):
+                if ccwfn.einsums:
+                    contract = ccwfn.ec.contract
+
                 t3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract)
 
                 X1[i] += contract('abc,bc->a',(t3 - t3.swapaxes(0,2)), L[j,k,v,v])
-                X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), F[k,v])
                 X2[i,j] += contract('abc,dbc->ad', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,k,v,v])
                 X2[i] -= contract('abc,lc->lab', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[j,k,o,v])
+
+#                contract = ccwfn.contract
+                X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), F[k,v])
+
+    if ccwfn.einsums:
+        contract = ccwfn.ec.contract
 
     ET = 2.0 * contract('ia,ia->', t1, X1)
     ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
@@ -189,6 +203,9 @@ def t_vikings(ccwfn):
 # Vikings' formulation – inverted algorithm
 def t_vikings_inverted(ccwfn):
     contract = ccwfn.contract
+    if ccwfn.einsums:
+        contract = ccwfn.ec.contract
+
     o = ccwfn.o
     v = ccwfn.v
     no = ccwfn.no
@@ -204,12 +221,19 @@ def t_vikings_inverted(ccwfn):
     for a in range(nv):
         for b in range(nv):
             for c in range(nv):
+                if ccwfn.einsums:
+                    contract = ccwfn.ec.contract
                 t3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
 
                 X1[a] += contract('ijk,jk->i',(t3 - t3.swapaxes(0,2)), L[o,o,b+no,c+no])
-                X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), F[o,c+no])
                 X2[a] += contract('ijk,dk->dij', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,o,b+no,c+no])
                 X2[a,b] -= contract('ijk,jkl->il', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[o,o,o,c+no])
+
+#                contract = ccwfn.contract
+                X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), F[o,c+no])
+
+    if ccwfn.einsums:
+        contract = ccwfn.ec.contract
 
     ET = 2.0 * contract('ia,ia->', t1, X1.T)
     ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2.T)
