@@ -16,7 +16,7 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-from .utils import helper_diis, cc_contract
+from .utils import helper_diis, cc_contract, sort_mos_by_energy
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
@@ -132,13 +132,16 @@ class ccwfn(object):
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
-        self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
-        self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
-        self.nmo = self.ref.nmo()                       # all MOs/AOs
-        self.nv = self.nmo - self.no - self.nfzc        # active virt
-        self.nact = self.no + self.nv                   # all active MOs
+        # Support both C1 and higher-symmetry references.
+        # frzcpi / doccpi are per-irrep Dimension objects; sum across irreps.
+        self.nfzc = int(sum(self.ref.frzcpi()))
+        self.no   = int(sum(self.ref.doccpi())) - self.nfzc   # active occ
+        self.nmo  = self.ref.nmo()                             # all MOs
+        self.nv   = self.nmo - self.no - self.nfzc             # active virt
+        self.nact = self.no + self.nv
 
         print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
+
 
         # orbital subspaces
         self.o = slice(0, self.no)
@@ -148,9 +151,26 @@ class ccwfn(object):
         o = self.o
         v = self.v
 
-        # Get MOs
+        # Get MOs — Psi4 returns columns in irrep-block order when symmetry
+        # is present.  Re-sort to a single energy-ordered block so the rest
+        # of PyCC needs no changes.
         C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C)  # as numpy array
+        npC = np.asarray(C) # (nao, nact), irrep order
+
+        npC_sorted, eps_sorted, sort_idx = sort_mos_by_energy(self.ref, npC, self.nfzc, self.nact)
+
+        # Sanity check: occupied orbitals should all precede virtuals
+        # (true for a converged RHF with no symmetry breaking).
+        # Warn if the energy ordering disagrees with occ/virt structure.
+        if eps_sorted[self.no - 1] > eps_sorted[self.no]:
+            import warnings
+            warnings.warn(
+                "After energy-sorting MOs, HOMO energy (%.6f) > LUMO energy (%.6f). "
+                "Check for symmetry breaking or degenerate orbitals." %
+                (eps_sorted[self.no - 1], eps_sorted[self.no]))
+
+        npC = npC_sorted
+        C = psi4.core.Matrix.from_array(npC)
         self.C = C
 
         # Localize occupied MOs if requested

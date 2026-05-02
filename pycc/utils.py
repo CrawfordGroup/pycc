@@ -186,3 +186,43 @@ class cc_contract(object):
             del input_list
             return output
 
+
+@staticmethod
+def sort_mos_by_energy(ref, npC_active, nfzc, nact):
+    """
+    Reorder columns of npC_active (AO x nact, irrep-block order) so that
+    they are sorted by increasing orbital energy across all irreps.
+
+    Psi4 stores epsilon_a() as a Dimension-blocked Vector; we flatten it,
+    grab only the active slice (dropping frozen core and frozen virt), and
+    return the permutation that sorts those energies.
+
+    Returns
+    -------
+    npC_sorted : np.ndarray, shape (nao, nact)
+    eps_sorted  : np.ndarray, shape (nact,)
+    """
+    nirrep = ref.nirrep()
+    frzcpi = ref.frzcpi()          # frozen core per irrep
+    doccpi = ref.doccpi()          # doubly occupied per irrep
+    nmopi  = ref.nmopi()           # total MOs per irrep
+
+    # Collect active orbital energies in the same irrep-block order that
+    # Ca_subset("AO","ACTIVE") uses for its columns.
+    eps_active = []
+    eps_a = ref.epsilon_a()        # psi4.core.Vector, blocked by irrep
+    for h in range(nirrep):
+        fzc_h  = frzcpi[h]
+        nmo_h  = nmopi[h]
+        # active slice within this irrep: drop frozen core at bottom,
+        # frozen virt at top (nmo - frzcpi - frzvpi; frzvpi not needed
+        # here since Ca_subset already excludes them)
+        eps_h  = np.array(eps_a.nph[h])      # all MOs in irrep h
+        eps_active.append(eps_h[fzc_h:])     # drop frozen core
+
+    eps_active = np.concatenate(eps_active)  # length == nact
+    sort_idx   = np.argsort(eps_active, kind='stable')
+
+    npC_sorted = npC_active[:, sort_idx]
+    eps_sorted = eps_active[sort_idx]
+    return npC_sorted, eps_sorted, sort_idx

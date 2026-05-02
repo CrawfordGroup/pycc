@@ -49,7 +49,7 @@ h2o = """
 O
 H 1 1.1
 H 1 1.1 2 104
-symmetry c1
+symmetry c2v
 """
 
 ### Water cluster
