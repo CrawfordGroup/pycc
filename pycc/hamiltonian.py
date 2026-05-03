@@ -27,53 +27,47 @@ class Hamiltonian(object):
 
         npCp = np.asarray(Cp)
         npCr = np.asarray(Cr)
-        npCq = np.asarray(Cq)
-        npCs = np.asarray(Cs)
 
-        # AO->SO transformation from Psi4's petite list.
-        # Use to_array(dense=True) to get a single (nao, nso) matrix regardless
-        # of the number of irreps — np.asarray() fails for nirrep > 1.
-        aotoso_full = ref.aotoso().to_array(dense=True)   # (nao, nso)
-
-        # Transform C matrices from SO basis to AO basis.
-        npCp_ao = aotoso_full @ npCp
-        npCr_ao = aotoso_full @ npCr
-        npCq_ao = aotoso_full @ npCq
-        npCs_ao = aotoso_full @ npCs
-
-        # Rebuild Psi4 Matrix objects in the AO basis for mo_eri()
-        Cp_ao = psi4.core.Matrix.from_array(npCp_ao)
-        Cr_ao = psi4.core.Matrix.from_array(npCr_ao)
-        Cq_ao = psi4.core.Matrix.from_array(npCq_ao)
-        Cs_ao = psi4.core.Matrix.from_array(npCs_ao)
+        # Build the AO->SO transformation matrix by stacking per-irrep blocks
+        # horizontally.  ref.aotoso() is a blocked psi4.core.Matrix with shape
+        # (nao, nso_h) per irrep; to_array(dense=True) stacks them vertically
+        # (incorrectly for our purposes), so we use nph[] directly instead.
+        aotoso_raw = ref.aotoso()
+        aotoso_full = np.hstack([np.array(aotoso_raw.nph[h])
+                                 for h in range(aotoso_raw.nirrep())
+                                 if np.array(aotoso_raw.nph[h]).shape[1] > 0])  # (nao, nso)
 
         # Generate MO Fock matrix.
-        # ref.Fa() is SO-basis blocked; use to_array(dense=True) to get (nso, nso).
+        # ref.Fa() is in the SO basis; back-transform to AO basis, then to MO.
+        # npCp contains AO->MO coefficients (from Ca_subset("AO", "ACTIVE")),
+        # so we need F in the AO basis for the transform to be consistent.
         F_so = ref.Fa().to_array(dense=True)             # (nso, nso)
         F_ao = aotoso_full @ F_so @ aotoso_full.T        # (nao, nao)
-        self.F = npCp_ao.T @ F_ao @ npCr_ao
+        self.F = npCp.T @ F_ao @ npCr
 
-        # Get MO two-electron integrals in Dirac notation using AO-basis C matrices
+        # Get MO two-electron integrals in Dirac notation.
+        # mo_eri() expects AO-basis C matrices, which Cp and Cr already are.
         mints = psi4.core.MintsHelper(ref.basisset())
-        self.ERI = np.asarray(mints.mo_eri(Cp_ao, Cr_ao, Cq_ao, Cs_ao))  # (pr|qs)
-        self.ERI = self.ERI.swapaxes(1, 2)                                  # <pq|rs>
+        self.ERI = np.asarray(mints.mo_eri(Cp, Cr, Cq, Cs))  # (pr|qs)
+        self.ERI = self.ERI.swapaxes(1, 2)                     # <pq|rs>
         self.L = 2.0 * self.ERI - self.ERI.swapaxes(2, 3)
 
         self.mol = ref.molecule()
         self.basisset = ref.basisset()
-        self.C_all = ref.Ca().to_array()  # includes frozen core (SO basis)
-        self.F_ao = F_ao                   # AO-basis Fock matrix
+        self.C_all = ref.Ca().to_array(dense=True)  # includes frozen core (SO basis)
+        self.F_ao = F_ao
 
         ## One-electron property integrals
-        # mints.ao_*() methods always return pure AO-basis matrices.
+        # mints.ao_*() returns SO-basis matrices despite the "ao" prefix;
+        # back-transform to AO basis before the MO transform.
 
         # Electric dipole integrals (length): -e r
         dipole_ints = mints.ao_dipole()
         self.mu = []
         for axis in range(3):
-            mu_so = dipole_ints[axis].to_array(dense=True)   # (nso, nso)
-            mu_ao = aotoso_full @ mu_so @ aotoso_full.T       # (nao, nao)
-            self.mu.append(npCp_ao.T @ mu_ao @ npCr_ao)
+            mu_so = dipole_ints[axis].to_array(dense=True)
+            mu_ao = aotoso_full @ mu_so @ aotoso_full.T
+            self.mu.append(npCp.T @ mu_ao @ npCr)
 
         # Magnetic dipole integrals: -(e/2 m_e) L
         m_ints = mints.ao_angular_momentum()
@@ -81,8 +75,7 @@ class Hamiltonian(object):
         for axis in range(3):
             m_so = m_ints[axis].to_array(dense=True)
             m_ao = aotoso_full @ m_so @ aotoso_full.T
-            m = npCp_ao.T @ (m_ao * -0.5) @ npCr_ao
-            self.m.append(m * 1.0j)
+            self.m.append((npCp.T @ (m_ao * -0.5) @ npCr) * 1.0j)
 
         # Linear momentum integrals: (-e)(-i hbar) Del
         p_ints = mints.ao_nabla()
@@ -90,8 +83,7 @@ class Hamiltonian(object):
         for axis in range(3):
             p_so = p_ints[axis].to_array(dense=True)
             p_ao = aotoso_full @ p_so @ aotoso_full.T
-            p = npCp_ao.T @ p_ao @ npCr_ao
-            self.p.append(p * 1.0j)
+            self.p.append((npCp.T @ p_ao @ npCr) * 1.0j)
 
         # Traceless quadrupole
         Q_ints = mints.ao_traceless_quadrupole()
@@ -101,5 +93,5 @@ class Hamiltonian(object):
             for axis2 in range(axis1, 3):
                 Q_so = Q_ints[ij].to_array(dense=True)
                 Q_ao = aotoso_full @ Q_so @ aotoso_full.T
-                self.Q.append(npCp_ao.T @ Q_ao @ npCr_ao)
+                self.Q.append(npCp.T @ Q_ao @ npCr)
                 ij += 1

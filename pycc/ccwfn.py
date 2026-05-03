@@ -16,7 +16,7 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-from .utils import helper_diis, cc_contract, sort_mos_by_energy
+from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
@@ -70,6 +70,27 @@ class ccwfn(object):
     residuals()
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
+
+    @staticmethod
+    def _sort_mos_by_energy(ref, npC_active, nfzc, nact):
+        """
+        Reorder columns of npC_active (nao x nact, irrep-block order) so that
+        they are sorted by increasing orbital energy across all irreps.
+
+        Uses epsilon_a_subset("AO","ACTIVE") which is guaranteed to be in the
+        same irrep-block column order as Ca_subset("AO","ACTIVE").
+
+        Returns
+        -------
+        npC_sorted : np.ndarray, shape (nao, nact)
+        eps_sorted : np.ndarray, shape (nact,)
+        sort_idx   : np.ndarray, shape (nact,)  -- permutation applied
+        """
+        eps_active = ref.epsilon_a_subset("AO", "ACTIVE").to_array()
+        sort_idx   = np.argsort(eps_active, kind='stable')
+        npC_sorted = npC_active[:, sort_idx]
+        eps_sorted = eps_active[sort_idx]
+        return npC_sorted, eps_sorted, sort_idx
 
     def __init__(self, scf_wfn, **kwargs):
         """
@@ -132,6 +153,7 @@ class ccwfn(object):
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
+
         # Support both C1 and higher-symmetry references.
         # frzcpi / doccpi are per-irrep Dimension objects; sum across irreps.
         self.nfzc = int(sum(self.ref.frzcpi()))
@@ -142,7 +164,6 @@ class ccwfn(object):
 
         print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
-
         # orbital subspaces
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
@@ -151,23 +172,14 @@ class ccwfn(object):
         o = self.o
         v = self.v
 
-        # Get MOs — Psi4 returns columns in irrep-block order when symmetry
-        # is present.  Re-sort to a single energy-ordered block so the rest
-        # of PyCC needs no changes.
+        # Get MOs — Psi4 returns Ca_subset("AO","ACTIVE") columns in
+        # irrep-block order when symmetry is present.  Re-sort to a single
+        # energy-ordered block so the rest of PyCC needs no changes.
         C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C) # (nao, nact), irrep order
+        npC = np.asarray(C)                             # (nao, nact), irrep order
 
-        npC_sorted, eps_sorted, sort_idx = sort_mos_by_energy(self.ref, npC, self.nfzc, self.nact)
-
-        # Sanity check: occupied orbitals should all precede virtuals
-        # (true for a converged RHF with no symmetry breaking).
-        # Warn if the energy ordering disagrees with occ/virt structure.
-        if eps_sorted[self.no - 1] > eps_sorted[self.no]:
-            import warnings
-            warnings.warn(
-                "After energy-sorting MOs, HOMO energy (%.6f) > LUMO energy (%.6f). "
-                "Check for symmetry breaking or degenerate orbitals." %
-                (eps_sorted[self.no - 1], eps_sorted[self.no]))
+        npC_sorted, eps_sorted, sort_idx = ccwfn._sort_mos_by_energy(
+            self.ref, npC, self.nfzc, self.nact)
 
         npC = npC_sorted
         C = psi4.core.Matrix.from_array(npC)

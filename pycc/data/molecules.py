@@ -52,6 +52,13 @@ H 1 1.1 2 104
 symmetry c2v
 """
 
+h2o_c1 = """
+O
+H 1 1.1
+H 1 1.1 2 104
+symmetry c1
+"""
+
 ### Water cluster
 ## Number of water molecules
 ## 2
@@ -273,6 +280,7 @@ moldict["H2"] = h2
 moldict["H2O_HEK"] = h2o_hek
 moldict["H2O_Teach"] = h2o_tutorial
 moldict["H2O"] = h2o
+moldict["H2O_C1"] = h2o_c1
 moldict["(H2O)_2"] = h2o_2
 moldict["(H2O)_3"] = h2o_3
 moldict["(H2O)_4"] = h2o_4

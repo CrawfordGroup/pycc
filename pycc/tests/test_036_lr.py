@@ -19,7 +19,7 @@ def test_linresp():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12
     })
-    mol = psi4.geometry(moldict["H2O"])
+    mol = psi4.geometry(moldict["H2O_C1"])
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     e_conv = 1e-12
