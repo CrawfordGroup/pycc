@@ -50,16 +50,10 @@ def test_eomccsd_h2o():
     guess = 'unit'
     eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
 
-    psi4.set_options({'cceom__e_convergence': e_conv,
-                      'cceom__r_convergence': r_conv,
-                      'roots_per_irrep': [N]})
-    psi4.energy('eom-ccsd')
-    for i in range(N):
-        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
-        psi_E = psi4.core.variable(var_str)
-        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
+    psi_E = [0.2464015742, 0.3136327374, 0.3543763364]
+    assert(abs(eom_E_guess_1[0] - psi_E[0]) < 1e-5)
+    assert(abs(eom_E_guess_2[1] - psi_E[1]) < 1e-5)
+    assert(abs(eom_E_guess_3[2] - psi_E[2]) < 1e-5)
 
 # Test frozen core
 def test_eomccsd_h2o_fc():
@@ -99,17 +93,11 @@ def test_eomccsd_h2o_fc():
     guess = 'unit'
     eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "left")
 
-    psi4.set_options({'cceom__e_convergence': e_conv,
-                      'cceom__r_convergence': r_conv,
-                      'roots_per_irrep': [N],
-                      'restart': 'false'})
-    psi4.energy('eom-ccsd')
-    for i in range(N):
-        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
-        psi_E = psi4.core.variable(var_str)
-        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
+    psi_E = [0.2463657776, 0.3135919025, 0.3543900976]
+    assert(abs(eom_E_guess_1[0] - psi_E[0]) < 1e-5)
+    assert(abs(eom_E_guess_2[1] - psi_E[1]) < 1e-5)
+    assert(abs(eom_E_guess_3[2] - psi_E[2]) < 1e-5)
+
 
 def test_eomccsd_c2h4_fc():
     # Psi4 Setup
@@ -154,11 +142,9 @@ def test_eomccsd_c2h4_fc():
                       'cceom__r_convergence': r_conv,
                       'roots_per_irrep': [N],
                       'restart': 'false'})
-    psi4.energy('eom-ccsd')
-    for i in range(N):
-        var_str = "CCSD ROOT {} CORRELATION ENERGY".format(i + 1)
-        psi_E = psi4.core.variable(var_str)
-        assert(abs(eom_E_guess_1[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_2[i] - psi_E) < 1e-5)
-        assert(abs(eom_E_guess_3[i] - psi_E) < 1e-5)
+
+    psi_E = [0.3260065052, 0.3298285196, 0.3345771530]
+    assert(abs(eom_E_guess_1[0] - psi_E[0]) < 1e-5)
+    assert(abs(eom_E_guess_2[1] - psi_E[1]) < 1e-5)
+    assert(abs(eom_E_guess_3[2] - psi_E[2]) < 1e-5)
 

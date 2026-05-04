@@ -21,7 +21,7 @@ def test_polar_h2o_cc_pvdz():
                       'd_convergence': 1e-14,
                       'r_convergence': 1e-14,
                       'diis': 1})
-    mol = psi4.geometry(moldict["H2O_C1"])
+    mol = psi4.geometry(moldict["H2O"])
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     e_conv = 1e-13

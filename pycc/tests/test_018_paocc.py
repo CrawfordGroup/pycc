@@ -60,7 +60,7 @@ def test_pao_h2o():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
                       'diis': 8})
-    mol = psi4.geometry(moldict["H2O_Teach"] + "\nnoreorient\nnocom")
+    mol = psi4.geometry(moldict["H2O_Teach"] + "\nnoreorient\nnocom\nsymmetry c1")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
     
     maxiter = 75
@@ -91,7 +91,7 @@ def test_pao_h2o_frzc():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
                       'diis': 8})
-    mol = psi4.geometry(moldict["H2O_Teach"] + "\nnoreorient\nnocom")
+    mol = psi4.geometry(moldict["H2O_Teach"] + "\nnoreorient\nnocom\nsymmetry c1")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
     
     maxiter = 75

@@ -58,31 +58,26 @@ class Hamiltonian(object):
         self.F_ao = F_ao
 
         ## One-electron property integrals
-        # mints.ao_*() returns SO-basis matrices despite the "ao" prefix;
-        # back-transform to AO basis before the MO transform.
 
         # Electric dipole integrals (length): -e r
         dipole_ints = mints.ao_dipole()
         self.mu = []
         for axis in range(3):
-            mu_so = dipole_ints[axis].to_array(dense=True)
-            mu_ao = aotoso_full @ mu_so @ aotoso_full.T
+            mu_ao = np.asarray(dipole_ints[axis])
             self.mu.append(npCp.T @ mu_ao @ npCr)
 
         # Magnetic dipole integrals: -(e/2 m_e) L
         m_ints = mints.ao_angular_momentum()
         self.m = []
         for axis in range(3):
-            m_so = m_ints[axis].to_array(dense=True)
-            m_ao = aotoso_full @ m_so @ aotoso_full.T
+            m_ao = np.asarray(m_ints[axis])
             self.m.append((npCp.T @ (m_ao * -0.5) @ npCr) * 1.0j)
 
         # Linear momentum integrals: (-e)(-i hbar) Del
         p_ints = mints.ao_nabla()
         self.p = []
         for axis in range(3):
-            p_so = p_ints[axis].to_array(dense=True)
-            p_ao = aotoso_full @ p_so @ aotoso_full.T
+            p_ao = np.asarray(p_ints[axis])
             self.p.append((npCp.T @ p_ao @ npCr) * 1.0j)
 
         # Traceless quadrupole
@@ -91,7 +86,6 @@ class Hamiltonian(object):
         ij = 0
         for axis1 in range(3):
             for axis2 in range(axis1, 3):
-                Q_so = Q_ints[ij].to_array(dense=True)
-                Q_ao = aotoso_full @ Q_so @ aotoso_full.T
+                Q_ao = np.asarray(Q_ints[ij])
                 self.Q.append(npCp.T @ Q_ao @ npCr)
                 ij += 1
