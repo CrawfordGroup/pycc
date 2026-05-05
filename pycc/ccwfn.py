@@ -71,27 +71,6 @@ class ccwfn(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    @staticmethod
-    def _sort_mos_by_energy(ref, npC_active, nfzc, nact):
-        """
-        Reorder columns of npC_active (nao x nact, irrep-block order) so that
-        they are sorted by increasing orbital energy across all irreps.
-
-        Uses epsilon_a_subset("AO","ACTIVE") which is guaranteed to be in the
-        same irrep-block column order as Ca_subset("AO","ACTIVE").
-
-        Returns
-        -------
-        npC_sorted : np.ndarray, shape (nao, nact)
-        eps_sorted : np.ndarray, shape (nact,)
-        sort_idx   : np.ndarray, shape (nact,)  -- permutation applied
-        """
-        eps_active = ref.epsilon_a_subset("AO", "ACTIVE").to_array()
-        sort_idx   = np.argsort(eps_active, kind='stable')
-        npC_sorted = npC_active[:, sort_idx]
-        eps_sorted = eps_active[sort_idx]
-        return npC_sorted, eps_sorted, sort_idx
-
     def __init__(self, scf_wfn, **kwargs):
         """
         Parameters
@@ -178,10 +157,11 @@ class ccwfn(object):
         C = self.ref.Ca_subset("AO", "ACTIVE")
         npC = np.asarray(C)                             # (nao, nact), irrep order
 
-        npC_sorted, eps_sorted, sort_idx = ccwfn._sort_mos_by_energy(
-            self.ref, npC, self.nfzc, self.nact)
+        # Reorder MO columns from irrep-block order to global energy order
+        eps_active = self.ref.epsilon_a_subset("AO", "ACTIVE").to_array()
+        sort_idx   = np.argsort(eps_active, kind='stable')
+        npC        = npC[:, sort_idx]
 
-        npC = npC_sorted
         C = psi4.core.Matrix.from_array(npC)
         self.C = C
 

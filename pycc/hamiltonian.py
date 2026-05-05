@@ -28,21 +28,11 @@ class Hamiltonian(object):
         npCp = np.asarray(Cp)
         npCr = np.asarray(Cr)
 
-        # Build the AO->SO transformation matrix by stacking per-irrep blocks
-        # horizontally.  ref.aotoso() is a blocked psi4.core.Matrix with shape
-        # (nao, nso_h) per irrep; to_array(dense=True) stacks them vertically
-        # (incorrectly for our purposes), so we use nph[] directly instead.
-        aotoso_raw = ref.aotoso()
-        aotoso_full = np.hstack([np.array(aotoso_raw.nph[h])
-                                 for h in range(aotoso_raw.nirrep())
-                                 if np.array(aotoso_raw.nph[h]).shape[1] > 0])  # (nao, nso)
-
         # Generate MO Fock matrix.
         # ref.Fa() is in the SO basis; back-transform to AO basis, then to MO.
         # npCp contains AO->MO coefficients (from Ca_subset("AO", "ACTIVE")),
         # so we need F in the AO basis for the transform to be consistent.
-        F_so = ref.Fa().to_array(dense=True)             # (nso, nso)
-        F_ao = aotoso_full @ F_so @ aotoso_full.T        # (nao, nao)
+        F_ao = np.asarray(ref.Fa_subset("AO"))
         self.F = npCp.T @ F_ao @ npCr
 
         # Get MO two-electron integrals in Dirac notation.
