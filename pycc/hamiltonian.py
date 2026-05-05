@@ -29,9 +29,6 @@ class Hamiltonian(object):
         npCr = np.asarray(Cr)
 
         # Generate MO Fock matrix.
-        # ref.Fa() is in the SO basis; back-transform to AO basis, then to MO.
-        # npCp contains AO->MO coefficients (from Ca_subset("AO", "ACTIVE")),
-        # so we need F in the AO basis for the transform to be consistent.
         F_ao = np.asarray(ref.Fa_subset("AO"))
         self.F = npCp.T @ F_ao @ npCr
 
