@@ -42,7 +42,6 @@ jobs:
         environment-file: devtools/conda-envs/psi.yaml
         python-version: ${{ matrix.python-version }}
         auto-activate-base: false
-        add-pip-as-python-dependency: true
 
     - name: Install Psi4
       run: |
@@ -50,7 +49,7 @@ jobs:
         conda list --show-channel-urls
         hash -r
         env
-        conda install psi4 python=${{ matrix.python-version }} numpy=2 -c conda-forge
+        conda install psi4 python=${{ matrix.python-version }} pip numpy=2 -c conda-forge
         which conda python psi4
         ls -l $CONDA
 
