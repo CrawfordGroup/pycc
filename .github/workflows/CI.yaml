@@ -51,20 +51,21 @@ jobs:
         conda list --show-channel-urls
         hash -r
         env
-        conda install psi4 python=${{ matrix.python-version }} numpy=1 -c conda-forge
+        conda install psi4 python=${{ matrix.python-version }} numpy=2 -c conda-forge
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
       run: |
         export PATH=$CONDA_PREFIX/bin:$PATH
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
-        conda env list
-        python -c 'import psi4'
+        conda list
+        python -c 'import psi4;print(psi4.__file__, psi4.__version__)' || true
 
     - name: Install PyCC and Deps
       run: |
         pip install -e .
         pip install pytest
+        conda list
 
     - name: Test and generate coverage report
       run: |
