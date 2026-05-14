@@ -24,7 +24,6 @@ jobs:
         os: [macOS-latest, ubuntu-latest]
         python-version: ['3.11']
 
-
     steps:
     - uses: actions/checkout@v3
 
@@ -35,7 +34,6 @@ jobs:
         df -h
         ulimit -a
 
-
     - name: Create Psi4 Environment
       uses: conda-incubator/setup-miniconda@v3
       with:
@@ -43,7 +41,8 @@ jobs:
         activate-environment: p4env
         environment-file: devtools/conda-envs/psi.yaml
         python-version: ${{ matrix.python-version }}
-        auto-activate-base: true
+        auto-activate-base: false
+        add-pip-as-python-dependency: true
 
     - name: Install Psi4
       run: |
@@ -52,25 +51,35 @@ jobs:
         hash -r
         env
         conda install psi4 python=${{ matrix.python-version }} numpy=2 -c conda-forge
+        which conda python psi4
         ls -l $CONDA
+
+    - name: Buildtime Conda environment
+      run: |
+        conda info
+        conda list
 
     - name: Test Psi4 Python Loading
       run: |
         export PATH=$CONDA_PREFIX/bin:$PATH
         export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
-        conda list
         python -c 'import psi4;print(psi4.__file__, psi4.__version__)' || true
+        which conda python psi4
 
     - name: Install PyCC and Deps
       run: |
         pip install -e .
         pip install pytest
         conda list
+        python -c 'import psi4;print(psi4.__file__, psi4.__version__)' || true
+        which conda python psi4
 
     - name: Test and generate coverage report
       run: |
         export KMP_DUPLICATE_LIB_OK=TRUE
         pip install coverage
+        python -c 'import psi4;print(psi4.__file__, psi4.__version__)' || true
+        which conda python psi4
         coverage run -m pytest
         coverage xml
         ls -l
