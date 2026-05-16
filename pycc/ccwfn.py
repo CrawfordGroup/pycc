@@ -132,26 +132,50 @@ class ccwfn(object):
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
-        self.nfzc = self.ref.frzcpi()[0]                # assumes symmetry c1
-        self.no = self.ref.doccpi()[0] - self.nfzc      # active occ; assumes closed-shell
-        self.nmo = self.ref.nmo()                       # all MOs/AOs
-        self.nv = self.nmo - self.no - self.nfzc        # active virt
-        self.nact = self.no + self.nv                   # all active MOs
+
+        # Support both C1 and higher-symmetry references.
+        # frzcpi / doccpi are per-irrep Dimension objects; sum across irreps.
+        self.nfzc = int(sum(self.ref.frzcpi()))
+        self.no   = int(sum(self.ref.doccpi())) - self.nfzc
+        self.nmo  = self.ref.nmo()
+        self.nv   = self.nmo - self.no - self.nfzc
+        self.nact = self.no + self.nv
 
         print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
-        # orbital subspaces
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
-
-        # For convenience
         o = self.o
         v = self.v
 
-        # Get MOs
-        C = self.ref.Ca_subset("AO", "ACTIVE")
-        npC = np.asarray(C)  # as numpy array
-        self.C = C
+        # Ca_subset("AO","ACTIVE") returns columns in global energy order.
+        # Ca_subset("SO","ACTIVE") returns columns in irrep-block order.
+        # We use the SO energies only to derive the irrep label for each MO.
+        self.C = self.ref.Ca_subset("AO", "ACTIVE")
+
+        eps_so_blocked  = self.ref.epsilon_a_subset("SO", "ACTIVE")
+        eps_active_so   = np.concatenate([np.array(eps_so_blocked.nph[h])
+                                          for h in range(self.ref.nirrep())])
+        sort_idx        = np.argsort(eps_active_so, kind='stable')
+
+        irrep_labels    = self.ref.molecule().irrep_labels()
+        mo_irreps       = np.array([h for h in range(self.ref.nirrep())
+                                    for _ in range(self.ref.nmopi()[h]
+                                                   - self.ref.frzcpi()[h]
+                                                   - self.ref.frzvpi()[h])])
+        mo_irreps       = mo_irreps[sort_idx]
+        mo_irrep_labels = [irrep_labels[h] for h in mo_irreps]
+        eps_active      = eps_active_so[sort_idx]
+
+        # Print MO summary
+        print("\nActive MOs by energy:")
+        print(f"  {'#':>4}  {'Irrep':>6}  {'Energy':>16}")
+        print(f"  {'-'*4}  {'-'*6}  {'-'*16}")
+        for i, (eps, label) in enumerate(zip(eps_active, mo_irrep_labels)):
+            if i == self.no:
+                print(f"  {'.'*4}  {'.'*6}  {'.'*16}")
+            idx = i if i < self.no else i - self.no
+            print(f"  {idx:>4}  {label:>6}  {eps:>16.10f}")
 
         # Localize occupied MOs if requested
         if (local is not None):
@@ -159,6 +183,7 @@ class ccwfn(object):
             LMOS = psi4.core.Localizer.build(self.local_MOs, self.ref.basisset(), C_occ)
             LMOS.localize()
             npL = np.asarray(LMOS.L)
+            npC = np.asarray(self.C)
             npC[:,:self.no] = npL
             C = psi4.core.Matrix.from_array(npC)
             self.C = C

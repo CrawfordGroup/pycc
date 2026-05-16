@@ -3,19 +3,16 @@ h2="""
         units au
         H 0.0 0.0 0.0
         H 0.0 0.0 1.4
-        symmetry c1
         """
 
 # Be atom
 be = """
 Be
-symmetry c1
 """
 
 # He atom
 he = """
 He
-symmetry c1
 """
 
 # Håkon's LiH test case
@@ -23,7 +20,6 @@ lih="""
         units au
         Li 0.0 0.0 0.0
         H  0.0 0.0 3.08
-        symmetry c1
         """
 
 # Håkon's H2O test case
@@ -32,7 +28,6 @@ h2o_hek="""
         O
         H 1 1.8103
         H 1 1.8103 2 104.48
-        symmetry c1
         """
 
 ### Water molecule from CrawfordGroup/Programming Projects
@@ -40,7 +35,6 @@ h2o_tutorial = """
 O  0.000000000000  -0.143225816552   0.000000000000
 H  1.638036840407   1.136548822547  -0.000000000000
 H -1.638036840407   1.136548822547  -0.000000000000
-symmetry c1
 units bohr
 """
 ### Water molecule
@@ -49,7 +43,6 @@ h2o = """
 O
 H 1 1.1
 H 1 1.1 2 104
-symmetry c1
 """
 
 ### Water cluster
@@ -215,7 +208,6 @@ H
 H 1 0.75
 H 2 1.5 1 90.0
 H 3 0.75 2 90.0 1 60.0
-symmetry c1
 """
 
 # (S)-1,3-dimethylallene
