@@ -12,6 +12,7 @@ from ..data.molecules import *
 
 def test_rtcc_he_cc_pvdz():
     """H2O cc-pVDZ"""
+    psi4.core.clean()
     psi4.set_memory('2 GiB')
     psi4.core.set_output_file('output.dat', False)
     psi4.set_options({'basis': 'cc-pVDZ',
