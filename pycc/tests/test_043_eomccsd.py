@@ -112,8 +112,15 @@ def test_eomccsd_c2h4_fc():
                       'd_convergence': 1e-12,
                       'r_convergence': 1e-12,
                       'diis': 1})
-    mol = psi4.geometry("pubchem:ethylene")
-    mol.reset_point_group("c1")
+    mol = psi4.geometry("""
+C            0.000000000000     0.667203595356     0.000000000000
+C            0.000000000000    -0.667196404644     0.000000000000
+H           -0.931693962629     1.221303595356     0.000000000000
+H            0.931693962629     1.221203595356     0.000000000000
+H            0.931693962629    -1.221296404644     0.000000000000
+H           -0.931693962629    -1.221296404644     0.000000000000
+units angstrom
+""")
     rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
 
     maxiter = 75
