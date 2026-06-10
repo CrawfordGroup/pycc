@@ -448,17 +448,65 @@ class cclambda(object):
         return r1, r2
 
     def build_Goo(self, t2, l2):
+        """Build the G_mi occupied density intermediate (t2-weighted lambda).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no)
+            Indexed [m, i].
+
+        Notes
+        -----
+        ::
+
+            G_mi = t2_mjab l2_ijab
+        """
         contract = self.contract
         return contract('mjab,ijab->mi', t2, l2)
 
 
     def build_Gvv(self, t2, l2):
-        contract = self.contract 
+        """Build the G_ae virtual density intermediate (t2-weighted lambda).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv)
+            Indexed [a, e].
+
+        Notes
+        -----
+        ::
+
+            G_ae = - t2_ijeb l2_ijab
+        """
+        contract = self.contract
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
     def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
-        contract = self.contract 
+        """Compute the L1 (lambda singles) residual.
+
+        The lambda equations are linear; solve_lambda drives this residual to
+        zero. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
+        Returns zeros for CCD (no singles); CC2 and CCSD(T) modify/extend the
+        terms below.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv)
+            L1 residual indexed [i, a].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            r_l1_ia = 2 H_ia + l1_ie H_ea - l1_ma H_im
+                    + l2_imef H_efam - l2_mnae H_iemn
+                    + l1_me (2 H_ieam - H_iema)
+                    - G_ef (2 H_eifa - H_eiaf)
+                    - G_mn (2 H_mina - H_imna)
+        """
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l1 = torch.zeros_like(l1)
@@ -493,7 +541,34 @@ class cclambda(object):
         return r_l1
 
     def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
-        contract = self.contract 
+        """Compute the L2 (lambda doubles) residual.
+
+        The lambda equations are linear; solve_lambda drives this residual to
+        zero. The expression below is symmetrized as r_l2_ijab += r_l2_jiba on
+        return. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
+        CCD drops the l1 terms; CC2 and CCSD(T) modify/extend the terms below.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, nv, nv)
+            L2 residual indexed [i, j, a, b].
+
+        Notes
+        -----
+        CCSD form, before the i<->j / a<->b symmetrization (repeated indices
+        summed)::
+
+            r_l2_ijab = L_ijab
+                      + 2 l1_ia H_jb - l1_ja H_ib
+                      + 2 l1_ie H_ejab - l1_ie H_ejba
+                      - 2 l1_mb H_jima + l1_mb H_ijma
+                      + l2_ijeb H_ea - l2_mjab H_im
+                      + 1/2 l2_mnab H_ijmn + 1/2 l2_ijef H_efab
+                      + l2_mjeb (2 H_ieam - H_iema)
+                      - l2_mibe H_jema - l2_mieb H_jeam
+                      + G_ae L_ijeb - G_mi L_mjab
+        """
+        contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
@@ -544,6 +619,20 @@ class cclambda(object):
 
     # Additional intermediates needed for CC3 lambda equations
     def build_cc3_Wmbje(self, o, v, ERI, t1):
+        """Build the CC3 W_mbje intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, nv)
+            Indexed [m, b, j, e].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbje = <mb|je> + t_jf <mb|fe> - t_nb <mn|je>
+                            - t_jf t_nb <mn|fe>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
@@ -555,6 +644,20 @@ class cclambda(object):
         return W
 
     def build_cc3_Wmbej(self, o, v, ERI, t1):
+        """Build the CC3 W_mbej intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, nv, no)
+            Indexed [m, b, e, j].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
+                            - t_jf t_nb <mn|ef>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
@@ -566,6 +669,20 @@ class cclambda(object):
         return W
 
     def build_cc3_Wabef(self, o, v, ERI, t1):
+        """Build the CC3 W_abef intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv, nv, nv)
+            Indexed [a, b, e, f].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_abef = <ab|ef> - t_ma <mb|ef> - t_mb <ma|fe>
+                            + t_ma t_nb <mn|ef>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
@@ -577,5 +694,12 @@ class cclambda(object):
         return W
                                          
     def pseudoenergy(self, o, v, ERI, l2):
-        contract = self.contract 
+        """Compute the CC pseudoenergy from the L2 amplitudes.
+
+        Returns
+        -------
+        float
+            The lambda pseudoenergy 1/2 <ij|ab> l2_ijab.
+        """
+        contract = self.contract
         return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)

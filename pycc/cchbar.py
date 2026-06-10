@@ -88,6 +88,19 @@ class cchbar(object):
     4-index tensors are stored on CPU
     """
     def build_Hov(self, o, v, F, L, t1):
+        """Build the occupied-virtual block H_me of the one-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv)
+            Indexed [m, e]. For CCD this is just f_me (no singles term).
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            H_me = f_me + t_nf L_mnef
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(F, torch.Tensor):
@@ -104,6 +117,21 @@ class cchbar(object):
 
 
     def build_Hvv(self, o, v, F, L, t1, t2):
+        """Build the virtual-virtual block H_ae of the one-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv)
+            Indexed [a, e].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CCD keeps only f_ae and the final
+        t2 term)::
+
+            H_ae = f_ae - f_me t_ma + t_mf L_amef
+                        - (t2_mnfa + t_mf t_na) L_mnfe
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(F, torch.Tensor):
@@ -124,6 +152,21 @@ class cchbar(object):
 
 
     def build_Hoo(self, o, v, F, L, t1, t2):
+        """Build the occupied-occupied block H_mi of the one-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no)
+            Indexed [m, i].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CCD keeps only f_mi and the final
+        t2 term)::
+
+            H_mi = f_mi + t_ie f_me + t_ne L_mnie
+                        + (t2_inef + t_ie t_nf) L_mnef
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(F, torch.Tensor):
@@ -144,6 +187,20 @@ class cchbar(object):
 
 
     def build_Hoooo(self, o, v, ERI, t1, t2):
+        """Build the occ-occ-occ-occ block H_mnij of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, no, no)
+            Indexed [m, n, i, j]. ERI is in Dirac order <pq|rs>.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            H_mnij = <mn|ij> + t_je <mn|ie> + t_ie <nm|je>
+                            + (t2_ijef + t_ie t_jf) <mn|ef>
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(t1, torch.Tensor):
@@ -168,6 +225,20 @@ class cchbar(object):
 
 
     def build_Hvvvv(self, o, v, ERI, t1, t2):
+        """Build the vir-vir-vir-vir block H_abef of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv, nv, nv)
+            Indexed [a, b, e, f].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            H_abef = <ab|ef> - t_mb <am|ef> - t_ma <bm|fe>
+                            + (t2_mnab + t_ma t_nb) <mn|ef>
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -192,6 +263,19 @@ class cchbar(object):
 
 
     def build_Hvovv(self, o, v, ERI, t1):
+        """Build the vir-occ-vir-vir block H_amef of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, no, nv, nv)
+            Indexed [a, m, e, f]. For CCD this is just <am|ef>.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            H_amef = <am|ef> - t_na <nm|ef>
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -209,6 +293,19 @@ class cchbar(object):
 
 
     def build_Hooov(self, o, v, ERI, t1):
+        """Build the occ-occ-occ-vir block H_mnie of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, no, nv)
+            Indexed [m, n, i, e]. For CCD this is just <mn|ie>.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            H_mnie = <mn|ie> + t_if <nm|ef>
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -226,6 +323,21 @@ class cchbar(object):
 
 
     def build_Hovvo(self, o, v, ERI, L, t1, t2):
+        """Build the occ-vir-vir-occ block H_mbej of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, nv, no)
+            Indexed [m, b, e, j].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CC2 drops the t2 terms)::
+
+            H_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
+                            - (t2_jnfb + t_jf t_nb) <mn|ef>
+                            + t2_njfb L_mnef
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -250,6 +362,20 @@ class cchbar(object):
 
 
     def build_Hovov(self, o, v, ERI, t1, t2):
+        """Build the occ-vir-occ-vir block H_mbje of the two-body HBAR.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, nv)
+            Indexed [m, b, j, e].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CC2 drops the t2 term)::
+
+            H_mbje = <mb|je> + t_jf <bm|ef> - t_nb <mn|je>
+                            - (t2_jnfb + t_jf t_nb) <nm|ef>
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -270,6 +396,28 @@ class cchbar(object):
 
 
     def build_Hvvvo(self, o, v, ERI, L, Hov, Hvvvv, t1, t2):
+        """Build the vir-vir-vir-occ block H_abei of the two-body HBAR.
+
+        Reuses the already-built Hov and Hvvvv blocks.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv, nv, no)
+            Indexed [a, b, e, i].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; the parenthesized groups are the
+        nested intermediates assembled in the code)::
+
+            H_abei = <ab|ei> - H_me t2_miab + t_if H_abef
+                            + (t2_mnab + t_ma t_nb) <mn|ei>
+                            - t2_imfa <bm|fe> - t2_imfb <am|ef>
+                            + t2_mifb L_amef
+                            - t_mb ( <am|ei> - t2_infa <mn|fe> )
+                            - t_ma ( <bm|ie> - t2_infb <mn|ef>
+                                              + t2_nifb L_mnef )
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
@@ -322,6 +470,28 @@ class cchbar(object):
 
 
     def build_Hovoo(self, o, v, ERI, L, Hov, Hoooo, t1, t2):
+        """Build the occ-vir-occ-occ block H_mbij of the two-body HBAR.
+
+        Reuses the already-built Hov and Hoooo blocks.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, no)
+            Indexed [m, b, i, j].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; the parenthesized groups are the
+        nested intermediates assembled in the code)::
+
+            H_mbij = <mb|ij> + H_me t2_ijeb - t_nb H_mnij
+                            + (t2_ijef + t_ie t_jf) <mb|ef>
+                            - t2_ineb <nm|je> - t2_jneb <mn|ie>
+                            + t2_njeb L_mnie
+                            + t_je ( <mb|ie> - t2_infb <mn|fe> )
+                            + t_ie ( <bm|je> - t2_jnfb <mn|ef>
+                                              + t2_njfb L_mnef )
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             if HAS_TORCH and isinstance(ERI, torch.Tensor):
