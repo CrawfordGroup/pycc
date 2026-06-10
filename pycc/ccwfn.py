@@ -344,7 +344,6 @@ class ccwfn(object):
                 self.t1 += r1/Dia
                 self.t2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia) + contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-#rms = ec.contract('ia,ia->', r1/Dia, r1/Dia) + ec.contract('ijab,ijab->', r2/Dijab, r2/Dijab)
                 if HAS_TORCH and isinstance(r1, torch.Tensor):
                     rms = torch.sqrt(rms)
                 else:
@@ -637,7 +636,7 @@ class ccwfn(object):
 
         if self.model == 'CCD':
             if HAS_TORCH and isinstance(t1, torch.Tensor):
-                r_T1 = torch.zero_like(t1)
+                r_T1 = torch.zeros_like(t1)
             else:
                 r_T1 = np.zeros_like(t1)
         else:
