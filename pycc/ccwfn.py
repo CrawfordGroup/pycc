@@ -471,6 +471,21 @@ class ccwfn(object):
         return r1, r2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
+        """Build the effective doubles amplitude tau = fact1*t2 + fact2*(t1 t1).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, nv, nv)
+            tau indexed [i, j, a, b]; t1 is [i, a], t2 is [i, j, a, b].
+
+        Notes
+        -----
+        ::
+
+            tau_ijab = fact1 * t2_ijab + fact2 * t_ia t_jb
+
+        (defaults fact1 = fact2 = 1).
+        """
         contract = self.contract
         if self.einsums:
             tau = fact1 * np.transpose(t2, (3,2,1,0)) + fact2 * self.ec.contract('ai,bj->baji', t1.T, t1.T)
@@ -480,6 +495,28 @@ class ccwfn(object):
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
+        """Build the F_ae similarity-transformed one-body intermediate.
+
+        Parameters
+        ----------
+        o, v : slice
+            Occupied and virtual orbital subspaces.
+        F, L : ndarray or torch.Tensor
+            Fock matrix and spin-adapted ERIs (L = 2<pq|rs> - <pq|sr>).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv)
+            Virtual-virtual intermediate indexed [a, e].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CCD keeps only the f_ae and final
+        t2 terms)::
+
+            F_ae = f_ae - 1/2 f_me t_ma + t_mf L_mafe
+                        - (t2_mnaf + 1/2 t_ma t_nf) L_mnef
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -502,6 +539,21 @@ class ccwfn(object):
 
 
     def build_Fmi(self, o, v, F, L, t1, t2):
+        """Build the F_mi similarity-transformed one-body intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no)
+            Occupied-occupied intermediate indexed [m, i].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed; CCD keeps only the f_mi and final
+        t2 terms)::
+
+            F_mi = f_mi + 1/2 t_ie f_me + t_ne L_mnie
+                        + (t2_inef + 1/2 t_ie t_nf) L_mnef
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -524,6 +576,20 @@ class ccwfn(object):
 
 
     def build_Fme(self, o, v, F, L, t1):
+        """Build the F_me similarity-transformed one-body intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv)
+            Occupied-virtual intermediate indexed [m, e]. Returns None for the
+            CCD model, which has no singles.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            F_me = f_me + t_nf L_mnef
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -540,6 +606,20 @@ class ccwfn(object):
 
 
     def build_Wmnij(self, o, v, ERI, t1, t2):
+        """Build the W_mnij similarity-transformed two-body intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, no, no)
+            Intermediate indexed [m, n, i, j]. ERI is in Dirac order <pq|rs>.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            W_mnij = <mn|ij> + t_je <mn|ie> + t_ie <mn|ej>
+                            + (t2_ijef + t_ie t_jf) <mn|ef>
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -566,6 +646,22 @@ class ccwfn(object):
 
 
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
+        """Build the W_mbej similarity-transformed two-body intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, nv, no)
+            Intermediate indexed [m, b, e, j]. Returns None for the CC2 model,
+            which omits this intermediate.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            W_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
+                            - (1/2 t2_jnfb + t_jf t_nb) <mn|ef>
+                            + 1/2 t2_njfb L_mnef
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -592,6 +688,21 @@ class ccwfn(object):
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
+        """Build the W_mbje similarity-transformed two-body intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, nv)
+            Intermediate indexed [m, b, j, e]. Returns None for the CC2 model,
+            which omits this intermediate.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            W_mbje = -<mb|je> - t_jf <mb|fe> + t_nb <mn|je>
+                             + (1/2 t2_jnfb + t_jf t_nb) <mn|fe>
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -616,6 +727,19 @@ class ccwfn(object):
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
+        """Build the Z_mbij similarity-transformed intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, no)
+            Intermediate indexed [m, b, i, j]. Returns None for the CCD model.
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            Z_mbij = <mb|ef> (t2_ijef + t_ie t_jf)
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -630,6 +754,26 @@ class ccwfn(object):
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
+        """Compute the T1 (singles) amplitude residual.
+
+        solve_cc drives this residual to zero. Fae/Fme/Fmi are the precomputed
+        one-body intermediates. Returns zeros for CCD (no singles).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv)
+            T1 residual indexed [i, a].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            r_t1_ia = f_ia + t_ie F_ae - F_mi t_ma
+                    + (2 t2_imae - t2_imea) F_me
+                    + t_nf L_nafi
+                    + (2 t2_mief - t2_mife) <ma|ef>
+                    - t2_mnae L_nmei
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -654,6 +798,35 @@ class ccwfn(object):
 
 
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
+        """Compute the T2 (doubles) amplitude residual.
+
+        solve_cc drives this residual to zero. The expression below is the
+        spin-adapted "half" residual, symmetrized as r_t2_ijab += r_t2_jiba on
+        return. Fae/Fmi/Fme and Wmnij/Wmbej/Wmbje/Zmbij are the precomputed
+        intermediates; tau = build_tau(t1, t2). CCD drops the singles terms;
+        CC2 replaces the Fae/Fmi terms with bare-Fock forms (see code).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, nv, nv)
+            T2 residual indexed [i, j, a, b].
+
+        Notes
+        -----
+        CCSD form, before the i<->j / a<->b symmetrization (repeated indices
+        summed; W_mbje[e<->j] is Wmbje with its last two axes swapped)::
+
+            r_t2_ijab = 1/2 <ij|ab>
+                      + t2_ijae F_be  - 1/2 t2_ijae t_mb F_me
+                      - t2_imab F_mj  - 1/2 t2_imab t_je F_me
+                      + 1/2 tau_mnab W_mnij + 1/2 tau_ijef <ab|ef>
+                      - t_ma Z_mbij
+                      + (t2_imae - t2_imea) W_mbej
+                      + t2_imae (W_mbej + W_mbje[e<->j])
+                      + t2_mjae W_mbie
+                      - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
+                      + t_ie <ab|ej> - t_ma <mb|ij>
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
@@ -725,6 +898,20 @@ class ccwfn(object):
 
     # Intermedeates needed for CC3
     def build_cc3_Wmnij(self, o, v, ERI, t1):
+        """Build the CC3 W_mnij intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, no, no)
+            Indexed [m, n, i, j].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mnij = <mn|ij> + t_ja <mn|ia> + t_ia <nm|ja>
+                            + t_ie t_jf <mn|ef>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,o,o,o].clone().to(self.device1)
@@ -737,6 +924,22 @@ class ccwfn(object):
         return W
 
     def build_cc3_Wmbij(self, o, v, ERI, t1, Wmnij):
+        """Build the CC3 W_mbij intermediate (T1-dressed integrals).
+
+        Reuses the CC3 W_mnij intermediate.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv, no, no)
+            Indexed [m, b, i, j].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbij = <mb|ij> - W_mnij t_nb + t_je <mb|ie>
+                            + t_ie ( <mb|ej> + t_jf <mb|ef> )
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,v,o,o].clone().to(self.device1)
@@ -752,6 +955,19 @@ class ccwfn(object):
         return W
 
     def build_cc3_Wmnie(self, o, v, ERI, t1):
+        """Build the CC3 W_mnie intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, no, nv)
+            Indexed [m, n, i, e].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mnie = <mn|ie> + t_if <mn|fe>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[o,o,o,v].clone().to(self.device1)
@@ -761,6 +977,19 @@ class ccwfn(object):
         return W
 
     def build_cc3_Wamef(self, o, v, ERI, t1):
+        """Build the CC3 W_amef intermediate (T1-dressed integrals).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, no, nv, nv)
+            Indexed [a, m, e, f].
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_amef = <am|ef> - t_na <nm|ef>
+        """
         contract = self.contract
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             W = ERI[v,o,v,v].clone().to(self.device1)
@@ -770,6 +999,21 @@ class ccwfn(object):
         return W
 
     def build_cc3_Wabei(self, o, v, ERI, t1):
+        """Build the CC3 W_abei intermediate (T1-dressed integrals).
+
+        The most involved CC3 intermediate. It is assembled in two parts that
+        are combined as W_abei = Z_abei + Z_eiab[swap (a,e) and (b,i)]:
+
+        - Z_eiab: <ei|ab> dressed by t1 through the vir-vir-vir-vir integrals
+          (symmetric + antisymmetric pieces) and ladder/ring corrections;
+        - Z_abei: the -t_ma (<mb|ei> + t_if <mb|ef>) particle-attachment term.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv, nv, no)
+            Indexed [a, b, e, i]. See the inline construction for the exact
+            term-by-term T1 dressing.
+        """
         contract =self.contract
         # eiab
         if HAS_TORCH and isinstance(t1, torch.Tensor):
@@ -812,6 +1056,16 @@ class ccwfn(object):
         return W
 
     def cc_energy(self, o, v, F, L, t1, t2):
+        """Compute the CC correlation energy from the current amplitudes.
+
+        Returns
+        -------
+        float
+            The CC correlation energy (repeated indices summed)::
+
+                CCD:   E = t2_ijab L_ijab
+                else:  E = 2 f_ia t_ia + tau_ijab L_ijab   (tau = t2 + t1 t1)
+        """
         contract = self.contract
         if self.einsums:
             contract = self.ec.contract
