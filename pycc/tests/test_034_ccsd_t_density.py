@@ -9,38 +9,25 @@ import pytest
 from ..data.molecules import *
 from ..cctriples import t_vikings, t_vikings_inverted, t_tjl
 
-def test_ccsd_t_h2o():
+def test_ccsd_t_h2o(rhf_wfn):
     """H2O cc-pVDZ"""
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'STO-3G',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12,
-                      'diis': 1})
-    mol = psi4.geometry(
-"""
+    maxiter = 75
+    e_conv = 1e-12
+    r_conv = 1e-12
+
+    geom = """
 O 0.000000000000000   0.000000000000000   0.143225857166674
 H 0.000000000000000  -1.638037301628121  -1.136549142277225
 H 0.000000000000000   1.638037301628121  -1.136549142277225
 symmetry c1
 units bohr
 """
-)
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
-    maxiter = 75
-    e_conv = 1e-12
-    r_conv = 1e-12
+    wfn = rhf_wfn(geom, "STO-3G", freeze_core="false")
 
     etot = psi4.energy('CCSD(T)')
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
-    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', make_t3_density=True)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter, max_diis=0)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)
@@ -60,13 +47,12 @@ units bohr
 
     psi4.core.clean()
 
-    psi4.set_options({'basis': 'cc-pVDZ'})
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+    wfn = rhf_wfn(geom, "cc-pVDZ", freeze_core="false")
 
     etot = psi4.energy('CCSD(T)')
     ecc_psi4 = psi4.variable('CCSD(T) CORRELATION ENERGY')
 
-    cc = pycc.ccwfn(rhf_wfn, model='ccsd(t)', make_t3_density=True)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
     ecc = cc.solve_cc(e_conv, r_conv, maxiter)
     assert (abs(ecc_psi4 - ecc) < 1e-11)
     hbar = pycc.cchbar(cc)

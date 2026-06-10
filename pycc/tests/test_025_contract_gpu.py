@@ -14,28 +14,18 @@ from pycc.ccwfn import HAS_TORCH
 
 @pytest.mark.gpu
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
-def test_rtcc_water_cc_pvdz():
+def test_rtcc_water_cc_pvdz(rhf_wfn):
     """H2O cc-pVDZ"""
-    psi4.set_memory('2 GiB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-13,
-                      'd_convergence': 1e-13,
-                      'r_convergence': 1e-13,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["H2O"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     e_conv = 1e-13
     r_conv = 1e-13
-    
+
+    wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
+                  e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
+
     # The device for the calculation (CPU/GPU) can be specified.
     # Option: 'CPU', 'GPU'
     # Default: 'CPU'
-    cc = pycc.ccwfn(rhf_wfn, device='GPU')
+    cc = pycc.ccwfn(wfn, device='GPU')
     ecc = cc.solve_cc(e_conv, r_conv)
     
     hbar = pycc.cchbar(cc)

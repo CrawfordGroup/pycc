@@ -10,25 +10,14 @@ from scipy.integrate import complex_ode as ode
 from pycc.rt.lasers import sine_square_laser
 from ..data.molecules import *
 
-def test_rtcc_he_cc_pvdz_auto():
+def test_rtcc_he_cc_pvdz_auto(rhf_wfn):
     """He cc-pVDZ"""
-    psi4.set_memory('2 GiB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-13,
-                      'd_convergence': 1e-13,
-                      'r_convergence': 1e-13,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["He"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     e_conv = 1e-13
     r_conv = 1e-13
 
-    cc = pycc.ccwfn(rhf_wfn)
+    wfn = rhf_wfn("He", "cc-pVDZ", freeze_core="false",
+                  e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv, r_conv)
 
     hbar = pycc.cchbar(cc)

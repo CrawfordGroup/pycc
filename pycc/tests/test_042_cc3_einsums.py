@@ -12,25 +12,13 @@ from pycc.ccwfn import HAS_EINSUMS
 
 # H2O/cc-pVDZ
 @pytest.mark.skipif(not HAS_EINSUMS, reason="Einsums not installed")
-def test_cc3_h2o():
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["H2O_Teach"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
+def test_cc3_h2o(rhf_wfn):
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    cc = pycc.ccwfn(rhf_wfn, model='CC3', einsums=True)
+
+    wfn = rhf_wfn("H2O_Teach", "cc-pVDZ", freeze_core="false")
+    cc = pycc.ccwfn(wfn, model='CC3', einsums=True)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     epsi4 = -0.227888246840310
     ecfour = -0.2278882468404231
