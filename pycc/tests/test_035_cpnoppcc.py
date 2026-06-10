@@ -9,28 +9,16 @@ import pytest
 from ..data.molecules import *
 
 
-def test_cpnopp_ccsd():
+def test_cpnopp_ccsd(rhf_wfn):
     """H2O CPNO++-CCSD Test"""
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-13,
-                      'd_convergence': 1e-13,
-                      'r_convergence': 1e-13,
-                      'diis': 8})
-    mol = psi4.geometry(moldict["H2O"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='CPNO++', local_cutoff=1e-7, it2_opt=False)
+    wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false", diis=8,
+                  e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
+    ccsd = pycc.ccwfn(wfn, local='CPNO++', local_cutoff=1e-7, it2_opt=False)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
     
     hbar = pycc.cchbar(ccsd)
@@ -44,28 +32,16 @@ def test_cpnopp_ccsd():
     assert (abs(esim - eccsd) < 1e-7)
     assert (abs(lsim - lccsd) < 1e-7)   
 
-def test_pnopp_ccsd_opt():
+def test_pnopp_ccsd_opt(rhf_wfn):
     """H2O CPNO++-CCSD with Optimized Initial T2 Amplitudes"""
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-13,
-                      'd_convergence': 1e-13,
-                      'r_convergence': 1e-13,
-                      'diis': 8})
-    mol = psi4.geometry(moldict["H2O"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
     max_diis = 8
 
-    ccsd = pycc.ccwfn(rhf_wfn, local='CPNO++', local_cutoff=1e-7)
+    wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false", diis=8,
+                  e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
+    ccsd = pycc.ccwfn(wfn, local='CPNO++', local_cutoff=1e-7)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
 
     hbar = pycc.cchbar(ccsd)

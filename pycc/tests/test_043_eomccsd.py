@@ -13,25 +13,13 @@ import sys
 np.set_printoptions(precision=10, linewidth=300, threshold=sys.maxsize, suppress=True)
 
 # H2O/cc-pVDZ
-def test_eomccsd_h2o():
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["H2O_Teach"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+def test_eomccsd_h2o(rhf_wfn):
+    wfn = rhf_wfn("H2O_Teach", "cc-pVDZ", freeze_core="false")
 
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    cc = pycc.ccwfn(rhf_wfn)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
     eom = pycc.cceom(cc, hbar)
@@ -56,25 +44,13 @@ def test_eomccsd_h2o():
     assert(abs(eom_E_guess_3[2] - psi_E[2]) < 1e-5)
 
 # Test frozen core
-def test_eomccsd_h2o_fc():
-    # Psi4 Setup
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'true',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["H2O_Teach"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+def test_eomccsd_h2o_fc(rhf_wfn):
+    wfn = rhf_wfn("H2O_Teach", "cc-pVDZ")
 
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    cc = pycc.ccwfn(rhf_wfn)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
     eom = pycc.cceom(cc, hbar)
@@ -99,20 +75,8 @@ def test_eomccsd_h2o_fc():
     assert(abs(eom_E_guess_3[2] - psi_E[2]) < 1e-5)
 
 
-def test_eomccsd_c2h4_fc():
-    # Psi4 Setup
-    psi4.core.clean()
-    psi4.set_memory('2 GB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pVDZ',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'true',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12,
-                      'diis': 1})
-    mol = psi4.geometry("""
+def test_eomccsd_c2h4_fc(rhf_wfn):
+    wfn = rhf_wfn("""
 C            0.000000000000     0.667203595356     0.000000000000
 C            0.000000000000    -0.667196404644     0.000000000000
 H           -0.931693962629     1.221303595356     0.000000000000
@@ -120,13 +84,12 @@ H            0.931693962629     1.221203595356     0.000000000000
 H            0.931693962629    -1.221296404644     0.000000000000
 H           -0.931693962629    -1.221296404644     0.000000000000
 units angstrom
-""")
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
+""", "cc-pVDZ")
 
     maxiter = 75
     e_conv = 1e-12
     r_conv = 1e-12
-    cc = pycc.ccwfn(rhf_wfn)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv,r_conv,maxiter)
     hbar = pycc.cchbar(cc)
     eom = pycc.cceom(cc, hbar)
@@ -144,11 +107,6 @@ units angstrom
 
     guess = 'unit'
     eom_E_guess_3, _ = eom.solve_eom(N, e_conv, r_conv, maxiter, guess, "right")
-
-    psi4.set_options({'cceom__e_convergence': e_conv,
-                      'cceom__r_convergence': r_conv,
-                      'roots_per_irrep': [N],
-                      'restart': 'false'})
 
     psi_E = [0.3260065052, 0.3298285196, 0.3345771530]
     assert(abs(eom_E_guess_1[0] - psi_E[0]) < 1e-5)

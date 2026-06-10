@@ -9,25 +9,14 @@ import pytest
 from ..data.molecules import *
 
 
-def test_polar_h2o_cc_pvdz():
+def test_polar_h2o_cc_pvdz(rhf_wfn):
     """H2O cc-pVDZ"""
-    psi4.set_memory('2 GiB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'STO-3G',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-14,
-                      'd_convergence': 1e-14,
-                      'r_convergence': 1e-14,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["H2O"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     e_conv = 1e-13
     r_conv = 1e-13
 
-    cc = pycc.ccwfn(rhf_wfn)
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
+                  e_convergence=1e-14, d_convergence=1e-14, r_convergence=1e-14)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)

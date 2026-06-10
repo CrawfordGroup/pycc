@@ -10,25 +10,14 @@ import numpy as np
 from ..data.molecules import *
 from pycc.rt.lasers import gaussian_laser
 
-def test_dipole_h2_2_field():
+def test_dipole_h2_2_field(rhf_wfn):
     """H2 dimer"""
-    psi4.set_memory('2 GiB')
-    psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': '6-31G',
-                      'scf_type': 'pk',
-                      'mp2_type': 'conv',
-                      'freeze_core': 'false',
-                      'e_convergence': 1e-13,
-                      'd_convergence': 1e-13,
-                      'r_convergence': 1e-13,
-                      'diis': 1})
-    mol = psi4.geometry(moldict["(H2)_2"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
     e_conv = 1e-13
     r_conv = 1e-13
 
-    cc = pycc.ccwfn(rhf_wfn)
+    wfn = rhf_wfn("(H2)_2", "6-31G", freeze_core="false",
+                  e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv, r_conv)
 
     hbar = pycc.cchbar(cc)

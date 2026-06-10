@@ -9,24 +9,12 @@ import pytest
 import pycc
 from ..data.molecules import *
 
-def test_linresp():
-    psi4.core.clean()
-    psi4.core.clean_options()
-    psi4.set_memory('2 GiB')
-    psi4.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'aug-cc-pvdz',
-                      'scf_type': 'pk',
-                      'e_convergence': 1e-12,
-                      'd_convergence': 1e-12,
-                      'r_convergence': 1e-12
-    })
-    mol = psi4.geometry(moldict["H2O"])
-    rhf_e, rhf_wfn = psi4.energy('SCF', return_wfn=True)
-
+def test_linresp(rhf_wfn):
     e_conv = 1e-12
     r_conv = 1e-12
 
-    cc = pycc.ccwfn(rhf_wfn)
+    wfn = rhf_wfn("H2O", "aug-cc-pvdz", freeze_core="false")
+    cc = pycc.ccwfn(wfn)
     ecc = cc.solve_cc(e_conv, r_conv)
     hbar = pycc.cchbar(cc)
     cclambda = pycc.cclambda(cc, hbar)
