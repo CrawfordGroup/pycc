@@ -44,8 +44,8 @@ test = [
 branch = true
 omit = ["*/tests/*", "*site-packages*", "*__init__.py"]
 
-[tool.setuptools]
-packages = ["pycc"]
+[tool.setuptools.packages.find]
+include = ["pycc*"]
 
 # [tool.setuptools.aliases]
 # can't be done in pyproject.toml so use `pytest` itself

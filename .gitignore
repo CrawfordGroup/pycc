@@ -123,3 +123,14 @@ pycc/tests/ref_t1.pk
 pycc/tests/ref_t2.pk
 pycc/tests/t1.pk
 pycc/tests/t2.pk
+
+# Psi4 scratch / cleanup files (named psi.<pid>.clean, etc.)
+psi.*.clean
+psi.*
+
+# Misc leftover test/profiling output
+ijk.dat
+profile.txt
+
+# macOS
+.DS_Store
