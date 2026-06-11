@@ -7,13 +7,16 @@ import psi4
 import numpy as np
 import pycc
 import pytest
-from pycc.rt.integrators import rk4 
+from pycc.rt.integrators import rk4
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
-from pycc.ccwfn import HAS_TORCH
+
+# Skip the whole module if PyTorch is absent, and bind `torch` for use below.
+# (Without torch installed the GPU path can't run; with CPU-only torch it runs
+# on CPU, which is enough to exercise the torch code path in CI.)
+torch = pytest.importorskip("torch")
 
 @pytest.mark.gpu
-@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_rtcc_water_cc_pvdz(rhf_wfn):
     """H2O cc-pVDZ"""
     e_conv = 1e-13

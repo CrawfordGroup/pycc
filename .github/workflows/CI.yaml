@@ -16,13 +16,23 @@ jobs:
       run:
         shell: bash -l {0}
 
-    name: PyCC Test ${{ matrix.os }}, Python ${{ matrix.python-version }}
+    name: PyCC Test ${{ matrix.os }}, Py ${{ matrix.python-version }}, torch=${{ matrix.torch }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [macOS-latest, ubuntu-latest]
         python-version: ['3.11']
+        # Run without torch (covers the HAS_TORCH=False CPU paths) and, on Linux
+        # only, with a CPU-only torch (covers the torch/"GPU" code path on CPU --
+        # no CUDA needed; this is the lane that catches torch-API regressions like
+        # the torch.zero_like bug). gpu-marked tests skip on the torch=false legs.
+        torch: [false, true]
+        exclude:
+          # Keep the CPU-torch lane Linux-only to limit CI cost; the torch code
+          # path is OS-independent enough that one OS suffices to catch API bugs.
+          - os: macOS-latest
+            torch: true
 
 
     steps:
@@ -65,6 +75,18 @@ jobs:
       run: |
         pip install -e .
         pip install pytest
+
+    - name: Install PyTorch (CPU build) for the torch code path
+      if: ${{ matrix.torch }}
+      run: |
+        # CPU-only wheel: small, no CUDA. The Linux default torch wheel bundles
+        # CUDA (~2 GB) and is unnecessary here; macOS wheels are CPU/MPS already.
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+        else
+          pip install torch
+        fi
+        python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 
     - name: Conda environment & Test Psi4 Python Loading
       run: |
