@@ -41,8 +41,16 @@ in the **Critique** section.
       errors — `.upper()` never applied — and were removed rather than "fixed".
       Verified in `p4env`: error path raises with the new message; lowercase
       `local`/`local_mos` accepted and drive localization correctly.
-- [ ] **GPU-fallback warning** — emit a warning when GPU is requested but Torch is
-      missing instead of silently falling back to CPU.
+- [x] **GPU-fallback warning** — DONE. New `PyCCWarning(UserWarning)` base in
+      `pycc/exceptions.py` (filterable/escalatable). In `ccwfn.__init__`, the
+      torch-missing `print` became a `warnings.warn(..., PyCCWarning)` and a *second*
+      warning was added for the genuinely-silent case — torch present but
+      `torch.cuda.is_available()` False, where `device` stays `'GPU'` while tensors
+      silently run on CPU (the elif at the device block; tensor routing unchanged).
+      Verified in `p4env` (no torch installed → exercises the torch-missing path:
+      one `PyCCWarning`, `device` falls back to `'CPU'`). The CUDA-unavailable elif is
+      verified by inspection only — testing it needs torch installed, which we declined
+      to add to `p4env`; it's safe because it's only reachable when `HAS_TORCH` is True.
 - [x] **Type hints + method docstrings** — DONE (both halves):
       shape/index + CCSD-equation docstrings on the intermediate builders and
       residual/energy methods in `ccwfn.py`, `cchbar.py`, `cclambda.py`
