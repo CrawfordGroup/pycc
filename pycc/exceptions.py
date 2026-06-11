@@ -14,6 +14,15 @@ class PyCCError(Exception):
     """Base class for all PyCC-specific errors."""
 
 
+class PyCCWarning(UserWarning):
+    """Base class for all PyCC-specific warnings.
+
+    Subclassing :class:`UserWarning` lets callers silence or escalate PyCC
+    warnings selectively, e.g. ``warnings.filterwarnings('error',
+    category=PyCCWarning)``.
+    """
+
+
 class InvalidKeywordError(PyCCError, ValueError):
     """A keyword argument was given an unrecognized or invalid value.
 

@@ -10,6 +10,7 @@ if __name__ == "__main__":
 
 import psi4
 import time
+import warnings
 import numpy as np
 
 try:
@@ -26,7 +27,7 @@ from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
 from ._typing import Tensor
-from .exceptions import InvalidKeywordError
+from .exceptions import InvalidKeywordError, PyCCWarning
 
 try:
     import einsums as ein
@@ -227,9 +228,14 @@ class ccwfn(object):
         if device.upper() not in valid_device:
             raise InvalidKeywordError('device', device, valid_device)
         self.device = device.upper()
-        if self.device == 'GPU' and HAS_TORCH == False:
+        if self.device == 'GPU' and not HAS_TORCH:
+            warnings.warn("GPU requested, but PyTorch is not available; "
+                          "falling back to CPU.", PyCCWarning, stacklevel=2)
             self.device = 'CPU'
-            print('GPU requested, but torch not available.  Using CPU instead.')
+        elif self.device == 'GPU' and not torch.cuda.is_available():
+            warnings.warn("GPU requested, but no CUDA device is available; "
+                          "PyTorch tensors will run on CPU.", PyCCWarning,
+                          stacklevel=2)
 
         if self.precision == 'SP':
             self.H.F = np.float32(self.H.F)
