@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 import psi4
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
+if HAS_TORCH:
+    import torch
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -157,10 +159,10 @@ class rtcc(object):
         """
         Parameters
         ----------
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes or residuals
         phase : scalar
             current wave function phase
-        t1, t2, l2, l2 : NumPy arrays
-            current cluster amplitudes or residuals
 
         Returns
         -------
@@ -191,10 +193,10 @@ class rtcc(object):
 
         Returns
         -------
+        t1, t2, l1, l2 : NumPy arrays
+            current cluster amplitudes or residuals
         phase : scalar
             current wave function phase
-        t1, t2, l2, l2 : NumPy arrays
-            current cluster amplitudes or residuals
         """
         no = self.ccwfn.no
         nv = self.ccwfn.nv

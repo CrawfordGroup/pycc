@@ -51,6 +51,19 @@ in the **Critique** section.
       one `PyCCWarning`, `device` falls back to `'CPU'`). The CUDA-unavailable elif is
       verified by inspection only — testing it needs torch installed, which we declined
       to add to `p4env`; it's safe because it's only reachable when `HAS_TORCH` is True.
+- [x] **CI: CPU-torch test lane** — DONE (branch `ci/torch-path-lane`). GitHub-hosted
+      runners have no GPU/CUDA, but the torch/"GPU" code path falls back to CPU tensors
+      when CUDA is absent, so it runs on a standard runner once torch is installed —
+      which is what catches torch-API regressions (the `torch.zero_like` class of bug).
+      Added a `torch` matrix dimension to `.github/workflows/CI.yaml`: the suite runs
+      without torch (covers the `HAS_TORCH=False` CPU paths) and, **Linux-only** (cost),
+      with a CPU-only torch wheel (covers the torch path); `fail-fast: false`. Also fixed
+      a latent `NameError` in `test_025_contract_gpu.py` (used `torch.complex128` but
+      never imported torch — masked because the test was always skipped) via
+      `torch = pytest.importorskip("torch")`. _Validated structurally + the no-torch skip
+      locally; the `ubuntu, torch=true` leg is unproven until it runs on GitHub._ **Still
+      open:** real-CUDA numerics need actual GPU hardware (self-hosted runner or a paid
+      GPU runner, gated to the nightly `schedule:`) — deferred.
 - [x] **Type hints + method docstrings** — DONE (both halves):
       shape/index + CCSD-equation docstrings on the intermediate builders and
       residual/energy methods in `ccwfn.py`, `cchbar.py`, `cclambda.py`
@@ -96,6 +109,16 @@ Sphinx docs. As a research scaffold it's in good shape.
 
 ### Real bugs
 
+- **Six modules use `torch.*` without importing it** (`utils.py`, `ccdensity.py`,
+  `cchbar.py`, `cclambda.py`, `cctriples.py`, `rt/rtcc.py`). Each does
+  `from pycc.ccwfn import HAS_TORCH` but never `import torch`, then references `torch`
+  inside `if HAS_TORCH and isinstance(x, torch.Tensor):` guards. Latent for the same
+  reason as the others: with torch absent the guard is never entered, so the no-torch CI
+  never hit it. The moment torch is installed, `helper_diis.__init__` (`utils.py:8`, on
+  every solve's DIIS path) raises `NameError: name 'torch' is not defined` → **37 of the
+  non-slow tests fail**. **[FIXED 2026-06-11]** — added a guarded `if HAS_TORCH: import
+  torch` after the `HAS_TORCH` import in each module. **Found by the new CPU-torch CI
+  lane on its first run** (PR #99) — exactly the class of bug that lane exists to catch.
 - **`ccwfn.py:640` — `torch.zero_like(t1)` is not a function** (should be `torch.zeros_like`).
   On the GPU CCD residual path, latent until someone runs CCD on a Torch tensor → `AttributeError`.
   **[FIXED 2026-06-10]**

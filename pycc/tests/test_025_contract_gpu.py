@@ -7,13 +7,16 @@ import psi4
 import numpy as np
 import pycc
 import pytest
-from pycc.rt.integrators import rk4 
+from pycc.rt.integrators import rk4
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
-from pycc.ccwfn import HAS_TORCH
+
+# Skip the whole module if PyTorch is absent, and bind `torch` for use below.
+# (Without torch installed the GPU path can't run; with CPU-only torch it runs
+# on CPU, which is enough to exercise the torch code path in CI.)
+torch = pytest.importorskip("torch")
 
 @pytest.mark.gpu
-@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_rtcc_water_cc_pvdz(rhf_wfn):
     """H2O cc-pVDZ"""
     e_conv = 1e-13
@@ -49,10 +52,10 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     h = 0.01
     t = t0
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
-    y0 = rtcc.collect_amps(phase, cc.t1, cc.t2, cclambda.l1, cclambda.l2).type(torch.complex128)
+    y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).type(torch.complex128)
     y = y0
     ODE = rk4(h)
-    phase, t1, t2, l1, l2 = rtcc.extract_amps(y0)
+    t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
 
@@ -71,7 +74,7 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     while t < tf:
         y = ODE(rtcc.f, t, y)
         t += h 
-        phase, t1, t2, l1, l2 = rtcc.extract_amps(y)
+        t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
         """
@@ -82,7 +85,7 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
         """
         
     print(mu_z)
-    mu_z_ref = -0.34894577
+    mu_z_ref = -0.0780067603267549 # matches test_024 (identical propagation); old value predated removing SCF from the ref
     assert (abs(mu_z_ref - mu_z.real) < 1e-4)
     
     #return (dip_x, dip_y, dip_z, time_points)

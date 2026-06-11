@@ -1,5 +1,7 @@
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
+if HAS_TORCH:
+    import torch
 import opt_einsum
 
 
