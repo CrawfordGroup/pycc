@@ -2,13 +2,22 @@
 ccresponse.py: CC Response Functions
 """
 
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
-import numpy as np
 import time
+from typing import TYPE_CHECKING
+
+import numpy as np
 from .utils import helper_diis
 from .cclambda import cclambda
+from ._typing import Tensor
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
+    from pycc.ccdensity import ccdensity
 
 class ccresponse(object):
     """
@@ -24,7 +33,7 @@ class ccresponse(object):
         Check first-order perturbed wave functions for all available perturbation operators.
     """
 
-    def __init__(self, ccdensity, omega1 = 0, omega2 = 0):
+    def __init__(self, ccdensity: "ccdensity", omega1: float = 0, omega2: float = 0) -> None:
         """
         Parameters
         ----------
@@ -94,7 +103,7 @@ class ccresponse(object):
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
 
-    def pertcheck(self, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
+    def pertcheck(self, omega: float, e_conv: float = 1e-13, r_conv: float = 1e-13, maxiter: int = 200, max_diis: int = 8, start_diis: int = 1):
         """
         Build first-order perturbed wave functions for all available perturbations and return a dict of their converged pseudoresponse values.  Primarily for testing purposes.
 
@@ -205,7 +214,7 @@ class ccresponse(object):
         return check
 
 
-    def linresp(self, A, B, omega, e_conv=1e-13, r_conv=1e-13, maxiter=200, max_diis=8, start_diis=1):
+    def linresp(self, A: str, B: str, omega: float, e_conv: float = 1e-13, r_conv: float = 1e-13, maxiter: int = 200, max_diis: int = 8, start_diis: int = 1) -> Tensor:
         """
         Calculate the CC linear-response function for one-electron perturbations A and B at field-frequency omega (w).
 
@@ -296,7 +305,7 @@ class ccresponse(object):
                     check.append(polar)
 
 
-    def linresp_asym(self, pertkey_a, X1_B, X2_B, Y1_B, Y2_B):
+    def linresp_asym(self, pertkey_a: str, X1_B: Tensor, X2_B: Tensor, Y1_B: Tensor, Y2_B: Tensor):
         """
 	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
 
@@ -364,7 +373,7 @@ class ccresponse(object):
         return -1.0 * (polar1 + polar2)
 
 
-    def solve_right(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+    def solve_right(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
         solver_start = time.time()
 
         Dia = self.Dia
@@ -411,7 +420,7 @@ class ccresponse(object):
             if niter >= start_diis:
                 self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
 
-    def solve_left(self, pertbar, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200, max_diis=7, start_diis=1):
+    def solve_left(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
         """
 	Notes
 	-----
@@ -823,7 +832,7 @@ class ccresponse(object):
 
         return r_Y2
 
-    def pseudoresponse(self, pertbar, X1, X2):
+    def pseudoresponse(self, pertbar: "pertbar", X1: Tensor, X2: Tensor):
         contract = self.ccwfn.contract
         polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
 #polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
@@ -832,7 +841,7 @@ class ccresponse(object):
         return -2.0*(polar1 + polar2) 
         
 class pertbar(object):
-    def __init__(self, pert, ccwfn):
+    def __init__(self, pert: Tensor, ccwfn: "ccwfn") -> None:
         o = ccwfn.o
         v = ccwfn.v
         t1 = ccwfn.t1

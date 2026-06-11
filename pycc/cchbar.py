@@ -2,13 +2,20 @@
 cchbar.py: Builds the similarity-transformed Hamiltonian (one- and two-body terms only).
 """
 
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 
 import time
+from typing import TYPE_CHECKING
+
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
 
 
 class cchbar(object):
@@ -41,7 +48,7 @@ class cchbar(object):
         The occ,vir,occ,occ block of the two-body component HBAR.
 
     """
-    def __init__(self, ccwfn):
+    def __init__(self, ccwfn: "ccwfn") -> None:
         """
         Parameters
         ----------

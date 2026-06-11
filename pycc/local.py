@@ -1,7 +1,16 @@
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING, Any
+
 import psi4
 import numpy as np
 from opt_einsum import contract
-import time
+
+from pycc._typing import Slice, Tensor
+
+if TYPE_CHECKING:
+    from pycc.hamiltonian import Hamiltonian
 
 class Local(object):
     """
@@ -59,11 +68,11 @@ class Local(object):
      to run local MP2, uncomment the necessary lines within the _build_"local" functions which are at the end 
     """
 
-    def __init__(self, local, C, nfzc, no, nv, H, cutoff, it2_opt,
-            core_cut=5E-2,
-            lindep_cut=1E-6,
-            e_conv=1e-12,
-            r_conv=1e-12):
+    def __init__(self, local: str, C: Any, nfzc: int, no: int, nv: int, H: "Hamiltonian", cutoff: float, it2_opt: bool,
+            core_cut: float = 5E-2,
+            lindep_cut: float = 1E-6,
+            e_conv: float = 1e-12,
+            r_conv: float = 1e-12) -> None:
 
         self.cutoff = cutoff
         self.nfzc = nfzc
@@ -786,7 +795,7 @@ class Local(object):
 
             print("MP2 Iter %3d: MP2 Ecorr = %.15f dE = % .5E rmsd = % .5E" % (niter, emp2, ediff, rmsd))
     
-    def filter_t2amps(self,r2):
+    def filter_t2amps(self, r2: Tensor) -> Tensor:
         no = self.no
         nv = self.nv
         dim = self.dim
@@ -808,7 +817,7 @@ class Local(object):
 
         return t2
 
-    def filter_amps(self, r1, r2):
+    def filter_amps(self, r1: Tensor, r2: Tensor):
         no = self.no
         nv = self.nv
         dim = self.dim
@@ -843,7 +852,7 @@ class Local(object):
 
         return t1, t2
 
-    def filter_res(self, r1, r2):
+    def filter_res(self, r1: Tensor, r2: Tensor):
         no = self.no
         nv = self.nv
 
@@ -868,7 +877,7 @@ class Local(object):
 
         return t1, t2
 
-    def trans_integrals(self, o, v):
+    def trans_integrals(self, o: Slice, v: Slice):
         """
         Transforming all the necessary integrals to the semi-canonical PNO basis, stored in a list with length occ*occ
  
@@ -970,7 +979,7 @@ class Local(object):
 
         print("Integrals transformed in %.3f seconds." % (time.time() - trans_intstart))
 
-    def overlaps(self, QL): 
+    def overlaps(self, QL: list):
         """
         Generating and storing overlap terms
 

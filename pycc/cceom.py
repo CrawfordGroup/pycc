@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 import time
+from typing import TYPE_CHECKING
+
 import psi4
 import pycc
 import pytest
 from pycc.data.molecules import *
 import numpy as np
 import scipy.linalg
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
+    from pycc.cchbar import cchbar
 
 class cceom(object):
     """
@@ -34,7 +42,7 @@ class cceom(object):
         Build the doubles components of the sigma = C * HBAR vector
     """
 
-    def __init__(self, ccwfn, cchbar):
+    def __init__(self, ccwfn: "ccwfn", cchbar: "cchbar") -> None:
         """
         Parameters
         ----------
@@ -61,7 +69,7 @@ class cceom(object):
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
-    def solve_eom(self, N=1, e_conv=1e-5, r_conv=1e-5, maxiter=100, guess='HBAR_SS', eom_type = 'RIGHT'):
+    def solve_eom(self, N: int = 1, e_conv: float = 1e-5, r_conv: float = 1e-5, maxiter: int = 100, guess: str = 'HBAR_SS', eom_type: str = 'RIGHT'):
         """
         Solves the left and right-hand EOM-CC eigenvalue problem using the Davidson algorithm
 

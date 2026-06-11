@@ -2,13 +2,21 @@
 ccdensity.py: Builds the CC density.
 """
 
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 import time
+from typing import TYPE_CHECKING
+
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
-from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc 
+from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
+    from pycc.cclambda import cclambda
 
 class ccdensity(object):
     """
@@ -45,7 +53,7 @@ class ccdensity(object):
     compute_onepdm() :
         Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
-    def __init__(self, ccwfn, cclambda, onlyone=False):
+    def __init__(self, ccwfn: "ccwfn", cclambda: "cclambda", onlyone: bool = False) -> None:
         """
         Parameters
         ----------
@@ -96,7 +104,7 @@ class ccdensity(object):
 
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
-    def compute_energy(self):
+    def compute_energy(self) -> float:
         """
         Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
 
