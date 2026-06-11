@@ -8,6 +8,7 @@ import numpy as np
 from opt_einsum import contract
 
 from pycc._typing import Slice, Tensor
+from pycc.exceptions import InvalidKeywordError
 
 if TYPE_CHECKING:
     from pycc.hamiltonian import Hamiltonian
@@ -99,7 +100,8 @@ class Local(object):
         elif self.local.upper() in ["CPNO++"]:
             self._build_cPNOpp()
         else:
-            raise Exception("Not a valid local type!")
+            raise InvalidKeywordError('local', self.local,
+                                      ['PNO', 'PAO', 'PNO++', 'CPNO++'])
 
     def _build_PAO(self):
         """

@@ -26,6 +26,7 @@ from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
 from ._typing import Tensor
+from .exceptions import InvalidKeywordError
 
 try:
     import einsums as ein
@@ -93,7 +94,7 @@ class ccwfn(object):
         valid_cc_models = ['CCD', 'CC2', 'CCSD', 'CCSD(T)', 'CC3']
         model = kwargs.pop('model','CCSD').upper()
         if model not in valid_cc_models:
-            raise Exception("%s is not an allowed CC model." % (model))
+            raise InvalidKeywordError('model', model, valid_cc_models)
         self.model = model
 
         # models requiring singles
@@ -109,30 +110,29 @@ class ccwfn(object):
 
         valid_local_models = [None, 'PNO', 'PAO','CPNO++','PNO++']
         local = kwargs.pop('local', None)
-        # TODO: case-protect this kwarg
+        if isinstance(local, str):
+            local = local.upper()
         if local not in valid_local_models:
-            raise Exception("%s is not an allowed local-CC model." % (local))
+            raise InvalidKeywordError('local', local, valid_local_models)
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
 
         valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
-        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY')
+        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY').upper()
         if local_MOs not in valid_local_MOs:
-            raise Exception("%s is not an allowed MO localization method." % (local_MOs))
+            raise InvalidKeywordError('local_mos', local_MOs, valid_local_MOs)
         self.local_MOs = local_MOs
 
         valid_it2_opt = [True,False]
         it2_opt = kwargs.pop('it2_opt', True)
-        # TODO: case-protect this kwarg
         if it2_opt not in valid_it2_opt:
-            raise Exception("%s is not an allowed initial t2 amplitudes." % (it2_opt))
+            raise InvalidKeywordError('it2_opt', it2_opt, valid_it2_opt)
         self.it2_opt = it2_opt
 
         valid_filter = [True,False]
-        # TODO: case-protect this kwarg
         filter = kwargs.pop('filter', False)
         if filter not in valid_filter:
-            raise Exception("%s is not an allowed local filter." % (filter))
+            raise InvalidKeywordError('filter', filter, valid_filter)
         self.filter = filter
 
         self.ref = scf_wfn
@@ -219,13 +219,13 @@ class ccwfn(object):
         valid_precision = ['SP', 'DP']
         precision = kwargs.pop('precision', 'DP')
         if precision.upper() not in valid_precision:
-            raise Exception('%s is not an allowed precision arithmetic.' % (precision))
+            raise InvalidKeywordError('precision', precision, valid_precision)
         self.precision = precision.upper()
 
         valid_device = ['CPU', 'GPU']
         device = kwargs.pop('device', 'CPU')
         if device.upper() not in valid_device:
-            raise Exception("%s is not an allowed device." % (device))
+            raise InvalidKeywordError('device', device, valid_device)
         self.device = device.upper()
         if self.device == 'GPU' and HAS_TORCH == False:
             self.device = 'CPU'
