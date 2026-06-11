@@ -351,7 +351,7 @@ class cceom(object):
         s2 -= contract('miea,mbje->ijab', C2, hbar.Hovov)
 
         return (s2 + s2.swapaxes(0,1).swapaxes(2,3)).copy()
-    
+
 
     def build_Goo(self, t2, l2):
         contract = self.contract
@@ -359,7 +359,7 @@ class cceom(object):
 
 
     def build_Gvv(self, t2, l2):
-        contract = self.contract 
+        contract = self.contract
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
@@ -379,10 +379,9 @@ class cceom(object):
             the singles components of sigma
         """
         contract = hbar.contract
-        #s1 = 2.0 * hbar.Hov.copy()
 
         s1 = contract('ie,ea->ia', C1, hbar.Hvv)
-        s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)          
+        s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)
         s1 = s1 + contract('imef,efam->ia', C2, hbar.Hvvvo)
         s1 = s1 - contract('mnae,iemn->ia', C2, hbar.Hovoo)
         s1 = s1 + contract('me,ieam->ia', C1, (2.0 * hbar.Hovvo - hbar.Hovov.swapaxes(2,3)))
@@ -413,7 +412,6 @@ class cceom(object):
         t2 = hbar.ccwfn.t2
         o = hbar.o
         v = hbar.v
-        #s2 = L[o,o,v,v].copy()
 
         s2 = 2.0 * contract('ia,jb->ijab', C1, hbar.Hov)
         s2 = s2 - contract('ja,ib->ijab', C1, hbar.Hov)
