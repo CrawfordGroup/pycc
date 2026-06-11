@@ -199,6 +199,24 @@ class lccwfn(object):
         return r1, r2   
 
     def build_Fae(self, Fae_ij, L, Fvv, Fov, Sijmm, Sijmn, t1, t2):
+        """Build the local F_ae one-body intermediate, one block per pair.
+
+        Returns
+        -------
+        list of ndarray, length no*no
+            Fae_ij[ij] has shape (dim[ij], dim[ij]) and is indexed [a, e] in
+            pair ij's local virtual basis. Fvv[ij] is the pair-projected Fock
+            vv block; Sijmm/Sijmn project amplitudes from their native pair
+            domains into pair ij.
+
+        Notes
+        -----
+        Local analog of the canonical F_ae (repeated indices summed; CCD keeps
+        only the f_ae and final t2 terms, all others are singles terms)::
+
+            F_ae = f_ae - 1/2 f_me t_ma + t_mf L_mafe
+                        - (t2_mnaf + 1/2 t_ma t_nf) L_mnef
+        """
         #self.fae_t.start()
         o = self.o
         v = self.v
@@ -259,6 +277,24 @@ class lccwfn(object):
         return Fae_ij
 
     def build_Fmi(self, o, F, L, Fov, Looov, Loovv, t1, t2):
+        """Build the local F_mi one-body intermediate.
+
+        Returns
+        -------
+        ndarray, shape (no, no)
+            Occupied-occupied intermediate indexed [m, i]. The occupied space
+            is not localized, so this is a single full matrix rather than a
+            per-pair list; only the contracted virtual indices use the local
+            (pair-projected) integrals/amplitudes.
+
+        Notes
+        -----
+        Local analog of the canonical F_mi (repeated indices summed; CCD keeps
+        only the f_mi and final t2 terms, all others are singles terms)::
+
+            F_mi = f_mi + 1/2 t_ie f_me + t_ne L_mnie
+                        + (t2_inef + 1/2 t_ie t_nf) L_mnef
+        """
         #self.fmi_t.start()
         v = self.v
         QL = self.QL
@@ -290,6 +326,21 @@ class lccwfn(object):
         return Fmi
 
     def build_Fme(self, Fme_ij, L, Fov, t1):
+        """Build the local F_me one-body intermediate, one block per pair.
+
+        Returns
+        -------
+        list of ndarray, length no*no
+            Fme_ij[ij] has shape (no, dim[ij]) and is indexed [m, e] with e in
+            pair ij's local virtual basis. Returns None for the CCD model,
+            which has no singles.
+
+        Notes
+        -----
+        Local analog of the canonical F_me (repeated indices summed)::
+
+            F_me = f_me + t_nf L_mnef
+        """
         #self.fme_t.start()
         QL = self.QL
         v = self.v
@@ -315,6 +366,24 @@ class lccwfn(object):
         return Fme_ij
 
     def build_Wmnij(self, o, ERI, ERIooov, ERIoovo, ERIoovv, t1, t2):
+        """Build the local W_mnij two-body intermediate.
+
+        Returns
+        -------
+        ndarray, shape (no, no, no, no)
+            Intermediate indexed [m, n, i, j]. Like F_mi this is a single full
+            occupied-block tensor; only the contracted virtual indices use the
+            pair-projected integrals/amplitudes (ERIoovv[ij], etc.). ERI is in
+            Dirac order <pq|rs>.
+
+        Notes
+        -----
+        Local analog of the canonical W_mnij (repeated indices summed; CCD
+        keeps only the bare ERI and final t2 terms)::
+
+            W_mnij = <mn|ij> + t_je <mn|ie> + t_ie <mn|ej>
+                            + (t2_ijef + t_ie t_jf) <mn|ef>
+        """
         #self.wmnij_t.start()
         v = self.v
         QL = self.Local.QL
@@ -346,6 +415,21 @@ class lccwfn(object):
         return Wmnij
 
     def build_Zmbij(self, Zmbij_ij, ERI, ERIovvv, t1, t2):
+        """Build the local Z_mbij intermediate, one block per pair.
+
+        Returns
+        -------
+        list of ndarray, length no*no
+            Zmbij_ij[ij] has shape (no, dim[ij]) and is indexed [m, b] with b
+            in pair ij's local virtual basis. Returns None for the CCD model,
+            which has no singles.
+
+        Notes
+        -----
+        Local analog of the canonical Z_mbij (repeated indices summed)::
+
+            Z_mbij = <mb|ef> (t2_ijef + t_ie t_jf)
+        """
         #self.zmbij_t.start()
         o = self.o
         v = self.v
@@ -375,6 +459,25 @@ class lccwfn(object):
         return Zmbij_ij
 
     def build_Wmbej(self, Wmbej_ijim, ERI, L, ERIoovo, Sijnn, Sijnj, Sijjn, t1, t2):
+        """Build the local W_mbej two-body intermediate.
+
+        Returns
+        -------
+        list of ndarray, length no*no*no
+            Indexed by the flattened (ij, m) pair-orbital label ij*no + m.
+            Each block has shape (dim[ij], dim[im]) and is indexed [b, e] with
+            b in pair ij's domain and e in pair im's domain. The Sij** overlaps
+            project the n-summed amplitudes between domains.
+
+        Notes
+        -----
+        Local analog of the canonical W_mbej (repeated indices summed; CCD
+        keeps only the bare ERI and the two final t2 terms)::
+
+            W_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
+                            - (1/2 t2_jnfb + t_jf t_nb) <mn|ef>
+                            + 1/2 t2_njfb L_mnef
+        """
         #self.wmbej_t.start()
         v = self.v
         o = self.o
@@ -454,6 +557,27 @@ class lccwfn(object):
         return Wmbej_ijim
 
     def build_Wmbje(self, Wmbje_ijim, Wmbie_ijmj, ERI, ERIooov, Sijnn, Sijin, Sijjn, t1, t2):
+        """Build the local W_mbje intermediate and its W_mbie permutation partner.
+
+        Returns
+        -------
+        Wmbje_ijim : list of ndarray, length no*no*no
+            Indexed by the flattened (ij, m) label ij*no + m; each block has
+            shape (dim[ij], dim[im]), indexed [b, e].
+        Wmbie_ijmj : list of ndarray, length no*no*no
+            The i<->j permutation partner needed by r_T2; each block has shape
+            (dim[ij], dim[mj]), indexed [b, e]. Built alongside W_mbje so the
+            shared n-sum and integral transforms are reused.
+
+        Notes
+        -----
+        Local analog of the canonical W_mbje (repeated indices summed; CCD
+        keeps only the bare ERI and final t2 term). W_mbie is the same
+        expression with i and j exchanged::
+
+            W_mbje = -<mb|je> - t_jf <mb|fe> + t_nb <mn|je>
+                             + (1/2 t2_jnfb + t_jf t_nb) <mn|fe>
+        """
         #self.wmbje_t.start()
         o = self.o
         v = self.v
@@ -469,8 +593,8 @@ class lccwfn(object):
                     im = i*self.no + m
                     mj = m*self.no + j
 
-                    Wmbje = np.zeros(dim[ij],dim[im])
-                    Wmbie = np.zeros(dim[ij],dim[mj])
+                    Wmbje = np.zeros((dim[ij],dim[im]))
+                    Wmbie = np.zeros((dim[ij],dim[mj]))
 
                     tmp = QL[ij].T @ ERI[m,v,j,v]
                     tmp_mj = QL[ij].T @ ERI[m,v,i,v]
@@ -505,8 +629,8 @@ class lccwfn(object):
                     im = i*self.no + m
                     mj = m*self.no + j
 
-                    Wmbje = np.zeros(dim[ij],dim[im])
-                    Wmbie = np.zeros(dim[ij],dim[mj])
+                    Wmbje = np.zeros((dim[ij],dim[im]))
+                    Wmbie = np.zeros((dim[ij],dim[mj]))
 
                     tmp = QL[ij].T @ ERI[m,v,j,v]
                     tmp_mj = QL[ij].T @ ERI[m,v,i,v]
@@ -557,6 +681,28 @@ class lccwfn(object):
         return Wmbje_ijim, Wmbie_ijmj
 
     def r_T1(self, r1_ii, Fov , ERI, L, Loovo, Sijmm, Sijim, Sijmn, t1, t2, Fae, Fmi, Fme):
+        """Compute the local T1 (singles) amplitude residual, one vector per orbital.
+
+        solve_lcc drives this residual to zero. Fae/Fmi/Fme are the precomputed
+        local one-body intermediates; the Sij** overlaps project amplitudes
+        from their native pair domains into pair ii.
+
+        Returns
+        -------
+        list of ndarray, length no
+            r1_ii[i] has shape (dim[ii],) and is indexed [a] in pair ii's local
+            virtual basis. Returns zeros for CCD (no singles).
+
+        Notes
+        -----
+        Local analog of the canonical T1 residual (repeated indices summed)::
+
+            r_t1_ia = f_ia + t_ie F_ae - F_mi t_ma
+                    + (2 t2_imae - t2_imea) F_me
+                    + t_nf L_nafi
+                    + (2 t2_mief - t2_mife) <ma|ef>
+                    - t2_mnae L_nmei
+        """
         #self.r1_t.start()
         v = self.v
         QL = self.QL
@@ -612,6 +758,37 @@ class lccwfn(object):
         return r1_ii
 
     def r_T2(self,r2_ij, ERI, ERIoovv, ERIvvvv, ERIovoo, Sijmm, Sijim, Sijmj, Sijnn, Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie):
+        """Compute the local T2 (doubles) amplitude residual, one block per pair.
+
+        solve_lcc drives this residual to zero. The per-pair "half" residual
+        nr2[ij] is built first, then symmetrized on return as
+        r2_ij[ij] = nr2[ij] + nr2[ji].T (the i<->j / a<->b permutation).
+        Fae/Fmi/Fme, Wmnij/Zmbij/Wmbej/Wmbje/Wmbie are the precomputed local
+        intermediates; the Sij** overlaps project amplitudes between pair
+        domains. CCD drops the singles terms.
+
+        Returns
+        -------
+        list of ndarray, length no*no
+            r2_ij[ij] has shape (dim[ij], dim[ij]) and is indexed [a, b] in
+            pair ij's local virtual basis.
+
+        Notes
+        -----
+        Local analog of the canonical T2 half residual, before the
+        i<->j / a<->b symmetrization (repeated indices summed; W_mbie is the
+        i<->j partner of W_mbje)::
+
+            r_t2_ijab = 1/2 <ij|ab>
+                      + t2_ijae F_be  - 1/2 t2_ijae t_mb F_me
+                      - t2_imab F_mj  - 1/2 t2_imab t_je F_me
+                      + 1/2 tau_mnab W_mnij + 1/2 tau_ijef <ab|ef>
+                      - t_ma Z_mbij
+                      + (t2_imae - t2_imea) W_mbej
+                      + t2_imae (W_mbej + W_mbje) + t2_mjae W_mbie
+                      - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
+                      + t_ie <ab|ej> - t_ma <mb|ij>
+        """
         #self.r2_t.start()
         v = self.v
         QL = self.QL
@@ -625,7 +802,7 @@ class lccwfn(object):
                 ii = i*self.no + i
                 jj = j*self.no + j
 
-                r2 = np.zeros(dim[ij],dim[ij])
+                r2 = np.zeros((dim[ij],dim[ij]))
 
                 r2 = 0.5 * ERIoovv[ij][i,j]
                 r2 += t2[ij] @ Fae[ij].T
@@ -667,7 +844,7 @@ class lccwfn(object):
                 ii = i*self.no + i
                 jj = j*self.no + j
 
-                r2 = np.zeros(dim[ij],dim[ij])
+                r2 = np.zeros((dim[ij],dim[ij]))
 
                 r2 = 0.5 * ERIoovv[ij][i,j].copy()
                 r2 += t2[ij] @ Fae[ij].T
@@ -749,6 +926,18 @@ class lccwfn(object):
         return r2_ij
 
     def lcc_energy(self, Fov, Loovv, t1, t2):
+        """Compute the local CC correlation energy from the current amplitudes.
+
+        Returns
+        -------
+        float
+            The local CC correlation energy, summed over pairs ij with each
+            term contracted in pair ij's local virtual basis (repeated indices
+            summed)::
+
+                CCD:   E = t2_ijab L_ijab
+                else:  E = 2 f_ia t_ia + (t2_ijab + t_ia t_jb) L_ijab
+        """
         #self.energy_t.start()
         QL = self.QL
         v = self.v

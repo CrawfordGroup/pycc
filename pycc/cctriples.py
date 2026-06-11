@@ -3,10 +3,34 @@
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
 
-# Various triples drivers; useful for (T) corrections and CC3
+"""Various triples drivers; useful for (T) corrections and CC3.  Each driver
+returns batches of triples amplitudes corresponding to the general expression:
+
+    t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ]/D_ijkabc
+
+Here the W quantity is either a two-electron integral <pq|rs> or a dressed
+intermediate (e.g., T1-similarity-transformed integrals) depending on the
+desired target.
+"""
 
 def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
+    """Build the T3 amplitudes in batches for fixed i,j,k indices.
 
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (nv, nv, nv)
+
+    Notes
+    -----
+    General expression:
+
+    t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ]/D_ijkabc
+
+    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
+    intermediate (e.g., T1-similarity-transformed integrals) depending on the
+    desired target.
+
+    """
     t3 = contract('bae,ce->abc', Wvvvo[:,:,:,i], t2[k,j])
     t3 += contract('cae,be->abc', Wvvvo[:,:,:,i], t2[j,k])
     t3 += contract('ace,be->abc', Wvvvo[:,:,:,k], t2[j,i])
@@ -36,6 +60,23 @@ def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
 
 def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
+    """Build the T3 amplitudes in batches for fixed a,b,c indices.
+
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (no, no, no)
+
+    Notes
+    -----
+    General expression:
+
+    t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ]/D_ijkabc
+
+    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
+    intermediate (e.g., T1-similarity-transformed integrals) depending on the
+    desired target.
+
+    """
     t3 = contract('ei,kje->ijk', Wvvvo[b,a], t2[:,:,c])
     t3 += contract('ei,jke->ijk', Wvvvo[c,a], t2[:,:,b])
     t3 += contract('ek,jie->ijk', Wvvvo[a,c], t2[:,:,b])
@@ -66,6 +107,25 @@ def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
 
 def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
+    """Build the disconnected contributions to the T3 amplitudes in batches
+    for fixed i,j,k indices.
+
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (nv, nv, nv)
+
+    Notes
+    -----
+    General expression:
+
+    t3_ijkabc = W_ijab t1_kc + W_ikac t1_jb + W_jkbc t1_ia +
+                t2_ijab F_kc + t2_ikac F_jb + t2_jkbc F_ia
+
+    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
+    intermediate (e.g., T1-similarity-transformed integrals) depending on the
+    desired target.
+
+    """
     t3 = contract('ab,c->abc', Woovv[i,j], t1[k])
     t3 += contract('ac,b->abc', Woovv[i,k], t1[j])
     t3 += contract('bc,a->abc', Woovv[j,k], t1[i])
@@ -83,6 +143,25 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
         return t3
 
 def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
+    """Build the disconnected contributions to the T3 amplitudes in batches
+    for fixed a,b,c indices.
+
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (no, no, no)
+
+    Notes
+    -----
+    General expression:
+
+    t3_ijkabc = W_ijab t1_kc + W_ikac t1_jb + W_jkbc t1_ia +
+                t2_ijab F_kc + t2_ikac F_jb + t2_jkbc F_ia
+
+    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
+    intermediate (e.g., T1-similarity-transformed integrals) depending on the
+    desired target.
+
+    """
     t3 = contract('ij,k->ijk', Woovv[:,:,a,b], t1[:,c])
     t3 += contract('ik,j->ijk', Woovv[:,:,a,c], t1[:,b])
     t3 += contract('jk,i->ijk', Woovv[:,:,b,c], t1[:,a])
@@ -104,6 +183,14 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn):
+    """Compute the (T) energy correction using the efficient formulation by Rendell
+    and Lee, Chem. Phys. Lett. 178, 462-470 (1991).
+
+    Returns
+    -------
+    float
+
+    """
     contract = ccwfn.contract
     if ccwfn.einsums:
         contract = ccwfn.ec.contract
@@ -157,6 +244,16 @@ def t_tjl(ccwfn):
 
 # Vikings' formulation
 def t_vikings(ccwfn):
+    """Compute the (T) energy correction using the formulation by Helgaker,
+    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
+    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
+    batches triples oveer fixed i,j,k indices.
+
+    Returns
+    -------
+    float
+
+    """
     contract = ccwfn.contract
     if ccwfn.einsums:
         contract = ccwfn.ec.contract
@@ -188,7 +285,6 @@ def t_vikings(ccwfn):
                 X2[i,j] += contract('abc,dbc->ad', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,k,v,v])
                 X2[i] -= contract('abc,lc->lab', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[j,k,o,v])
 
-#                contract = ccwfn.contract
                 X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), F[k,v])
 
     if ccwfn.einsums:
@@ -202,6 +298,16 @@ def t_vikings(ccwfn):
 
 # Vikings' formulation – inverted algorithm
 def t_vikings_inverted(ccwfn):
+    """Compute the (T) energy correction using the formulation by Helgaker,
+    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
+    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
+    batches triples oveer fixed a,b,c indices.
+
+    Returns
+    -------
+    float
+
+    """
     contract = ccwfn.contract
     if ccwfn.einsums:
         contract = ccwfn.ec.contract
@@ -229,7 +335,6 @@ def t_vikings_inverted(ccwfn):
                 X2[a] += contract('ijk,dk->dij', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,o,b+no,c+no])
                 X2[a,b] -= contract('ijk,jkl->il', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[o,o,o,c+no])
 
-#                contract = ccwfn.contract
                 X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), F[o,c+no])
 
     if ccwfn.einsums:
