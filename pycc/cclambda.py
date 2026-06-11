@@ -15,6 +15,8 @@ import numpy as np
 from opt_einsum import contract
 from .utils import helper_diis
 from pycc.ccwfn import HAS_TORCH
+if HAS_TORCH:
+    import torch
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
 
 if TYPE_CHECKING:

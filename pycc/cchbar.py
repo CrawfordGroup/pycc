@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
+if HAS_TORCH:
+    import torch
 
 if TYPE_CHECKING:
     from pycc.ccwfn import ccwfn

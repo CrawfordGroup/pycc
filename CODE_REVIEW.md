@@ -109,6 +109,16 @@ Sphinx docs. As a research scaffold it's in good shape.
 
 ### Real bugs
 
+- **Six modules use `torch.*` without importing it** (`utils.py`, `ccdensity.py`,
+  `cchbar.py`, `cclambda.py`, `cctriples.py`, `rt/rtcc.py`). Each does
+  `from pycc.ccwfn import HAS_TORCH` but never `import torch`, then references `torch`
+  inside `if HAS_TORCH and isinstance(x, torch.Tensor):` guards. Latent for the same
+  reason as the others: with torch absent the guard is never entered, so the no-torch CI
+  never hit it. The moment torch is installed, `helper_diis.__init__` (`utils.py:8`, on
+  every solve's DIIS path) raises `NameError: name 'torch' is not defined` → **37 of the
+  non-slow tests fail**. **[FIXED 2026-06-11]** — added a guarded `if HAS_TORCH: import
+  torch` after the `HAS_TORCH` import in each module. **Found by the new CPU-torch CI
+  lane on its first run** (PR #99) — exactly the class of bug that lane exists to catch.
 - **`ccwfn.py:640` — `torch.zero_like(t1)` is not a function** (should be `torch.zeros_like`).
   On the GPU CCD residual path, latent until someone runs CCD on a Torch tensor → `AttributeError`.
   **[FIXED 2026-06-10]**

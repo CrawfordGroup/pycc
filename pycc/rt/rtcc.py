@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 import psi4
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
+if HAS_TORCH:
+    import torch
 import pickle as pk
 from os.path import exists
 import opt_einsum
