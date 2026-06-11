@@ -1,7 +1,17 @@
+from __future__ import annotations
+
 import time
 #from timer import Timer
+from typing import TYPE_CHECKING
+
 import numpy as np
 from opt_einsum import contract
+
+from pycc._typing import Slice, Tensor
+
+if TYPE_CHECKING:
+    from pycc.hamiltonian import Hamiltonian
+    from pycc.local import Local as LocalObj
 
 
 class lccwfn(object):
@@ -46,7 +56,7 @@ class lccwfn(object):
     (2) time table for each intermediate?
     """
 
-    def __init__(self, o, v, no, nv, H, local, model, eref, Local):
+    def __init__(self, o: Slice, v: Slice, no: int, nv: int, H: "Hamiltonian", local: str, model: str, eref: float, Local: "LocalObj") -> None:
         self.o = o
         self.v = v
         self.no = no
@@ -77,7 +87,7 @@ class lccwfn(object):
         self.t1 = t1
         self.t2 = t2
 
-    def solve_lcc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8,start_diis=1):
+    def solve_lcc(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> float:
         """
         Parameters
         ----------

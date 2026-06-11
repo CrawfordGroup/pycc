@@ -2,12 +2,23 @@
 rtcc.py: Real-time coupled object that provides data for an ODE propagator
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 import psi4
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
 import pickle as pk
 from os.path import exists
 import opt_einsum
+
+from pycc._typing import Tensor
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
+    from pycc.cclambda import cclambda
+    from pycc.ccdensity import ccdensity
 
 
 class rtcc(object):
@@ -55,7 +66,7 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn, cclambda, ccdensity, V, magnetic = False, kick = None):
+    def __init__(self, ccwfn: "ccwfn", cclambda: "cclambda", ccdensity: "ccdensity", V: Tensor, magnetic: bool = False, kick: Any = None) -> None:
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
@@ -98,7 +109,7 @@ class rtcc(object):
         else:
             self.magnetic = False
 
-    def f(self, t, y):
+    def f(self, t: float, y: Tensor) -> Tensor:
         """
         Parameters
         ----------
@@ -207,7 +218,7 @@ class rtcc(object):
 
         return t1, t2, l1, l2, phase
 
-    def dipole(self, t1, t2, l1, l2, magnetic = False, real_time=False):
+    def dipole(self, t1: Tensor, t2: Tensor, l1: Tensor, l2: Tensor, magnetic: bool = False, real_time: bool = False):
         """
         Parameters
         ----------
@@ -358,7 +369,7 @@ class rtcc(object):
 
         return (eref + ecc) * (-1.0j)
 
-    def autocorrelation(self, y_left, y_right):
+    def autocorrelation(self, y_left: Tensor, y_right: Tensor):
         """
         Parameters
         ----------
@@ -436,8 +447,8 @@ class rtcc(object):
             ret['m_z'] = m_z
         return y,ret
 
-    def propagate(self, ODE, yi, tf, ti=0, ref=False, chk=False, tchk=False,
-                  ofile="output.pk",tfile="t_out.pk",cfile="chk.pk",k=2):
+    def propagate(self, ODE: Any, yi: Tensor, tf: float, ti: float = 0, ref: bool = False, chk: bool = False, tchk: bool = False,
+                  ofile: str = "output.pk", tfile: str = "t_out.pk", cfile: str = "chk.pk", k: int = 2):
         """
         Propagate the function yi from time ti to time tf
 

@@ -2,6 +2,8 @@
 ccwfn.py: CC T-amplitude Solver
 """
 
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
@@ -16,11 +18,14 @@ try:
 except ImportError:
     HAS_TORCH = False
 
+from typing import Any
+
 from .utils import helper_diis, cc_contract
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
+from ._typing import Tensor
 
 try:
     import einsums as ein
@@ -71,7 +76,7 @@ class ccwfn(object):
         Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
-    def __init__(self, scf_wfn, **kwargs):
+    def __init__(self, scf_wfn: Any, **kwargs) -> None:
         """
         Parameters
         ----------
@@ -287,7 +292,7 @@ class ccwfn(object):
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
 
-    def solve_cc(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+    def solve_cc(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> float:
         """
         Parameters
         ----------

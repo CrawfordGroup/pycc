@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
+
+from typing import Any
 
 import psi4
 import numpy as np
@@ -23,7 +27,7 @@ class Hamiltonian(object):
     m : NumPy array
         MO-basis magnetic dipole integrals
     """
-    def __init__(self, ref, Cp, Cr, Cq, Cs):
+    def __init__(self, ref: Any, Cp: Any, Cr: Any, Cq: Any, Cs: Any) -> None:
 
         npCp = np.asarray(Cp)
         npCr = np.asarray(Cr)

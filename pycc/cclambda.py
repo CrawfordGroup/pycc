@@ -2,16 +2,24 @@
 cclambda.py: Lambda-amplitude Solver
 """
 
+from __future__ import annotations
+
 if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 
-import numpy as np
 import time
+from typing import TYPE_CHECKING
+
+import numpy as np
 from opt_einsum import contract
 from .utils import helper_diis
 from pycc.ccwfn import HAS_TORCH
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
+
+if TYPE_CHECKING:
+    from pycc.ccwfn import ccwfn
+    from pycc.cchbar import cchbar
 
 
 class cclambda(object):
@@ -36,7 +44,7 @@ class cclambda(object):
     residuals()
         Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
-    def __init__(self, ccwfn, hbar):
+    def __init__(self, ccwfn: "ccwfn", hbar: "cchbar") -> None:
         """
         Parameters
         ----------
@@ -57,7 +65,7 @@ class cclambda(object):
         self.l1 = 2.0 * self.ccwfn.t1
         self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
-    def solve_lambda(self, e_conv=1e-7, r_conv=1e-7, maxiter=100, max_diis=8, start_diis=1):
+    def solve_lambda(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> float:
         """
         Parameters
         ----------
