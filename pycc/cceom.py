@@ -9,6 +9,7 @@ import pytest
 from pycc.data.molecules import *
 import numpy as np
 import scipy.linalg
+from pycc.exceptions import InvalidKeywordError
 
 if TYPE_CHECKING:
     from pycc.ccwfn import ccwfn
@@ -120,7 +121,7 @@ class cceom(object):
         valid_guesses = ['UNIT', 'CIS', 'HBAR_SS']
         guess = guess.upper()
         if guess not in valid_guesses:
-            raise Exception("%s is not a valid choice of initial guess vectors." % (guess))
+            raise InvalidKeywordError('guess', guess, valid_guesses)
         _, C1 = self.guess(M, guess)
         # Store guess vectors as rows of a matrix
         C = np.hstack((np.reshape(C1, (M, s1_len)), np.zeros((M, s2_len))))
