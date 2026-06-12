@@ -21,7 +21,7 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, cc_contract
+from .utils import helper_diis, cc_contract, zeros_like
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
@@ -444,12 +444,8 @@ class ccwfn(object):
             Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
             Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
 
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                X1 = torch.zeros_like(t1)
-                X2 = torch.zeros_like(t2)
-            else:
-                X1 = np.zeros_like(t1)
-                X2 = np.zeros_like(t2)
+            X1 = zeros_like(t1)
+            X2 = zeros_like(t2)
 
             contract = self.contract
             for i in range(no):
@@ -790,10 +786,7 @@ class ccwfn(object):
             contract = self.ec.contract
 
         if self.model == 'CCD':
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                r_T1 = torch.zeros_like(t1)
-            else:
-                r_T1 = np.zeros_like(t1)
+            r_T1 = zeros_like(t1)
         else:
             if HAS_TORCH and isinstance(t1, torch.Tensor):
                 r_T1 = F[o,v].clone()
