@@ -15,7 +15,7 @@ from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
 from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc
-from .utils import zeros, zeros_like
+from .utils import zeros, zeros_like, clone
 
 if TYPE_CHECKING:
     from pycc.ccwfn import ccwfn
@@ -248,20 +248,14 @@ class ccdensity(object):
 
 
     def build_Dvo(self, l1):  # complete
-        if HAS_TORCH and isinstance(l1, torch.Tensor):
-            return l1.T.clone()
-        else:
-            return l1.T.copy()
+        return clone(l1.T)
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dov = zeros_like(t1)
         else:
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                Dov = 2.0 * t1.clone()
-            else:
-                Dov = 2.0 * t1.copy()
+            Dov = 2.0 * clone(t1)
 
             Dov += 2.0 * contract('me,imae->ia', l1, t2)
             Dov -= contract('me,miae->ia', l1, self.ccwfn.build_tau(t1, t2))
@@ -292,10 +286,7 @@ class ccdensity(object):
                     # Dov_1
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                     if real_time is True:
-                        if HAS_TORCH and isinstance(t1, torch.Tensor):
-                            V = F - self.ccwfn.H.F.clone()
-                        else:
-                            V = F - self.ccwfn.H.F.copy()
+                        V = F - clone(self.ccwfn.H.F)
                         t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
                     Dov[i] +=  contract('abc,bc->a', t3 - t3.swapaxes(0,1), l2[j,k])
         # Dov_2
@@ -310,10 +301,7 @@ class ccdensity(object):
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
                 if real_time is True:
-                    if HAS_TORCH and isinstance(t2, torch.Tensor):
-                        V = F - self.ccwfn.H.F.clone()
-                    else:
-                        V = F - self.ccwfn.H.F.copy()
+                    V = F - clone(self.ccwfn.H.F)
                     t3 -= t3_pert_bc(o, v, b, c, t2, V, F, contract)
                 l3 = l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
                 Doo -= 0.5 * contract('lmia,lmja->ij', t3, l3)        
@@ -330,10 +318,7 @@ class ccdensity(object):
                 for k in range(no):
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                     if real_time is True:
-                        if HAS_TORCH and isinstance(t2, torch.Tensor):
-                            V = F - self.ccwfn.H.F.clone()
-                        else:
-                            V = F - self.ccwfn.H.F.copy()
+                        V = F - clone(self.ccwfn.H.F)
                         t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
                     l3 = l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
                     Dvv += 0.5 * contract('bdc,adc->ab', t3, l3)
@@ -588,20 +573,14 @@ class ccdensity(object):
     # T1-transformed dipole integrals needed in CC3
     def build_Moo(self, no, nv, ints, t1):
         contract = self.contract
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            Moo = ints[:no,:no].clone()
-        else:
-            Moo = ints[:no,:no].copy()
+        Moo = clone(ints[:no,:no])
         Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
 
         return Moo
 
     def build_Mvv(self, no, nv, ints, t1):
         contract = self.contract
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            Mvv = ints[-nv:,-nv:].clone()
-        else:
-            Mvv = ints[-nv:,-nv:].copy()
+        Mvv = clone(ints[-nv:,-nv:])
         Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
 
         return Mvv

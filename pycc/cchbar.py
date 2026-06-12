@@ -15,6 +15,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
+from pycc.utils import clone
 
 if TYPE_CHECKING:
     from pycc.ccwfn import ccwfn
@@ -112,15 +113,9 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hov = F[o,v].clone()
-            else:
-                Hov = F[o,v].copy()
+            Hov = clone(F[o,v])
         else:
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hov = F[o,v].clone()
-            else:
-                Hov = F[o,v].copy()
+            Hov = clone(F[o,v])
             Hov = Hov + contract('nf,mnef->me', t1, L[o,o,v,v])
         return Hov
 
@@ -143,17 +138,11 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hvv = F[v,v].clone()
-            else:
-                Hvv = F[v,v].copy()
+            Hvv = clone(F[v,v])
             Hvv = Hvv - contract('mnfa,mnfe->ae', t2, L[o,o,v,v])
 
         else:
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hvv = F[v,v].clone()
-            else:
-                Hvv = F[v,v].copy()
+            Hvv = clone(F[v,v])
             Hvv = Hvv - contract('me,ma->ae', F[o,v], t1)
             Hvv = Hvv + contract('mf,amef->ae', t1, L[v,o,v,v])
             Hvv = Hvv - contract('mnfa,mnfe->ae', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
@@ -178,17 +167,11 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hoo = F[o,o].clone()
-            else:
-                Hoo = F[o,o].copy()
+            Hoo = clone(F[o,o])
             Hoo = Hoo + contract('inef,mnef->mi', t2, L[o,o,v,v])
 
         else:
-            if HAS_TORCH and isinstance(F, torch.Tensor):
-                Hoo = F[o,o].clone()
-            else:
-                Hoo = F[o,o].copy()
+            Hoo = clone(F[o,o])
             Hoo = Hoo + contract('ie,me->mi', t1, F[o,v])
             Hoo = Hoo + contract('ne,mnie->mi', t1, L[o,o,o,v])
             Hoo = Hoo + contract('inef,mnef->mi', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
@@ -212,17 +195,11 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                Hoooo = ERI[o,o,o,o].clone().to(self.ccwfn.device1)
-            else: 
-                Hoooo = ERI[o,o,o,o].copy()
+            Hoooo = clone(ERI[o,o,o,o], device=self.ccwfn.device1)
             Hoooo = Hoooo + contract('ijef,mnef->mnij', t2, ERI[o,o,v,v])
 
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hoooo = ERI[o,o,o,o].clone().to(self.ccwfn.device1)
-            else:
-                Hoooo = ERI[o,o,o,o].copy()
+            Hoooo = clone(ERI[o,o,o,o], device=self.ccwfn.device1)
             tmp = contract('je,mnie->mnij', t1, ERI[o,o,o,v])
             Hoooo = Hoooo + (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
             if self.ccwfn.model == 'CC2':
@@ -250,17 +227,11 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvvvv = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
-            else:
-                Hvvvv = ERI[v,v,v,v].copy()
+            Hvvvv = clone(ERI[v,v,v,v], device=self.ccwfn.device1)
             Hvvvv = Hvvvv + contract('mnab,mnef->abef', t2, ERI[o,o,v,v])
 
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvvvv = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
-            else:
-                Hvvvv = ERI[v,v,v,v].copy()
+            Hvvvv = clone(ERI[v,v,v,v], device=self.ccwfn.device1)
             tmp = contract('mb,amef->abef', t1, ERI[v,o,v,v])
             Hvvvv = Hvvvv - (tmp + tmp.swapaxes(0,1).swapaxes(2,3))
             if self.ccwfn.model == 'CC2':
@@ -287,15 +258,9 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvovv = ERI[v,o,v,v].clone().to(self.ccwfn.device1)
-            else:
-                Hvovv = ERI[v,o,v,v].copy()
+            Hvovv = clone(ERI[v,o,v,v], device=self.ccwfn.device1)
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvovv = ERI[v,o,v,v].clone().to(self.ccwfn.device1)
-            else:
-                Hvovv = ERI[v,o,v,v].copy()
+            Hvovv = clone(ERI[v,o,v,v], device=self.ccwfn.device1)
             Hvovv = Hvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
 
         return Hvovv
@@ -317,15 +282,9 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hooov = ERI[o,o,o,v].clone().to(self.ccwfn.device1)
-            else:
-                Hooov = ERI[o,o,o,v].copy()
+            Hooov = clone(ERI[o,o,o,v], device=self.ccwfn.device1)
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hooov = ERI[o,o,o,v].clone().to(self.ccwfn.device1)
-            else:
-                Hooov = ERI[o,o,o,v].copy()
+            Hooov = clone(ERI[o,o,o,v], device=self.ccwfn.device1)
             Hooov = Hooov + contract('if,nmef->mnie', t1, ERI[o,o,v,v])
 
         return Hooov
@@ -349,19 +308,13 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovvo = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
-            else:
-                Hovvo = ERI[o,v,v,o].copy()
+            Hovvo = clone(ERI[o,v,v,o], device=self.ccwfn.device1)
             # clean th== up
             Hovvo = Hovvo - contract('jnfb,mnef->mbej', t2, ERI[o,o,v,v])
             Hovvo = Hovvo + contract('njfb,mnef->mbej', t2, L[o,o,v,v])
 
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovvo = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
-            else:
-                Hovvo = ERI[o,v,v,o].copy()
+            Hovvo = clone(ERI[o,v,v,o], device=self.ccwfn.device1)
             Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
             Hovvo = Hovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
             if self.ccwfn.model != 'CC2':
@@ -387,16 +340,10 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovov = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
-            else:
-                Hovov = ERI[o,v,o,v].copy()
+            Hovov = clone(ERI[o,v,o,v], device=self.ccwfn.device1)
             Hovov = Hovov - contract('jnfb,nmef->mbje', t2, ERI[o,o,v,v])
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovov = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
-            else:
-                Hovov = ERI[o,v,o,v].copy()
+            Hovov = clone(ERI[o,v,o,v], device=self.ccwfn.device1)
             Hovov = Hovov + contract('jf,bmef->mbje', t1, ERI[v,o,v,v])
             Hovov = Hovov - contract('nb,mnje->mbje', t1, ERI[o,o,o,v])
             if self.ccwfn.model != 'CC2':
@@ -429,10 +376,7 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvvvo = ERI[v,v,v,o].clone().to(self.ccwfn.device1)
-            else:
-                Hvvvo = ERI[v,v,v,o].copy()
+            Hvvvo = clone(ERI[v,v,v,o], device=self.ccwfn.device1)
             Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
@@ -440,36 +384,24 @@ class cchbar(object):
             Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])
 
         elif self.ccwfn.model == 'CC2':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvvvo = ERI[v,v,v,o].clone().to(self.ccwfn.device1)  
-            else:
-                Hvvvo = ERI[v,v,v,o].copy()
+            Hvvvo = clone(ERI[v,v,v,o], device=self.ccwfn.device1)
             Hvvvo = Hvvvo - contract('me,miab->abei', self.ccwfn.H.F[o,v], t2)
             Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
             Hvvvo = Hvvvo + contract('nb,anei->abei', t1, contract('ma,mnei->anei', t1, ERI[o,o,v,o]))
             Hvvvo = Hvvvo - contract('mb,amei->abei', t1, ERI[v,o,v,o])
             Hvvvo = Hvvvo - contract('ma,bmie->abei', t1, ERI[v,o,o,v])
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hvvvo = ERI[v,v,v,o].clone().to(self.ccwfn.device1)
-            else:
-                Hvvvo = ERI[v,v,v,o].copy()
+            Hvvvo = clone(ERI[v,v,v,o], device=self.ccwfn.device1)
             Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
             Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo - contract('imfb,amef->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])   
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                tmp = ERI[v,o,v,o].clone().to(self.ccwfn.device1)
-            else: 
-                tmp = ERI[v,o,v,o].copy()
+            tmp = clone(ERI[v,o,v,o], device=self.ccwfn.device1)
             tmp = tmp - contract('infa,mnfe->amei', t2, ERI[o,o,v,v])
             Hvvvo = Hvvvo - contract('mb,amei->abei', t1, tmp)
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                tmp = ERI[v,o,o,v].clone().to(self.ccwfn.device1)
-            else:
-                tmp = ERI[v,o,o,v].copy()
+            tmp = clone(ERI[v,o,o,v], device=self.ccwfn.device1)
             tmp = tmp - contract('infb,mnef->bmie', t2, ERI[o,o,v,v])
             tmp = tmp + contract('nifb,mnef->bmie', t2, L[o,o,v,v])
             Hvvvo = Hvvvo - contract('ma,bmie->abei', t1, tmp)
@@ -503,10 +435,7 @@ class cchbar(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovoo = ERI[o,v,o,o].clone().to(self.ccwfn.device1)
-            else:
-                Hovoo = ERI[o,v,o,o].copy()
+            Hovoo = clone(ERI[o,v,o,o], device=self.ccwfn.device1)
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
             Hovoo = Hovoo + contract('ijef,mbef->mbij', t2, ERI[o,v,v,v])
             Hovoo = Hovoo - contract('ineb,nmje->mbij', t2, ERI[o,o,o,v])
@@ -514,10 +443,7 @@ class cchbar(object):
             Hovoo = Hovoo + contract('njeb,mnie->mbij', t2, L[o,o,o,v])
 
         elif self.ccwfn.model == 'CC2':
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovoo = ERI[o,v,o,o].clone().to(self.ccwfn.device1)
-            else:
-                Hovoo = ERI[o,v,o,o].copy()
+            Hovoo = clone(ERI[o,v,o,o], device=self.ccwfn.device1)
             Hovoo = Hovoo + contract('me,ijeb->mbij', self.ccwfn.H.F[o,v], t2)
             Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
             Hovoo = Hovoo + contract('jf,mbif->mbij', t1, contract('ie,mbef->mbif', t1, ERI[o,v,v,v]))
@@ -525,26 +451,17 @@ class cchbar(object):
             Hovoo = Hovoo + contract('ie,bmje->mbij', t1, ERI[v,o,o,v])     
   
         else:
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                Hovoo = ERI[o,v,o,o].clone().to(self.ccwfn.device1)
-            else:
-                Hovoo = ERI[o,v,o,o].copy()
+            Hovoo = clone(ERI[o,v,o,o], device=self.ccwfn.device1)
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
             Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
             Hovoo = Hovoo + contract('ijef,mbef->mbij', self.ccwfn.build_tau(t1, t2), ERI[o,v,v,v])
             Hovoo = Hovoo - contract('ineb,nmje->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo - contract('jneb,mnie->mbij', t2, ERI[o,o,o,v])
             Hovoo = Hovoo + contract('njeb,mnie->mbij', t2, L[o,o,o,v])
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                tmp = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
-            else:
-                tmp = ERI[o,v,o,v].copy()
+            tmp = clone(ERI[o,v,o,v], device=self.ccwfn.device1)
             tmp = tmp - contract('infb,mnfe->mbie', t2, ERI[o,o,v,v])
             Hovoo = Hovoo + contract('je,mbie->mbij', t1, tmp)
-            if HAS_TORCH and isinstance(ERI, torch.Tensor):
-                tmp = ERI[v,o,o,v].clone().to(self.ccwfn.device1)
-            else:
-                tmp = ERI[v,o,o,v].copy()
+            tmp = clone(ERI[v,o,o,v], device=self.ccwfn.device1)
             tmp = tmp - contract('jnfb,mnef->bmje', t2, ERI[o,o,v,v])
             tmp = tmp + contract('njfb,mnef->bmje', t2, L[o,o,v,v])
             Hovoo = Hovoo + contract('ie,bmje->mbij', t1, tmp)
