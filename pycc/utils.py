@@ -5,6 +5,33 @@ if HAS_TORCH:
 import opt_einsum
 
 
+def zeros_like(a):
+    """Backend-aware ``zeros_like``: ``torch.zeros_like`` for a torch tensor,
+    else ``np.zeros_like``.
+
+    Collapses the ``if HAS_TORCH and isinstance(a, torch.Tensor): ... else: ...``
+    allocation branch that recurs throughout the CC modules into a single call.
+    """
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.zeros_like(a)
+    return np.zeros_like(a)
+
+
+def zeros(shape, like):
+    """Allocate a zero tensor of ``shape`` matching ``like``'s backend/dtype/device.
+
+    Dispatches on the runtime type of ``like`` (NumPy vs torch) and inherits its
+    dtype — and, for torch, its device — so single/mixed precision and GPU
+    placement ride along automatically. Use this in place of the
+    ``zeros_like(x)`` + ``np.pad``/``torch.nn.functional.pad`` idiom when the
+    target shape mixes occupied and virtual dimensions and so is not
+    ``zeros_like`` of any single amplitude array.
+    """
+    if HAS_TORCH and isinstance(like, torch.Tensor):
+        return torch.zeros(shape, dtype=like.dtype, device=like.device)
+    return np.zeros(shape, dtype=like.dtype)
+
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
         if HAS_TORCH and isinstance(t1, torch.Tensor):
