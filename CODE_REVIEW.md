@@ -42,9 +42,13 @@ in the **Critique** section.
       only difference between the two former copies). `ccwfn.t3_density`'s flagged dead
       debug block was **already gone** (removed before this effort; the "912–958" line
       ref was stale) and the method is now a clean 86-line (T)-density kernel — dropped
-      from this item. _Still open:_ the mirror **t3** dedup in `ccwfn.py` (its `residuals`
-      vs the `solve_cc` per-iteration block), and the `ccwfn.r_T2`/`residuals` deep
-      CCD/CC2/CCSD/CC3 conditional trees.
+      from this item. A mirror **t3** dedup in `ccwfn.py` was considered but is a
+      **non-issue**: unlike `cclambda`, `ccwfn.solve_cc` already delegates to
+      `ccwfn.residuals` (it does not inline its own copy of the CC3 t3 block), so there is
+      nothing duplicated to extract. _Still open:_ the `ccwfn.r_T2` (~100-line) deep
+      CCD/CC2/CCSD/CC3 conditional tree (the genuine remaining god method); optionally,
+      pulling the single-instance CC3 t3 block out of `ccwfn.residuals` into a helper for
+      parallelism with `cclambda._cc3_lambda_triples` (readability only, not dedup).
 - [x] **Custom exception types** + `.upper()` the string kwargs — DONE. New
       `pycc/exceptions.py` with `PyCCError` base and `InvalidKeywordError(PyCCError,
       ValueError)` (carries `keyword`/`value`/`allowed`, standardized message,

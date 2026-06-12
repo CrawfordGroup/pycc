@@ -8,6 +8,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
+from pycc.utils import zeros_like, diag
 
 if TYPE_CHECKING:
     from pycc.ccwfn import ccwfn
@@ -55,12 +56,8 @@ def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
     t3 -= contract('mc,mba->abc', Wovoo[:,:,i,k], t2[j])
 
     if WithDenom is True:
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(t3)
-        else:
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(t3)
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
         denom += F[i,i] + F[j,j] + F[k,k]
         return t3/denom
@@ -102,12 +99,8 @@ def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            denom = torch.zeros_like(t3)
-        else:
-            Fo = np.diag(F)[o]
-            denom = np.zeros_like(t3)
+        Fo = diag(F)[o]
+        denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
         denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
         return t3/denom
@@ -275,12 +268,8 @@ def t_vikings(ccwfn: "ccwfn") -> float:
     L = ccwfn.H.L
     t1 = ccwfn.t1
     t2 = ccwfn.t2
-    if HAS_TORCH and isinstance(t1, torch.Tensor):
-        X1 = torch.zeros_like(ccwfn.t1)
-        X2 = torch.zeros_like(ccwfn.t2)
-    else:
-        X1 = np.zeros_like(ccwfn.t1)
-        X2 = np.zeros_like(ccwfn.t2)
+    X1 = zeros_like(ccwfn.t1)
+    X2 = zeros_like(ccwfn.t2)
 
     for i in range(no):
         for j in range(no):
@@ -402,12 +391,8 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     l3 += W
 
     if WithDenom is True:
-        if HAS_TORCH and isinstance(l2, torch.Tensor):
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(l3)
-        else:
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(l3)
+        Fv = diag(F)[v]
+        denom = zeros_like(l3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
         denom += F[i,i] + F[j,j] + F[k,k]
         return l3/denom
@@ -468,12 +453,8 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(l2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            denom = torch.zeros_like(l3)
-        else:
-            Fo = np.diag(F)[o]
-            denom = np.zeros_like(l3)
+        Fo = diag(F)[o]
+        denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
         denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
         return l3/denom
@@ -515,12 +496,8 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
     l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)
 
     if WithDenom is True:
-        if HAS_TORCH and isinstance(l2, torch.Tensor):
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(l3)
-        else:
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(l3)
+        Fv = diag(F)[v]
+        denom = zeros_like(l3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
         denom += F[i,i] + F[j,j] + F[k,k]
         return l3/denom
@@ -564,12 +541,8 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(l2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            denom = torch.zeros_like(l3)
-        else:
-            Fo = np.diag(F)[o]
-            denom = np.zeros_like(l3)
+        Fo = diag(F)[o]
+        denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
         denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
         return l3/denom
@@ -596,14 +569,9 @@ def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(t3)
-        else:
-            Fo = np.diag(F)[o]
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(t3)
+        Fo = diag(F)[o]
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
         denom -= F[b+no,b+no] + F[c+no,c+no]
@@ -665,14 +633,9 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(l2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(l3)
-        else:
-            Fo = np.diag(F)[o]
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(l3)
+        Fo = diag(F)[o]
+        Fv = diag(F)[v]
+        denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
         denom -= F[b+no,b+no] + F[c+no,c+no]
@@ -687,12 +650,8 @@ def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
     t3 = contract('al,lcb->abc', tmp, t2[k])
 
     if WithDenom is True:
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(t3)
-        else:
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(t3)
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
         denom += F[i,i] + F[j,j] + F[k,k]
         return t3/denom
@@ -705,12 +664,8 @@ def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            denom = torch.zeros_like(t3)
-        else:
-            Fo = np.diag(F)[o]
-            denom = np.zeros_like(t3)
+        Fo = diag(F)[o]
+        denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
         denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
         return t3/denom
@@ -723,14 +678,9 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
 
     if WithDenom is True:
         no = o.stop
-        if HAS_TORCH and isinstance(t2, torch.Tensor):
-            Fo = torch.diag(F)[o]
-            Fv = torch.diag(F)[v]
-            denom = torch.zeros_like(t3)
-        else:
-            Fo = np.diag(F)[o]
-            Fv = np.diag(F)[v]
-            denom = np.zeros_like(t3)
+        Fo = diag(F)[o]
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
         denom -= F[b+no,b+no] + F[c+no,c+no]

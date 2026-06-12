@@ -32,6 +32,18 @@ def zeros(shape, like):
     return np.zeros(shape, dtype=like.dtype)
 
 
+def diag(a):
+    """Backend-aware ``diag``: ``torch.diag`` for a torch tensor, else ``np.diag``.
+
+    Collapses the ``if HAS_TORCH and isinstance(a, torch.Tensor): torch.diag(a)
+    else: np.diag(a)`` branch (paired with ``zeros_like`` in the triples-denominator
+    construction throughout cctriples).
+    """
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.diag(a)
+    return np.diag(a)
+
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
         if HAS_TORCH and isinstance(t1, torch.Tensor):

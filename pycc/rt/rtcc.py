@@ -11,6 +11,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
+from pycc.utils import zeros_like
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -248,10 +249,7 @@ class rtcc(object):
             # Calculating T1-transformed dipole integral  
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                ints_cc3 = torch.zeros_like(ints)
-            else:
-                ints_cc3 = np.zeros_like(ints)
+            ints_cc3 = zeros_like(ints)
             for i in range(3):
                 if HAS_TORCH and isinstance(t1, torch.Tensor):                    
                     ints_cc3 = ints_cc3.type_as(t1)
