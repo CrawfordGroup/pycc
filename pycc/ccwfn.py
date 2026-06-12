@@ -438,47 +438,81 @@ class ccwfn(object):
         Zmbij = self.build_Zmbij(o, v, ERI, t1, t2)
 
         r1 = self.r_T1(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi)
-        r2 = self.r_T2(o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+        r2 = self.r_T2(o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
 
         if HAS_TORCH and isinstance(Fae, torch.Tensor):
             del Fae, Fmi, Wmnij, Wmbej, Wmbje, Zmbij
 
         if self.model == 'CC3':
-            Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
-            Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
-            Wmnie_cc3 = self.build_cc3_Wmnie(o, v, ERI, t1)
-            Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
-            Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
-
-            X1 = zeros_like(t1)
-            X2 = zeros_like(t2)
-
-            contract = self.contract
-            for i in range(no):
-                for j in range(no):
-                    for k in range(no):
-                        if self.einsums:
-                            contract = self.ec.contract
-                        t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
-
-                        if real_time is True:
-                            V = F - clone(self.H.F)
-                            t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
-
-                        X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
-
-                        X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
-                        X2[i] -= contract('lc,abc->lab', Wmnie_cc3[j,k], (2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)))
-                        contract = self.contract
-                        X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
-
+            X1, X2 = self._cc3_t_residual(o, v, F, ERI, L, t1, t2, Fme, real_time=real_time)
             r1 += X1
             r2 += X2 + X2.swapaxes(0,1).swapaxes(2,3)
 
-            if HAS_TORCH and isinstance(t3, torch.Tensor):
-                del Fme, Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3
+            if HAS_TORCH and isinstance(r1, torch.Tensor):
+                del Fme
 
         return r1, r2
+
+    def _cc3_t_residual(self, o, v, F, ERI, L, t1, t2, Fme, real_time=False):
+        """Compute the CC3 connected-triples contributions (X1, X2) to the T residuals.
+
+        Builds the T1-dressed CC3 W-intermediates, then accumulates the connected
+        triples' contribution to the T1 and T2 residuals. Single-instance helper
+        that parallels cclambda._cc3_lambda_triples (the t3 side of the l3 work).
+
+        Parameters
+        ----------
+        o, v : slice
+            occupied/virtual orbital slices
+        F, ERI, L : ndarray or torch.Tensor
+            Fock matrix, two-electron integrals, and L = 2*ERI - ERI.swapaxes
+        t1, t2 : ndarray or torch.Tensor
+            current T1/T2 amplitudes
+        Fme : ndarray or torch.Tensor
+            the one-body H_me intermediate (already built by residuals)
+        real_time : bool
+            if True, subtract the explicit time-dependent perturbation from the
+            connected triples (real-time CC3 path)
+
+        Returns
+        -------
+        X1, X2 : ndarray or torch.Tensor
+            the CC3 triples contributions to the T1 and T2 residuals
+        """
+        no = self.no
+
+        Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
+        Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
+        Wmnie_cc3 = self.build_cc3_Wmnie(o, v, ERI, t1)
+        Wamef_cc3 = self.build_cc3_Wamef(o, v, ERI, t1)
+        Wabei_cc3 = self.build_cc3_Wabei(o, v, ERI, t1)
+
+        X1 = zeros_like(t1)
+        X2 = zeros_like(t2)
+
+        contract = self.contract
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    if self.einsums:
+                        contract = self.ec.contract
+                    t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
+
+                    if real_time is True:
+                        V = F - clone(self.H.F)
+                        t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
+
+                    X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
+
+                    X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
+                    X2[i] -= contract('lc,abc->lab', Wmnie_cc3[j,k], (2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)))
+                    contract = self.contract
+                    X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
+
+        if HAS_TORCH and isinstance(t3, torch.Tensor):
+            del Wmnij_cc3, Wmbij_cc3, Wmnie_cc3, Wamef_cc3, Wabei_cc3
+
+        return X1, X2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
         """Build the effective doubles amplitude tau = fact1*t2 + fact2*(t1 t1).
@@ -768,7 +802,7 @@ class ccwfn(object):
         return r_T1
 
 
-    def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
+    def r_T2(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         """Compute the T2 (doubles) amplitude residual.
 
         solve_cc drives this residual to zero. This method dispatches on the CC

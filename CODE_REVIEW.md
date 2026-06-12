@@ -20,14 +20,22 @@ in the **Critique** section.
       branching with one callable that owns library/device/precision. (Root cause of
       the `zero_like` bug.) _Design drafted below — see "Design note:
       contraction-backend abstraction"; decision is to grow `cc_contract`._
-      _Started (smear #3, the array-namespace helpers):_ added shared `zeros_like(a)` and
-      `zeros(shape, like)` to `utils.py` as free functions (free, not `cc_contract`
-      methods, because `cctriples`' triples kernels are module-level and have no
-      `self.contract`), and applied them in `cclambda` and `ccdensity` — collapsing the
-      `if HAS_TORCH … torch.zeros_like … else np.zeros_like` branches and removing every
-      `zeros_like`+`pad` idiom. Remaining modules (`ccwfn`, `cctriples`, `cchbar`,
-      `cceom`, `rt/rtcc`, `lccwfn`) adopt the helpers one-per-PR. The library-dispatch
-      (smear #1) and `.clone()/.copy()` (smear #2) collapses are still open.
+      **Smear #3 (array-namespace helpers) DONE.** Added shared free functions to
+      `utils.py` — `zeros_like(a)`, `zeros(shape, like)`, `diag(a)`, `clone(a, device=None)`
+      (free, not `cc_contract` methods, because `cctriples`' triples kernels are
+      module-level and have no `self.contract`) — and adopted them across the torch-aware
+      modules (`cclambda`/`ccdensity` PR #102, `ccwfn`/`cctriples`/`rtcc` PR #103),
+      collapsing the `if HAS_TORCH … torch.zeros_like … else np.zeros_like` branches and
+      removing every `zeros_like`+`pad` idiom. **Smear #2 (`.clone()/.copy()`) DONE (PR
+      #105):** `clone(a, device=None)` collapsed ~166 branched copy sites across
+      `cchbar`/`ccwfn`/`cclambda`/`ccdensity`/`cctriples`/`rtcc` + `utils`'s `helper_diis`
+      (−215 lines); bare `.copy()` in the numpy-only modules (`ccresponse`/`local`/
+      `lccwfn`/`cceom`/`integrators`) was left as-is. _Still open:_ **smear #1** — the
+      per-method `contract = self.ec.contract if self.einsums` library re-dispatch (paused;
+      the einsums path is not in CI, so it needs a manual run before collapsing). The
+      genuinely backend-divergent bodies that no copy/alloc helper can unify
+      (`helper_diis.extrapolate`'s `torch.linalg.solve` vs `np.linalg.solve`; `rtcc`'s
+      `torch.trace`/`np.trace` arms) await the fuller backend object.
 - [x] **Test fixtures** — added `pycc/tests/conftest.py` (`psi4_environment` +
       `rhf_wfn` factory); converted 32 test modules off the copied psi4-setup block
       (~570 fewer lines). Branch `refactor/test-fixtures`, commit `2cfe825`. A
@@ -35,7 +43,7 @@ in the **Critique** section.
       reference energies are method-specific and stay inline in each test. Note:
       `test_040` (einsums CC2) hangs locally with or without this change; einsums
       isn't in CI so those tests skip there.
-- [~] **Break up god methods** — _`cclambda` half DONE (PR #101)._
+- [x] **Break up god methods** — DONE. _`cclambda` half (PR #101)._
       `cclambda.solve_lambda` (221→122) and `cclambda.residuals` (169→56) each carried a
       near-verbatim ~120-line CC3 lambda-triples block; extracted to shared helpers
       `_build_cc3_lambda_intermediates` + `_cc3_lambda_triples` (a `real_time` flag is the
@@ -45,10 +53,16 @@ in the **Critique** section.
       from this item. A mirror **t3** dedup in `ccwfn.py` was considered but is a
       **non-issue**: unlike `cclambda`, `ccwfn.solve_cc` already delegates to
       `ccwfn.residuals` (it does not inline its own copy of the CC3 t3 block), so there is
-      nothing duplicated to extract. _Still open:_ the `ccwfn.r_T2` (~100-line) deep
-      CCD/CC2/CCSD/CC3 conditional tree (the genuine remaining god method); optionally,
-      pulling the single-instance CC3 t3 block out of `ccwfn.residuals` into a helper for
-      parallelism with `cclambda._cc3_lambda_triples` (readability only, not dedup).
+      nothing duplicated to extract. **`ccwfn.r_T2` split DONE (PR #104):** the ~100-line
+      CCD/CC2/CCSD/CC3 conditional tree became a thin dispatcher over per-model builders
+      `_r_T2_ccd`/`_r_T2_cc2`/`_r_T2_ccsd` (each with its own tensor-expression docstring),
+      and a double `self.build_tau` call in the CCSD branch was fixed. (The CC2 builder is
+      currently a modified-CCSD form; the user may later rewrite it to a true CC2
+      formulation.) Finally, the single-instance CC3 t3 block was pulled out of
+      `ccwfn.residuals` (79→52 lines) into `_cc3_t_residual`, parallel to
+      `cclambda._cc3_lambda_triples` (readability, not dedup). No remaining god methods
+      from the original review; `ccwfn.__init__` (~226 lines of linear setup) is long but
+      out of scope here (no deep conditional tree or duplication).
 - [x] **Custom exception types** + `.upper()` the string kwargs — DONE. New
       `pycc/exceptions.py` with `PyCCError` base and `InvalidKeywordError(PyCCError,
       ValueError)` (carries `keyword`/`value`/`allowed`, standardized message,
