@@ -126,35 +126,9 @@ class cclambda(object):
         contract = self.contract
 
         if self.ccwfn.model == 'CC3':
-            # Intermediates for t3
-            Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
-            Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
-            Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
-            Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
-            Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
-            Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
-            # Additional intermediates for l3
-            Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
-            Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
-            Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
-
-            # Building intermediates in t3l1
-            if HAS_TORCH and isinstance(t1, torch.Tensor):                
-                Zmndi = torch.zeros_like(t2[:,:,:,:no])
-                Zmdfa = torch.zeros_like(t2)
-                Zmdfa = torch.nn.functional.pad(Zmdfa, (0, 0, 0, 0, 0, nv-no))
-            else:
-                Zmndi = np.zeros_like(t2[:,:,:,:no])
-                Zmdfa = np.zeros_like(t2)
-                Zmdfa = np.pad(Zmdfa, ((0,0), (0,nv-no), (0,0), (0,0)))
-            for m in range(no):
-                for n in range(no):
-                    for l in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
-                        Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
-                        Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
-                        Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
-                        Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])
+            # T-dependent CC3 intermediates: t1/t2 are fixed during the Lambda
+            # solve, so build them once here and reuse every iteration.
+            cc3_ints = self._build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI, L)
 
         for niter in range(1, maxiter+1):
             lecc_last = lecc
@@ -167,84 +141,11 @@ class cclambda(object):
             r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
             r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
    
-            if self.ccwfn.model == 'CC3':                                       
-                if HAS_TORCH and isinstance(t1, torch.Tensor):
-                    Y1 = torch.zeros_like(l1)
-                    Y2 = torch.zeros_like(l2)
-                    # Z intermediates in CC3 l1, l2 equations
-                    # t3l1
-                    Znf = torch.zeros_like(l1)
-                    #l3l1+l3l2
-                    Zbide = torch.zeros_like(l2)
-                    Zbide = torch.nn.functional.pad(Zbide, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                    Zblad_1 = torch.zeros_like(l2)
-                    Zblad_1 = torch.nn.functional.pad(Zblad_1, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                    Zblad_2 = torch.zeros_like(l2)
-                    Zblad_2 = torch.nn.functional.pad(Zblad_2, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                    Zjlma = torch.zeros_like(l2[:,:,:no,:])
-                    Zjlid_1 = torch.zeros_like(l2[:,:,:no,:])
-                    Zjlid_2 = torch.zeros_like(l2[:,:,:no,:])
-                else:
-                    Y1 = np.zeros_like(l1)
-                    Y2 = np.zeros_like(l2)     
-                    # Z intermediates in CC3 l1, l2 equations           
-                    # t3l1
-                    Znf = np.zeros_like(l1)
-                    #l3l1+l3l2
-                    Zbide = np.zeros_like(l2)
-                    Zbide = np.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
-                    Zblad_1 = np.zeros_like(l2)
-                    Zblad_1 = np.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
-                    Zblad_2 = np.zeros_like(l2)
-                    Zblad_2 = np.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))                    
-                    Zjlma = np.zeros_like(l2[:,:,:no,:])
-                    Zjlid_1 = np.zeros_like(l2[:,:,:no,:])
-                    Zjlid_2 = np.zeros_like(l2[:,:,:no,:])
-                # t3l1
-                for l in range(no):
-                    for m in range(no):
-                        for n in range(no):
-                            t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)        
-                            Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
-                for m in range(no):
-                    Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
-                    Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])  
-                    for n in range(no):                            
-                        Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])                   
-                # end of t3l1
-                #l3l1+l3l2
-                for i in range(no):
-                    for j in range(no):
-                        for k in range(no):
-                            l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
-                            # l3l1_Z_build
-                            Zbide[:,i,:,:] += contract('bc,cde->bde', t2[j,k], l3_kij)
-                            Zblad_1[:,i,:,:] += contract('bc,cad->bad', t2[j,k], l3_kij)
-                            Zblad_2[:,i,:,:] += contract('bc,cda->bad', t2[j,k], l3_kij)  
-                            Zjlma[:,i,j,:] += contract('jbc,cab->ja', t2[:,k,:,:], l3_kij)
-                            Zjlid_1[:,i,j,:] += contract('jbc,cbd->jd', t2[:,k,:,:], l3_kij)
-                            Zjlid_2[:,i,j,:] += contract('jbc,cdb->jd', t2[:,k,:,:], l3_kij)
-                            # l3l2
-                            Y2[i,j] += contract('deb,eda->ab', l3_kij, Wvvvo[:,:,:,k]) 
-                            Y2[i] -= contract('dab,ld->lab', l3_kij, Wovoo[:,:,j,k])
-                # l3l1
-                Y1 += contract('bide,deab->ia', Zbide, Wvvvv)
-                for j in range(no):
-                    for l in range(no):
-                        for m in range(no):  
-                            Y1 += contract('a,i->ia', Zjlma[j,l,m], Woooo[:,j,l,m])                             
-                for j in range(no):
-                    for l in range(no):
-                        Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wovov[j,:,l,:])
-                        Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wovvo[j,:,:,l])
-                for l in range(no):
-                    Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wovov[:,:,l,:])
-                    Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wovvo[:,:,:,l])   
-                # end l3l1+l3l2
-                              
+            if self.ccwfn.model == 'CC3':
+                Y1, Y2 = self._cc3_lambda_triples(o, v, l1, l2, t2, F, ERI, L, cc3_ints)
                 r1 += Y1
-                r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
-                                                 
+                r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3)
+
             if self.ccwfn.local is not None:
                 inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
                 self.l1 += inc1
@@ -286,7 +187,7 @@ class cclambda(object):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
 
         if (HAS_TORCH and isinstance(r1, torch.Tensor)) & (self.ccwfn.model == 'CC3'):
-            del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
+            del cc3_ints
            
     def residuals(self, F, t1, t2, l1, l2):
         """
@@ -330,132 +231,208 @@ class cclambda(object):
         r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
         r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
 
-        if self.ccwfn.model == 'CC3':   
-            # Intermediates for t3
-            Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
-            Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
-            Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
-            Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
-            Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
-            Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
-            # Additional intermediates for l3
-            Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
-            Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
-            Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
-
-            # Building intermediates in t3l1
-            if HAS_TORCH and isinstance(t1, torch.Tensor):                
-                Zmndi = torch.zeros_like(t2[:,:,:,:no])
-                Zmdfa = torch.zeros_like(t2)
-                Zmdfa = torch.nn.functional.pad(Zmdfa, (0, 0, 0, 0, 0, nv-no))
-            else:
-                Zmndi = np.zeros_like(t2[:,:,:,:no])
-                Zmdfa = np.zeros_like(t2)
-                Zmdfa = np.pad(Zmdfa, ((0,0), (0,nv-no), (0,0), (0,0)))
-            for m in range(no):
-                for n in range(no):
-                    for l in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
-                        if self.ccwfn.real_time is True:
-                            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                                V = F - self.ccwfn.H.F.clone()
-                            else:
-                                V = F - self.ccwfn.H.F.copy()
-                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
-                        Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
-                        Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
-                        Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
-                        Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])                                                
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                Y1 = torch.zeros_like(l1)
-                Y2 = torch.zeros_like(l2)
-                # Z intermediates in CC3 l1, l2 equations
-                # t3l1
-                Znf = torch.zeros_like(l1)
-                #l3l1+l3l2
-                Zbide = torch.zeros_like(l2)
-                Zbide = torch.nn.functional.pad(Zbide, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                Zblad_1 = torch.zeros_like(l2)
-                Zblad_1 = torch.nn.functional.pad(Zblad_1, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                Zblad_2 = torch.zeros_like(l2)
-                Zblad_2 = torch.nn.functional.pad(Zblad_2, (0, 0, 0, 0, 0, 0, 0, nv-no))
-                Zjlma = torch.zeros_like(l2[:,:,:no,:])
-                Zjlid_1 = torch.zeros_like(l2[:,:,:no,:])
-                Zjlid_2 = torch.zeros_like(l2[:,:,:no,:])
-            else:
-                Y1 = np.zeros_like(l1)
-                Y2 = np.zeros_like(l2)     
-                # Z intermediates in CC3 l1, l2 equations           
-                # t3l1
-                Znf = np.zeros_like(l1)
-                #l3l1+l3l2
-                Zbide = np.zeros_like(l2)
-                Zbide = np.pad(Zbide, ((0,nv-no), (0,0), (0,0), (0,0)))
-                Zblad_1 = np.zeros_like(l2)
-                Zblad_1 = np.pad(Zblad_1, ((0,nv-no), (0,0), (0,0), (0,0)))
-                Zblad_2 = np.zeros_like(l2)
-                Zblad_2 = np.pad(Zblad_2, ((0,nv-no), (0,0), (0,0), (0,0)))                    
-                Zjlma = np.zeros_like(l2[:,:,:no,:])
-                Zjlid_1 = np.zeros_like(l2[:,:,:no,:])
-                Zjlid_2 = np.zeros_like(l2[:,:,:no,:])            
-            # t3l1
-            for l in range(no):
-                for m in range(no):
-                    for n in range(no):
-                        t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
-                        if self.ccwfn.real_time is True:
-                            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                                V = F - self.ccwfn.H.F.clone()
-                            else:
-                                V = F - self.ccwfn.H.F.copy()
-                            t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
-                        Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))          
-            for m in range(no):
-                Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
-                Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])  
-                for n in range(no):                            
-                    Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])   
-            # end of t3l1
-            #l3l1+l3l2
-            for i in range(no):
-                for j in range(no):
-                    for k in range(no):
-                        l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
-                        # l3l1_Z_build
-                        Zbide[:,i,:,:] += contract('bc,cde->bde', t2[j,k], l3_kij)
-                        Zblad_1[:,i,:,:] += contract('bc,cad->bad', t2[j,k], l3_kij)
-                        Zblad_2[:,i,:,:] += contract('bc,cda->bad', t2[j,k], l3_kij)  
-                        Zjlma[:,i,j,:] += contract('jbc,cab->ja', t2[:,k,:,:], l3_kij)
-                        Zjlid_1[:,i,j,:] += contract('jbc,cbd->jd', t2[:,k,:,:], l3_kij)
-                        Zjlid_2[:,i,j,:] += contract('jbc,cdb->jd', t2[:,k,:,:], l3_kij)
-                        # l3l2
-                        Y2[i,j] += contract('deb,eda->ab', l3_kij, Wvvvo[:,:,:,k]) 
-                        Y2[i] -= contract('dab,ld->lab', l3_kij, Wovoo[:,:,j,k])
-            # l3l1                          
-            Y1 += contract('bide,deab->ia', Zbide, Wvvvv)
-            for j in range(no):
-                for l in range(no):
-                    for m in range(no):     
-                        Y1 += contract('a,i->ia', Zjlma[j,l,m], Woooo[:,j,l,m])                          
-            for j in range(no):
-                for l in range(no):
-                    Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wovov[j,:,l,:])
-                    Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wovvo[j,:,:,l])
-            for l in range(no):
-                Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wovov[:,:,l,:])
-                Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wovvo[:,:,:,l])   
-            # end l3l1+l3l2
-                         
+        if self.ccwfn.model == 'CC3':
+            cc3_ints = self._build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI, L, real_time=self.ccwfn.real_time)
+            Y1, Y2 = self._cc3_lambda_triples(o, v, l1, l2, t2, F, ERI, L, cc3_ints, real_time=self.ccwfn.real_time)
             r1 += Y1
-            r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3) 
+            r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3)
 
             if HAS_TORCH and isinstance(r1, torch.Tensor):
-                del Zmndi, Zmdfa, Znf, Zbide, Zjlma, Zblad_1, Zblad_2, Zjlid_1, Zjlid_2, Fov, Woooo, Wovoo, Wooov, Wvovv, Wvvvo, Wovov, Wovvo, Wvvvv
+                del cc3_ints
        
         if HAS_TORCH and isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
                                              
         return r1, r2
+
+    def _zeros(self, shape, like):
+        """Allocate a zero tensor of ``shape`` matching ``like``'s backend/dtype/device.
+
+        A small file-local version of the ``zeros(shape, like=x)`` primitive
+        described in the contraction-backend design note: it dispatches on the
+        runtime type of ``like`` (NumPy vs torch) and inherits its dtype — and,
+        for torch, its device — so single/mixed precision and GPU placement ride
+        along automatically. Used to allocate the CC3 Z-intermediates, whose
+        shapes mix occupied and virtual dimensions and so are not ``zeros_like``
+        of any single amplitude array.
+        """
+        if HAS_TORCH and isinstance(like, torch.Tensor):
+            return torch.zeros(shape, dtype=like.dtype, device=like.device)
+        return np.zeros(shape, dtype=like.dtype)
+
+    def _build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI, L, real_time=False):
+        """Build the T-dependent CC3 intermediates shared by the Lambda equations.
+
+        Constructs the CC3 W-intermediates (t3 and l3) and the ``Zmndi``/``Zmdfa``
+        triples intermediates. These depend only on the T-amplitudes (not Lambda),
+        so ``solve_lambda`` builds them once before its iteration loop while
+        ``residuals`` builds them per call.
+
+        Parameters
+        ----------
+        o, v : slice
+            occupied/virtual orbital slices
+        t1, t2 : ndarray or torch.Tensor
+            current T1/T2 amplitudes
+        F, ERI, L : ndarray or torch.Tensor
+            Fock matrix, two-electron integrals, and L = 2*ERI - ERI.swapaxes
+        real_time : bool
+            if True, subtract the explicit time-dependent perturbation from the
+            connected triples (real-time CC3 path)
+
+        Returns
+        -------
+        dict
+            the W-intermediates plus ``Zmndi`` and ``Zmdfa``
+        """
+        contract = self.contract
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+
+        # Intermediates for t3
+        Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
+        Woooo = self.ccwfn.build_cc3_Wmnij(o, v, ERI, t1)
+        Wovoo = self.ccwfn.build_cc3_Wmbij(o, v, ERI, t1, Woooo)
+        Wooov = self.ccwfn.build_cc3_Wmnie(o, v, ERI, t1)
+        Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
+        Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
+        # Additional intermediates for l3
+        Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
+        Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
+        Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
+
+        # Building intermediates in t3l1. Zmdfa's second axis is virtual
+        # (shape no,nv,nv,nv), so it is allocated directly rather than padded.
+        Zmndi = self._zeros((no, no, nv, no), like=t2)
+        Zmdfa = self._zeros((no, nv, nv, nv), like=t2)
+        for m in range(no):
+            for n in range(no):
+                for l in range(no):
+                    t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                    if real_time is True:
+                        if HAS_TORCH and isinstance(t1, torch.Tensor):
+                            V = F - self.ccwfn.H.F.clone()
+                        else:
+                            V = F - self.ccwfn.H.F.copy()
+                        t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
+                    Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
+                    Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
+                    Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
+                    Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])
+
+        return {'Fov': Fov, 'Woooo': Woooo, 'Wovoo': Wovoo, 'Wooov': Wooov,
+                'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wovov': Wovov, 'Wovvo': Wovvo,
+                'Wvvvv': Wvvvv, 'Zmndi': Zmndi, 'Zmdfa': Zmdfa}
+
+    def _cc3_lambda_triples(self, o, v, l1, l2, t2, F, ERI, L, ints, real_time=False):
+        """Compute the CC3 triples contributions (Y1, Y2) to the Lambda residuals.
+
+        Uses the T-dependent intermediates from
+        :meth:`_build_cc3_lambda_intermediates` together with the current
+        Lambda amplitudes. Shared by ``solve_lambda`` (each iteration, with the
+        same ``ints``) and ``residuals`` (a single evaluation).
+
+        Parameters
+        ----------
+        o, v : slice
+            occupied/virtual orbital slices
+        l1, l2 : ndarray or torch.Tensor
+            current L1/L2 amplitudes
+        t2 : ndarray or torch.Tensor
+            current T2 amplitudes
+        F, ERI, L : ndarray or torch.Tensor
+            Fock matrix, two-electron integrals, and L = 2*ERI - ERI.swapaxes
+        ints : dict
+            intermediates from :meth:`_build_cc3_lambda_intermediates`
+        real_time : bool
+            if True, subtract the explicit time-dependent perturbation from the
+            connected triples (real-time CC3 path)
+
+        Returns
+        -------
+        Y1, Y2 : ndarray or torch.Tensor
+            the CC3 triples contributions to the L1 and L2 residuals
+        """
+        contract = self.contract
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+
+        Fov = ints['Fov']
+        Woooo = ints['Woooo']
+        Wovoo = ints['Wovoo']
+        Wooov = ints['Wooov']
+        Wvovv = ints['Wvovv']
+        Wvvvo = ints['Wvvvo']
+        Wovov = ints['Wovov']
+        Wovvo = ints['Wovvo']
+        Wvvvv = ints['Wvvvv']
+        Zmndi = ints['Zmndi']
+        Zmdfa = ints['Zmdfa']
+
+        # Y residual accumulators and the CC3 Z-intermediates. Y1/Y2/Znf match
+        # a Lambda array's shape; Zbide/Zblad_* have a virtual leading axis
+        # (nv,no,nv,nv) and Zjlma/Zjlid_* an all-but-last occupied shape
+        # (no,no,no,nv), so they are allocated by explicit shape.
+        Y1 = self._zeros(l1.shape, like=l1)
+        Y2 = self._zeros(l2.shape, like=l2)
+        # t3l1
+        Znf = self._zeros(l1.shape, like=l1)
+        #l3l1+l3l2
+        Zbide = self._zeros((nv, no, nv, nv), like=l2)
+        Zblad_1 = self._zeros((nv, no, nv, nv), like=l2)
+        Zblad_2 = self._zeros((nv, no, nv, nv), like=l2)
+        Zjlma = self._zeros((no, no, no, nv), like=l2)
+        Zjlid_1 = self._zeros((no, no, no, nv), like=l2)
+        Zjlid_2 = self._zeros((no, no, no, nv), like=l2)
+        # t3l1
+        for l in range(no):
+            for m in range(no):
+                for n in range(no):
+                    t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
+                    if real_time is True:
+                        if HAS_TORCH and isinstance(l1, torch.Tensor):
+                            V = F - self.ccwfn.H.F.clone()
+                        else:
+                            V = F - self.ccwfn.H.F.copy()
+                        t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
+                    Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))
+        for m in range(no):
+            Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
+            Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])
+            for n in range(no):
+                Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])
+        # end of t3l1
+        #l3l1+l3l2
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    l3_kij = l3_ijk(k, i, j, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
+                    # l3l1_Z_build
+                    Zbide[:,i,:,:] += contract('bc,cde->bde', t2[j,k], l3_kij)
+                    Zblad_1[:,i,:,:] += contract('bc,cad->bad', t2[j,k], l3_kij)
+                    Zblad_2[:,i,:,:] += contract('bc,cda->bad', t2[j,k], l3_kij)
+                    Zjlma[:,i,j,:] += contract('jbc,cab->ja', t2[:,k,:,:], l3_kij)
+                    Zjlid_1[:,i,j,:] += contract('jbc,cbd->jd', t2[:,k,:,:], l3_kij)
+                    Zjlid_2[:,i,j,:] += contract('jbc,cdb->jd', t2[:,k,:,:], l3_kij)
+                    # l3l2
+                    Y2[i,j] += contract('deb,eda->ab', l3_kij, Wvvvo[:,:,:,k])
+                    Y2[i] -= contract('dab,ld->lab', l3_kij, Wovoo[:,:,j,k])
+        # l3l1
+        Y1 += contract('bide,deab->ia', Zbide, Wvvvv)
+        for j in range(no):
+            for l in range(no):
+                for m in range(no):
+                    Y1 += contract('a,i->ia', Zjlma[j,l,m], Woooo[:,j,l,m])
+        for j in range(no):
+            for l in range(no):
+                Y1 -= contract('id,da->ia', Zjlid_1[j,l,:,:], Wovov[j,:,l,:])
+                Y1 -= contract('id,da->ia', Zjlid_2[j,l,:,:], Wovvo[j,:,:,l])
+        for l in range(no):
+            Y1 -= contract('bad,idb->ia', Zblad_1[:,l,:,:], Wovov[:,:,l,:])
+            Y1 -= contract('bad,idb->ia', Zblad_2[:,l,:,:], Wovvo[:,:,:,l])
+        # end l3l1+l3l2
+
+        return Y1, Y2
 
     def build_Goo(self, t2, l2):
         """Build the G_mi occupied density intermediate (t2-weighted lambda).
