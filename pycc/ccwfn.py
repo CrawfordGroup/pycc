@@ -804,16 +804,110 @@ class ccwfn(object):
     def r_T2(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
         """Compute the T2 (doubles) amplitude residual.
 
-        solve_cc drives this residual to zero. The expression below is the
-        spin-adapted "half" residual, symmetrized as r_t2_ijab += r_t2_jiba on
-        return. Fae/Fmi/Fme and Wmnij/Wmbej/Wmbje/Zmbij are the precomputed
-        intermediates; tau = build_tau(t1, t2). CCD drops the singles terms;
-        CC2 replaces the Fae/Fmi terms with bare-Fock forms (see code).
+        solve_cc drives this residual to zero. This method dispatches on the CC
+        model to the per-model builder (CCD / CC2 / CCSD; CC3 and CCSD(T) use the
+        CCSD form), then symmetrizes the spin-adapted "half" residual as
+        r_t2_ijab += r_t2_jiba. Fae/Fmi/Fme and Wmnij/Wmbej/Wmbje/Zmbij are the
+        precomputed intermediates.
 
         Returns
         -------
         ndarray or torch.Tensor, shape (no, no, nv, nv)
             T2 residual indexed [i, j, a, b].
+        """
+        if self.model == 'CCD':
+            r_T2 = self._r_T2_ccd(o, v, ERI, t2, Fae, Fmi, Wmnij, Wmbej, Wmbje)
+        elif self.model == 'CC2':
+            r_T2 = self._r_T2_cc2(o, v, F, ERI, t1, t2, Wmnij, Zmbij)
+        else:
+            r_T2 = self._r_T2_ccsd(o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij)
+
+        r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
+        return r_T2
+
+    def _r_T2_ccd(self, o, v, ERI, t2, Fae, Fmi, Wmnij, Wmbej, Wmbje):
+        """CCD doubles residual (no singles), before the r_T2 symmetrization.
+
+        Notes
+        -----
+        The CCSD form with every singles term dropped (so tau -> t2); F_be = Fae
+        and F_mj = Fmi are the CCD intermediates. Before the i<->j / a<->b
+        symmetrization (repeated indices summed; W_mbje[e<->j] is Wmbje with its
+        last two axes swapped)::
+
+            r_t2_ijab = 1/2 <ij|ab>
+                      + t2_ijae F_be - t2_imab F_mj
+                      + 1/2 t2_mnab W_mnij + 1/2 t2_ijef <ab|ef>
+                      + (t2_imae - t2_imea) W_mbej
+                      + t2_imae (W_mbej + W_mbje[e<->j])
+                      + t2_mjae W_mbie
+        """
+        contract = self.contract
+        if self.einsums:
+            contract = self.ec.contract
+
+        if HAS_TORCH and isinstance(t2, torch.Tensor):
+            r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
+        else:
+            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+        r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
+        r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
+        r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', t2, ERI[v,v,v,v])
+        r_T2 = r_T2 + 0.5 * contract('mnij,mnab->ijab', Wmnij, t2)
+        r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
+        r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
+        r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+        return r_T2
+
+    def _r_T2_cc2(self, o, v, F, ERI, t1, t2, Wmnij, Zmbij):
+        """CC2 doubles residual (bare-Fock Fae/Fmi forms), before the r_T2 symmetrization.
+
+        Notes
+        -----
+        Like CCSD, but the Fae/Fmi dressings are truncated to their bare-Fock + t1
+        forms (f is the Fock matrix; the W_mnij and <ab|ef> terms are evaluated on
+        t1.t1 rather than tau). Before the i<->j / a<->b symmetrization (repeated
+        indices summed)::
+
+            r_t2_ijab = 1/2 <ij|ab>
+                      + t2_ijae (f_be - 1/2 f_me t_mb) - 1/2 t2_ijae f_me t_mb
+                      - t2_imab (f_mj + 1/2 f_me t_je) - 1/2 t2_imab f_me t_je
+                      + 1/2 t_ma t_nb W_mnij + 1/2 t_ie t_jf <ab|ef>
+                      - t_ma Z_mbij
+                      - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
+                      + t_ie <ab|ej> - t_ma <mb|ij>
+        """
+        contract = self.contract
+        if self.einsums:
+            contract = self.ec.contract
+
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
+            r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
+        else:
+            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+
+        tmp = F[v,v] - 0.5 * contract('me,ma->ae', F[o,v], t1)
+        r_T2 = r_T2 + contract('ijae,eb->ijab', t2, tmp.T)
+        tmp = contract('mb,me->be', t1, F[o,v])
+        r_T2 = r_T2 - 0.5 * contract('ijae,eb->ijab', t2, tmp.T)
+        tmp = F[o,o] + 0.5 * contract('ie,me->mi', t1, F[o,v])
+        r_T2 = r_T2 - contract('imab,mj->ijab', t2, tmp)
+        tmp = contract('je,me->jm', t1, F[o,v])
+        r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
+        r_T2 = r_T2 + 0.5 * contract('ma,mbij->ijab', t1, contract('nb,mnij->mbij', t1, Wmnij))
+        r_T2 = r_T2 + 0.5 * contract('jf,abif->ijab', t1, contract('ie,abef->abif', t1, ERI[v,v,v,v]))
+        r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
+        r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o]))
+        r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
+        r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
+        r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+        contract = self.contract
+        if HAS_TORCH and isinstance(tmp, torch.Tensor):
+            del tmp
+        return r_T2
+
+    def _r_T2_ccsd(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
+        """CCSD doubles residual (also used by CC3 / CCSD(T)), before the r_T2 symmetrization.
 
         Notes
         -----
@@ -835,69 +929,31 @@ class ccwfn(object):
         if self.einsums:
             contract = self.ec.contract
 
-        if self.model == 'CCD':
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
-            else:
-                r_T2 = 0.5 * ERI[o,o,v,v].copy()
-            r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
-            r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
-            r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', t2, ERI[v,v,v,v])
-            r_T2 = r_T2 + 0.5 * contract('mnij,mnab->ijab', Wmnij, t2)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
-            r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
-        elif self.model == 'CC2':
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
-            else:
-                r_T2 = 0.5 * ERI[o,o,v,v].copy()
-
-            tmp = F[v,v] - 0.5 * contract('me,ma->ae', F[o,v], t1)
-            r_T2 = r_T2 + contract('ijae,eb->ijab', t2, tmp.T)
-            tmp = contract('mb,me->be', t1, F[o,v])
-            r_T2 = r_T2 - 0.5 * contract('ijae,eb->ijab', t2, tmp.T)
-            tmp = F[o,o] + 0.5 * contract('ie,me->mi', t1, F[o,v])
-            r_T2 = r_T2 - contract('imab,mj->ijab', t2, tmp)
-            tmp = contract('je,me->jm', t1, F[o,v])
-            r_T2 = r_T2 - 0.5 * contract('imab,jm->ijab', t2, tmp)
-            r_T2 = r_T2 + 0.5 * contract('ma,mbij->ijab', t1, contract('nb,mnij->mbij', t1, Wmnij))
-            r_T2 = r_T2 + 0.5 * contract('jf,abif->ijab', t1, contract('ie,abef->abif', t1, ERI[v,v,v,v]))
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, contract('ie,mbej->mbij', t1, ERI[o,v,v,o]))
-            r_T2 = r_T2 - contract('mb,maji->ijab', t1, contract('ie,maje->maji', t1, ERI[o,v,o,v]))
-            r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
-            contract = self.contract
-            if HAS_TORCH and isinstance(tmp, torch.Tensor):
-                del tmp
+        if HAS_TORCH and isinstance(t1, torch.Tensor):
+            r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
         else:
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                r_T2 = 0.5 * ERI[o,o,v,v].clone().to(self.device1)
-            else:
-                r_T2 = 0.5 * ERI[o,o,v,v].copy()
-            r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
-            tmp = contract('bm,me->be', t1.T, Fme)
-            r_T2 = r_T2 - 0.5 * contract('ijae,eb->ijab', t2, tmp.T)
-            r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
-            tmp = contract('je,em->jm', t1, Fme.T)
-            r_T2 = r_T2 - 0.5 * contract('imab,mj->ijab', t2, tmp.T)
-            r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', self.build_tau(t1, t2), Wmnij)
-            r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', self.build_tau(t1, t2), ERI[v,v,v,v])
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
-            r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
-            r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
-            tmp = contract('ei,am->aemi', t1.T, t1.T)
-            r_T2 = r_T2 - contract('imea,mbej->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,v,o])
-            r_T2 = r_T2 - contract('imeb,maje->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,o,v])
-            r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
-            r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+            r_T2 = 0.5 * ERI[o,o,v,v].copy()
+        r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
+        tmp = contract('bm,me->be', t1.T, Fme)
+        r_T2 = r_T2 - 0.5 * contract('ijae,eb->ijab', t2, tmp.T)
+        r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
+        tmp = contract('je,em->jm', t1, Fme.T)
+        r_T2 = r_T2 - 0.5 * contract('imab,mj->ijab', t2, tmp.T)
+        tau = self.build_tau(t1, t2)
+        r_T2 = r_T2 + 0.5 * contract('mnab,mnij->ijab', tau, Wmnij)
+        r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', tau, ERI[v,v,v,v])
+        r_T2 = r_T2 - contract('ma,mbij->ijab', t1, Zmbij)
+        r_T2 = r_T2 + contract('imae,mbej->ijab', (t2 - t2.swapaxes(2,3)), Wmbej)
+        r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
+        r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
+        tmp = contract('ei,am->aemi', t1.T, t1.T)
+        r_T2 = r_T2 - contract('imea,mbej->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,v,o])
+        r_T2 = r_T2 - contract('imeb,maje->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,o,v])
+        r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
+        r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
 
-            if HAS_TORCH and isinstance(tmp, torch.Tensor):
-                del tmp
-
-        r_T2 = r_T2 + r_T2.swapaxes(0,1).swapaxes(2,3)
+        if HAS_TORCH and isinstance(tmp, torch.Tensor):
+            del tmp
         return r_T2
 
     # Intermedeates needed for CC3
