@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from opt_einsum import contract
-from .utils import helper_diis, zeros, zeros_like
+from .utils import helper_diis, zeros, zeros_like, clone
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
@@ -295,10 +295,7 @@ class cclambda(object):
                 for l in range(no):
                     t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                     if real_time is True:
-                        if HAS_TORCH and isinstance(t1, torch.Tensor):
-                            V = F - self.ccwfn.H.F.clone()
-                        else:
-                            V = F - self.ccwfn.H.F.copy()
+                        V = F - clone(self.ccwfn.H.F)
                         t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
                     Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
                     Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
@@ -375,10 +372,7 @@ class cclambda(object):
                 for n in range(no):
                     t3_lmn = t3c_ijk(o, v, l, m, n, t2, Wvvvo, Wovoo, F, contract, WithDenom=True)
                     if real_time is True:
-                        if HAS_TORCH and isinstance(l1, torch.Tensor):
-                            V = F - self.ccwfn.H.F.clone()
-                        else:
-                            V = F - self.ccwfn.H.F.copy()
+                        V = F - clone(self.ccwfn.H.F)
                         t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
                     Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))
         for m in range(no):
@@ -482,10 +476,7 @@ class cclambda(object):
         if self.ccwfn.model == 'CCD':
             r_l1 = zeros_like(l1)
         else:
-            if HAS_TORCH and isinstance(l1, torch.Tensor):
-                r_l1 = 2.0 * Hov.clone()
-            else: 
-                r_l1 = 2.0 * Hov.copy()
+            r_l1 = 2.0 * clone(Hov)
 
             # Add (T) contributions to L1
             if self.ccwfn.model == 'CCSD(T)':
@@ -539,10 +530,7 @@ class cclambda(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(l1, torch.Tensor):
-                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
-            else:
-                r_l2 = L[o,o,v,v].copy()
+            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
 
             r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
             r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
@@ -554,10 +542,7 @@ class cclambda(object):
             r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
             r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         else:
-            if HAS_TORCH and isinstance(l1, torch.Tensor):
-                r_l2 = L[o,o,v,v].clone().to(self.ccwfn.device1)
-            else:
-                r_l2 = L[o,o,v,v].copy()
+            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
 
             # Add (T) contributions to L2
             if self.ccwfn.model == 'CCSD(T)':
@@ -603,10 +588,7 @@ class cclambda(object):
                             - t_jf t_nb <mn|fe>
         """
         contract = self.contract
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            W = ERI[o,v,o,v].clone().to(self.ccwfn.device1)
-        else:
-            W = ERI[o,v,o,v].copy()
+        W = clone(ERI[o,v,o,v], device=self.ccwfn.device1)
         W = W + contract('mbfe,jf->mbje', ERI[o,v,v,v], t1)
         W = W - contract('mnje,nb->mbje', ERI[o,o,o,v], t1)
         W = W - contract('mnfe,jf,nb->mbje', ERI[o,o,v,v], t1, t1)
@@ -628,10 +610,7 @@ class cclambda(object):
                             - t_jf t_nb <mn|ef>
         """
         contract = self.contract
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            W = ERI[o,v,v,o].clone().to(self.ccwfn.device1)
-        else:
-            W = ERI[o,v,v,o].copy()
+        W = clone(ERI[o,v,v,o], device=self.ccwfn.device1)
         W = W + contract('mbef,jf->mbej', ERI[o,v,v,v], t1)
         W = W - contract('mnej,nb->mbej', ERI[o,o,v,o], t1)
         W = W - contract('mnef,jf,nb->mbej', ERI[o,o,v,v], t1, t1)
@@ -653,10 +632,7 @@ class cclambda(object):
                             + t_ma t_nb <mn|ef>
         """
         contract = self.contract
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            W = ERI[v,v,v,v].clone().to(self.ccwfn.device1)
-        else:
-            W = ERI[v,v,v,v].copy()
+        W = clone(ERI[v,v,v,v], device=self.ccwfn.device1)
         tmp = contract('mbef,ma->abef', ERI[o,v,v,v], t1)
         W = W - tmp - tmp.swapaxes(0,1).swapaxes(2,3)
         W = W + contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)

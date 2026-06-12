@@ -11,7 +11,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import zeros_like
+from pycc.utils import zeros_like, clone
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -130,10 +130,7 @@ class rtcc(object):
         t1, t2, l1, l2, phase = self.extract_amps(y)
 
         # Add the field to the Hamiltonian
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
-        else:
-            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
+        F = clone(self.ccwfn.H.F) + self.mu_tot * self.V(t)
 
         # Compute the current residuals
         rt1, rt2 = self.ccwfn.residuals(F, t1, t2, real_time=True)
@@ -305,9 +302,8 @@ class rtcc(object):
         Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
         contract = self.contract
         
+        F = clone(self.ccwfn.H.F) + self.mu_tot * self.V(t)
         if HAS_TORCH and isinstance(t1, torch.Tensor):
-            F = self.ccwfn.H.F.clone() + self.mu_tot * self.V(t)
-    
             eref = 2.0 * torch.trace(F[o,o])
             # torch.trace doesn't have "axis" argument
             #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
@@ -316,8 +312,6 @@ class rtcc(object):
             del tmp
 
         else:
-            F = self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
-
             eref = 2.0 * np.trace(F[o,o])
             eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
 
