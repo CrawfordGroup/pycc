@@ -250,6 +250,12 @@ class ccwfn(object):
         # for GPU or CPU.  
         self.contract = cc_contract(device=self.device)
 
+        # CPU/compute device handles for the GPU path. Default to None on CPU so
+        # that clone(x, device=self.device1) is a plain copy with no transfer
+        # (the device arg is ignored for NumPy arrays).
+        self.device0 = None
+        self.device1 = None
+
         # Convert the arrays to torch.Tensors if the calculation is on GPU.
         # Send the copy of F, t1, t2 to GPU.
         # ERI will be kept on GPU

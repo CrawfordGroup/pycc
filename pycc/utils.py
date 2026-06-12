@@ -44,20 +44,29 @@ def diag(a):
     return np.diag(a)
 
 
+def clone(a, device=None):
+    """Backend-aware deep copy: ``a.clone()`` for a torch tensor (optionally moved
+    to ``device``), else ``a.copy()``.
+
+    Collapses the ``if HAS_TORCH and isinstance(a, torch.Tensor): a.clone()
+    [.to(self.device1)] else: a.copy()`` branch that recurs throughout the CC
+    modules. ``device`` is ignored for NumPy arrays (always CPU).
+    """
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        a = a.clone()
+        return a.to(device) if device is not None else a
+    return a.copy()
+
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
         if HAS_TORCH and isinstance(t1, torch.Tensor):
             self.device0 = torch.device('cpu')
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-            self.oldt1 = t1.clone()
-            self.oldt2 = t2.clone()
-            self.diis_vals_t1 = [t1.clone()]
-            self.diis_vals_t2 = [t2.clone()]
-        else:
-            self.oldt1 = t1.copy()
-            self.oldt2 = t2.copy()
-            self.diis_vals_t1 = [t1.copy()]
-            self.diis_vals_t2 = [t2.copy()]
+        self.oldt1 = clone(t1)
+        self.oldt2 = clone(t2)
+        self.diis_vals_t1 = [clone(t1)]
+        self.diis_vals_t2 = [clone(t2)]
 
         self.diis_errors = []
         self.diis_size = 0
@@ -65,26 +74,18 @@ class helper_diis(object):
         self.precision = precision
 
     def add_error_vector(self, t1, t2):
+        # Add DIIS vectors
+        self.diis_vals_t1.append(clone(t1))
+        self.diis_vals_t2.append(clone(t2))
+        # Add new error vectors
+        error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
+        error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
         if HAS_TORCH and isinstance(t1, torch.Tensor):
-            # Add DIIS vectors
-            self.diis_vals_t1.append(t1.clone())
-            self.diis_vals_t2.append(t2.clone())
-            # Add new error vectors
-            error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
-            error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
             self.diis_errors.append(torch.cat((error_t1, error_t2)))
-            self.oldt1 = t1.clone()
-            self.oldt2 = t2.clone()
         else:
-            # Add DIIS vectors
-            self.diis_vals_t1.append(t1.copy())
-            self.diis_vals_t2.append(t2.copy())
-            # Add new error vectors
-            error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
-            error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
             self.diis_errors.append(np.concatenate((error_t1, error_t2)))
-            self.oldt1 = t1.copy()
-            self.oldt2 = t2.copy()
+        self.oldt1 = clone(t1)
+        self.oldt2 = clone(t2)
 
     def extrapolate(self, t1, t2):
         
@@ -134,10 +135,6 @@ class helper_diis(object):
                 t1 += torch.real(ci[num] * self.diis_vals_t1[num + 1])
                 t2 += torch.real(ci[num] * self.diis_vals_t2[num + 1])
 
-            # Save extrapolated amplitudes to old_t amplitudes
-            self.oldt1 = t1.clone()
-            self.oldt2 = t2.clone()
-
         else:
             # Build error matrix B
             if self.precision == 'DP':
@@ -173,9 +170,9 @@ class helper_diis(object):
                 t1 += ci[num] * self.diis_vals_t1[num + 1]
                 t2 += ci[num] * self.diis_vals_t2[num + 1]
 
-            # Save extrapolated amplitudes to old_t amplitudes
-            self.oldt1 = t1.copy()
-            self.oldt2 = t2.copy()
+        # Save extrapolated amplitudes to old_t amplitudes
+        self.oldt1 = clone(t1)
+        self.oldt2 = clone(t2)
 
         return t1, t2
 
