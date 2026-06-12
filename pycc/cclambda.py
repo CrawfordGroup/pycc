@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from opt_einsum import contract
-from .utils import helper_diis
+from .utils import helper_diis, zeros, zeros_like
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
@@ -245,21 +245,6 @@ class cclambda(object):
                                              
         return r1, r2
 
-    def _zeros(self, shape, like):
-        """Allocate a zero tensor of ``shape`` matching ``like``'s backend/dtype/device.
-
-        A small file-local version of the ``zeros(shape, like=x)`` primitive
-        described in the contraction-backend design note: it dispatches on the
-        runtime type of ``like`` (NumPy vs torch) and inherits its dtype — and,
-        for torch, its device — so single/mixed precision and GPU placement ride
-        along automatically. Used to allocate the CC3 Z-intermediates, whose
-        shapes mix occupied and virtual dimensions and so are not ``zeros_like``
-        of any single amplitude array.
-        """
-        if HAS_TORCH and isinstance(like, torch.Tensor):
-            return torch.zeros(shape, dtype=like.dtype, device=like.device)
-        return np.zeros(shape, dtype=like.dtype)
-
     def _build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI, L, real_time=False):
         """Build the T-dependent CC3 intermediates shared by the Lambda equations.
 
@@ -303,8 +288,8 @@ class cclambda(object):
 
         # Building intermediates in t3l1. Zmdfa's second axis is virtual
         # (shape no,nv,nv,nv), so it is allocated directly rather than padded.
-        Zmndi = self._zeros((no, no, nv, no), like=t2)
-        Zmdfa = self._zeros((no, nv, nv, nv), like=t2)
+        Zmndi = zeros((no, no, nv, no), like=t2)
+        Zmdfa = zeros((no, nv, nv, nv), like=t2)
         for m in range(no):
             for n in range(no):
                 for l in range(no):
@@ -373,17 +358,17 @@ class cclambda(object):
         # a Lambda array's shape; Zbide/Zblad_* have a virtual leading axis
         # (nv,no,nv,nv) and Zjlma/Zjlid_* an all-but-last occupied shape
         # (no,no,no,nv), so they are allocated by explicit shape.
-        Y1 = self._zeros(l1.shape, like=l1)
-        Y2 = self._zeros(l2.shape, like=l2)
+        Y1 = zeros_like(l1)
+        Y2 = zeros_like(l2)
         # t3l1
-        Znf = self._zeros(l1.shape, like=l1)
+        Znf = zeros_like(l1)
         #l3l1+l3l2
-        Zbide = self._zeros((nv, no, nv, nv), like=l2)
-        Zblad_1 = self._zeros((nv, no, nv, nv), like=l2)
-        Zblad_2 = self._zeros((nv, no, nv, nv), like=l2)
-        Zjlma = self._zeros((no, no, no, nv), like=l2)
-        Zjlid_1 = self._zeros((no, no, no, nv), like=l2)
-        Zjlid_2 = self._zeros((no, no, no, nv), like=l2)
+        Zbide = zeros((nv, no, nv, nv), like=l2)
+        Zblad_1 = zeros((nv, no, nv, nv), like=l2)
+        Zblad_2 = zeros((nv, no, nv, nv), like=l2)
+        Zjlma = zeros((no, no, no, nv), like=l2)
+        Zjlid_1 = zeros((no, no, no, nv), like=l2)
+        Zjlid_2 = zeros((no, no, no, nv), like=l2)
         # t3l1
         for l in range(no):
             for m in range(no):
@@ -495,10 +480,7 @@ class cclambda(object):
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
-            if HAS_TORCH and isinstance(l1, torch.Tensor):
-                r_l1 = torch.zeros_like(l1)
-            else:
-                r_l1 = np.zeros_like(l1)
+            r_l1 = zeros_like(l1)
         else:
             if HAS_TORCH and isinstance(l1, torch.Tensor):
                 r_l1 = 2.0 * Hov.clone()
