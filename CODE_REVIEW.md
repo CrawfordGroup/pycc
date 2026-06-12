@@ -51,7 +51,7 @@ in the **Critique** section.
       one `PyCCWarning`, `device` falls back to `'CPU'`). The CUDA-unavailable elif is
       verified by inspection only — testing it needs torch installed, which we declined
       to add to `p4env`; it's safe because it's only reachable when `HAS_TORCH` is True.
-- [x] **CI: CPU-torch test lane** — DONE (branch `ci/torch-path-lane`). GitHub-hosted
+- [x] **CI: CPU-torch test lane** — DONE & MERGED (PR #99). GitHub-hosted
       runners have no GPU/CUDA, but the torch/"GPU" code path falls back to CPU tensors
       when CUDA is absent, so it runs on a standard runner once torch is installed —
       which is what catches torch-API regressions (the `torch.zero_like` class of bug).
@@ -60,10 +60,13 @@ in the **Critique** section.
       with a CPU-only torch wheel (covers the torch path); `fail-fast: false`. Also fixed
       a latent `NameError` in `test_025_contract_gpu.py` (used `torch.complex128` but
       never imported torch — masked because the test was always skipped) via
-      `torch = pytest.importorskip("torch")`. _Validated structurally + the no-torch skip
-      locally; the `ubuntu, torch=true` leg is unproven until it runs on GitHub._ **Still
-      open:** real-CUDA numerics need actual GPU hardware (self-hosted runner or a paid
-      GPU runner, gated to the nightly `schedule:`) — deferred.
+      `torch = pytest.importorskip("torch")`. **The lane earned its keep on the first run**:
+      it surfaced two real defects (the six-module missing-`import torch`, and the stale
+      always-skipped `test_025` — both in *Real bugs* below). After those fixes all three
+      legs pass green, so the torch path is now actually exercised — including
+      `test_025`'s RT-CCSD propagation running on torch-CPU tensors and matching the
+      validated reference. **Still open:** real-CUDA numerics need actual GPU hardware
+      (self-hosted runner or a paid GPU runner, gated to the nightly `schedule:`) — deferred.
 - [x] **Type hints + method docstrings** — DONE (both halves):
       shape/index + CCSD-equation docstrings on the intermediate builders and
       residual/energy methods in `ccwfn.py`, `cchbar.py`, `cclambda.py`
@@ -119,6 +122,19 @@ Sphinx docs. As a research scaffold it's in good shape.
   non-slow tests fail**. **[FIXED 2026-06-11]** — added a guarded `if HAS_TORCH: import
   torch` after the `HAS_TORCH` import in each module. **Found by the new CPU-torch CI
   lane on its first run** (PR #99) — exactly the class of bug that lane exists to catch.
+- **`test_025_contract_gpu.py` — stale, never-run test (wrong `rtcc` arg order + stale
+  reference).** Because it was always skipped (gpu-marked, no torch in CI), it drifted out
+  of sync with the `rtcc` API: it passed `phase` *first* to `collect_amps` and unpacked
+  `extract_amps` as `(phase, t1, …)`, but both put `phase` **last** (matching its working
+  CPU twin `test_024`). With `phase` bound to `t1`, the `isinstance(t1, torch.Tensor)`
+  check fell through to the NumPy branch and `.type()` raised
+  `AttributeError: 'numpy.ndarray' object has no attribute 'type'`. Its `mu_z` reference
+  (`-0.34894577`) was also stale — the test is the *identical* propagation to `test_024`,
+  whose reference was corrected to `-0.0780067603267549` ("removing SCF from original ref")
+  while this skipped test never got the update. **[FIXED 2026-06-11]** — corrected the arg
+  order and reference; also fixed the **root cause**: the `collect_amps`/`extract_amps`
+  docstrings listed `phase` first (and had an `l2, l2` typo) while signature/return put it
+  last. Surfaced by the CPU-torch lane (PR #99) once the missing-import bug above was cleared.
 - **`ccwfn.py:640` — `torch.zero_like(t1)` is not a function** (should be `torch.zeros_like`).
   On the GPU CCD residual path, latent until someone runs CCD on a Torch tensor → `AttributeError`.
   **[FIXED 2026-06-10]**
