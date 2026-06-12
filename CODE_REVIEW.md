@@ -15,11 +15,19 @@ in the **Critique** section.
 - [x] `.gitignore` — Psi4 scratch (`psi.*.clean`), `ijk.dat`, `profile.txt`, `.DS_Store`
 - [ ] **Shared CC solver base** — extract a `_CCSolver` (or composition) shared by
       `ccwfn` and `lccwfn` to kill the ~800–960-line duplication. _Highest leverage._
-- [ ] **Contraction-backend abstraction** — replace the ~50×/module
+- [~] **Contraction-backend abstraction** — replace the ~50×/module
       `contract = self.ec.contract if self.einsums ...` + `.clone()/.copy()` device
       branching with one callable that owns library/device/precision. (Root cause of
       the `zero_like` bug.) _Design drafted below — see "Design note:
       contraction-backend abstraction"; decision is to grow `cc_contract`._
+      _Started (smear #3, the array-namespace helpers):_ added shared `zeros_like(a)` and
+      `zeros(shape, like)` to `utils.py` as free functions (free, not `cc_contract`
+      methods, because `cctriples`' triples kernels are module-level and have no
+      `self.contract`), and applied them in `cclambda` and `ccdensity` — collapsing the
+      `if HAS_TORCH … torch.zeros_like … else np.zeros_like` branches and removing every
+      `zeros_like`+`pad` idiom. Remaining modules (`ccwfn`, `cctriples`, `cchbar`,
+      `cceom`, `rt/rtcc`, `lccwfn`) adopt the helpers one-per-PR. The library-dispatch
+      (smear #1) and `.clone()/.copy()` (smear #2) collapses are still open.
 - [x] **Test fixtures** — added `pycc/tests/conftest.py` (`psi4_environment` +
       `rhf_wfn` factory); converted 32 test modules off the copied psi4-setup block
       (~570 fewer lines). Branch `refactor/test-fixtures`, commit `2cfe825`. A
@@ -27,9 +35,16 @@ in the **Critique** section.
       reference energies are method-specific and stay inline in each test. Note:
       `test_040` (einsums CC2) hangs locally with or without this change; einsums
       isn't in CI so those tests skip there.
-- [ ] **Break up god methods** — `cclambda.solve_lambda` (~220), `cclambda.residuals`
-      (~170), `ccwfn.t3_density` (~134, incl. dead debug block at 912–958),
-      `ccwfn.r_T2`/`residuals` deep model conditional trees.
+- [~] **Break up god methods** — _`cclambda` half DONE (PR #101)._
+      `cclambda.solve_lambda` (221→122) and `cclambda.residuals` (169→56) each carried a
+      near-verbatim ~120-line CC3 lambda-triples block; extracted to shared helpers
+      `_build_cc3_lambda_intermediates` + `_cc3_lambda_triples` (a `real_time` flag is the
+      only difference between the two former copies). `ccwfn.t3_density`'s flagged dead
+      debug block was **already gone** (removed before this effort; the "912–958" line
+      ref was stale) and the method is now a clean 86-line (T)-density kernel — dropped
+      from this item. _Still open:_ the mirror **t3** dedup in `ccwfn.py` (its `residuals`
+      vs the `solve_cc` per-iteration block), and the `ccwfn.r_T2`/`residuals` deep
+      CCD/CC2/CCSD/CC3 conditional trees.
 - [x] **Custom exception types** + `.upper()` the string kwargs — DONE. New
       `pycc/exceptions.py` with `PyCCError` base and `InvalidKeywordError(PyCCError,
       ValueError)` (carries `keyword`/`value`/`allowed`, standardized message,
@@ -169,9 +184,11 @@ Sphinx docs. As a research scaffold it's in good shape.
   `if HAS_TORCH and isinstance(t1, torch.Tensor): .clone() else .copy()` appears ~50+ times per
   module. Should be one contraction-backend abstraction (a callable that already knows
   device/precision/library). This smearing is exactly what produced the `zero_like` bug.
-- **God methods.** `cclambda.solve_lambda` (~220 lines) and `residuals` (~170),
-  `ccwfn.t3_density` (~134, with a 47-line commented-out debug block at 912–958),
-  `residuals`/`r_T2` with deep CCD/CC2/CCSD/CC3 conditional trees. Hard to test and review.
+- **God methods.** `cclambda.solve_lambda` (~220 lines) and `residuals` (~170) — both
+  cut roughly in half by extracting the shared CC3 lambda-triples block (PR #101);
+  `ccwfn.t3_density` (now ~86 lines; the once-flagged commented-out debug block is already
+  gone); `ccwfn.residuals`/`r_T2` with deep CCD/CC2/CCSD/CC3 conditional trees (still
+  open). Hard to test and review.
 
 ### Quality / maintainability
 
