@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from opt_einsum import contract
-from .utils import helper_diis, zeros, zeros_like, clone
+from .utils import helper_diis, zeros, zeros_like, clone, sqrt
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
@@ -152,19 +152,13 @@ class cclambda(object):
                 self.l2 += inc2
                 rms = contract('ia,ia->', inc1, inc1)
                 rms += contract('ijab,ijab->', inc2, inc2)
-                if HAS_TORCH and isinstance(l1, torch.Tensor):
-                    rms = torch.sqrt(rms)
-                else: 
-                    rms = np.sqrt(rms)
+                rms = sqrt(rms)
             else:
                 self.l1 += r1/Dia
                 self.l2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia)
                 rms += contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                if HAS_TORCH and isinstance(l1, torch.Tensor):
-                    rms = torch.sqrt(rms)
-                else:
-                    rms = np.sqrt(rms)
+                rms = sqrt(rms)
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last

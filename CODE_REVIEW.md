@@ -207,6 +207,16 @@ Sphinx docs. As a research scaffold it's in good shape.
   PNO/PNO++ opt paths converge fine, so this is PAO-specific (possibly the `local_cutoff=2e-2`
   domain construction or a sign/projection error on the PAO path) — a genuine numerical bug,
   NOT the `np.zeros` issue above. Needs investigation.
+- **`ccwfn.py:solve_cc` — the torch/GPU convergence branch silently skips the `(T)`
+  correction (open).** In the convergence block the `if HAS_TORCH and isinstance(self.t1,
+  torch.Tensor):` arm prints/returns the bare `ecc` (CCSD energy), while only the NumPy
+  `else` arm has the `if self.model == 'CCSD(T)': et = t3_density()/t_tjl(self); ecc += et`
+  step. So **`model='CCSD(T)'` run on a torch tensor returns the CCSD energy with no `(T)`
+  correction** — a wrong result, not a crash. Latent because torch/GPU isn't in CI (the
+  CPU-torch lane added in PR #99 *would* catch it if a `CCSD(T)` torch test existed). Fix:
+  hoist the `(T)` step out of the backend branch so both paths compute it. Surfaced while
+  auditing remaining `HAS_TORCH` branches for the backend-helper sweep; left as a separate
+  behavior fix (untestable locally — no torch in `p4env`).
 
 ### Structural issues (the expensive ones)
 

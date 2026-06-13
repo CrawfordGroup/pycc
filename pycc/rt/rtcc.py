@@ -11,7 +11,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import zeros_like, clone, conj
+from pycc.utils import zeros_like, clone, conj, reshape
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -202,18 +202,14 @@ class rtcc(object):
         # Extract the amplitudes
         len1 = no*nv
         len2 = no*no*nv*nv
+        t1 = reshape(y[:len1], (no, nv))
+        t2 = reshape(y[len1:(len1+len2)], (no, no, nv, nv))
+        l1 = reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
+        l2 = reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
+        # Extract the phase; .item() returns a Python scalar from a torch tensor
         if HAS_TORCH and isinstance(y, torch.Tensor):
-            t1 = torch.reshape(y[:len1], (no, nv))
-            t2 = torch.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
-            l1 = torch.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = torch.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
             phase = y[-1].item()
         else:
-            t1 = np.reshape(y[:len1], (no, nv))
-            t2 = np.reshape(y[len1:(len1+len2)], (no, no, nv, nv))
-            l1 = np.reshape(y[(len1+len2):(len1+len2+len1)], (no, nv))
-            l2 = np.reshape(y[(len1+len2+len1):-1], (no, no, nv, nv))
-            # Extract the phase
             phase = y[-1]
 
         return t1, t2, l1, l2, phase

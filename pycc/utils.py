@@ -103,6 +103,28 @@ def solve(A, b):
     return np.linalg.solve(A, b)
 
 
+def sqrt(a):
+    """Backend-aware square root: ``torch.sqrt`` for a torch tensor, else ``np.sqrt``."""
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.sqrt(a)
+    return np.sqrt(a)
+
+
+def reshape(a, shape):
+    """Backend-aware reshape: ``torch.reshape`` for a torch tensor, else ``np.reshape``."""
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.reshape(a, shape)
+    return np.reshape(a, shape)
+
+
+def concatenate(arrays):
+    """Backend-aware 1-D concatenation: ``torch.cat`` for torch tensors, else
+    ``np.concatenate``. Dispatches on the first array in ``arrays``."""
+    if HAS_TORCH and isinstance(arrays[0], torch.Tensor):
+        return torch.cat(arrays)
+    return np.concatenate(arrays)
+
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
         self.oldt1 = clone(t1)
@@ -122,10 +144,7 @@ class helper_diis(object):
         # Add new error vectors
         error_t1 = (self.diis_vals_t1[-1] - self.oldt1).ravel()
         error_t2 = (self.diis_vals_t2[-1] - self.oldt2).ravel()
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            self.diis_errors.append(torch.cat((error_t1, error_t2)))
-        else:
-            self.diis_errors.append(np.concatenate((error_t1, error_t2)))
+        self.diis_errors.append(concatenate((error_t1, error_t2)))
         self.oldt1 = clone(t1)
         self.oldt2 = clone(t2)
 
