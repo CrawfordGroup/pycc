@@ -21,7 +21,7 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, cc_contract, zeros_like, clone
+from .utils import helper_diis, cc_contract, zeros_like, clone, sqrt
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
@@ -353,18 +353,12 @@ class ccwfn(object):
                 self.t1 += inc1
                 self.t2 += inc2
                 rms = contract('ia,ia->', inc1, inc1) + contract('ijab,ijab->', inc2, inc2)
-                if HAS_TORCH and isinstance(r1, torch.Tensor):
-                    rms = torch.sqrt(rms)
-                else:
-                    rms = np.sqrt(rms)
+                rms = sqrt(rms)
             else:
                 self.t1 += r1/Dia
                 self.t2 += r2/Dijab
                 rms = contract('ia,ia->', r1/Dia, r1/Dia) + contract('ijab,ijab->', r2/Dijab, r2/Dijab)
-                if HAS_TORCH and isinstance(r1, torch.Tensor):
-                    rms = torch.sqrt(rms)
-                else:
-                    rms = np.sqrt(rms)
+                rms = sqrt(rms)
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last

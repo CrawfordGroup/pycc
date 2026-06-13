@@ -36,6 +36,23 @@ in the **Critique** section.
       genuinely backend-divergent bodies that no copy/alloc helper can unify
       (`helper_diis.extrapolate`'s `torch.linalg.solve` vs `np.linalg.solve`; `rtcc`'s
       `torch.trace`/`np.trace` arms) await the fuller backend object.
+- [ ] **Real-valued response amplitudes for imaginary perturbations.** The magnetic-dipole
+      (`H.m`) and linear-momentum (`H.p`) integrals are stored pure-imaginary (`* 1.0j`),
+      so for those perturbations `ccresponse`'s `X1`/`X2` come out **pure imaginary** —
+      verified empirically: real part is *exactly* `0.0`, only the imaginary half is used
+      (the electric-dipole `MU` amplitudes are real). They are nonetheless carried as
+      `complex128`. Factoring the `i` out and storing them as **real** arrays would halve
+      their memory, drop the complex arithmetic, and remove a benign `ComplexWarning` in
+      DIIS (`np.dot` of two pure-imaginary vectors returns a complex-dtype scalar whose
+      imaginary part is exactly zero, which is then cast into the real DIIS `B` matrix —
+      no information lost; the warning is **pre-existing on `main`**, not from the
+      backend-helper refactor). A focused `ccresponse` change, independent of the
+      contraction-backend work. **Caveat:** the `* 1.0j` integral arrays `H.m`/`H.p`
+      themselves **cannot** simply be made real — they are shared with the RT-CC code
+      (`rtcc` consumes `self.ccwfn.H.m` for the magnetic-field coupling), which relies on
+      their imaginary character. So any "store real" change must factor the `i` out
+      *locally inside `ccresponse`*'s amplitude/perturbation handling, leaving the
+      `hamiltonian` integral storage untouched.
 - [x] **Test fixtures** — added `pycc/tests/conftest.py` (`psi4_environment` +
       `rhf_wfn` factory); converted 32 test modules off the copied psi4-setup block
       (~570 fewer lines). Branch `refactor/test-fixtures`, commit `2cfe825`. A
@@ -190,6 +207,16 @@ Sphinx docs. As a research scaffold it's in good shape.
   PNO/PNO++ opt paths converge fine, so this is PAO-specific (possibly the `local_cutoff=2e-2`
   domain construction or a sign/projection error on the PAO path) — a genuine numerical bug,
   NOT the `np.zeros` issue above. Needs investigation.
+- **`ccwfn.py:solve_cc` — the torch/GPU convergence branch silently skips the `(T)`
+  correction (open).** In the convergence block the `if HAS_TORCH and isinstance(self.t1,
+  torch.Tensor):` arm prints/returns the bare `ecc` (CCSD energy), while only the NumPy
+  `else` arm has the `if self.model == 'CCSD(T)': et = t3_density()/t_tjl(self); ecc += et`
+  step. So **`model='CCSD(T)'` run on a torch tensor returns the CCSD energy with no `(T)`
+  correction** — a wrong result, not a crash. Latent because torch/GPU isn't in CI (the
+  CPU-torch lane added in PR #99 *would* catch it if a `CCSD(T)` torch test existed). Fix:
+  hoist the `(T)` step out of the backend branch so both paths compute it. Surfaced while
+  auditing remaining `HAS_TORCH` branches for the backend-helper sweep; left as a separate
+  behavior fix (untestable locally — no torch in `p4env`).
 
 ### Structural issues (the expensive ones)
 
