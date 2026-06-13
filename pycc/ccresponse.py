@@ -66,25 +66,21 @@ class ccresponse(object):
             key = "MU_" + self.cart[axis]
             self.pertbar[key] = pertbar(self.H.mu[axis], self.ccwfn)
 
-        # Magnetic-dipole operator
+        # Magnetic-dipole (m) and velocity-gauge electric-dipole / linear-momentum (p)
+        # integrals are stored *pure imaginary* in hamiltonian.py (H.m, H.p = i * real)
+        # because the RT-CC code relies on that. For response, factor the i out here so
+        # the perturbed amplitudes X1/X2 stay real: a pure-imaginary perturbation i*A
+        # gives X = i*x (x real), and the pseudoresponse/polarizability are bilinear in
+        # the perturbation (~ conj(c)*c = |c|^2), so dropping the i leaves every property
+        # value unchanged while halving the amplitude storage and removing complex
+        # arithmetic. np.real(-1.0j * pert) returns a real-dtype A (not a complex array
+        # with zero imaginary part); the -1.0j is applied to the conjugate operators too,
+        # so M* = -M (and P* = -P) stays distinct from M (P).
         for axis in range(3):
-            key = "M_" + self.cart[axis]
-            self.pertbar[key] = pertbar(self.H.m[axis], self.ccwfn)
-
-        # Complex-conjugate of magnetic-dipole operator
-        for axis in range(3):
-            key = "M*_" + self.cart[axis]
-            self.pertbar[key] = pertbar(np.conj(self.H.m[axis]), self.ccwfn)
-
-        # Electric-dipole operator (velocity)
-        for axis in range(3):
-            key = "P_" + self.cart[axis]
-            self.pertbar[key] = pertbar(self.H.p[axis], self.ccwfn)
-
-        # Complex-conjugate of electric-dipole operator (velocity)
-        for axis in range(3):
-            key = "P*_" + self.cart[axis]
-            self.pertbar[key] = pertbar(np.conj(self.H.p[axis]), self.ccwfn)
+            self.pertbar["M_" + self.cart[axis]] = pertbar(np.real(-1.0j * self.H.m[axis]), self.ccwfn)
+            self.pertbar["M*_" + self.cart[axis]] = pertbar(np.real(-1.0j * np.conj(self.H.m[axis])), self.ccwfn)
+            self.pertbar["P_" + self.cart[axis]] = pertbar(np.real(-1.0j * self.H.p[axis]), self.ccwfn)
+            self.pertbar["P*_" + self.cart[axis]] = pertbar(np.real(-1.0j * np.conj(self.H.p[axis])), self.ccwfn)
 
         # Traceless quadrupole
         ij = 0
