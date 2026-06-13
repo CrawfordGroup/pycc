@@ -81,23 +81,25 @@ in the **Critique** section.
       unverifiable" worry was moot). **This item is now fully done; the only remaining
       backend work is the deeper device-placed object the design note describes (a future
       direction, not a worklist gap).**
-- [ ] **Real-valued response amplitudes for imaginary perturbations.** The magnetic-dipole
-      (`H.m`) and linear-momentum (`H.p`) integrals are stored pure-imaginary (`* 1.0j`),
-      so for those perturbations `ccresponse`'s `X1`/`X2` come out **pure imaginary** —
-      verified empirically: real part is *exactly* `0.0`, only the imaginary half is used
-      (the electric-dipole `MU` amplitudes are real). They are nonetheless carried as
-      `complex128`. Factoring the `i` out and storing them as **real** arrays would halve
-      their memory, drop the complex arithmetic, and remove a benign `ComplexWarning` in
-      DIIS (`np.dot` of two pure-imaginary vectors returns a complex-dtype scalar whose
-      imaginary part is exactly zero, which is then cast into the real DIIS `B` matrix —
-      no information lost; the warning is **pre-existing on `main`**, not from the
-      backend-helper refactor). A focused `ccresponse` change, independent of the
-      contraction-backend work. **Caveat:** the `* 1.0j` integral arrays `H.m`/`H.p`
-      themselves **cannot** simply be made real — they are shared with the RT-CC code
-      (`rtcc` consumes `self.ccwfn.H.m` for the magnetic-field coupling), which relies on
-      their imaginary character. So any "store real" change must factor the `i` out
-      *locally inside `ccresponse`*'s amplitude/perturbation handling, leaving the
-      `hamiltonian` integral storage untouched.
+- [x] **Real-valued response amplitudes for imaginary perturbations** — DONE (PR #111).
+      The magnetic-dipole (`H.m`) and linear-momentum (`H.p`) integrals are stored
+      pure-imaginary (`* 1.0j`) for the RT-CC code, so for those perturbations
+      `ccresponse`'s `X1`/`X2` came out pure imaginary (real part *exactly* `0.0`) but were
+      carried as `complex128`. Factored the `i` out **locally in `ccresponse.__init__`**
+      (Option 1 of two): the `M`/`M*`/`P`/`P*` pertbars are built from
+      `np.real(-1.0j * pert)` — a real-dtype `A`, not a complex array with zero imaginary
+      part — with `-1.0j` applied to the conjugate operators too, so `M* = -M` (`P* = -P`)
+      stays distinct. `hamiltonian.py`/`rtcc.py` left untouched (Option 2 — making the
+      integrals real and re-imaginary-ing in `rtcc` — was rejected: it spreads `i`-handling
+      to both modules and `np.conj` of a real array collapses the `M`/`M*` distinction).
+      Results-preserving because `pertbar`/`solve_right` are linear in the perturbation and
+      pseudoresponse/polarizability are bilinear (`~ conj(c)*c = |c|^2`, and `|i|^2=|1|^2`),
+      so every property value is unchanged; `X1`/`X2` are now real `float64` (half memory,
+      and the two DIIS `ComplexWarning`s are gone). _Known limitation:_ a genuinely mixed
+      real×imaginary property (optical rotation `<<MU;M>>` via `linresp_asym`) would now
+      differ by a factor of `i` — untested and not currently functional (the polarizability
+      accumulator is a real array), so nothing working regresses; if such properties are
+      added later, carry the stripped phase on `pertbar` and apply it in the contraction.
 - [x] **Test fixtures** — added `pycc/tests/conftest.py` (`psi4_environment` +
       `rhf_wfn` factory); converted 32 test modules off the copied psi4-setup block
       (~570 fewer lines). Branch `refactor/test-fixtures`, commit `2cfe825`. A
@@ -281,5 +283,6 @@ Scientifically impressive and broad. Of the three original debt clusters —
 (1) the `ccwfn`/`lccwfn` fork, (2) hand-rolled backend dispatch, (3) test-setup duplication —
 **(2) and (3) are done**, and **(1) was re-scoped**: the audit showed it's two implementations
 of the same equations (not copy-paste), so the decision is to keep both solvers explicit. The
-remaining open work is concrete and bounded: the **PAO NaN bug**, the **CCSD(T)-on-GPU `(T)`
-skip**, and the optional **real-valued response amplitudes** — all in the worklist above.
+remaining open work is concrete and bounded: the **PAO NaN bug** and the **CCSD(T)-on-GPU
+`(T)` skip** — both in the worklist above. (The real-valued response amplitudes landed in
+PR #111.)
