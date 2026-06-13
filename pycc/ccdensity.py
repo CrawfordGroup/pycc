@@ -184,16 +184,7 @@ class ccdensity(object):
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L
  
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            if self.ccwfn.precision == 'DP':
-                opdm = torch.zeros((nt, nt), dtype=torch.complex128, device=self.ccwfn.device1)
-            elif self.ccwfn.precision == 'SP':
-                opdm = torch.zeros((nt, nt), dtype=torch.complex64, device=self.ccwfn.device1)
-        else:
-            if self.ccwfn.precision == 'DP':
-                opdm = np.zeros((nt, nt), dtype='complex128')
-            elif self.ccwfn.precision == 'SP':
-                opdm = np.zeros((nt, nt), dtype='complex64')
+        opdm = zeros((nt, nt), like=t1)
         opdm[o,o] = self.build_Doo(t1, t2, l1, l2)
         opdm[v,v] = self.build_Dvv(t1, t2, l1, l2)
         opdm[o,v] = self.build_Dov(t1, t2, l1, l2)
@@ -348,16 +339,7 @@ class ccdensity(object):
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                if self.ccwfn.precision == 'DP':
-                    Dooov = torch.zeros((no,no,no,nv), dtype=torch.complex128, device=self.ccwfn.device1)
-                elif self.ccwfn.precision == 'SP':                    
-                    Dooov = torch.zeros((no,no,no,nv), dtype=torch.complex64, device=self.ccwfn.device1)
-            else:
-                if self.ccwfn.precision == 'DP':
-                    Dooov = np.zeros((no,no,no,nv))
-                elif self.ccwfn.precision == 'SP':
-                    Dooov = np.zeros((no,no,no.nv), dtype=np.complex64)
+            Dooov = zeros((no,no,no,nv), like=t1)
         else:
             tmp = 2.0 * self.ccwfn.build_tau(t1, t2) - self.ccwfn.build_tau(t1, t2).swapaxes(2, 3)
             Dooov = -1.0 * contract('ke,ijea->ijka', l1, tmp)
@@ -401,16 +383,7 @@ class ccdensity(object):
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
             nv = self.ccwfn.nv
-            if HAS_TORCH and isinstance(t1, torch.Tensor):
-                if self.ccwfn.precision == 'DP':
-                    Dvvvo = torch.zeros((nv,nv,nv,no), dtype=torch.complex128, device=self.ccwfn.device1)
-                if self.ccwfn.precision == 'SP':
-                    Dvvvo = torch.zeros((nv,nv,nv,no), dtype=torch.complex64, device=self.ccwfn.device1)
-            else:
-                if self.ccwfn.precision == 'DP':
-                    Dvvvo = np.zeros((nv,nv,nv,no))
-                if self.ccwfn.precision == 'SP':
-                    Dvvvo = np.zeros((nv,nv,nv,no), dtype=np.complex64)
+            Dvvvo = zeros((nv,nv,nv,no), like=t1)
         else: 
             tmp = 2.0 * self.ccwfn.build_tau(t1, t2) - self.ccwfn.build_tau(t1, t2).swapaxes(2, 3)
             Dvvvo = contract('mc,miab->abci', l1, tmp)
