@@ -1,6 +1,6 @@
 # PyCC — Overview & Critique
 
-_Review date: 2026-06-10_
+_Review date: 2026-06-10 (last updated 2026-06-13 — fixed/landed items pruned from the Critique)_
 
 ## Remaining cleanup (worklist)
 
@@ -13,8 +13,30 @@ in the **Critique** section.
 - [x] `pycc/data/__init__.py` — make `data` a real subpackage
 - [x] `ccwfn.py:347` — remove orphaned commented-out line
 - [x] `.gitignore` — Psi4 scratch (`psi.*.clean`), `ijk.dat`, `profile.txt`, `.DS_Store`
-- [ ] **Shared CC solver base** — extract a `_CCSolver` (or composition) shared by
-      `ccwfn` and `lccwfn` to kill the ~800–960-line duplication. _Highest leverage._
+- [~] **Shared CC solver base** — _re-scoped after a direct ccwfn/lccwfn audit
+      (2026-06-13)._ The original "~800–960-line duplication → extract a `_CCSolver`"
+      framing is **misleading**: the two solvers implement the **same CC equations**
+      (the `build_*`/energy docstrings match equation-for-equation) but via **different
+      data structures** — `ccwfn` uses full canonical tensors with `contract(...)`,
+      `lccwfn` uses per-pair PNO/PAO lists with `QL` projections + `Sij` overlaps and
+      explicit `ij`/`m`/`n` loops. So there is **almost no textually-identical code to
+      hoist**: `build_Fae` is ~6 lines vs ~45/branch, `cc_energy` ~2 lines vs ~25, and
+      every intermediate/`r_T1`/`r_T2`/residual is a genuine reimplementation in
+      projected local domains. A full shared-intermediate `_CCSolver` is **not feasible**
+      without first building a domain-abstracted tensor layer (canonical = local with
+      identity projections) — research-scale, changes numerics, **not recommended**.
+      _What is actually shared:_ only the ~30-line **driver skeleton** (`solve_cc`/
+      `solve_lcc`: init-energy → iterate → residuals → update → rms → energy →
+      convergence-print → DIIS) — a thin template-method base is the *only* viable dedup,
+      and is **optional** (for a teaching/research code, two explicit solvers may read
+      better than a hook-based base). The equation docstrings are already kept in sync by
+      hand. **Decision: keep the two solvers explicit; no base-class extraction.**
+      _Related observation (not a planned change):_ `lccwfn` has **no DIIS** — it's
+      commented out (`#ldiis = helper_ldiis(...)`). `utils.helper_diis` is not a drop-in:
+      it assumes uniform `ndarray` `t1`/`t2` (`.ravel()` + `concatenate`), whereas
+      `lccwfn`'s `t1`/`t2` are **lists of per-pair arrays of varying dimension**, so a
+      local DIIS would need its own pair-aware error-vector handling. The missing
+      convergence acceleration plausibly feeds the open **PAO NaN bug**.
 - [x] **Contraction-backend abstraction** — replace the ~50×/module
       `contract = self.ec.contract if self.einsums ...` + `.clone()/.copy()` device
       branching with one callable that owns library/device/precision. (Root cause of
@@ -135,7 +157,7 @@ in the **Critique** section.
       never imported torch — masked because the test was always skipped) via
       `torch = pytest.importorskip("torch")`. **The lane earned its keep on the first run**:
       it surfaced two real defects (the six-module missing-`import torch`, and the stale
-      always-skipped `test_025` — both in *Real bugs* below). After those fixes all three
+      always-skipped `test_025`) — both fixed in the same effort. After those fixes all three
       legs pass green, so the torch path is now actually exercised — including
       `test_025`'s RT-CCSD propagation running on torch-CPU tensors and matching the
       validated reference. **Still open:** real-CUDA numerics need actual GPU hardware
@@ -166,12 +188,12 @@ platform on top of Psi4 (SCF + integrals) and NumPy/opt_einsum for the correlate
 
 | Module | Role |
 |---|---|
-| `ccwfn.py` (960) | T-amplitude solver; the central "god object" |
-| `lccwfn.py` (785) | Local-CC T-amplitude solver (PAO/PNO/PNO++) |
+| `ccwfn.py` (1163) | T-amplitude solver; the central "god object" |
+| `lccwfn.py` (984) | Local-CC T-amplitude solver (PAO/PNO/PNO++) |
 | `cchbar.py` / `cclambda.py` / `ccdensity.py` | Similarity-transformed H̄, Λ-amplitudes, one- & two-PDMs |
-| `cctriples.py` (625) | (T), CC3, and approximate-triples drivers |
-| `cceom.py` / `ccresponse.py` (864) | EOM-CCSD and response/property machinery |
-| `local.py` (1031) | Virtual-space localizers (PAO, PNO, PNO++, cPNO++) |
+| `cctriples.py` (666) | (T), CC3, and approximate-triples drivers |
+| `cceom.py` / `ccresponse.py` (873) | EOM-CCSD and response/property machinery |
+| `local.py` (1042) | Virtual-space localizers (PAO, PNO, PNO++, cPNO++) |
 | `hamiltonian.py` | MO integral transform (Fock, ERIs, dipole/angular-momentum) |
 | `rt/` | Real-time CC: integrators, lasers, autocorrelation |
 
@@ -185,51 +207,17 @@ Sphinx docs. As a research scaffold it's in good shape.
 
 ### Real bugs
 
-- **Six modules use `torch.*` without importing it** (`utils.py`, `ccdensity.py`,
-  `cchbar.py`, `cclambda.py`, `cctriples.py`, `rt/rtcc.py`). Each does
-  `from pycc.ccwfn import HAS_TORCH` but never `import torch`, then references `torch`
-  inside `if HAS_TORCH and isinstance(x, torch.Tensor):` guards. Latent for the same
-  reason as the others: with torch absent the guard is never entered, so the no-torch CI
-  never hit it. The moment torch is installed, `helper_diis.__init__` (`utils.py:8`, on
-  every solve's DIIS path) raises `NameError: name 'torch' is not defined` → **37 of the
-  non-slow tests fail**. **[FIXED 2026-06-11]** — added a guarded `if HAS_TORCH: import
-  torch` after the `HAS_TORCH` import in each module. **Found by the new CPU-torch CI
-  lane on its first run** (PR #99) — exactly the class of bug that lane exists to catch.
-- **`test_025_contract_gpu.py` — stale, never-run test (wrong `rtcc` arg order + stale
-  reference).** Because it was always skipped (gpu-marked, no torch in CI), it drifted out
-  of sync with the `rtcc` API: it passed `phase` *first* to `collect_amps` and unpacked
-  `extract_amps` as `(phase, t1, …)`, but both put `phase` **last** (matching its working
-  CPU twin `test_024`). With `phase` bound to `t1`, the `isinstance(t1, torch.Tensor)`
-  check fell through to the NumPy branch and `.type()` raised
-  `AttributeError: 'numpy.ndarray' object has no attribute 'type'`. Its `mu_z` reference
-  (`-0.34894577`) was also stale — the test is the *identical* propagation to `test_024`,
-  whose reference was corrected to `-0.0780067603267549` ("removing SCF from original ref")
-  while this skipped test never got the update. **[FIXED 2026-06-11]** — corrected the arg
-  order and reference; also fixed the **root cause**: the `collect_amps`/`extract_amps`
-  docstrings listed `phase` first (and had an `l2, l2` typo) while signature/return put it
-  last. Surfaced by the CPU-torch lane (PR #99) once the missing-import bug above was cleared.
-- **`ccwfn.py:640` — `torch.zero_like(t1)` is not a function** (should be `torch.zeros_like`).
-  On the GPU CCD residual path, latent until someone runs CCD on a Torch tensor → `AttributeError`.
-  **[FIXED 2026-06-10]**
-- **`pyproject.toml` — `packages = ["pycc"]` omitted the subpackages.** `pycc.rt`, `pycc.data`,
-  `pycc.tests` were not declared, so a non-editable `pip install` shipped a broken package
-  (no `rtcc`, no `molecules.py`, which 21 test files import). Worked only because everyone uses
-  `pip install -e .`. **[FIXED 2026-06-10]** — switched to `[tool.setuptools.packages.find]`
-  with `include = ["pycc*"]`, and added `pycc/data/__init__.py` so `data` is a real subpackage.
-- **`ccwfn.py:347` — orphaned, de-indented commented line** (`#rms = ec.contract(...)`) at
-  column 0 inside a method. Harmless leftover from a half-finished `einsums` refactor. (not fixed)
-- **`lccwfn.py` — `np.zeros(dim[ij], dim[ij])` (6 sites, in `build_Wmbje` and `r_T2`)**
-  passes the second dimension as the `dtype` arg, not as part of the shape. Latent because
-  `dim[ij]` is a `numpy.int64`, so NumPy reads it as `dtype=int64` and silently returns a
-  1-D `int64` array — and every one of these is immediately overwritten before use, so it was
-  dead code. **[FIXED 2026-06-11]** — wrapped the shapes in tuples. (No runtime change; removes
-  the trap if an `=` ever becomes `+=`.)
+_Open bugs only. The fixed bugs from the original review (the six-module missing-`import
+torch`, the stale `test_025`, `torch.zero_like`, the `pyproject.toml` subpackages, the
+`ccwfn.py:347` orphaned comment, and the `lccwfn` `np.zeros(dim,dim)` shape trap) are
+recorded with their PRs in the worklist above._
+
 - **`lccwfn.py` — PAO local-CC diverges to `NaN` (open).** `test_pao_ccd_opt` and
   `test_pao_ccsd_opt` (both `slow`, not in CI) run 100 iterations of `nan` then fail with a
   `TypeError` when the test subtracts the `None` returned by the non-converged `solve_lcc`.
   PNO/PNO++ opt paths converge fine, so this is PAO-specific (possibly the `local_cutoff=2e-2`
   domain construction or a sign/projection error on the PAO path) — a genuine numerical bug,
-  NOT the `np.zeros` issue above. Needs investigation.
+  not the (now-fixed) `np.zeros(dim,dim)` shape trap. Needs investigation.
 - **`ccwfn.py:solve_cc` — the torch/GPU convergence branch silently skips the `(T)`
   correction (open).** In the convergence block the `if HAS_TORCH and isinstance(self.t1,
   torch.Tensor):` arm prints/returns the bare `ecc` (CCSD energy), while only the NumPy
@@ -243,117 +231,55 @@ Sphinx docs. As a research scaffold it's in good shape.
 
 ### Structural issues (the expensive ones)
 
-- **`ccwfn` / `lccwfn` duplication.** Two ~800–960-line solvers implement the same CC iteration
-  with no shared base. Every intermediate fix (Fae/Fmi/Wmbej, DIIS wiring, convergence) must be
-  made twice, and they're already drifting. A common `_CCSolver` base (or composition) is the
-  single highest-leverage refactor.
-- **Backend dispatch smeared across every method.** The
-  `contract = self.contract; if self.einsums: contract = self.ec.contract` pattern plus
-  `if HAS_TORCH and isinstance(t1, torch.Tensor): .clone() else .copy()` appears ~50+ times per
-  module. Should be one contraction-backend abstraction (a callable that already knows
-  device/precision/library). This smearing is exactly what produced the `zero_like` bug.
-- **God methods.** `cclambda.solve_lambda` (~220 lines) and `residuals` (~170) — both
-  cut roughly in half by extracting the shared CC3 lambda-triples block (PR #101);
-  `ccwfn.t3_density` (now ~86 lines; the once-flagged commented-out debug block is already
-  gone); `ccwfn.residuals`/`r_T2` with deep CCD/CC2/CCSD/CC3 conditional trees (still
-  open). Hard to test and review.
+- **`ccwfn` / `lccwfn` parallelism.** Two ~1000–1160-line solvers implement the **same CC
+  equations** with no shared base. _But the 2026-06-13 audit showed this is conceptual, not
+  textual, duplication_ — `lccwfn` reformulates every intermediate/residual/energy in projected
+  per-pair PNO/PAO domains (loops + `QL`/`Sij`), so the bodies are genuine reimplementations,
+  not copy-paste, and a shared-intermediate base class isn't feasible without a domain-abstracted
+  tensor layer. The real maintenance cost is keeping the *equations* in sync (the docstrings
+  already mirror each other) — not deduplicating code. See the re-scoped worklist item above for
+  the decision (keep both solvers explicit). _Observation:_ `lccwfn` also has no DIIS
+  (commented-out `helper_ldiis`); `utils.helper_diis` is not a drop-in (it assumes uniform
+  `ndarray` amplitudes, but local `t1`/`t2` are per-pair lists), and the missing convergence
+  acceleration plausibly feeds the PAO NaN bug above.
 
-### Quality / maintainability
+_The other two structural issues from the original review — **backend dispatch smeared across
+every method** and **god methods** — are now resolved (see the `[x]` contraction-backend and
+break-up-god-methods worklist items; all three contraction-backend smears and the method
+splits landed in PRs #101–#109)._
 
-- **No type hints anywhere**; method-level docstrings inconsistent (good class-level numpydoc,
-  but most `build_*` intermediates undocumented). For a code where tensor index order and o/v
-  slicing is the whole ballgame, even shape-documenting docstrings would pay off.
-- **No `conftest.py`.** The same `psi4.set_memory / set_output_file / set_options` block is
-  copy-pasted into 40+ files; geometries re-defined despite `data/molecules.py`; reference
-  energies are hardcoded magic numbers with `1e-11` tolerances. A few fixtures (`rhf_wfn` factory,
-  parameterized `(molecule, basis, ref_energy)`) would shrink the suite and unify tolerances.
-  Stray `psi.*.clean` / `*.dat` test-output files should be `.gitignore`d.
-- **Error handling is all `raise Exception("...")`** for kwarg validation, with
-  `# TODO: case-protect this kwarg` noted 3× in `ccwfn.__init__`. Cheap wins: custom exception
-  types and `.upper()` on the string kwargs already validated against uppercase lists.
-- **Silent CPU fallback** when GPU is requested but Torch is missing — never tells the caller,
-  making "why is this slow / why did precision change" hard to diagnose. A one-line warning helps.
+### Design note: contraction-backend abstraction — IMPLEMENTED
 
-### Design note: contraction-backend abstraction
+_Drafted 2026-06-11, implemented across PRs #102–#109. Kept here for the design rationale
+that still informs future GPU work; the migration plan/histograms have been pruned now that
+the work is done._
 
-_Drafted 2026-06-11. Design only — no code yet. Decision: grow the existing
-`cc_contract` (utils.py:141) into the backend object rather than introduce a new class._
+The abstraction was three distinct "smears": (1) per-method `if self.einsums` library
+re-dispatch, (2) `.clone()/.copy()` device copies, (3) `torch.*`/`np.*` array-namespace
+calls (`zeros_like`/`zeros`/`diag`/`sqrt`/…). Decisions that held up and should guide the
+remaining/ future backend work:
 
-**The item bundles three distinct smears, not one.** Counts are repo-wide across the
-CC modules:
-
-| # | Pattern | Sites | Risk |
-|---|---|---|---|
-| 1 | `contract = self.contract; if self.einsums: contract = self.ec.contract` (per-method library re-dispatch) | ~50 | low |
-| 2 | `if HAS_TORCH and isinstance(x, torch.Tensor): x.clone() else x.copy()` (device copy) | ~201 | medium |
-| 3 | `torch.sqrt`/`np.sqrt`, `torch.zeros_like`/`np.zeros_like`, etc. (device reductions/constructors) | ~97 `isinstance(_, torch.Tensor)` guards | medium |
-
-`cc_contract` already owns the CPU/GPU branch for *contraction* (`__call__` moves
-operands to `device1` and calls `opt_einsum.contract`). It is the natural home for the
-array-namespace helpers the other two smears need. `self.contract = cc_contract(device=...)`
-is set once at ccwfn.py:245 and threaded to every sub-object (`self.contract =
-self.ccwfn.contract`), so a single object already reaches every call site.
-
-**Target shape.** Grow `cc_contract` into a backend that exposes, alongside `__call__`:
-
-```
-backend.clone(x)        # x.clone() if torch else x.copy()
-backend.zeros_like(x)   # the would-be home of the zero_like bug — one definition
-backend.zeros(shape, like=x) / ones(...)
-backend.sqrt(x) / abs(x) / real(x) / diag(x) / dot(a,b) / cat(xs)
-```
-
-The histogram of `torch.*` calls fixes the helper set: `zeros_like` (47), `diag` (14),
-`zeros` (8), `abs` (5), `sqrt`/`real`/`ones`/`dot`/`cat` (≤4 each). `torch.tensor`/
-`torch.complex`/`torch.device`/`torch.cuda` are construction-only in `__init__` and stay.
-
-**Dispatch on the operand, not the device flag.** Each helper keeps the
-`isinstance(x, torch.Tensor)` check *internally* rather than branching on
-`self.device == 'GPU'`. Reason: in GPU mode some arrays deliberately stay on CPU
-(`H.ERI`, `H.L` live on `device0=cpu` while `t1/t2/F` live on `device1`; ccwfn.py:255–262),
-so the runtime type is the correct key and the device flag would be wrong. This also keeps
-the helpers usable from the mixed CPU/GPU reductions without a special case.
-
-**Precision mostly rides along for free.** SP/DP is applied once at construction by casting
-the seed arrays (ccwfn.py:234–274). `clone`/`zeros_like`/`sqrt` inherit dtype from the
-operand, so they need no precision logic. The only sites needing an explicit `dtype` are
-the bare `zeros`/`ones` constructors (≤10) — give those a `like=` operand to copy dtype/
-device from, so precision stays a property of the data, not a branch in every method.
-
-**Smear #1 (library dispatch) — do first, separately.** Fold the choice in once:
-
-```python
-self.contract = self.ec.contract if self.einsums else cc_contract(device=self.device)
-```
-
-then delete the ~50 per-method `if self.einsums:` reassignments. Cheap and mechanical.
-**One caveat that gates this:** `ein` is the *external* `einsums` C++ library
-(`import einsums as ein`, ccwfn.py:31); the per-method pattern may exist precisely because
-einsums doesn't implement every contraction ("...where implemented", ccwfn.py:279) and some
-methods are deliberately pinned to `opt_einsum`. Before collapsing, audit whether any method
-uses `self.contract` (opt_einsum) while `self.einsums` is true — i.e. a real per-method
-override, not redundancy. The einsums path is **not in CI**, so tests won't catch a
-regression here; this needs a manual einsums run or an explicit "einsums unverified" note.
-
-**Migration strategy.** Incremental and reviewable:
-1. Add the helpers to `cc_contract` (pure addition, no call sites changed) + unit-test each
-   helper on a NumPy and a Torch input.
-2. Collapse smear #1 across all modules in one mechanical pass (after the audit above).
-3. Sweep smears #2/#3 **one module at a time** (`ccwfn` → `cchbar` → `cclambda` →
-   `ccdensity` → `cceom`/`ccresponse`/`cctriples` → `lccwfn`), running the CPU test suite
-   after each module. GPU and einsums paths aren't in CI — flag both as manually-verified
-   or known-unverified per module.
-
-**Why this is worth it:** smear #3 is exactly what produced the `zero_like` bug — there
-were 47 places to mistype `zeros_like`, and one was wrong. Centralizing collapses 47 → 1.
-Net deletion is on the order of ~250–300 lines once #1–#3 are done.
+- **Free functions in `utils.py`, not `cc_contract` methods** — `cctriples`' (T) kernels are
+  module-level and have no `self.contract`, so `zeros_like`/`zeros`/`real_zeros`/`diag`/
+  `clone`/`dot`/`absolute`/`conj`/`solve`/`sqrt`/`reshape`/`concatenate` are free functions.
+- **Dispatch on the operand's runtime type** (`isinstance(x, torch.Tensor)`), not on a device
+  flag — in GPU mode some arrays deliberately stay on CPU (`H.ERI`/`H.L` on `device0`).
+- **Precision rides along with the data** — `like=`/`like.real.dtype` seeds inherit dtype
+  (and, for torch, device), so SP/DP is never a per-method branch.
+- **Smear #1 is scoped, not global** — einsums is a partial feature (only `ccwfn`/`cctriples`
+  dispatch to `self.ec`), so the fold went into a ccwfn-private `self._contract`, *not*
+  `self.contract` (which the H̄/Λ/density/EOM/response sub-objects inherit and must keep on
+  opt_einsum).
+- **What stays explicit:** one-time precision/device construction (`torch.tensor`/`complex*`/
+  `device`/`cuda` seed-casts in `__init__`), and the genuinely backend-divergent device-placed
+  linear algebra. The natural next step (a *future direction*, not a worklist gap) is a deeper
+  backend object that owns device-placed ops so even those can move behind helpers.
 
 ### Bottom line
 
-Scientifically impressive and broad. Technical debt is concentrated and predictable:
-1. the `ccwfn`/`lccwfn` fork,
-2. hand-rolled backend dispatch repeated everywhere (source of the `zero_like` bug),
-3. test-setup duplication.
-
-Recommended order: fix the concrete bugs (done), then a shared solver base + a contraction-backend
-abstraction as the medium-term cleanup, with a `conftest.py` fixture refactor alongside.
+Scientifically impressive and broad. Of the three original debt clusters —
+(1) the `ccwfn`/`lccwfn` fork, (2) hand-rolled backend dispatch, (3) test-setup duplication —
+**(2) and (3) are done**, and **(1) was re-scoped**: the audit showed it's two implementations
+of the same equations (not copy-paste), so the decision is to keep both solvers explicit. The
+remaining open work is concrete and bounded: the **PAO NaN bug**, the **CCSD(T)-on-GPU `(T)`
+skip**, and the optional **real-valued response amplitudes** — all in the worklist above.
