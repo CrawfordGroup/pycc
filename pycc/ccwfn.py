@@ -293,6 +293,13 @@ class ccwfn(object):
             self.einsums = False
             print('C++ Einsums library requested but not available.')
 
+        # Contraction callable for ccwfn's own intermediate/residual builders (and the
+        # module-level cctriples kernels): the C++ einsums backend where enabled, else the
+        # shared opt_einsum cc_contract. Scoped to ccwfn + cctriples on purpose -- the
+        # cchbar/cclambda/ccdensity/cceom/ccresponse sub-objects deliberately stay on
+        # self.contract (opt_einsum), as einsums implements only the T/triples paths.
+        self._contract = self.ec.contract if self.einsums else self.contract
+
         # Compute MP2 energy as einsums test
         if self.einsums:
             t2 = 2*self.t2 - self.t2.swapaxes(2,3)
@@ -333,9 +340,7 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
@@ -412,9 +417,7 @@ class ccwfn(object):
             New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
 
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         o = self.o
         v = self.v
@@ -484,12 +487,12 @@ class ccwfn(object):
         X1 = zeros_like(t1)
         X2 = zeros_like(t2)
 
-        contract = self.contract
         for i in range(no):
             for j in range(no):
                 for k in range(no):
-                    if self.einsums:
-                        contract = self.ec.contract
+                    # re-established each iteration: the final contraction below resets
+                    # contract back to self.contract (opt_einsum), which einsums cannot do
+                    contract = self._contract
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
 
                     if real_time is True:
@@ -555,9 +558,7 @@ class ccwfn(object):
             F_ae = f_ae - 1/2 f_me t_ma + t_mf L_mafe
                         - (t2_mnaf + 1/2 t_ma t_nf) L_mnef
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             Fae = clone(F[v,v])
@@ -586,9 +587,7 @@ class ccwfn(object):
             F_mi = f_mi + 1/2 t_ie f_me + t_ne L_mnie
                         + (t2_inef + 1/2 t_ie t_nf) L_mnef
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             Fmi = clone(F[o,o])
@@ -616,9 +615,7 @@ class ccwfn(object):
 
             F_me = f_me + t_nf L_mnef
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             return
@@ -643,9 +640,7 @@ class ccwfn(object):
             W_mnij = <mn|ij> + t_je <mn|ie> + t_ie <mn|ej>
                             + (t2_ijef + t_ie t_jf) <mn|ef>
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             Wmnij = clone(ERI[o,o,o,o], device=self.device1)
@@ -679,9 +674,7 @@ class ccwfn(object):
                             - (1/2 t2_jnfb + t_jf t_nb) <mn|ef>
                             + 1/2 t2_njfb L_mnef
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             Wmbej = clone(ERI[o,v,v,o], device=self.device1)
@@ -714,9 +707,7 @@ class ccwfn(object):
             W_mbje = -<mb|je> - t_jf <mb|fe> + t_nb <mn|je>
                              + (1/2 t2_jnfb + t_jf t_nb) <mn|fe>
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             Wmbje = -1.0 * clone(ERI[o,v,o,v], device=self.device1)
@@ -745,9 +736,7 @@ class ccwfn(object):
 
             Z_mbij = <mb|ef> (t2_ijef + t_ie t_jf)
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             return
@@ -779,9 +768,7 @@ class ccwfn(object):
                     + (2 t2_mief - t2_mife) <ma|ef>
                     - t2_mnae L_nmei
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         if self.model == 'CCD':
             r_T1 = zeros_like(t1)
@@ -837,9 +824,7 @@ class ccwfn(object):
                       + t2_imae (W_mbej + W_mbje[e<->j])
                       + t2_mjae W_mbie
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
@@ -869,9 +854,7 @@ class ccwfn(object):
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
 
@@ -914,9 +897,7 @@ class ccwfn(object):
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
@@ -1085,9 +1066,7 @@ class ccwfn(object):
                 CCD:   E = t2_ijab L_ijab
                 else:  E = 2 f_ia t_ia + tau_ijab L_ijab   (tau = t2 + t1 t1)
         """
-        contract = self.contract
-        if self.einsums:
-            contract = self.ec.contract
+        contract = self._contract
         if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
         else:

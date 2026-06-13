@@ -15,7 +15,7 @@ in the **Critique** section.
 - [x] `.gitignore` — Psi4 scratch (`psi.*.clean`), `ijk.dat`, `profile.txt`, `.DS_Store`
 - [ ] **Shared CC solver base** — extract a `_CCSolver` (or composition) shared by
       `ccwfn` and `lccwfn` to kill the ~800–960-line duplication. _Highest leverage._
-- [~] **Contraction-backend abstraction** — replace the ~50×/module
+- [x] **Contraction-backend abstraction** — replace the ~50×/module
       `contract = self.ec.contract if self.einsums ...` + `.clone()/.copy()` device
       branching with one callable that owns library/device/precision. (Root cause of
       the `zero_like` bug.) _Design drafted below — see "Design note:
@@ -43,9 +43,22 @@ in the **Critique** section.
       `np.zeros((no,no,no.nv), …)` typo and a torch-vs-numpy DP dtype mismatch in the CCD
       branches (only the numpy/DP sub-path was ever exercised). The only explicit
       `torch.*` left is genuine one-time construction (`torch.tensor`/`complex*`/`device`/
-      `cuda` precision seed-casts in `__init__`). _Still open:_ **smear #1** — the
-      per-method `contract = self.ec.contract if self.einsums` library re-dispatch (paused;
-      the einsums path is not in CI, so it needs a manual run before collapsing).
+      `cuda` precision seed-casts in `__init__`). **Smear #1 (library dispatch) DONE.**
+      The ~27 per-method `contract = self.contract; if self.einsums: contract =
+      self.ec.contract` blocks fold into one `ccwfn.__init__` attribute
+      `self._contract = self.ec.contract if self.einsums else self.contract`, used by
+      ccwfn's builders and the `cctriples` (T) kernels (−35 lines). **The audit changed
+      the plan:** einsums is a *partial* feature (only `ccwfn`/`cctriples` dispatch to
+      `self.ec`), so the fold is scoped to a ccwfn-private `_contract` rather than
+      `self.contract` — folding into `self.contract` would have silently switched the
+      H-bar/Λ/density/EOM/response sub-objects (which inherit it) to einsums. Genuine
+      einsums-specific code was preserved: `build_tau`'s transpose formula, the MP2
+      sanity check, and `_cc3_t_residual`'s deliberate opt_einsum reset before its final
+      `'abc,c->ab'` contraction. Verified locally — einsums *is* installed in `p4env`
+      (unlike torch), so `test_038–042` exercise the dispatch (the old "not in CI →
+      unverifiable" worry was moot). **This item is now fully done; the only remaining
+      backend work is the deeper device-placed object the design note describes (a future
+      direction, not a worklist gap).**
 - [ ] **Real-valued response amplitudes for imaginary perturbations.** The magnetic-dipole
       (`H.m`) and linear-momentum (`H.p`) integrals are stored pure-imaginary (`* 1.0j`),
       so for those perturbations `ccresponse`'s `X1`/`X2` come out **pure imaginary** —
