@@ -11,7 +11,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import zeros_like, clone
+from pycc.utils import zeros_like, clone, conj
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -303,17 +303,7 @@ class rtcc(object):
         contract = self.contract
         
         F = clone(self.ccwfn.H.F) + self.mu_tot * self.V(t)
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            eref = 2.0 * torch.trace(F[o,o])
-            # torch.trace doesn't have "axis" argument
-            #eref -= torch.trace(torch.trace(tmp, axis1=1, axis2=3))
-            tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
-            eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
-            del tmp
-
-        else:
-            eref = 2.0 * np.trace(F[o,o])
-            eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
+        eref = self._eref(F)
 
         eone = F.flatten().dot(opdm.flatten())
 
@@ -325,6 +315,20 @@ class rtcc(object):
         oovv_energy = 0.5 * contract('ijab,ijab->', ERI[o,o,v,v], Doovv)
         etwo = oooo_energy + vvvv_energy + ooov_energy + vvvo_energy + ovov_energy + oovv_energy
         return eref + eone + etwo
+
+    def _eref(self, F):
+        """Reference (zeroth-order) energy contribution to the CC quasienergy.
+
+        Returns ``2 Tr F_oo - sum_{ia} L_iaia`` (i.e. ``2 np.trace(F[o,o]) -
+        np.trace(np.trace(L[o,o,o,o], axis1=1, axis2=3))``). Evaluated through the
+        backend ``contract`` so the single expression runs unchanged on NumPy or
+        torch — ``contract`` handles any device transfer of ``H.L`` in GPU mode.
+        """
+        o = self.ccwfn.o
+        contract = self.contract
+        eref = 2.0 * contract('ii->', F[o, o])
+        eref -= contract('iaia->', self.ccwfn.H.L[o, o, o, o])
+        return eref
 
     def phase(self, F, t1, t2):
         """
@@ -345,15 +349,7 @@ class rtcc(object):
         v = self.ccwfn.v
         L = self.ccwfn.H.L
 
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            eref = 2.0 * torch.trace(F[o,o])
-            tmp = self.ccwfn.H.L[o,o,o,o].to(self.ccwfn.device1)
-            eref -= torch.trace(opt_einsum.contract('i...i', tmp.swapaxes(0,1), backend='torch'))
-            del tmp
-
-        else:
-            eref = 2.0 * np.trace(F[o,o])
-            eref -= np.trace(np.trace(self.ccwfn.H.L[o,o,o,o], axis1=1, axis2=3))
+        eref = self._eref(F)
 
         if self.ccwfn.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
@@ -396,10 +392,7 @@ class rtcc(object):
         B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
         B *= np.exp(-phase_r) * np.exp(phase_l)
         
-        if HAS_TORCH and isinstance(A, torch.Tensor):
-            return 0.5*A + 0.5*torch.conj(B)
-        else:
-            return 0.5*A + 0.5*np.conj(B)
+        return 0.5*A + 0.5*conj(B)
 
     def step(self,ODE,yi,t,ref=False):
         """

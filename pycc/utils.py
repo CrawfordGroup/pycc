@@ -58,11 +58,53 @@ def clone(a, device=None):
     return a.copy()
 
 
+def real_zeros(shape, like):
+    """Allocate a real-dtype zero tensor of ``shape`` on ``like``'s backend/device.
+
+    Uses the *real-component* dtype of ``like`` (``like.real.dtype``), so a complex
+    amplitude yields a real buffer of the matching precision (complex128->float64,
+    complex64->float32) while a real amplitude is unchanged. Used for the DIIS B
+    matrix / residual vector, which must stay real even when the amplitudes are
+    complex (e.g. frequency-dependent response in ``ccresponse``); precision and,
+    for torch, device placement ride along from the data.
+    """
+    if HAS_TORCH and isinstance(like, torch.Tensor):
+        return torch.zeros(shape, dtype=like.real.dtype, device=like.device)
+    return np.zeros(shape, dtype=like.real.dtype)
+
+
+def dot(a, b):
+    """Backend-aware 1-D dot product: ``torch.dot`` for torch tensors, else ``np.dot``."""
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.dot(a, b)
+    return np.dot(a, b)
+
+
+def absolute(a):
+    """Backend-aware elementwise absolute value: ``torch.abs`` for a torch tensor,
+    else ``np.abs``."""
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.abs(a)
+    return np.abs(a)
+
+
+def conj(a):
+    """Backend-aware complex conjugate: ``torch.conj`` for a torch tensor, else ``np.conj``."""
+    if HAS_TORCH and isinstance(a, torch.Tensor):
+        return torch.conj(a)
+    return np.conj(a)
+
+
+def solve(A, b):
+    """Backend-aware dense linear solve: ``torch.linalg.solve`` for a torch tensor,
+    else ``np.linalg.solve``."""
+    if HAS_TORCH and isinstance(A, torch.Tensor):
+        return torch.linalg.solve(A, b)
+    return np.linalg.solve(A, b)
+
+
 class helper_diis(object):
     def __init__(self, t1, t2, max_diis, precision='DP'):
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            self.device0 = torch.device('cpu')
-            self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.oldt1 = clone(t1)
         self.oldt2 = clone(t2)
         self.diis_vals_t1 = [clone(t1)]
@@ -100,75 +142,35 @@ class helper_diis(object):
 
         self.diis_size = len(self.diis_errors)
 
-        if HAS_TORCH and isinstance(t1, torch.Tensor):
-            # Build error matrix B
-            if self.precision == 'DP':
-                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.float64, device=self.device1) * -1
-            elif self.precision == 'SP':
-                B = torch.ones((self.diis_size + 1, self.diis_size + 1), dtype=torch.float32, device=self.device1) * -1
-            B[-1, -1] = 0
+        # Build error matrix B. B/resid are real even when the amplitudes are complex
+        # (e.g. ccresponse), so they are seeded from real_zeros (real-component dtype of
+        # oldt1), which also carries the precision and, for torch, the device.
+        B = real_zeros((self.diis_size + 1, self.diis_size + 1), self.oldt1) - 1.0
+        B[-1, -1] = 0
 
-            for n1, e1 in enumerate(self.diis_errors):
-                B[n1, n1] = torch.dot(e1, e1)
-                for n2, e2 in enumerate(self.diis_errors):
-                    if n1 >= n2:
-                        continue
-                    B[n1, n2] = torch.dot(e1, e2)
-                    B[n2, n1] = B[n1, n2]
+        for n1, e1 in enumerate(self.diis_errors):
+            B[n1, n1] = dot(e1, e1)
+            for n2, e2 in enumerate(self.diis_errors):
+                if n1 >= n2:
+                    continue
+                B[n1, n2] = dot(e1, e2)
+                B[n2, n1] = B[n1, n2]
 
-            B[:-1, :-1] /= torch.abs(B[:-1, :-1]).max()
+        B[:-1, :-1] /= absolute(B[:-1, :-1]).max()
 
-            # Build residual vector
-            if self.precision == 'DP':
-                resid = torch.zeros((self.diis_size + 1), dtype=torch.float64, device=self.device1)
-            elif self.precision == 'SP':
-                resid = torch.zeros((self.diis_size + 1), dtype=torch.float32, device=self.device1)
-            resid[-1] = -1
+        # Build residual vector
+        resid = real_zeros((self.diis_size + 1,), self.oldt1)
+        resid[-1] = -1
 
-            # Solve pulay equations
-            ci = torch.linalg.solve(B, resid)
+        # Solve pulay equations
+        ci = solve(B, resid)
 
-            # Calculate new amplitudes
-            t1 = torch.zeros_like(self.oldt1)
-            t2 = torch.zeros_like(self.oldt2)
-            for num in range(self.diis_size):
-                t1 += torch.real(ci[num] * self.diis_vals_t1[num + 1])
-                t2 += torch.real(ci[num] * self.diis_vals_t2[num + 1])
-
-        else:
-            # Build error matrix B
-            if self.precision == 'DP':
-                B = np.ones((self.diis_size + 1, self.diis_size + 1)) * -1
-            elif self.precision == 'SP':
-                B = np.ones((self.diis_size + 1, self.diis_size + 1), dtype=np.float32) * -1
-            B[-1, -1] = 0
-
-            for n1, e1 in enumerate(self.diis_errors):
-                B[n1, n1] = np.dot(e1, e1)
-                for n2, e2 in enumerate(self.diis_errors):
-                    if n1 >= n2:
-                        continue
-                    B[n1, n2] = np.dot(e1, e2)
-                    B[n2, n1] = B[n1, n2]
-
-            B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
-
-            # Build residual vector
-            if self.precision == 'DP':
-                resid = np.zeros(self.diis_size + 1)
-            elif self.precision == 'SP':
-                resid = np.zeros((self.diis_size + 1), dtype=np.float32)
-            resid[-1] = -1
-
-            # Solve pulay equations
-            ci = np.linalg.solve(B, resid)
-
-            # Calculate new amplitudes
-            t1 = np.zeros_like(self.oldt1)
-            t2 = np.zeros_like(self.oldt2)
-            for num in range(self.diis_size):
-                t1 += ci[num] * self.diis_vals_t1[num + 1]
-                t2 += ci[num] * self.diis_vals_t2[num + 1]
+        # Calculate new amplitudes
+        t1 = zeros_like(self.oldt1)
+        t2 = zeros_like(self.oldt2)
+        for num in range(self.diis_size):
+            t1 += ci[num] * self.diis_vals_t1[num + 1]
+            t2 += ci[num] * self.diis_vals_t2[num + 1]
 
         # Save extrapolated amplitudes to old_t amplitudes
         self.oldt1 = clone(t1)
