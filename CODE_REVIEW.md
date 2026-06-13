@@ -220,16 +220,17 @@ recorded with their PRs in the worklist above._
   PNO/PNO++ opt paths converge fine, so this is PAO-specific (possibly the `local_cutoff=2e-2`
   domain construction or a sign/projection error on the PAO path) — a genuine numerical bug,
   not the (now-fixed) `np.zeros(dim,dim)` shape trap. Needs investigation.
-- **`ccwfn.py:solve_cc` — the torch/GPU convergence branch silently skips the `(T)`
-  correction (open).** In the convergence block the `if HAS_TORCH and isinstance(self.t1,
-  torch.Tensor):` arm prints/returns the bare `ecc` (CCSD energy), while only the NumPy
-  `else` arm has the `if self.model == 'CCSD(T)': et = t3_density()/t_tjl(self); ecc += et`
-  step. So **`model='CCSD(T)'` run on a torch tensor returns the CCSD energy with no `(T)`
-  correction** — a wrong result, not a crash. Latent because torch/GPU isn't in CI (the
-  CPU-torch lane added in PR #99 *would* catch it if a `CCSD(T)` torch test existed). Fix:
-  hoist the `(T)` step out of the backend branch so both paths compute it. Surfaced while
-  auditing remaining `HAS_TORCH` branches for the backend-helper sweep; left as a separate
-  behavior fix (untestable locally — no torch in `p4env`).
+- **`ccwfn.py:solve_cc` — the torch/GPU convergence branch silently skipped the `(T)`
+  correction — FIXED (PR #112).** The convergence block was a `HAS_TORCH`/`else` pair where
+  only the NumPy arm computed `(T)`, so `model='CCSD(T)'` on a torch tensor returned the bare
+  CCSD energy. Unified the two arms (`abs()` dispatches to `__abs__` on both NumPy scalars and
+  0-d torch tensors), so `(T)` runs on either backend; also made the default `(T)` kernels
+  backend-aware (`t_tjl`/`t3d_ijk` `np.diag`/`np.zeros_like` → `diag`/`zeros_like`). Added
+  `test_044_ccsd_t_gpu.py` (`device='GPU'` CCSD(T)) for the CPU-torch CI lane. **Verifying on a
+  local CPU-torch clone surfaced a second pre-existing latent torch bug** the test then caught:
+  `_r_T2_ccsd` used `np.transpose(tmp, (3,2,1,0))` on a tensor (breaks on torch at CCSD
+  iteration 1) → `tmp.swapaxes(0,3).swapaxes(1,2)`. CCSD(T) now verified on real torch tensors;
+  numpy suite unchanged.
 
 ### Structural issues (the expensive ones)
 
@@ -283,6 +284,6 @@ Scientifically impressive and broad. Of the three original debt clusters —
 (1) the `ccwfn`/`lccwfn` fork, (2) hand-rolled backend dispatch, (3) test-setup duplication —
 **(2) and (3) are done**, and **(1) was re-scoped**: the audit showed it's two implementations
 of the same equations (not copy-paste), so the decision is to keep both solvers explicit. The
-remaining open work is concrete and bounded: the **PAO NaN bug** and the **CCSD(T)-on-GPU
-`(T)` skip** — both in the worklist above. (The real-valued response amplitudes landed in
-PR #111.)
+remaining open work is concrete and bounded: the **PAO NaN bug** is the main one in the
+worklist above. (The real-valued response amplitudes landed in PR #111; the CCSD(T)-on-GPU
+`(T)` skip — and a latent `np.transpose`-on-torch bug it surfaced — in PR #112.)
