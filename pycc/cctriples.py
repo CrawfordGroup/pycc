@@ -193,9 +193,7 @@ def t_tjl(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn.contract
-    if ccwfn.einsums:
-        contract = ccwfn.ec.contract
+    contract = ccwfn._contract
 
     o = ccwfn.o
     v = ccwfn.v
@@ -256,9 +254,7 @@ def t_vikings(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn.contract
-    if ccwfn.einsums:
-        contract = ccwfn.ec.contract
+    contract = ccwfn._contract
 
     o = ccwfn.o
     v = ccwfn.v
@@ -274,8 +270,6 @@ def t_vikings(ccwfn: "ccwfn") -> float:
     for i in range(no):
         for j in range(no):
             for k in range(no):
-                if ccwfn.einsums:
-                    contract = ccwfn.ec.contract
 
                 t3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract)
 
@@ -285,8 +279,6 @@ def t_vikings(ccwfn: "ccwfn") -> float:
 
                 X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), F[k,v])
 
-    if ccwfn.einsums:
-        contract = ccwfn.ec.contract
 
     ET = 2.0 * contract('ia,ia->', t1, X1)
     ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
@@ -306,9 +298,7 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn.contract
-    if ccwfn.einsums:
-        contract = ccwfn.ec.contract
+    contract = ccwfn._contract
 
     o = ccwfn.o
     v = ccwfn.v
@@ -325,8 +315,6 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
     for a in range(nv):
         for b in range(nv):
             for c in range(nv):
-                if ccwfn.einsums:
-                    contract = ccwfn.ec.contract
                 t3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
 
                 X1[a] += contract('ijk,jk->i',(t3 - t3.swapaxes(0,2)), L[o,o,b+no,c+no])
@@ -335,8 +323,6 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
 
                 X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), F[o,c+no])
 
-    if ccwfn.einsums:
-        contract = ccwfn.ec.contract
 
     ET = 2.0 * contract('ia,ia->', t1, X1.T)
     ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2.T)
