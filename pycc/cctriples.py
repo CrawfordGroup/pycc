@@ -136,8 +136,8 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
     t3 += contract('bc,a->abc', t2[j,k], F[i,v])
 
     if WithDenom is True:
-        Fv = np.diag(F)[v]
-        denom = np.zeros_like(t3)
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
         denom += F[i,i] + F[j,j] + F[k,k]
         return t3/denom
@@ -226,8 +226,8 @@ def t_tjl(ccwfn: "ccwfn") -> float:
                 Y3 = V3 + V3.swapaxes(0,1).swapaxes(1,2) + V3.swapaxes(0,1).swapaxes(0,2)
                 Z3 = V3.swapaxes(1,2) + V3.swapaxes(0,1) + V3.swapaxes(0,2)
 
-                Fv = np.diag(F)[v]
-                denom = np.zeros_like(W3)
+                Fv = diag(F)[v]
+                denom = zeros_like(W3)
                 denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
                 denom += F[i,i] + F[j,j] + F[k,k]
 
