@@ -369,32 +369,27 @@ class ccwfn(object):
             ediff = ecc - ecc_last
             print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
 
-            # check for convergence
-            if HAS_TORCH and isinstance(self.t1, torch.Tensor):
-                if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                    print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
-                    print("E(REF)  = %20.15f" % self.eref)
-                    print("E(%s) = %20.15f" % (self.model, ecc))
-                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
-                    self.ecc = ecc
-                    return ecc
-            else:
-                if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                    print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
-                    print("E(REF)  = %20.15f" % self.eref)
-                    if (self.model == 'CCSD(T)'):
-                        print("E(CCSD) = %20.15f" % ecc)
-                        if self.make_t3_density is True:
-                            et = self.t3_density()
-                        else:
-                            et = t_tjl(self)
-                        print("E(T)    = %20.15f" % et)
-                        ecc = ecc + et
+            # check for convergence. abs() dispatches to __abs__ on both NumPy scalars
+            # and 0-d torch tensors, so this single block (and the (T) correction below)
+            # runs on either backend -- previously the torch arm was a separate copy that
+            # silently skipped the (T) step, so CCSD(T) on a torch tensor returned the
+            # bare CCSD energy.
+            if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
+                print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                print("E(REF)  = %20.15f" % self.eref)
+                if (self.model == 'CCSD(T)'):
+                    print("E(CCSD) = %20.15f" % ecc)
+                    if self.make_t3_density is True:
+                        et = self.t3_density()
                     else:
-                        print("E(%s) = %20.15f" % (self.model, ecc))
-                    self.ecc = ecc
-                    print("E(TOT)  = %20.15f" % (ecc + self.eref))
-                    return ecc
+                        et = t_tjl(self)
+                    print("E(T)    = %20.15f" % et)
+                    ecc = ecc + et
+                else:
+                    print("E(%s) = %20.15f" % (self.model, ecc))
+                self.ecc = ecc
+                print("E(TOT)  = %20.15f" % (ecc + self.eref))
+                return ecc
 
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
@@ -914,8 +909,8 @@ class ccwfn(object):
         r_T2 = r_T2 + contract('imae,mbej->ijab', t2, (Wmbej + Wmbje.swapaxes(2,3)))
         r_T2 = r_T2 + contract('mjae,mbie->ijab', t2, Wmbje)
         tmp = contract('ei,am->aemi', t1.T, t1.T)
-        r_T2 = r_T2 - contract('imea,mbej->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,v,o])
-        r_T2 = r_T2 - contract('imeb,maje->ijab', np.transpose(tmp, (3,2,1,0)), ERI[o,v,o,v])
+        r_T2 = r_T2 - contract('imea,mbej->ijab', tmp.swapaxes(0,3).swapaxes(1,2), ERI[o,v,v,o])
+        r_T2 = r_T2 - contract('imeb,maje->ijab', tmp.swapaxes(0,3).swapaxes(1,2), ERI[o,v,o,v])
         r_T2 = r_T2 + contract('ie,abej->ijab', t1, ERI[v,v,v,o])
         r_T2 = r_T2 - contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
 
