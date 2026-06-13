@@ -30,12 +30,22 @@ in the **Critique** section.
       #105):** `clone(a, device=None)` collapsed ~166 branched copy sites across
       `cchbar`/`ccwfn`/`cclambda`/`ccdensity`/`cctriples`/`rtcc` + `utils`'s `helper_diis`
       (−215 lines); bare `.copy()` in the numpy-only modules (`ccresponse`/`local`/
-      `lccwfn`/`cceom`/`integrators`) was left as-is. _Still open:_ **smear #1** — the
+      `lccwfn`/`cceom`/`integrators`) was left as-is. **The remaining "irreducible" branches
+      are now DONE (PR #107):** `helper_diis.extrapolate` collapses to one block via new
+      `real_zeros(shape, like)`/`dot`/`absolute`/`solve` helpers (B/resid use
+      `real_zeros` = `like.real.dtype`, staying real even for the complex `ccresponse`
+      response amplitudes), and `rtcc`'s `torch.trace`/`np.trace` arms become one
+      backend-`contract` `_eref(F)`; same PR added `sqrt`/`reshape`/`concatenate`/`conj`
+      and collapsed the convergence-`rms`, `add_error_vector`, `extract_amps`, and
+      `autocorrelation` branches (11 branches total). **The `ccdensity` complex
+      allocations** (`opdm`/`Dooov`/`Dvvvo`) now use `zeros(shape, like=t1)` so dtype
+      tracks the amplitude (real ground-state, complex RT) — which also fixed a dormant
+      `np.zeros((no,no,no.nv), …)` typo and a torch-vs-numpy DP dtype mismatch in the CCD
+      branches (only the numpy/DP sub-path was ever exercised). The only explicit
+      `torch.*` left is genuine one-time construction (`torch.tensor`/`complex*`/`device`/
+      `cuda` precision seed-casts in `__init__`). _Still open:_ **smear #1** — the
       per-method `contract = self.ec.contract if self.einsums` library re-dispatch (paused;
-      the einsums path is not in CI, so it needs a manual run before collapsing). The
-      genuinely backend-divergent bodies that no copy/alloc helper can unify
-      (`helper_diis.extrapolate`'s `torch.linalg.solve` vs `np.linalg.solve`; `rtcc`'s
-      `torch.trace`/`np.trace` arms) await the fuller backend object.
+      the einsums path is not in CI, so it needs a manual run before collapsing).
 - [ ] **Real-valued response amplitudes for imaginary perturbations.** The magnetic-dipole
       (`H.m`) and linear-momentum (`H.p`) integrals are stored pure-imaginary (`* 1.0j`),
       so for those perturbations `ccresponse`'s `X1`/`X2` come out **pure imaginary** —
