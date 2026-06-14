@@ -13,9 +13,10 @@ Phase 3.
 
 Notes
 -----
-GPU tensors are currently always *complex* (the historical behavior, shared with
-RT-CC). The ``needs_complex`` seam exists so a future phase can give ground-state
-methods a real GPU dtype; it defaults to True, so present behavior is unchanged.
+GPU tensors are seeded *real* (float32/64). Complex arithmetic appears only
+transiently during RT-CC propagation; :class:`ContractionBackend` and
+``utils.dot`` upcast the real operands to complex per-contraction, since torch
+(unlike NumPy) does not promote real<->complex in einsum/matmul/dot.
 """
 
 from __future__ import annotations
@@ -71,6 +72,15 @@ class ContractionBackend(object):
             for i in range(len(input_list)):
                 if not input_list[i].is_cuda:
                     input_list[i] = input_list[i].to(self.device1)
+            # torch (unlike NumPy) will not promote real<->complex in a contraction,
+            # so when the operands mix, upcast the real ones to the complex dtype.
+            # This lets real ground-state integrals contract with complex RT
+            # amplitudes; for all-real (ground state) it is a no-op fast path.
+            if any(t.is_complex() for t in input_list):
+                ctype = next(t.dtype for t in input_list if t.is_complex())
+                for i in range(len(input_list)):
+                    if not input_list[i].is_complex():
+                        input_list[i] = input_list[i].to(ctype)
             output = opt_einsum.contract(subscripts, *input_list)
             del input_list
             return output
@@ -87,10 +97,6 @@ class DeviceManager(object):
         but tensors run on CPU.
     precision : str
         'SP' (single) or 'DP' (double).
-    needs_complex : bool
-        Whether GPU tensors must be complex (RT-CC). Defaults True, reproducing
-        the historical always-complex-on-GPU behavior; Phase 2b will set it False
-        for real ground-state methods.
 
     Attributes
     ----------
@@ -107,8 +113,7 @@ class DeviceManager(object):
     VALID_DEVICE = ['CPU', 'GPU']
     VALID_PRECISION = ['SP', 'DP']
 
-    def __init__(self, device: str = 'CPU', precision: str = 'DP',
-                 needs_complex: bool = True) -> None:
+    def __init__(self, device: str = 'CPU', precision: str = 'DP') -> None:
         # --- precision ---
         if precision.upper() not in self.VALID_PRECISION:
             raise InvalidKeywordError('precision', precision, self.VALID_PRECISION)
@@ -127,8 +132,6 @@ class DeviceManager(object):
                           "PyTorch tensors will run on CPU.", PyCCWarning,
                           stacklevel=3)
 
-        self.needs_complex = needs_complex
-
         # --- device handles ---
         # device0: storage/CPU-resident (the big integrals); device1: compute.
         # Both None on CPU so clone(x, device=device1) is a plain copy.
@@ -139,17 +142,13 @@ class DeviceManager(object):
             self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         # --- dtypes ---
-        # The numpy real dtype rides precision; the torch dtype for GPU-resident
-        # tensors is complex (under needs_complex) at the matching width.
+        # GPU tensors are seeded REAL at the matching width; complex appears only
+        # transiently during RT, where ContractionBackend/dot upcast per-contraction.
         self.real_dtype = np.float32 if self.precision == 'SP' else np.float64
         self._torch_dtype = None
         if HAS_TORCH:
-            if self.needs_complex:
-                self._torch_dtype = (torch.complex64 if self.precision == 'SP'
-                                     else torch.complex128)
-            else:
-                self._torch_dtype = (torch.float32 if self.precision == 'SP'
-                                     else torch.float64)
+            self._torch_dtype = (torch.float32 if self.precision == 'SP'
+                                 else torch.float64)
 
         # --- contraction backend (single owner of the resolved device1) ---
         self.contract = ContractionBackend(device=self.device, device1=self.device1)
