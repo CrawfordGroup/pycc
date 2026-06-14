@@ -29,12 +29,6 @@ from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError, PyCCWarning
 
-try:
-    import einsums as ein
-    HAS_EINSUMS = True
-except ImportError:
-    HAS_EINSUMS = False
-
 class ccwfn(object):
     """
     An RHF-CC wave function and energy object.
@@ -285,29 +279,6 @@ class ccwfn(object):
                 self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex64, device=self.device0)
                 self.H.L = torch.tensor(self.H.L, dtype=torch.complex64, device=self.device0)
                 
-        self.einsums = kwargs.pop('einsums', False)
-        if self.einsums and HAS_EINSUMS:
-            self.ec = ein.einsums_contract()
-            print('Contractions will use the C++ Einsums library where implemented...')
-        elif self.einsums and not HAS_EINSUMS:
-            self.einsums = False
-            print('C++ Einsums library requested but not available.')
-
-        # Contraction callable for ccwfn's own intermediate/residual builders (and the
-        # module-level cctriples kernels): the C++ einsums backend where enabled, else the
-        # shared opt_einsum cc_contract. Scoped to ccwfn + cctriples on purpose -- the
-        # cchbar/cclambda/ccdensity/cceom/ccresponse sub-objects deliberately stay on
-        # self.contract (opt_einsum), as einsums implements only the T/triples paths.
-        self._contract = self.ec.contract if self.einsums else self.contract
-
-        # Compute MP2 energy as einsums test
-        if self.einsums:
-            t2 = 2*self.t2 - self.t2.swapaxes(2,3)
-            emp2 = self.contract('ijab,ijab->', t2, self.H.ERI[o,o,v,v])
-            print("E(MP2) = %20.15f (opt_einsums)" % (emp2))
-            emp2 = self.ec.contract('ijab,ijab->', t2, self.H.ERI[o,o,v,v])
-            print("E(MP2) = %20.15f (einsums)" % (emp2))
-
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
 
@@ -340,7 +311,7 @@ class ccwfn(object):
         Dia = self.Dia
         Dijab = self.Dijab
 
-        contract = self._contract
+        contract = self.contract
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
@@ -412,7 +383,7 @@ class ccwfn(object):
             New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
 
-        contract = self._contract
+        contract = self.contract
 
         o = self.o
         v = self.v
@@ -472,6 +443,7 @@ class ccwfn(object):
             the CC3 triples contributions to the T1 and T2 residuals
         """
         no = self.no
+        contract = self.contract
 
         Wmnij_cc3 = self.build_cc3_Wmnij(o, v, ERI, t1)
         Wmbij_cc3 = self.build_cc3_Wmbij(o, v, ERI, t1, Wmnij_cc3)
@@ -485,9 +457,6 @@ class ccwfn(object):
         for i in range(no):
             for j in range(no):
                 for k in range(no):
-                    # re-established each iteration: the final contraction below resets
-                    # contract back to self.contract (opt_einsum), which einsums cannot do
-                    contract = self._contract
                     t3 = t3c_ijk(o, v, i, j, k, t2, Wabei_cc3, Wmbij_cc3, F, contract, WithDenom=True)
 
                     if real_time is True:
@@ -498,7 +467,6 @@ class ccwfn(object):
 
                     X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
                     X2[i] -= contract('lc,abc->lab', Wmnie_cc3[j,k], (2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)))
-                    contract = self.contract
                     X2[i,j] += contract('abc,c->ab', t3 - t3.swapaxes(0,2), Fme[k])
 
         if HAS_TORCH and isinstance(t3, torch.Tensor):
@@ -523,11 +491,7 @@ class ccwfn(object):
         (defaults fact1 = fact2 = 1).
         """
         contract = self.contract
-        if self.einsums:
-            tau = fact1 * np.transpose(t2, (3,2,1,0)) + fact2 * self.ec.contract('ai,bj->baji', t1.T, t1.T)
-            return np.transpose(tau, (3,2,1,0))
-        else:
-            return fact1 * t2 + fact2 * contract('ia,jb->ijab', t1, t1)
+        return fact1 * t2 + fact2 * contract('ia,jb->ijab', t1, t1)
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
@@ -553,7 +517,7 @@ class ccwfn(object):
             F_ae = f_ae - 1/2 f_me t_ma + t_mf L_mafe
                         - (t2_mnaf + 1/2 t_ma t_nf) L_mnef
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             Fae = clone(F[v,v])
@@ -582,7 +546,7 @@ class ccwfn(object):
             F_mi = f_mi + 1/2 t_ie f_me + t_ne L_mnie
                         + (t2_inef + 1/2 t_ie t_nf) L_mnef
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             Fmi = clone(F[o,o])
@@ -610,7 +574,7 @@ class ccwfn(object):
 
             F_me = f_me + t_nf L_mnef
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             return
@@ -635,7 +599,7 @@ class ccwfn(object):
             W_mnij = <mn|ij> + t_je <mn|ie> + t_ie <mn|ej>
                             + (t2_ijef + t_ie t_jf) <mn|ef>
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             Wmnij = clone(ERI[o,o,o,o], device=self.device1)
@@ -669,7 +633,7 @@ class ccwfn(object):
                             - (1/2 t2_jnfb + t_jf t_nb) <mn|ef>
                             + 1/2 t2_njfb L_mnef
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             Wmbej = clone(ERI[o,v,v,o], device=self.device1)
@@ -702,7 +666,7 @@ class ccwfn(object):
             W_mbje = -<mb|je> - t_jf <mb|fe> + t_nb <mn|je>
                              + (1/2 t2_jnfb + t_jf t_nb) <mn|fe>
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             Wmbje = -1.0 * clone(ERI[o,v,o,v], device=self.device1)
@@ -731,7 +695,7 @@ class ccwfn(object):
 
             Z_mbij = <mb|ef> (t2_ijef + t_ie t_jf)
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             return
@@ -763,7 +727,7 @@ class ccwfn(object):
                     + (2 t2_mief - t2_mife) <ma|ef>
                     - t2_mnae L_nmei
         """
-        contract = self._contract
+        contract = self.contract
 
         if self.model == 'CCD':
             r_T1 = zeros_like(t1)
@@ -819,7 +783,7 @@ class ccwfn(object):
                       + t2_imae (W_mbej + W_mbje[e<->j])
                       + t2_mjae W_mbie
         """
-        contract = self._contract
+        contract = self.contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
@@ -849,7 +813,7 @@ class ccwfn(object):
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
         """
-        contract = self._contract
+        contract = self.contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
 
@@ -892,7 +856,7 @@ class ccwfn(object):
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
         """
-        contract = self._contract
+        contract = self.contract
 
         r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
@@ -1061,7 +1025,7 @@ class ccwfn(object):
                 CCD:   E = t2_ijab L_ijab
                 else:  E = 2 f_ia t_ia + tau_ijab L_ijab   (tau = t2 + t1 t1)
         """
-        contract = self._contract
+        contract = self.contract
         if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
         else:

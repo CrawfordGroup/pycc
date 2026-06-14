@@ -193,7 +193,7 @@ def t_tjl(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn._contract
+    contract = ccwfn.contract
 
     o = ccwfn.o
     v = ccwfn.v
@@ -254,7 +254,7 @@ def t_vikings(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn._contract
+    contract = ccwfn.contract
 
     o = ccwfn.o
     v = ccwfn.v
@@ -298,7 +298,7 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
     float
 
     """
-    contract = ccwfn._contract
+    contract = ccwfn.contract
 
     o = ccwfn.o
     v = ccwfn.v
