@@ -1,5 +1,5 @@
 """
-Test RT-CCSD propagation with RK4 integrator on water molecule on GPU.
+Test RT-CCSD propagation with the RK4 integrator on water (torch "GPU" path).
 """
 
 # Import package, test suite, and other packages as needed
@@ -16,21 +16,23 @@ from ..data.molecules import *
 # on CPU, which is enough to exercise the torch code path in CI.)
 torch = pytest.importorskip("torch")
 
+
 @pytest.mark.gpu
 def test_rtcc_water_cc_pvdz(rhf_wfn):
-    """H2O cc-pVDZ"""
+    """H2O cc-pVDZ, RT-CCSD propagated with RK4 to t=0.1 a.u. on the torch device.
+
+    Mirrors test_024 (CPU/NumPy) and compares against the same reference, so it
+    checks that the torch path reproduces the NumPy propagation.
+    """
     e_conv = 1e-13
     r_conv = 1e-13
 
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
 
-    # The device for the calculation (CPU/GPU) can be specified.
-    # Option: 'CPU', 'GPU'
-    # Default: 'CPU'
     cc = pycc.ccwfn(wfn, device='GPU')
     ecc = cc.solve_cc(e_conv, r_conv)
-    
+
     hbar = pycc.cchbar(cc)
 
     cclambda = pycc.cclambda(cc, hbar)
@@ -39,59 +41,35 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     ccdensity = pycc.ccdensity(cc, cclambda)
 
     # Gaussian pulse (a.u.)
-    F_str = 0.01
+    F_str = 0.1
     omega = 0
     sigma = 0.01
     center = 0.05
     V = gaussian_laser(F_str, omega, sigma, center)
 
-    # RT-CC Setup
+    # RT-CC setup
     phase = 0
-    t0 = 0
+    t0 = 0.0
     tf = 0.1
     h = 0.01
-    t = t0
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, V)
     y0 = rtcc.collect_amps(cc.t1, cc.t2, cclambda.l1, cclambda.l2, phase).type(torch.complex128)
     y = y0
     ODE = rk4(h)
-    t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
-    mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
-    ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
 
-    # For saving data at each time step.
-    """
-    dip_x = []
-    dip_y = []
-    dip_z = []
-    time_points = []
-    dip_x.append(mu0_x)
-    dip_y.append(mu0_y)
-    dip_z.append(mu0_z)
-    time_points.append(t)
-    """
-    
-    while t < tf:
+    # Propagate t0 -> tf with a fixed number of RK4 steps (a `while t < tf` bound
+    # overshoots by one step here -- see test_024).
+    nsteps = int(round((tf - t0) / h))
+    t = t0
+    for step in range(nsteps):
         y = ODE(rtcc.f, t, y)
-        t += h 
+        t = t0 + (step + 1) * h
         t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
-        ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
-        """
-        dip_x.append(mu_x)
-        dip_y.append(mu_y)
-        dip_z.append(mu_z)
-        time_points.append(t)
-        """
-        
-    print(mu_z)
-    mu_z_ref = -0.0780067603267549 # matches test_024 (identical propagation); old value predated removing SCF from the ref
-    assert (abs(mu_z_ref - mu_z.real) < 1e-4)
-    
-    #return (dip_x, dip_y, dip_z, time_points)
 
-#dip = test_rtcc_water_cc_pvdz()
-#np.savez('h2o_F_0.01_h_0.01_t_1_rk4', dip_x=dip[0], dip_y=dip[1], dip_z=dip[2], time_points=dip[3])
-
-
-
+    # Same reference as test_024 (mu_z(t=tf) from this code, RK4, h=0.01): the torch
+    # path must reproduce the NumPy propagation to ~1e-10.
+    mu_z_ref = -0.078669702343987763
+    assert abs(mu_z_ref - mu_z.real) < 1e-10
+    # <mu_z> is a real observable; the propagated imaginary part is numerical noise.
+    assert abs(mu_z.imag) < 1e-7
