@@ -10,7 +10,6 @@ if __name__ == "__main__":
 
 import psi4
 import time
-import warnings
 import numpy as np
 
 try:
@@ -21,13 +20,14 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, cc_contract, zeros_like, clone, sqrt
+from .utils import helper_diis, zeros_like, clone, sqrt
+from .device import DeviceManager
 from .hamiltonian import Hamiltonian
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
 from ._typing import Tensor
-from .exceptions import InvalidKeywordError, PyCCWarning
+from .exceptions import InvalidKeywordError
 
 class ccwfn(object):
     """
@@ -211,74 +211,37 @@ class ccwfn(object):
             self.t1 = np.zeros((self.no, self.nv))
             self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
 
-        valid_precision = ['SP', 'DP']
-        precision = kwargs.pop('precision', 'DP')
-        if precision.upper() not in valid_precision:
-            raise InvalidKeywordError('precision', precision, valid_precision)
-        self.precision = precision.upper()
+        # Device / precision policy: validates the kwargs (fallback warnings for
+        # GPU-without-torch / GPU-without-CUDA), resolves device0/device1, builds
+        # the contraction backend, and owns the dtype/placement cast policy.
+        self.device_manager = DeviceManager(
+            device=kwargs.pop('device', 'CPU'),
+            precision=kwargs.pop('precision', 'DP'),
+        )
+        mgr = self.device_manager
 
-        valid_device = ['CPU', 'GPU']
-        device = kwargs.pop('device', 'CPU')
-        if device.upper() not in valid_device:
-            raise InvalidKeywordError('device', device, valid_device)
-        self.device = device.upper()
-        if self.device == 'GPU' and not HAS_TORCH:
-            warnings.warn("GPU requested, but PyTorch is not available; "
-                          "falling back to CPU.", PyCCWarning, stacklevel=2)
-            self.device = 'CPU'
-        elif self.device == 'GPU' and not torch.cuda.is_available():
-            warnings.warn("GPU requested, but no CUDA device is available; "
-                          "PyTorch tensors will run on CPU.", PyCCWarning,
-                          stacklevel=2)
+        # Back-compat handles: the builders and sub-objects still read
+        # ccwfn.<device0/device1/contract/...>. These pass-throughs dissolve in
+        # Phase 3, when consumers read the manager on the Wavefunction base.
+        self.precision = mgr.precision
+        self.device = mgr.device
+        self.device0 = mgr.device0
+        self.device1 = mgr.device1
+        self.contract = mgr.contract
 
-        if self.precision == 'SP':
-            self.H.F = np.float32(self.H.F)
-            self.t1 = np.float32(self.t1)
-            self.t2 = np.float32(self.t2)
-            self.Dia = np.float32(self.Dia)
-            self.Dijab = np.float32(self.Dijab)
-            self.H.ERI = np.float32(self.H.ERI)
-            self.H.L = np.float32(self.H.L)
+        # Cast/place the compute-resident arrays (amplitudes, Fock, denominators)
+        # and the storage-resident integrals (ERI/L) per the device/precision
+        # policy. On CPU+DP these are no-ops; on CPU+SP they real-cast to float32;
+        # on GPU they become complex torch tensors on device1 (compute) / device0
+        # (CPU storage).
+        self.H.F = mgr.seed_compute(self.H.F)
+        self.t1 = mgr.seed_compute(self.t1)
+        self.t2 = mgr.seed_compute(self.t2)
+        self.Dia = mgr.seed_compute(self.Dia)
+        self.Dijab = mgr.seed_compute(self.Dijab)
+        self.H.ERI = mgr.seed_store(self.H.ERI)
+        self.H.L = mgr.seed_store(self.H.L)
 
-        # Initiate the object for a generalized contraction function 
-        # for GPU or CPU.  
-        self.contract = cc_contract(device=self.device)
-
-        # CPU/compute device handles for the GPU path. Default to None on CPU so
-        # that clone(x, device=self.device1) is a plain copy with no transfer
-        # (the device arg is ignored for NumPy arrays).
-        self.device0 = None
-        self.device1 = None
-
-        # Convert the arrays to torch.Tensors if the calculation is on GPU.
-        # Send the copy of F, t1, t2 to GPU.
-        # ERI will be kept on GPU
-        if self.device == 'GPU':
-            if self.precision == 'DP':
-                self.device0 = torch.device('cpu')
-                self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-                # Storing on GPU
-                self.H.F = torch.tensor(self.H.F, dtype=torch.complex128, device=self.device1)
-                self.t1 = torch.tensor(self.t1, dtype=torch.complex128, device=self.device1)
-                self.t2 = torch.tensor(self.t2, dtype=torch.complex128, device=self.device1)
-                self.Dia = torch.tensor(self.Dia, dtype=torch.complex128, device=self.device1)
-                self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex128, device=self.device1)
-                # Storing on CPU
-                self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex128, device=self.device0)
-                self.H.L = torch.tensor(self.H.L, dtype=torch.complex128, device=self.device0)
-            elif self.precision == 'SP':
-                self.device0 = torch.device('cpu')
-                self.device1 = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-                # Storing on GPU
-                self.H.F = torch.tensor(self.H.F, dtype=torch.complex64, device=self.device1)
-                self.t1 = torch.tensor(self.t1, dtype=torch.complex64, device=self.device1)
-                self.t2 = torch.tensor(self.t2, dtype=torch.complex64, device=self.device1)
-                self.Dia = torch.tensor(self.Dia, dtype=torch.complex64, device=self.device1)
-                self.Dijab = torch.tensor(self.Dijab, dtype=torch.complex64, device=self.device1)
-                # Storing on CPU
-                self.H.ERI = torch.tensor(self.H.ERI, dtype=torch.complex64, device=self.device0)
-                self.H.L = torch.tensor(self.H.L, dtype=torch.complex64, device=self.device0)
-                
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
 
@@ -985,7 +948,7 @@ class ccwfn(object):
             Indexed [a, b, e, i]. See the inline construction for the exact
             term-by-term T1 dressing.
         """
-        contract =self.contract
+        contract = self.contract
         # eiab
         Z = clone(ERI[v,o,v,v], device=self.device1)
         tmp_ints = ERI[v,v,v,v] + ERI[v,v,v,v].swapaxes(2,3)
