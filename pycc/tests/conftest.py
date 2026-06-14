@@ -10,7 +10,7 @@ A test now obtains its reference wavefunction through the ``rhf_wfn`` factory::
         ccsd = pycc.ccwfn(wfn)
         ...
 
-The ``pycc.ccwfn(...)`` call (model, local, einsums, ... kwargs) legitimately
+The ``pycc.ccwfn(...)`` call (model, local, ... kwargs) legitimately
 varies per test and intentionally stays in the test body.
 """
 
