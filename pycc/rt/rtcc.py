@@ -11,7 +11,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import zeros_like, clone, conj, reshape
+from pycc.utils import zeros_like, clone, conj, reshape, dot
 import pickle as pk
 from os.path import exists
 import opt_einsum
@@ -251,20 +251,20 @@ class rtcc(object):
                 ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
                 ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
      
-            x = ints[0].flatten().dot(opdm.flatten())
-            y = ints[1].flatten().dot(opdm.flatten())
-            z = ints[2].flatten().dot(opdm.flatten())
+            x = dot(ints[0].flatten(), opdm.flatten())
+            y = dot(ints[1].flatten(), opdm.flatten())
+            z = dot(ints[2].flatten(), opdm.flatten())
             # Contractions between Doo_cc3, Dvv_cc3 and T1-transformed dipole integrals
-            x += ints_cc3[0].flatten().dot(opdm_cc3.flatten())
-            y += ints_cc3[1].flatten().dot(opdm_cc3.flatten())
-            z += ints_cc3[2].flatten().dot(opdm_cc3.flatten())
+            x += dot(ints_cc3[0].flatten(), opdm_cc3.flatten())
+            y += dot(ints_cc3[1].flatten(), opdm_cc3.flatten())
+            z += dot(ints_cc3[2].flatten(), opdm_cc3.flatten())
             
             return x, y, z
 
         else:
-            x = ints[0].flatten().dot(opdm.flatten())
-            y = ints[1].flatten().dot(opdm.flatten())
-            z = ints[2].flatten().dot(opdm.flatten())
+            x = dot(ints[0].flatten(), opdm.flatten())
+            y = dot(ints[1].flatten(), opdm.flatten())
+            z = dot(ints[2].flatten(), opdm.flatten())
 
             return x, y, z    
     
@@ -301,7 +301,7 @@ class rtcc(object):
         F = clone(self.ccwfn.H.F) + self.mu_tot * self.V(t)
         eref = self._eref(F)
 
-        eone = F.flatten().dot(opdm.flatten())
+        eone = dot(F.flatten(), opdm.flatten())
 
         oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], Doooo)
         vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], Dvvvv)

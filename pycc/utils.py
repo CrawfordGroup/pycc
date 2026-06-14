@@ -73,8 +73,16 @@ def real_zeros(shape, like):
 
 
 def dot(a, b):
-    """Backend-aware 1-D dot product: ``torch.dot`` for torch tensors, else ``np.dot``."""
+    """Backend-aware 1-D dot product: ``torch.dot`` for torch tensors, else ``np.dot``.
+
+    torch (unlike NumPy) refuses a real<->complex dot, so when the operands mix the
+    real one is upcast to the other's complex dtype. This lets real ground-state
+    integrals dot with complex RT densities (e.g. in rtcc's dipole/energy)."""
     if HAS_TORCH and isinstance(a, torch.Tensor):
+        if a.is_complex() and not b.is_complex():
+            b = b.to(a.dtype)
+        elif b.is_complex() and not a.is_complex():
+            a = a.to(b.dtype)
         return torch.dot(a, b)
     return np.dot(a, b)
 
