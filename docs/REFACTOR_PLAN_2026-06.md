@@ -1,8 +1,29 @@
 # PyCC Refactor Plan — 2026-06
 
-_Status: scoping/design (not yet started). Authored from the June 2026 design
-discussion. Supersedes the GPU/abstraction "future direction" notes in
-[`CODE_REVIEW_2026-06.md`](CODE_REVIEW_2026-06.md)._
+_Authored from the June 2026 design discussion. Supersedes the GPU/abstraction
+"future direction" notes in [`CODE_REVIEW_2026-06.md`](CODE_REVIEW_2026-06.md)._
+
+## Status / progress
+
+_Last updated 2026-06-14. This section is the cross-machine source of truth for
+where the refactor stands — the per-session memory used while authoring it is
+machine-local, but this doc and `git log` travel with the repo._
+
+| Phase | Status | Landed |
+|---|---|---|
+| 0 — tag/release snapshot | ✅ done | tag `v0.1.0` |
+| 1 — strip einsums | ✅ done | PR #114 |
+| 2 — device/precision manager | ✅ done | PR #115 (`DeviceManager` + `ContractionBackend` in `pycc/device.py`) |
+| 2b — GPU ground-state real; RT complex via backend promotion | ✅ done | PR #116 |
+| _(bonus)_ tighten RT-CCSD tests (`test_024`/`test_025`) | ✅ done | PR #117 (1e-10, real dynamics, reference verified bit-for-bit against pre-refactor code) |
+| **3 — extract `Wavefunction` base** | ⏭️ **next** | design-first |
+| 4 — `MPwfn`, then `HFwfn` (+ derivative/CPHF engine) | ⬜ pending | |
+| 5 — local frozen under `CCwfn`, CPU-only | ⬜ pending | |
+
+**To resume:** read this doc + `git log`. The next step is the **Phase 3 design
+pass** — the `Wavefunction` base: what moves up from `ccwfn.__init__`, the base's
+public surface (replacing the `self.ccwfn.<x>` reach-ins), and the two-lifetime
+integral layer with the lazy MO-basis derivative-integral seam.
 
 ## Governing principle
 
