@@ -18,7 +18,7 @@ def test_hf_gradient_h2o(rhf_wfn):
     # Independent reference: Psi4's own analytic SCF gradient on the same system.
     ref = np.asarray(psi4.gradient('scf'))
 
-    assert np.max(np.abs(grad - ref)) < 1e-9
+    assert np.max(np.abs(grad - ref)) < 1e-11
 
 
 def test_hf_gradient_frozen_core_ref(rhf_wfn):
@@ -30,4 +30,4 @@ def test_hf_gradient_frozen_core_ref(rhf_wfn):
 
     ref = np.asarray(psi4.gradient('scf'))
 
-    assert np.max(np.abs(grad - ref)) < 1e-9
+    assert np.max(np.abs(grad - ref)) < 1e-11
