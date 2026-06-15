@@ -19,8 +19,9 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, zeros_like, clone, sqrt, diag
+from .utils import helper_diis, zeros_like, clone, sqrt
 from .wavefunction import Wavefunction
+from .mpwfn import MPwfn
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
@@ -140,25 +141,23 @@ class ccwfn(Wavefunction):
                 self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
 
-        # Energy denominators from the MO energies (the diagonal of the seeded
-        # Fock). diag() is backend-aware, so this works whether H.F is NumPy or
-        # torch; Dia/Dijab inherit H.F's dtype/device (compute-resident).
-        eps_occ = diag(self.H.F)[o]
-        eps_vir = diag(self.H.F)[v]
-        self.Dia = eps_occ.reshape(-1, 1) - eps_vir
-        self.Dijab = (eps_occ.reshape(-1, 1, 1, 1) + eps_occ.reshape(-1, 1, 1)
-                      - eps_vir.reshape(-1, 1) - eps_vir)
+        # The MP2 wavefunction supplies the energy denominators and the CC initial
+        # guess. from_wavefunction reuses this object's already-built base (no second
+        # integral transform), so the denominator/MP2-amplitude code lives only in
+        # MPwfn. CC's singles denominator (Dia) is built here from the MP2 wfn's
+        # orbital energies -- MP2 has no singles.
+        self.mp = MPwfn.from_wavefunction(self)
+        self.Dijab = self.mp.Dijab
+        self.Dia = self.mp.eps_occ.reshape(-1, 1) - self.mp.eps_vir
 
-        # First-order (MP2) amplitudes as the CC initial guess, built from the
-        # seeded integrals/denominators so they inherit dtype/device. ERI is stored
-        # on device0 (CPU); clone(..., device1) stages the oovv block onto the
-        # compute device so the divide lands where the amplitudes live.
+        # CC initial-guess amplitudes. CC mutates t2 in place while iterating, so it
+        # takes its own copy of the MP2 doubles (the local path filters instead).
         if local is not None:
             self.t1, self.t2 = self.Local.filter_amps(np.zeros((self.no, self.nv)),
                                                        self.H.ERI[o,o,v,v])
         else:
             self.t1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
-            self.t2 = clone(self.H.ERI[o,o,v,v], device=self.device1) / self.Dijab
+            self.t2 = clone(self.mp.t2)
 
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
