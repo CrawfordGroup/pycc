@@ -8,7 +8,6 @@ if __name__ == "__main__":
     raise Exception("This file cannot be invoked on its own.")
 
 
-import psi4
 import time
 import numpy as np
 
@@ -20,16 +19,15 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, zeros_like, clone, sqrt
-from .device import DeviceManager
-from .hamiltonian import Hamiltonian
+from .utils import helper_diis, zeros_like, clone, sqrt, diag
+from .wavefunction import Wavefunction
 from .local import Local
 from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
 from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError
 
-class ccwfn(object):
+class ccwfn(Wavefunction):
     """
     An RHF-CC wave function and energy object.
 
@@ -112,12 +110,6 @@ class ccwfn(object):
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
 
-        valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
-        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY').upper()
-        if local_MOs not in valid_local_MOs:
-            raise InvalidKeywordError('local_mos', local_MOs, valid_local_MOs)
-        self.local_MOs = local_MOs
-
         valid_it2_opt = [True,False]
         it2_opt = kwargs.pop('it2_opt', True)
         if it2_opt not in valid_it2_opt:
@@ -130,65 +122,16 @@ class ccwfn(object):
             raise InvalidKeywordError('filter', filter, valid_filter)
         self.filter = filter
 
-        self.ref = scf_wfn
-        self.eref = self.ref.energy()
-
-        # Support both C1 and higher-symmetry references.
-        # frzcpi / doccpi are per-irrep Dimension objects; sum across irreps.
-        self.nfzc = int(sum(self.ref.frzcpi()))
-        self.no   = int(sum(self.ref.doccpi())) - self.nfzc
-        self.nmo  = self.ref.nmo()
-        self.nv   = self.nmo - self.no - self.nfzc
-        self.nact = self.no + self.nv
-
-        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
-
-        self.o = slice(0, self.no)
-        self.v = slice(self.no, self.nmo)
+        # Reference, orbital spaces, MO coefficients (occupied localized when a
+        # local-CC scheme is requested, so the base's single H build uses LMOs),
+        # the seeded MO-basis integrals, and the device/precision manager all come
+        # from the Wavefunction base. We pop only CC-specific kwargs above and
+        # forward the rest (device/precision/local_mos) to the base, which owns
+        # them -- so adding MPwfn/HFwfn/... needs no device/precision boilerplate.
+        super().__init__(scf_wfn, localize_occ=(local is not None), **kwargs)
         o = self.o
         v = self.v
-
-        # Ca_subset("AO","ACTIVE") returns columns in global energy order.
-        # Ca_subset("SO","ACTIVE") returns columns in irrep-block order.
-        # We use the SO energies only to derive the irrep label for each MO.
-        self.C = self.ref.Ca_subset("AO", "ACTIVE")
-
-        eps_so_blocked  = self.ref.epsilon_a_subset("SO", "ACTIVE")
-        eps_active_so   = np.concatenate([np.array(eps_so_blocked.nph[h])
-                                          for h in range(self.ref.nirrep())])
-        sort_idx        = np.argsort(eps_active_so, kind='stable')
-
-        irrep_labels    = self.ref.molecule().irrep_labels()
-        mo_irreps       = np.array([h for h in range(self.ref.nirrep())
-                                    for _ in range(self.ref.nmopi()[h]
-                                                   - self.ref.frzcpi()[h]
-                                                   - self.ref.frzvpi()[h])])
-        mo_irreps       = mo_irreps[sort_idx]
-        mo_irrep_labels = [irrep_labels[h] for h in mo_irreps]
-        eps_active      = eps_active_so[sort_idx]
-
-        # Print MO summary
-        print("\nActive MOs by energy:")
-        print(f"  {'#':>4}  {'Irrep':>6}  {'Energy':>16}")
-        print(f"  {'-'*4}  {'-'*6}  {'-'*16}")
-        for i, (eps, label) in enumerate(zip(eps_active, mo_irrep_labels)):
-            if i == self.no:
-                print(f"  {'.'*4}  {'.'*6}  {'.'*16}")
-            idx = i if i < self.no else i - self.no
-            print(f"  {idx:>4}  {label:>6}  {eps:>16.10f}")
-
-        # Localize occupied MOs if requested
-        if (local is not None):
-            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
-            LMOS = psi4.core.Localizer.build(self.local_MOs, self.ref.basisset(), C_occ)
-            LMOS.localize()
-            npL = np.asarray(LMOS.L)
-            npC = np.asarray(self.C)
-            npC[:,:self.no] = npL
-            C = psi4.core.Matrix.from_array(npC)
-            self.C = C
-
-        self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
+        mgr = self.device_manager
 
         if local is not None:
             self.Local = Local(local, self.C, self.nfzc, self.no, self.nv, self.H, self.local_cutoff,self.it2_opt)
@@ -197,50 +140,25 @@ class ccwfn(object):
                 self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
 
-        # denominators
-        eps_occ = np.diag(self.H.F)[o]
-        eps_vir = np.diag(self.H.F)[v]
-        self.Dia = eps_occ.reshape(-1,1) - eps_vir
-        self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
+        # Energy denominators from the MO energies (the diagonal of the seeded
+        # Fock). diag() is backend-aware, so this works whether H.F is NumPy or
+        # torch; Dia/Dijab inherit H.F's dtype/device (compute-resident).
+        eps_occ = diag(self.H.F)[o]
+        eps_vir = diag(self.H.F)[v]
+        self.Dia = eps_occ.reshape(-1, 1) - eps_vir
+        self.Dijab = (eps_occ.reshape(-1, 1, 1, 1) + eps_occ.reshape(-1, 1, 1)
+                      - eps_vir.reshape(-1, 1) - eps_vir)
 
-        # first-order amplitudes
-        self.t1 = np.zeros((self.no, self.nv))
+        # First-order (MP2) amplitudes as the CC initial guess, built from the
+        # seeded integrals/denominators so they inherit dtype/device. ERI is stored
+        # on device0 (CPU); clone(..., device1) stages the oovv block onto the
+        # compute device so the divide lands where the amplitudes live.
         if local is not None:
-            self.t1, self.t2 = self.Local.filter_amps(self.t1, self.H.ERI[o,o,v,v])
+            self.t1, self.t2 = self.Local.filter_amps(np.zeros((self.no, self.nv)),
+                                                       self.H.ERI[o,o,v,v])
         else:
-            self.t1 = np.zeros((self.no, self.nv))
-            self.t2 = self.H.ERI[o,o,v,v]/self.Dijab
-
-        # Device / precision policy: validates the kwargs (fallback warnings for
-        # GPU-without-torch / GPU-without-CUDA), resolves device0/device1, builds
-        # the contraction backend, and owns the dtype/placement cast policy.
-        self.device_manager = DeviceManager(
-            device=kwargs.pop('device', 'CPU'),
-            precision=kwargs.pop('precision', 'DP'),
-        )
-        mgr = self.device_manager
-
-        # Back-compat handles: the builders and sub-objects still read
-        # ccwfn.<device0/device1/contract/...>. These pass-throughs dissolve in
-        # Phase 3, when consumers read the manager on the Wavefunction base.
-        self.precision = mgr.precision
-        self.device = mgr.device
-        self.device0 = mgr.device0
-        self.device1 = mgr.device1
-        self.contract = mgr.contract
-
-        # Cast/place the compute-resident arrays (amplitudes, Fock, denominators)
-        # and the storage-resident integrals (ERI/L) per the device/precision
-        # policy. On CPU+DP these are no-ops; on CPU+SP they real-cast to float32;
-        # on GPU they become complex torch tensors on device1 (compute) / device0
-        # (CPU storage).
-        self.H.F = mgr.seed_compute(self.H.F)
-        self.t1 = mgr.seed_compute(self.t1)
-        self.t2 = mgr.seed_compute(self.t2)
-        self.Dia = mgr.seed_compute(self.Dia)
-        self.Dijab = mgr.seed_compute(self.Dijab)
-        self.H.ERI = mgr.seed_store(self.H.ERI)
-        self.H.L = mgr.seed_store(self.H.L)
+            self.t1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
+            self.t2 = clone(self.H.ERI[o,o,v,v], device=self.device1) / self.Dijab
 
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
