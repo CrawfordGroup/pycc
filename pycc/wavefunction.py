@@ -64,11 +64,15 @@ class Wavefunction(object):
     local_mos : str
         'PIPEK_MEZEY' or 'BOYS' (default 'PIPEK_MEZEY'); used only when
         ``localize_occ`` is True.
+    frozen_core : bool
+        honor the reference's frozen core, i.e. use the active MO space (default
+        True, for correlated methods). False uses the full, all-electron MO space
+        (nfzc = 0) -- HFwfn passes this, since HF properties are all-electron.
     """
 
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
                  localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
-                 **kwargs) -> None:
+                 frozen_core: bool = True, **kwargs) -> None:
         # A subclass may set its own attributes before calling super().__init__;
         # snapshot them so _base_attrs (recorded at the end) captures only what the
         # base itself adds -- which _from_shared_base then replicates.
@@ -87,9 +91,13 @@ class Wavefunction(object):
         self.ref = scf_wfn
         self.eref = self.ref.energy()
 
-        # Active-orbital counts. frzcpi/doccpi are per-irrep Dimension objects;
-        # sum across irreps to support both C1 and higher-symmetry references.
-        self.nfzc = int(sum(self.ref.frzcpi()))
+        # Orbital counts and the MO subset. Correlated methods honor the reference's
+        # frozen core (frozen_core=True -> the active space). HF properties are
+        # all-electron, so HFwfn passes frozen_core=False to use the full MO space
+        # (nfzc=0). frzcpi/doccpi are per-irrep Dimension objects; sum over irreps to
+        # support both C1 and higher-symmetry references.
+        subset = "ACTIVE" if frozen_core else "ALL"
+        self.nfzc = int(sum(self.ref.frzcpi())) if frozen_core else 0
         self.no   = int(sum(self.ref.doccpi())) - self.nfzc
         self.nmo  = self.ref.nmo()
         self.nv   = self.nmo - self.no - self.nfzc
@@ -100,21 +108,24 @@ class Wavefunction(object):
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nmo)
 
-        # Ca_subset("AO","ACTIVE") returns columns in global energy order.
-        # Ca_subset("SO","ACTIVE") returns columns in irrep-block order.
-        # We use the SO energies only to derive the irrep label for each MO.
-        self.C = self.ref.Ca_subset("AO", "ACTIVE")
+        # Ca_subset("AO", subset) returns columns in global energy order;
+        # Ca_subset("SO", subset) in irrep-block order (used only for irrep labels).
+        self.C = self.ref.Ca_subset("AO", subset)
 
-        eps_so_blocked  = self.ref.epsilon_a_subset("SO", "ACTIVE")
+        eps_so_blocked  = self.ref.epsilon_a_subset("SO", subset)
         eps_active_so   = np.concatenate([np.array(eps_so_blocked.nph[h])
                                           for h in range(self.ref.nirrep())])
         sort_idx        = np.argsort(eps_active_so, kind='stable')
 
         irrep_labels    = self.ref.molecule().irrep_labels()
-        mo_irreps       = np.array([h for h in range(self.ref.nirrep())
-                                    for _ in range(self.ref.nmopi()[h]
-                                                   - self.ref.frzcpi()[h]
-                                                   - self.ref.frzvpi()[h])])
+        nirrep          = self.ref.nirrep()
+        nmopi           = self.ref.nmopi()
+        if frozen_core:
+            frzcpi, frzvpi = self.ref.frzcpi(), self.ref.frzvpi()
+            mopi = [nmopi[h] - frzcpi[h] - frzvpi[h] for h in range(nirrep)]
+        else:
+            mopi = [nmopi[h] for h in range(nirrep)]
+        mo_irreps       = np.array([h for h in range(nirrep) for _ in range(mopi[h])])
         mo_irreps       = mo_irreps[sort_idx]
         mo_irrep_labels = [irrep_labels[h] for h in mo_irreps]
         eps_active      = eps_active_so[sort_idx]
@@ -129,10 +140,12 @@ class Wavefunction(object):
             idx = i if i < self.no else i - self.no
             print(f"  {idx:>4}  {label:>6}  {eps:>16.10f}")
 
-        # Localize the active occupied MOs if requested (used consistently for the
-        # single H build below, so all methods share the same integrals).
+        # Localize the occupied MOs if requested (used consistently for the single H
+        # build below, so all methods share the same integrals). The occupied subset
+        # tracks frozen_core: active occupied for correlated methods, all occupied
+        # for the full (HF) space.
         if localize_occ:
-            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
+            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC" if frozen_core else "OCC")
             LMOS = psi4.core.Localizer.build(self.local_mos, self.ref.basisset(), C_occ)
             LMOS.localize()
             npL = np.asarray(LMOS.L)

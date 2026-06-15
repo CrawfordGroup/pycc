@@ -12,7 +12,6 @@ import numpy as np
 from .wavefunction import Wavefunction
 from .derivatives import Derivatives
 from .utils import diag
-from .exceptions import PyCCError
 
 
 class HFwfn(Wavefunction):
@@ -32,7 +31,10 @@ class HFwfn(Wavefunction):
     """
 
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
-        super().__init__(scf_wfn, **kwargs)
+        # HF properties are all-electron: always use the full MO space, regardless
+        # of any frozen core the reference was run with.
+        kwargs.pop('frozen_core', None)
+        super().__init__(scf_wfn, frozen_core=False, **kwargs)
         self.derivatives = Derivatives(self)
 
     def gradient(self) -> np.ndarray:
@@ -49,13 +51,9 @@ class HFwfn(Wavefunction):
 
         The derivative integrals are transformed with the base's symmetry-handled
         ``self.C`` (single irrep block, global energy order), so this works with
-        molecular symmetry left on. Currently all-electron -- build the reference
-        without a frozen core.
+        molecular symmetry left on. HFwfn always uses the full (all-electron) MO
+        space, so a frozen core on the reference does not affect the gradient.
         """
-        if self.nfzc != 0:
-            raise PyCCError("HF gradient is all-electron; build the reference "
-                            "without a frozen core (nfzc = %d)." % self.nfzc)
-
         o = self.o
         no = self.no
         # Occupied block of the symmetry-handled MO coefficients, and the matching
