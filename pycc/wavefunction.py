@@ -22,6 +22,7 @@ import numpy as np
 
 from .hamiltonian import Hamiltonian
 from .device import DeviceManager
+from .exceptions import InvalidKeywordError, PyCCError
 
 
 class Wavefunction(object):
@@ -65,8 +66,19 @@ class Wavefunction(object):
         ``localize_occ`` is True.
     """
 
-    def __init__(self, scf_wfn: Any, device: str = 'CPU', precision: str = 'DP',
-                 localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY') -> None:
+    def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
+                 localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
+                 **kwargs) -> None:
+        # The general kwargs (device/precision/localize_occ/local_mos) are owned
+        # here; subclasses pop only their own kwargs and forward the rest, so this
+        # is the single place they are parsed. local_mos is validated up front (a
+        # bad value fails fast regardless of localize_occ).
+        valid_local_mos = ['PIPEK_MEZEY', 'BOYS']
+        local_mos = local_mos.upper()
+        if local_mos not in valid_local_mos:
+            raise InvalidKeywordError('local_mos', local_mos, valid_local_mos)
+        self.local_mos = local_mos
+
         self.ref = scf_wfn
         self.eref = self.ref.energy()
 
@@ -115,9 +127,8 @@ class Wavefunction(object):
         # Localize the active occupied MOs if requested (used consistently for the
         # single H build below, so all methods share the same integrals).
         if localize_occ:
-            self.local_mos = local_mos
             C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
-            LMOS = psi4.core.Localizer.build(local_mos, self.ref.basisset(), C_occ)
+            LMOS = psi4.core.Localizer.build(self.local_mos, self.ref.basisset(), C_occ)
             LMOS.localize()
             npL = np.asarray(LMOS.L)
             npC = np.asarray(self.C)
@@ -145,3 +156,9 @@ class Wavefunction(object):
         self.H.F = mgr.seed_compute(self.H.F)
         self.H.ERI = mgr.seed_store(self.H.ERI)
         self.H.L = mgr.seed_store(self.H.L)
+
+        # The base is the final consumer of forwarded kwargs (each subclass pops
+        # its own and passes the remainder through), so anything left over is an
+        # unrecognized keyword -- flag it instead of silently ignoring it.
+        if kwargs:
+            raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))

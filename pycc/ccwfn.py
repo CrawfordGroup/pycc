@@ -110,12 +110,6 @@ class ccwfn(Wavefunction):
         self.local = local
         self.local_cutoff = kwargs.pop('local_cutoff', 1e-5)
 
-        valid_local_MOs = ['PIPEK_MEZEY', 'BOYS']
-        local_MOs = kwargs.pop('local_mos', 'PIPEK_MEZEY').upper()
-        if local_MOs not in valid_local_MOs:
-            raise InvalidKeywordError('local_mos', local_MOs, valid_local_MOs)
-        self.local_MOs = local_MOs
-
         valid_it2_opt = [True,False]
         it2_opt = kwargs.pop('it2_opt', True)
         if it2_opt not in valid_it2_opt:
@@ -131,12 +125,10 @@ class ccwfn(Wavefunction):
         # Reference, orbital spaces, MO coefficients (occupied localized when a
         # local-CC scheme is requested, so the base's single H build uses LMOs),
         # the seeded MO-basis integrals, and the device/precision manager all come
-        # from the Wavefunction base.
-        super().__init__(scf_wfn,
-                         device=kwargs.pop('device', 'CPU'),
-                         precision=kwargs.pop('precision', 'DP'),
-                         localize_occ=(local is not None),
-                         local_mos=self.local_MOs)
+        # from the Wavefunction base. We pop only CC-specific kwargs above and
+        # forward the rest (device/precision/local_mos) to the base, which owns
+        # them -- so adding MPwfn/HFwfn/... needs no device/precision boilerplate.
+        super().__init__(scf_wfn, localize_occ=(local is not None), **kwargs)
         o = self.o
         v = self.v
         mgr = self.device_manager
