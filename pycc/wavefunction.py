@@ -69,6 +69,11 @@ class Wavefunction(object):
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
                  localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
                  **kwargs) -> None:
+        # A subclass may set its own attributes before calling super().__init__;
+        # snapshot them so _base_attrs (recorded at the end) captures only what the
+        # base itself adds -- which _from_shared_base then replicates.
+        _preexisting = set(vars(self))
+
         # The general kwargs (device/precision/localize_occ/local_mos) are owned
         # here; subclasses pop only their own kwargs and forward the rest, so this
         # is the single place they are parsed. local_mos is validated up front (a
@@ -162,3 +167,24 @@ class Wavefunction(object):
         # unrecognized keyword -- flag it instead of silently ignoring it.
         if kwargs:
             raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))
+
+        # Record exactly which attributes the base set (excluding anything the
+        # subclass set first), so _from_shared_base can replicate this base onto a
+        # new instance without re-running __init__ (and re-transforming integrals).
+        self._base_attrs = tuple(k for k in vars(self) if k not in _preexisting)
+
+    @classmethod
+    def _from_shared_base(cls, source: "Wavefunction") -> "Wavefunction":
+        """Create a ``cls`` instance that REUSES ``source``'s already-built base --
+        reference, orbital spaces, seeded integrals, device manager -- by bypassing
+        ``__init__`` so the Hamiltonian is not transformed a second time. The caller
+        adds its own method-specific state afterward.
+
+        Lets one wavefunction compose another over the same base (e.g. ccwfn holds an
+        MPwfn for its MP2 guess/denominators) with a single integral build.
+        """
+        obj = cls.__new__(cls)
+        for name in source._base_attrs:
+            setattr(obj, name, getattr(source, name))
+        obj._base_attrs = source._base_attrs
+        return obj
