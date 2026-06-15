@@ -8,7 +8,7 @@ import numpy as np
 from opt_einsum import contract
 
 from pycc._typing import Slice, Tensor
-from pycc.exceptions import InvalidKeywordError
+from pycc.exceptions import InvalidKeywordError, PyCCError
 
 if TYPE_CHECKING:
     from pycc.hamiltonian import Hamiltonian
@@ -74,6 +74,18 @@ class Local(object):
             lindep_cut: float = 1E-6,
             e_conv: float = 1e-12,
             r_conv: float = 1e-12) -> None:
+
+        # The current local (PNO/PAO/PNO++) machinery assumes the full occupied
+        # space (no frozen core) -- its QL/domain transforms are sized to the
+        # all-electron occupied count. Frozen-core support is deferred to the
+        # planned local rewrite; until then, fail fast rather than return a
+        # silently wrong energy.
+        if nfzc > 0:
+            raise PyCCError(
+                "Local correlation (local=%r) does not support a frozen core "
+                "(nfzc=%d). Run the reference with freeze_core=false, or use a "
+                "canonical method. Frozen-core local CC is deferred to the local "
+                "rewrite." % (local, nfzc))
 
         self.cutoff = cutoff
         self.nfzc = nfzc

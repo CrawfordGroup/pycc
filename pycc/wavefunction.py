@@ -2,11 +2,12 @@
 wavefunction.py: top-level Wavefunction base class.
 
 Owns the infrastructure shared by every correlated (and SCF-derived) method:
-the Psi4 reference, the active-orbital spaces, the MO coefficients (optionally
-with localized occupied orbitals), the MO-basis integrals (Hamiltonian), and the
+the Psi4 reference, the orbital spaces (full MO basis, with active occupied/virtual
+slices that offset past any frozen core), the MO coefficients (optionally with
+localized occupied orbitals), the full-MO-basis integrals (Hamiltonian), and the
 device/precision manager. Method-specific machinery (amplitudes, denominators,
-densities, response, ...) lives in the subclasses (CCwfn, and -- planned -- MPwfn,
-CIwfn, HFwfn).
+densities, response, ...) lives in the subclasses (CCwfn, MPwfn, HFwfn, and --
+planned -- CIwfn).
 
 Part of the 2026-06 refactor (docs/REFACTOR_PLAN_2026-06.md, Phase 3): the
 reference/orbital/integral setup and the DeviceManager were lifted out of
@@ -37,11 +38,15 @@ class Wavefunction(object):
     nfzc, no, nv, nmo, nact : int
         frozen-core / active-occupied / active-virtual / total-MO / active counts
     o, v : slice
-        occupied and virtual active-orbital subspaces
+        active occupied and virtual subspaces, as offsets into the full MO space:
+        ``o = slice(nfzc, nfzc+no)`` skips the frozen core and ``v`` is the
+        virtuals. With no frozen core (``nfzc == 0``) ``o`` starts at 0 as usual.
     C : Psi4 Matrix
-        active MO coefficients (occupied block localized if ``localize_occ``)
+        full-space MO coefficients (all ``nmo`` columns, global energy order; the
+        frozen core occupies columns ``[0:nfzc]``). The active occupied block is
+        localized in place if ``localize_occ``.
     H : Hamiltonian
-        MO-basis Fock (F), ERIs, spin-adapted ERIs (L), and property integrals,
+        full-MO-basis Fock (F), ERIs, spin-adapted ERIs (L), and property integrals,
         device/precision-seeded
     device_manager : DeviceManager
         owns device/precision, device0/device1, and the contraction backend
@@ -65,9 +70,11 @@ class Wavefunction(object):
         'PIPEK_MEZEY' or 'BOYS' (default 'PIPEK_MEZEY'); used only when
         ``localize_occ`` is True.
     frozen_core : bool
-        honor the reference's frozen core, i.e. use the active MO space (default
-        True, for correlated methods). False uses the full, all-electron MO space
-        (nfzc = 0) -- HFwfn passes this, since HF properties are all-electron.
+        whether to honor the reference's frozen core (default True, for correlated
+        methods). The Hamiltonian is ALWAYS built over the full MO space; this flag
+        only sets ``nfzc`` -- i.e. how far the active occupied slice ``o`` is offset
+        past the core. False means no core (``nfzc = 0``); HFwfn passes this, since
+        HF properties are all-electron.
     """
 
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
@@ -91,12 +98,12 @@ class Wavefunction(object):
         self.ref = scf_wfn
         self.eref = self.ref.energy()
 
-        # Orbital counts and the MO subset. Correlated methods honor the reference's
-        # frozen core (frozen_core=True -> the active space). HF properties are
-        # all-electron, so HFwfn passes frozen_core=False to use the full MO space
-        # (nfzc=0). frzcpi/doccpi are per-irrep Dimension objects; sum over irreps to
-        # support both C1 and higher-symmetry references.
-        subset = "ACTIVE" if frozen_core else "ALL"
+        # Always build the FULL-space Hamiltonian; a frozen core is handled purely as
+        # a slice OFFSET -- the active occupied slice ``o`` starts past the core
+        # rather than at 0. ``frozen_core`` only sets how many core orbitals to skip.
+        # This gives every method one MO/integral layout: correlated codes work on
+        # the active blocks via ``o``/``v``, while all-electron properties (HFwfn)
+        # pass frozen_core=False so the slices span the whole space.
         self.nfzc = int(sum(self.ref.frzcpi())) if frozen_core else 0
         self.no   = int(sum(self.ref.doccpi())) - self.nfzc
         self.nmo  = self.ref.nmo()
@@ -105,14 +112,14 @@ class Wavefunction(object):
 
         print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
-        self.o = slice(0, self.no)
-        self.v = slice(self.no, self.nmo)
+        ndocc = self.nfzc + self.no
+        self.o = slice(self.nfzc, ndocc)
+        self.v = slice(ndocc, self.nmo)
 
-        # Ca_subset("AO", subset) returns columns in global energy order;
-        # Ca_subset("SO", subset) in irrep-block order (used only for irrep labels).
-        self.C = self.ref.Ca_subset("AO", subset)
+        # Full MO space, global energy order; the frozen core sits at columns [0:nfzc].
+        self.C = self.ref.Ca_subset("AO", "ALL")
 
-        eps_so_blocked  = self.ref.epsilon_a_subset("SO", subset)
+        eps_so_blocked  = self.ref.epsilon_a_subset("SO", "ALL")
         eps_active_so   = np.concatenate([np.array(eps_so_blocked.nph[h])
                                           for h in range(self.ref.nirrep())])
         sort_idx        = np.argsort(eps_active_so, kind='stable')
@@ -120,37 +127,33 @@ class Wavefunction(object):
         irrep_labels    = self.ref.molecule().irrep_labels()
         nirrep          = self.ref.nirrep()
         nmopi           = self.ref.nmopi()
-        if frozen_core:
-            frzcpi, frzvpi = self.ref.frzcpi(), self.ref.frzvpi()
-            mopi = [nmopi[h] - frzcpi[h] - frzvpi[h] for h in range(nirrep)]
-        else:
-            mopi = [nmopi[h] for h in range(nirrep)]
-        mo_irreps       = np.array([h for h in range(nirrep) for _ in range(mopi[h])])
+        mo_irreps       = np.array([h for h in range(nirrep) for _ in range(nmopi[h])])
         mo_irreps       = mo_irreps[sort_idx]
         mo_irrep_labels = [irrep_labels[h] for h in mo_irreps]
         eps_active      = eps_active_so[sort_idx]
 
         # Print MO summary
-        print("\nActive MOs by energy:")
+        print("\nMOs by energy:")
         print(f"  {'#':>4}  {'Irrep':>6}  {'Energy':>16}")
         print(f"  {'-'*4}  {'-'*6}  {'-'*16}")
         for i, (eps, label) in enumerate(zip(eps_active, mo_irrep_labels)):
-            if i == self.no:
+            if i == ndocc:
                 print(f"  {'.'*4}  {'.'*6}  {'.'*16}")
-            idx = i if i < self.no else i - self.no
+            idx = i if i < ndocc else i - ndocc
             print(f"  {idx:>4}  {label:>6}  {eps:>16.10f}")
 
         # Localize the occupied MOs if requested (used consistently for the single H
-        # build below, so all methods share the same integrals). The occupied subset
-        # tracks frozen_core: active occupied for correlated methods, all occupied
-        # for the full (HF) space.
+        # build below, so all methods share the same integrals). Only the ACTIVE
+        # occupied orbitals are localized; the frozen core is left canonical.
         if localize_occ:
-            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC" if frozen_core else "OCC")
+            # Localize the ACTIVE occupied MOs and place them at the active-occupied
+            # offset [nfzc:nfzc+no] of the full C; the frozen core stays canonical.
+            C_occ = self.ref.Ca_subset("AO", "ACTIVE_OCC")
             LMOS = psi4.core.Localizer.build(self.local_mos, self.ref.basisset(), C_occ)
             LMOS.localize()
             npL = np.asarray(LMOS.L)
             npC = np.asarray(self.C)
-            npC[:, :self.no] = npL
+            npC[:, self.nfzc:self.nfzc + self.no] = npL
             self.C = psi4.core.Matrix.from_array(npC)
 
         # MO-basis integrals (built once from the final C).

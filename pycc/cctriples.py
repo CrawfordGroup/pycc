@@ -56,10 +56,11 @@ def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
     t3 -= contract('mc,mba->abc', Wovoo[:,:,i,k], t2[j])
 
     if WithDenom is True:
+        Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-        denom += F[i,i] + F[j,j] + F[k,k]
+        denom += Fo[i] + Fo[j] + Fo[k]
         return t3/denom
     else:
         return t3
@@ -98,11 +99,11 @@ def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
     t3 -= contract('mik,jm->ijk', Wovoo[:,c,:,:], t2[:,:,b,a])
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
+        Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
-        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[a] + Fv[b] + Fv[c]
         return t3/denom
     else:
         return t3
@@ -128,18 +129,20 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
     desired target.
 
     """
+    Fov = F[o,v]
     t3 = contract('ab,c->abc', Woovv[i,j], t1[k])
     t3 += contract('ac,b->abc', Woovv[i,k], t1[j])
     t3 += contract('bc,a->abc', Woovv[j,k], t1[i])
-    t3 += contract('ab,c->abc', t2[i,j], F[k,v])
-    t3 += contract('ac,b->abc', t2[i,k], F[j,v])
-    t3 += contract('bc,a->abc', t2[j,k], F[i,v])
+    t3 += contract('ab,c->abc', t2[i,j], Fov[k])
+    t3 += contract('ac,b->abc', t2[i,k], Fov[j])
+    t3 += contract('bc,a->abc', t2[j,k], Fov[i])
 
     if WithDenom is True:
+        Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-        denom += F[i,i] + F[j,j] + F[k,k]
+        denom += Fo[i] + Fo[j] + Fo[k]
         return t3/denom
     else:
         return t3
@@ -173,11 +176,11 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
     t3 += contract('jk,i->ijk', t2[:,:,b,c], Fov[:,a])
 
     if WithDenom is True:
-        no = o.stop
-        Fo = np.diag(F)[o]
-        denom = np.zeros_like(t3)
+        Fo = diag(F)[o]
+        Fv = diag(F)[v]
+        denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
-        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[a] + Fv[b] + Fv[c]
         return t3/denom
     else:
         return t3
@@ -226,10 +229,11 @@ def t_tjl(ccwfn: "ccwfn") -> float:
                 Y3 = V3 + V3.swapaxes(0,1).swapaxes(1,2) + V3.swapaxes(0,1).swapaxes(0,2)
                 Z3 = V3.swapaxes(1,2) + V3.swapaxes(0,1) + V3.swapaxes(0,2)
 
+                Fo = diag(F)[o]
                 Fv = diag(F)[v]
                 denom = zeros_like(W3)
                 denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-                denom += F[i,i] + F[j,j] + F[k,k]
+                denom += Fo[i] + Fo[j] + Fo[k]
 
                 for a in range(nv):
                     for b in range(a+1):
@@ -267,17 +271,21 @@ def t_vikings(ccwfn: "ccwfn") -> float:
     X1 = zeros_like(ccwfn.t1)
     X2 = zeros_like(ccwfn.t2)
 
+    Loovv = L[o,o,v,v]
+    ERIvovv = ERI[v,o,v,v]
+    ERIooov = ERI[o,o,o,v]
+    Fov = F[o,v]
     for i in range(no):
         for j in range(no):
             for k in range(no):
 
                 t3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract)
 
-                X1[i] += contract('abc,bc->a',(t3 - t3.swapaxes(0,2)), L[j,k,v,v])
-                X2[i,j] += contract('abc,dbc->ad', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,k,v,v])
-                X2[i] -= contract('abc,lc->lab', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[j,k,o,v])
+                X1[i] += contract('abc,bc->a',(t3 - t3.swapaxes(0,2)), Loovv[j,k])
+                X2[i,j] += contract('abc,dbc->ad', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERIvovv[:,k])
+                X2[i] -= contract('abc,lc->lab', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERIooov[j,k])
 
-                X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), F[k,v])
+                X2[i,j] += contract('abc,c->ab',(t3 - t3.swapaxes(0,2)), Fov[k])
 
 
     ET = 2.0 * contract('ia,ia->', t1, X1)
@@ -312,16 +320,20 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
     X1 = np.zeros_like(t1.T)
     X2 = np.zeros_like(t2.T)
 
+    Loovv = L[o,o,v,v]
+    ERIvovv = ERI[v,o,v,v]
+    ERIooov = ERI[o,o,o,v]
+    Fov = F[o,v]
     for a in range(nv):
         for b in range(nv):
             for c in range(nv):
                 t3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
 
-                X1[a] += contract('ijk,jk->i',(t3 - t3.swapaxes(0,2)), L[o,o,b+no,c+no])
-                X2[a] += contract('ijk,dk->dij', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[v,o,b+no,c+no])
-                X2[a,b] -= contract('ijk,jkl->il', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERI[o,o,o,c+no])
+                X1[a] += contract('ijk,jk->i',(t3 - t3.swapaxes(0,2)), Loovv[:,:,b,c])
+                X2[a] += contract('ijk,dk->dij', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERIvovv[:,:,b,c])
+                X2[a,b] -= contract('ijk,jkl->il', (2.0*t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)),ERIooov[:,:,:,c])
 
-                X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), F[o,c+no])
+                X2[a,b] += contract('ijk,k->ij',(t3 - t3.swapaxes(0,2)), Fov[:,c])
 
 
     ET = 2.0 * contract('ia,ia->', t1, X1.T)
@@ -330,12 +342,13 @@ def t_vikings_inverted(ccwfn: "ccwfn") -> float:
     return ET
 
 def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    l3 = contract('ab,c->abc', L[i,j,v,v], l1[k]) - contract('ac,b->abc', L[i,j,v,v], l1[k])
-    l3 += contract('ac,b->abc', L[i,k,v,v], l1[j]) - contract('ab,c->abc', L[i,k,v,v], l1[j])
-    l3 += contract('ba,c->abc', L[j,i,v,v], l1[k]) - contract('bc,a->abc', L[j,i,v,v], l1[k])
-    l3 += contract('ca,b->abc', L[k,i,v,v], l1[j]) - contract('cb,a->abc', L[k,i,v,v], l1[j])
-    l3 += contract('bc,a->abc', L[j,k,v,v], l1[i]) - contract('ba,c->abc', L[j,k,v,v], l1[i])
-    l3 += contract('cb,a->abc', L[k,j,v,v], l1[i]) - contract('ca,b->abc', L[k,j,v,v], l1[i])
+    Loovv = L[o,o,v,v]
+    l3 = contract('ab,c->abc', Loovv[i,j], l1[k]) - contract('ac,b->abc', Loovv[i,j], l1[k])
+    l3 += contract('ac,b->abc', Loovv[i,k], l1[j]) - contract('ab,c->abc', Loovv[i,k], l1[j])
+    l3 += contract('ba,c->abc', Loovv[j,i], l1[k]) - contract('bc,a->abc', Loovv[j,i], l1[k])
+    l3 += contract('ca,b->abc', Loovv[k,i], l1[j]) - contract('cb,a->abc', Loovv[k,i], l1[j])
+    l3 += contract('bc,a->abc', Loovv[j,k], l1[i]) - contract('ba,c->abc', Loovv[j,k], l1[i])
+    l3 += contract('cb,a->abc', Loovv[k,j], l1[i]) - contract('ca,b->abc', Loovv[k,j], l1[i])
 
     l3 += contract('a,bc->abc', Fov[i], l2[j,k]) - contract('b,ac->abc', Fov[i], l2[j,k])
     l3 += contract('a,cb->abc', Fov[i], l2[k,j]) - contract('c,ab->abc', Fov[i], l2[k,j])
@@ -377,10 +390,11 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     l3 += W
 
     if WithDenom is True:
+        Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(l3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-        denom += F[i,i] + F[j,j] + F[k,k]
+        denom += Fo[i] + Fo[j] + Fo[k]
         return l3/denom
     else:
         return l3
@@ -435,11 +449,11 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
     l3 += W
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
+        Fv = diag(F)[v]
         denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
-        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[a] + Fv[b] + Fv[c]
         return l3/denom
     else:
         return l3
@@ -448,12 +462,13 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
 # Efficient algorithm for l3
 # Need further debugging
 def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    l3 = contract('ab,c->abc', L[i,j,v,v], l1[k]) - contract('ac,b->abc', L[i,j,v,v], l1[k])
-    l3 += contract('ac,b->abc', L[i,k,v,v], l1[j]) - contract('ab,c->abc', L[i,k,v,v], l1[j])
-    l3 += contract('ba,c->abc', L[j,i,v,v], l1[k]) - contract('bc,a->abc', L[j,i,v,v], l1[k])
-    l3 += contract('ca,b->abc', L[k,i,v,v], l1[j]) - contract('cb,a->abc', L[k,i,v,v], l1[j])
-    l3 += contract('bc,a->abc', L[j,k,v,v], l1[i]) - contract('ba,c->abc', L[j,k,v,v], l1[i])
-    l3 += contract('cb,a->abc', L[k,j,v,v], l1[i]) - contract('ca,b->abc', L[k,j,v,v], l1[i])
+    Loovv = L[o,o,v,v]
+    l3 = contract('ab,c->abc', Loovv[i,j], l1[k]) - contract('ac,b->abc', Loovv[i,j], l1[k])
+    l3 += contract('ac,b->abc', Loovv[i,k], l1[j]) - contract('ab,c->abc', Loovv[i,k], l1[j])
+    l3 += contract('ba,c->abc', Loovv[j,i], l1[k]) - contract('bc,a->abc', Loovv[j,i], l1[k])
+    l3 += contract('ca,b->abc', Loovv[k,i], l1[j]) - contract('cb,a->abc', Loovv[k,i], l1[j])
+    l3 += contract('bc,a->abc', Loovv[j,k], l1[i]) - contract('ba,c->abc', Loovv[j,k], l1[i])
+    l3 += contract('cb,a->abc', Loovv[k,j], l1[i]) - contract('ca,b->abc', Loovv[k,j], l1[i])
 
     l3 += contract('a,bc->abc', Fov[i], l2[j,k]) - contract('b,ac->abc', Fov[i], l2[j,k])
     l3 += contract('a,cb->abc', Fov[i], l2[k,j]) - contract('c,ab->abc', Fov[i], l2[k,j])
@@ -479,10 +494,11 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
     l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)
 
     if WithDenom is True:
+        Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(l3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-        denom += F[i,i] + F[j,j] + F[k,k]
+        denom += Fo[i] + Fo[j] + Fo[k]
         return l3/denom
     else:
         return l3
@@ -520,11 +536,11 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
     l3 += 2 * W - W.swapaxes(0,1) - W.swapaxes(0,2)
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
+        Fv = diag(F)[v]
         denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
-        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[a] + Fv[b] + Fv[c]
         return l3/denom
     else:
         return l3
@@ -548,13 +564,12 @@ def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
     t3 -= contract('mik,jma->ijka', Wovoo[:,c,:,:], t2[:,:,b])
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
-        denom -= F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[b] + Fv[c]
         return t3/denom
     else:
         return t3
@@ -609,13 +624,12 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
     l3 += W
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(l3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
-        denom -= F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[b] + Fv[c]
         return l3/denom
     else:
         return l3
@@ -627,10 +641,11 @@ def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
     t3 = contract('al,lcb->abc', tmp, t2[k])
 
     if WithDenom is True:
+        Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom -= Fv.reshape(-1,1,1) + Fv.reshape(-1,1) + Fv
-        denom += F[i,i] + F[j,j] + F[k,k]
+        denom += Fo[i] + Fo[j] + Fo[k]
         return t3/denom
     else:
         return t3
@@ -640,11 +655,11 @@ def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
     t3 = contract('ijl,kl->ijk', tmp, t2[:,:,c,b])
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
+        Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1) + Fo.reshape(-1,1) + Fo
-        denom -= F[a+no,a+no] + F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[a] + Fv[b] + Fv[c]
         return t3/denom
     else:
         return t3
@@ -654,13 +669,12 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
     t3 = contract('ijal,kl->ijka', tmp, t2[:,:,c,b])
 
     if WithDenom is True:
-        no = o.stop
         Fo = diag(F)[o]
         Fv = diag(F)[v]
         denom = zeros_like(t3)
         denom += Fo.reshape(-1,1,1,1) + Fo.reshape(-1,1,1) + Fo.reshape(-1,1)
         denom -= Fv.reshape(1,1,1,-1)
-        denom -= F[b+no,b+no] + F[c+no,c+no]
+        denom -= Fv[b] + Fv[c]
         return t3/denom
     else:
         return t3
