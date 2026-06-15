@@ -11,6 +11,7 @@ import numpy as np
 
 from .wavefunction import Wavefunction
 from .derivatives import Derivatives
+from .cphf import CPHF
 from .utils import diag
 
 
@@ -26,6 +27,8 @@ class HFwfn(Wavefunction):
     ----------
     derivatives : Derivatives
         MO-basis derivative-integral provider (promotable to the base later)
+    cphf : CPHF
+        coupled-perturbed HF orbital-response solver (promotable to the base later)
     grad : numpy.ndarray
         the most recently computed nuclear gradient, shape (natom, 3)
     """
@@ -36,6 +39,7 @@ class HFwfn(Wavefunction):
         kwargs.pop('frozen_core', None)
         super().__init__(scf_wfn, frozen_core=False, **kwargs)
         self.derivatives = Derivatives(self)
+        self.cphf = CPHF(self)
 
     def gradient(self) -> np.ndarray:
         """RHF analytic energy gradient (a.u.), shape (natom, 3).
@@ -76,3 +80,14 @@ class HFwfn(Wavefunction):
                                  + Vnn[atom, c])
         self.grad = grad
         return grad
+
+    def polarizability(self) -> np.ndarray:
+        """Static electric-dipole polarizability tensor (a.u.), shape (3, 3).
+
+        Solves the electric-field CPHF orbital response (:class:`CPHF`) and contracts
+        with the MO dipole integrals. This is the first validation target for the
+        CPHF machinery: the field perturbation does not move the basis functions, so
+        the response has no overlap/Pulay contribution.
+        """
+        self.alpha = self.cphf.polarizability()
+        return self.alpha
