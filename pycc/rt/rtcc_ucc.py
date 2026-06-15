@@ -1,8 +1,6 @@
 """
-rtcc_ucc.py
-===========
 Real-time UCCSD object for ODE propagation. Lives in PyCC alongside rtcc.py.
-Uses Ajay's SeQuant-generated equations via UCCIntegrals (ajay_ucc.py).
+Uses Ajay's SeQuant-generated equations.
 """
 
 import numpy as np
@@ -17,8 +15,8 @@ class rtcc_ucc:
     ----------
     ccwfn        : PyCC ccwfn object  (.no, .nv, .H)
     V            : callable           laser field V(t) -> float
-    energy_fn    : callable           from ajay_ucc.UCCIntegrals
-    residuals_fn : callable           from ajay_ucc.UCCIntegrals
+    energy_fn    : callable           
+    residuals_fn : callable           
     kick         : 'x','y','z' or None  (None = isotropic)
     """
 
@@ -55,7 +53,7 @@ class rtcc_ucc:
     def _prep_tdag(self, t_vo, t_vvoo):
         """
         Pre-conjugate so Ajay's transpose-only t_dag gives correct T†
-        for complex RT amplitudes. Never add .conj() inside ajay_ucc.py.
+        for complex RT amplitudes. 
         """
         return t_vo.conj(), t_vvoo.conj()
 
@@ -128,28 +126,10 @@ class rtcc_ucc:
           + 0.5 * [t1*(0).t1(t)]^2                      S^2-S^2
           + 0.5 * t2*(0)_ijab t1(t)_ia t1(t)_jb        D(0) x S^2(t)
           + 0.5 * t1*(0)_ia t1*(0)_jb t2(t)_ijab       S^2(0) x D(t)
+
+        get SeQuant equations from Ajay and update
         """
-        c = self.contract
-        t1_0, t2_0, ph_0 = self.extract_amps(y0)
-        t1_t, t2_t, ph_t = self.extract_amps(yt)
 
-        t1_0c = t1_0.conj()
-        t2_0c = t2_0.conj()
-
-        ss = c("ia,ia->", t1_0c, t1_t)
-
-        C  = 1.0 + 0.0j
-        C += ss
-        C += 0.25 * c("ijab,ijab->", t2_0c, t2_t)
-        C += 0.5  * ss * ss
-        C += 0.5  * c("ijab,ia,jb->", t2_0c, t1_t,  t1_t)
-        C += 0.5  * c("ia,jb,ijab->", t1_0c, t1_0c, t2_t)
-        C *= np.exp(-ph_0) * np.exp(ph_t)
-        return C
-
-    # ------------------------------------------------------------------
-    # Dipole  (placeholder)
-    # ------------------------------------------------------------------
 
     def dipole(self, t1, t2):
         """Placeholder. Needs Ajay's ucc_onepdm(). Same contraction as rtcc."""

@@ -1,6 +1,4 @@
 """
-uccwfn.py
-=========
 UCCSD wavefunction object for PyCC.  Mirrors the structure of ccwfn.py.
 
 Energy   : BCH4  (uccsd_bch4_cs.py  — 4-commutator truncation)
@@ -9,28 +7,23 @@ Residuals: BCH2  (uccsd_bch2_cs.py  — 2-commutator truncation)
 All integral blocks are loaded ONCE at __init__ from ccwfn.H and stored
 as attributes.  energy() and residuals() do zero disk I/O.
 
-The t_dag convention
-----------------
-Ajay's SeQuant generator emits t_dag as a plain TRANSPOSE:
+The t_dag convention - Ajay's SeQuant generator emits t_dag as a plain TRANSPOSE:
     t_dag_oovv = einsum('abic->icab', t_vvoo)   # correct only for real T
 For complex RT amplitudes, rtcc_ucc._prep_tdag() pre-conjugates the
 inputs BEFORE passing them here, so every transpose inside this file
 produces the correct conjugate transpose T†.
-Do NOT add .conj() calls anywhere in this file.
+So, do NOT add .conj() calls anywhere in this file.
 
-Index conventions (Ajay / SeQuant)
-------------------------------------
+Index conventions (SeQuant)
   t_vo    (nv, no)            [ai]
   t_vvoo  (nv, nv, no, no)   [abij]
   tdag_vo / tdag_vvoo : pre-conjugated inputs passed by rtcc_ucc
 
-Interface (called by rtcc_ucc)
--------------------------------
+Interface (called by rtcc_ucc), just like normal stuff
   ucc.energy(F, ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo)    -> scalar
   ucc.residuals(F, ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo) -> (R1_vo, R2_vvoo)
 
 Usage
------
   from uccwfn import make_ucc_fns
   from rtcc_ucc import rtcc_ucc
 
@@ -88,8 +81,9 @@ class UCCWfn:
     # ------------------------------------------------------------------
     def energy(self, F, ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo):
         """UCCSD BCH4 energy (4-commutator truncation)."""
-        no = self.no
-        f_oo, f_vv, f_ov, f_vo = self._fock(F, no)
+        nocc = self.no
+        nvirt = self.nv   
+        f_oo, f_vv, f_ov, f_vo = self._fock(F, nocc)
 
         E = 0.0
 
@@ -19423,9 +19417,9 @@ class UCCWfn:
     def residuals(self, F, ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo):
         """UCCSD BCH2 T1 and T2 residuals (2-commutator truncation).
         Returns (R1_vo [nv,no], R2_vvoo [nv,nv,no,no])."""
-        no = self.no
-        nv = self.nv
-        f_oo, f_vv, f_ov, f_vo = self._fock(F, no)
+        nocc = self.no
+        nvirt = self.nv
+        f_oo, f_vv, f_ov, f_vo = self._fock(F, nocc)
 
         # T1 residual
 
