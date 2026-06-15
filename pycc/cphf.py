@@ -24,8 +24,8 @@ The two-electron part of ``G`` is written with the spin-adapted integrals
 
 The first validation target is the static dipole polarizability (electric-field
 response): the field does not move the basis functions, so its right-hand side
-is just the MO dipole integrals (``H.mu``) with no overlap/Pulay terms -- it
-exercises the solver in isolation.
+is just the (negated) MO dipole integrals (``B = -mu``, since the field enters as
+``-mu . E``) with no overlap/Pulay terms -- it exercises the solver in isolation.
 
 Created and owned by HFwfn for now; it depends only on base state (``o``/``v``,
 the Fock diagonal, ``H.L``) plus the property integrals (``H.mu``), so it can be
@@ -111,23 +111,36 @@ class CPHF(object):
         U = np.linalg.solve(G, np.asarray(B).reshape(-1))
         return U.reshape(self.no, self.nv)
 
-    # ---- perturbation right-hand sides ----
-    def rhs_field(self, axis: int) -> np.ndarray:
-        """Electric-field RHS: ov block of the MO dipole integral for ``axis`` (0/1/2)."""
+    # ---- property integrals / perturbation right-hand sides ----
+    def _mu_ov(self, axis: int) -> np.ndarray:
+        """ov block of the MO electric-dipole integral for ``axis`` (0/1/2)."""
         return np.asarray(self.wfn.H.mu[axis])[self.o, self.v]
+
+    def rhs_field(self, axis: int) -> np.ndarray:
+        """Electric-field CPHF RHS for ``axis`` (0/1/2), i.e. ``B = -mu``.
+
+        The field enters the Hamiltonian as ``H' = -mu . E`` -- the field-interaction
+        sign is distinct from the electron-charge sign already carried by the dipole
+        integrals (``H.mu`` = -e r) -- so ``dH'/dE = -mu`` and the response RHS is the
+        negated dipole. (For the polarizability the two sign conventions cancel, but
+        the response ``U`` is reused by other properties where they do not.)
+        """
+        return -self._mu_ov(axis)
 
     # ---- property drivers ----
     def polarizability(self) -> np.ndarray:
         """Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
 
         Solves the electric-field CPHF response for each Cartesian axis and contracts
-        with the dipole integrals: ``alpha_ab = 4 sum_ia mu^a_ia U^b_ia`` (closed
-        shell), where ``U^b`` solves ``G U^b = mu^b`` in the ov block.
+        with the dipole integrals: ``alpha_ab = -4 sum_ia mu^a_ia U^b_ia`` (closed
+        shell), where ``U^b`` solves ``G U^b = -mu^b`` in the ov block. (The two minus
+        signs -- the ``-mu`` RHS and the ``-4`` contraction -- make alpha positive
+        definite, and cancel against each other so the tensor is unchanged.)
         """
+        mu = [self._mu_ov(c) for c in range(3)]
         U = [self.solve(self.rhs_field(b), kind="electric") for b in range(3)]
         alpha = np.zeros((3, 3))
         for a in range(3):
-            mua = self.rhs_field(a)
             for b in range(3):
-                alpha[a, b] = 4.0 * np.einsum('ia,ia->', mua, U[b])
+                alpha[a, b] = -4.0 * np.einsum('ia,ia->', mu[a], U[b])
         return alpha
