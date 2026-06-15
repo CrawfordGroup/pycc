@@ -6,32 +6,11 @@ Pull checkpoint file for 0-5.1au, then finish propagation to 10au
 # Import package, test suite, and other packages as needed
 import psi4
 import pycc
-import os
 import pickle as pk
 import numpy as np
 from pycc.rt.integrators import rk2
 from pycc.rt.lasers import gaussian_laser
 from pycc.data.molecules import *
-from pytest import fixture
-from distutils import dir_util
-
-@fixture
-def datadir(tmpdir, request):
-    '''
-    from: https://stackoverflow.com/a/29631801
-    Fixture responsible for searching a folder with the same name of test
-    module and, if available, moving all contents to a temporary directory so
-    tests can use them freely.
-    '''
-    filename = request.module.__file__
-    test_dir, _ = os.path.splitext(filename)
-
-    if os.path.isdir(test_dir):
-        dir_util.copy_tree(test_dir, str(tmpdir))
-    else:
-        raise FileNotFoundError("Test folder not found.")
-
-    return tmpdir
 
 def test_chk(datadir):
     # run cc

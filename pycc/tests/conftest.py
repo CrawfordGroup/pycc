@@ -14,6 +14,9 @@ The ``pycc.ccwfn(...)`` call (model, local, ... kwargs) legitimately
 varies per test and intentionally stays in the test body.
 """
 
+import os
+from distutils import dir_util
+
 import psi4
 import pytest
 
@@ -88,3 +91,22 @@ def rhf_wfn(psi4_environment):
         _, wfn = psi4.energy('SCF', return_wfn=True)
         return wfn
     return _build
+
+
+@pytest.fixture
+def datadir(tmpdir, request):
+    '''
+    from: https://stackoverflow.com/a/29631801
+    Fixture responsible for searching a folder with the same name of test
+    module and, if available, moving all contents to a temporary directory so
+    tests can use them freely.
+    '''
+    filename = request.module.__file__
+    test_dir, _ = os.path.splitext(filename)
+
+    if os.path.isdir(test_dir):
+        dir_util.copy_tree(test_dir, str(tmpdir))
+    else:
+        raise FileNotFoundError("Test folder not found.")
+
+    return tmpdir

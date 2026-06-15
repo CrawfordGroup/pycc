@@ -6,30 +6,9 @@ Test RT-CCSD with local correlation simulation.
 import psi4
 import pycc
 import pytest
-import os
 from pycc.rt.lasers import gaussian_laser
 from pycc.rt.integrators import rk4
 from ..data.molecules import *
-from pytest import fixture
-from distutils import dir_util
-
-@fixture
-def datadir(tmpdir, request):
-    '''
-    from: https://stackoverflow.com/a/29631801
-    Fixture responsible for searching a folder with the same name of test
-    module and, if available, moving all contents to a temporary directory so
-    tests can use them freely.
-    '''
-    filename = request.module.__file__
-    test_dir, _ = os.path.splitext(filename)
-
-    if os.path.isdir(test_dir):
-        dir_util.copy_tree(test_dir, str(tmpdir))
-    else:
-        raise FileNotFoundError("Test folder not found.")
-
-    return tmpdir
 
 def test_rtpno(datadir):
     """H2O RT-PNO"""
