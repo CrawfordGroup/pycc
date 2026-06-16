@@ -5,7 +5,7 @@ _Authored from the June 2026 design discussion. Supersedes the GPU/abstraction
 
 ## Status / progress
 
-_Last updated 2026-06-14. This section is the cross-machine source of truth for
+_Last updated 2026-06-16. This section is the cross-machine source of truth for
 where the refactor stands — the per-session memory used while authoring it is
 machine-local, but this doc and `git log` travel with the repo._
 
@@ -16,14 +16,40 @@ machine-local, but this doc and `git log` travel with the repo._
 | 2 — device/precision manager | ✅ done | PR #115 (`DeviceManager` + `ContractionBackend` in `pycc/device.py`) |
 | 2b — GPU ground-state real; RT complex via backend promotion | ✅ done | PR #116 |
 | _(bonus)_ tighten RT-CCSD tests (`test_024`/`test_025`) | ✅ done | PR #117 (1e-10, real dynamics, reference verified bit-for-bit against pre-refactor code) |
-| **3 — extract `Wavefunction` base** | ⏭️ **next** | design-first |
-| 4 — `MPwfn`, then `HFwfn` (+ derivative/CPHF engine) | ⬜ pending | |
-| 5 — local frozen under `CCwfn`, CPU-only | ⬜ pending | |
+| 3 — extract `Wavefunction` base | ✅ done | PR #119 (`pycc/wavefunction.py`; `ccwfn(Wavefunction)`; kwargs forwarding) |
+| 4a — `MPwfn` | ✅ done | PR #120 (`pycc/mpwfn.py`; CC composes `mp = MPwfn.from_wavefunction(self)`, shared base) |
+| 4b — `HFwfn` + derivative/CPHF engine | ✅ done | PRs #121–#128 — see HF-derivative arc below |
+| _(refactor)_ full-space-`H` unification (frozen core as slice offset) | ✅ done | PR #123 (fixed `cctriples` absolute indices; `Local` fails fast for `nfzc>0`) |
+| _(cleanup)_ conftest hygiene (`datadir` fixture hoist) | ✅ done | PR #124 |
+| 5 — local frozen under `CCwfn`, CPU-only | 🟡 partial | `Local` raises for `nfzc>0` (#123); full freeze/marking deferred to the local rewrite |
 
-**To resume:** read this doc + `git log`. The next step is the **Phase 3 design
-pass** — the `Wavefunction` base: what moves up from `ccwfn.__init__`, the base's
-public surface (replacing the `self.ccwfn.<x>` reach-ins), and the two-lifetime
-integral layer with the lazy MO-basis derivative-integral seam.
+### HF-derivative arc (Phase 4b) — complete
+
+All MO-basis, validated against an external reference, with the nuclear CPHF response
+cached and shared across the Hessian and the APTs/AATs.
+
+| Increment | Landed | Validation |
+|---|---|---|
+| gradient + `Derivatives` provider | PR #121 (tol tightened #122) | vs `psi4.gradient('scf')`, ~1e-14 |
+| CPHF solver + static polarizability | PR #125 | vs `psi4` analytic polarizability, ~4e-13 |
+| nuclear CPHF → dipole derivatives / APTs | PR #126 | vs finite-difference SCF dipole, ~1e-8 |
+| nuclear Hessian + persistent response cache | PR #127 | vs `psi4.hessian('scf')`, ~1e-12 |
+| atomic axial tensors (AATs) via magnetic CPHF | PR #128 | vs DALTON SCF AATs (psi4numpy VCD ref), ~5e-9 |
+
+`HFwfn`/`CPHF`/`Derivatives` now hold every SCF VCD ingredient (Hessian → normal modes,
+APTs, AATs). The `Derivatives` and `CPHF` classes were written to depend only on
+base-level state, so they are **promotable to the base** for MP2/CI/CC derivative work.
+
+**To resume:** read this doc + `git log`. The structural refactor (Phases 1–4) is done;
+the canonical CC spine plus `MPwfn` and `HFwfn` all sit on the `Wavefunction` base. Open
+threads, in rough priority:
+1. **Promote the derivative engine to the base** — move `Derivatives` (and the promotable
+   `CPHF`) off `HFwfn` onto `Wavefunction` so MP2/CI/CC gradient/response code can reach
+   them. (Next up — see discussion below / decisions log.)
+2. **Assemble a full SCF VCD driver** from the now-complete pieces (frequencies + IR
+   intensities + rotatory strengths); psi4numpy's `vcd.py` is the recipe.
+3. **Phase 5** — formally mark `local.py`/`lccwfn.py` frozen/CPU-only; or extend the base
+   to a `CIwfn`.
 
 ## Governing principle
 
@@ -199,8 +225,16 @@ boundary; because the local and einsums tests are not in CI, also run them local
 
 ## Open questions
 
-- Exact public surface the sub-objects depend on (the base's documented contract,
-  replacing `self.ccwfn.<x>` reach-ins).
-- Internal structure of the `HFwfn` derivative engine (which pieces become sub-objects;
-  where the Z-vector/CPHF solver sits when it is promoted to shared use).
-- Tag/release naming for Phase 0.
+- **Promoting the derivative engine to the base** (the live question): `Derivatives` and
+  `CPHF` already depend only on base-level state (basis/molecule/`C`/`H`/`o`/`v`/Fock
+  diagonal), so they can move from `HFwfn` onto `Wavefunction`. To settle: do they become
+  always-constructed base attributes or lazily built on first use; how does the 2-e
+  derivative provider stay lazy/transient under the device manager; and what does an
+  MP2/CI/CC gradient need beyond the HF pieces (a Z-vector / relaxed density on top of the
+  same CPHF solver).
+- _(resolved)_ ~~Internal structure of the `HFwfn` derivative engine~~ — landed as the
+  `Derivatives` provider + `CPHF` solver (orbital Hessian, field/nuclear/magnetic RHS,
+  shared nuclear-response cache); `HFwfn` delegates. See Phase 4b arc above.
+- _(resolved)_ ~~Tag/release naming for Phase 0~~ — `v0.1.0`.
+- Base public surface vs the remaining `self.ccwfn.<x>` reach-ins from CC sub-objects
+  (works via inheritance today; a documented base contract is still desirable).
