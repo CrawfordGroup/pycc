@@ -81,6 +81,7 @@ class CPHF(object):
         self._B_nuc: dict = {}  # atom -> list of 3 (no, nv) nuclear RHS B^X
         self._F_nuc: dict = {}  # atom -> list of 3 (no, no) skeleton deriv Fock F^X_ij
         self._S_nuc: dict = {}  # atom -> list of 3 (no, no) overlap deriv S^X_ij
+        self._U_mag: dict = {}  # axis -> (no, nv) magnetic-field response U^B (real)
 
     # ---- orbital Hessian ----
     def hessian(self, kind: str = "electric") -> np.ndarray:
@@ -137,6 +138,34 @@ class CPHF(object):
         the response ``U`` is reused by other properties where they do not.)
         """
         return -self._mu_ov(axis)
+
+    # ---- magnetic-field perturbation (imaginary; for AATs) ----
+    def _m_ov(self, axis: int) -> np.ndarray:
+        """ov block of the (real) MO magnetic-dipole integral for ``axis`` (0/1/2).
+
+        ``H.m`` carries the ``-1/2`` and an imaginary unit (it is the pure-imaginary
+        operator ``-i/2 L``, with the ``i`` convention shared by the CC response code);
+        the magnetic CPHF can be solved as a real problem, so this strips the ``i`` by
+        multiplying by ``-i`` -- the final VCD rotatory strength takes the imaginary
+        component of the APT*AAT product, not of the AAT itself."""
+        return np.asarray(-1.0j * self.wfn.H.m[axis])[self.o, self.v].real
+
+    def rhs_magnetic(self, axis: int) -> np.ndarray:
+        """Magnetic-field CPHF RHS for ``axis`` (0/1/2), i.e. ``B = -m`` (real).
+
+        The magnetic field enters as ``H' = -m . B`` (analogous to ``-mu . E`` for the
+        electric field), and -- like the electric field -- it does not move the basis
+        functions, so there is no overlap/Pulay term: the RHS is just the (negated)
+        real magnetic-dipole ov integral. The magnetic perturbation is imaginary, so
+        this response uses the antisymmetric (``kind='magnetic'``) orbital Hessian."""
+        return -self._m_ov(axis)
+
+    def solve_magnetic(self, axis: int) -> np.ndarray:
+        """Magnetic-field CPHF response ``U^B`` for ``axis`` (0/1/2), ``(no, nv)``,
+        solved once and cached. Real (the magnetic-dipole RHS is stripped of its i)."""
+        if axis not in self._U_mag:
+            self._U_mag[axis] = self.solve(self.rhs_magnetic(axis), kind="magnetic")
+        return self._U_mag[axis]
 
     def _build_nuclear(self, atom: int):
         """One heavy pass over the derivative integrals for ``atom``; returns three
@@ -357,6 +386,51 @@ class CPHF(object):
                                 + 2.0 * np.einsum('ij,nm,imjn->', Sx, Sy, Loooo))
                         H[A * 3 + a, Bat * 3 + b] = skel + resp
         return H
+
+    def atomic_axial_tensors(self) -> np.ndarray:
+        """RHF atomic axial tensors (AATs) ``I^lambda_{alpha,beta}`` (a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[lambda, alpha, beta]`` -- the overlap of the
+        nuclear (``R_{lambda,alpha}``) and magnetic-field (``B_beta``) wavefunction
+        derivatives, the electronic part of the magnetic-dipole vibrational transition
+        moment (common gauge origin).
+
+        Implements Eq. (16) of the AAT note (CPHF coefficients over dependent pairs
+        already cancelled analytically)::
+
+            I^lambda_{alpha,beta} = 2 sum_{ia} [ U^{R}_{ai} U^{B}_{ai}
+                                                 + U^{B}_{ai} <phi^{R}_i | phi_a> ]
+
+        with ``U^{R}`` the nuclear CPHF response (shared cache, :meth:`solve_nuclear`),
+        ``U^{B}`` the magnetic-field response (:meth:`solve_magnetic`, antisymmetric
+        Hessian), and ``<phi^R_i|phi_a>`` the nuclear half-derivative overlap (occupied
+        derivative against the unperturbed virtual; ``Derivatives.overlap_half`` 'LEFT').
+
+        This is the electronic part only (the magnetic-dipole vibrational transition
+        moment); the full VCD AAT adds the nuclear term
+        ``(Z_lambda / 4) eps_{alpha,beta,gamma} R_{lambda,gamma}``. The magnetic-dipole
+        integrals are stripped of their ``i`` (:meth:`_m_ov`) so the magnetic response
+        and the AAT are real -- the VCD rotatory strength takes the imaginary component
+        of the APT*AAT product, not of the AAT. Validated against DALTON's STO-3G H2O2
+        electronic AATs (via the psi4numpy SCF-VCD reference) to ~5e-9.
+        """
+        o, v = self.o, self.v
+        d = self.wfn.derivatives
+        C = np.asarray(self.wfn.C)
+        Cocc = psi4.core.Matrix.from_array(C[:, o])
+        Cvir = psi4.core.Matrix.from_array(C[:, v])
+        natom = self.wfn.ref.molecule().natom()
+
+        Ub = [self.solve_magnetic(beta) for beta in range(3)]      # 3 x (no,nv), real
+        aat = np.zeros((natom, 3, 3))
+        for lam in range(natom):
+            Ur = self.solve_nuclear(lam)                           # 3 x (no,nv), cached
+            Shalf = d.overlap_half(lam, Cocc, Cvir, side="LEFT")   # 3 x (no,nv)
+            for alpha in range(3):
+                for beta in range(3):
+                    aat[lam, alpha, beta] = 2.0 * (
+                        np.einsum('ia,ia->', Ur[alpha], Ub[beta])
+                        + np.einsum('ia,ia->', Ub[beta], Shalf[alpha]))
+        return aat
 
     # ---- property drivers ----
     def polarizability(self) -> np.ndarray:
