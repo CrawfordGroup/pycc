@@ -83,6 +83,34 @@ class Derivatives(object):
         return [npC1.T @ np.asarray(m) @ npC2
                 for m in self.mints.ao_elec_dip_deriv1(atom)]
 
+    # ---- second derivatives (Hessian skeleton) ----
+    def overlap2(self, atom1: int, atom2: int, C1, C2) -> List[np.ndarray]:
+        """Second overlap derivatives ``S^{XY}`` for the ``(atom1, atom2)`` pair: a
+        list of 9 arrays, the (cart1, cart2) Cartesian-pair blocks indexed
+        ``cart1*3 + cart2``."""
+        return [np.asarray(m)
+                for m in self.mints.mo_oei_deriv2("OVERLAP", atom1, atom2, C1, C2)]
+
+    def core2(self, atom1: int, atom2: int, C1, C2) -> List[np.ndarray]:
+        """Second core one-electron (kinetic + potential) derivatives ``h^{XY}`` for
+        the ``(atom1, atom2)`` pair: 9 arrays, indexed ``cart1*3 + cart2``."""
+        T = self.mints.mo_oei_deriv2("KINETIC", atom1, atom2, C1, C2)
+        V = self.mints.mo_oei_deriv2("POTENTIAL", atom1, atom2, C1, C2)
+        return [np.asarray(t) + np.asarray(v) for t, v in zip(T, V)]
+
+    def eri2(self, atom1: int, atom2: int, C1, C2, C3, C4) -> List[np.ndarray]:
+        """Second two-electron (ERI) derivatives for the ``(atom1, atom2)`` pair: 9
+        arrays, indexed ``cart1*3 + cart2``. Chemist/Mulliken notation ``(pq|rs)``,
+        as for :meth:`eri`. The Hessian skeleton needs only the occupied block, so
+        callers pass ``Cocc`` (no**4 per pair) rather than the full MO space."""
+        return [np.asarray(m)
+                for m in self.mints.mo_tei_deriv2(atom1, atom2, C1, C2, C3, C4)]
+
+    def nuclear_repulsion2(self) -> np.ndarray:
+        """Nuclear-repulsion-energy Hessian, shape ``(3*natom, 3*natom)`` indexed
+        ``(atom1*3 + cart1, atom2*3 + cart2)``."""
+        return np.asarray(self.mol.nuclear_repulsion_energy_deriv2())
+
     # ---- two-electron (heavy: lazy, per atom) ----
     def eri(self, atom: int, C1, C2, C3, C4) -> List[np.ndarray]:
         """Two-electron (ERI) derivatives for ``atom``: list of 3 (x, y, z) arrays.

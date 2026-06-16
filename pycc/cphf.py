@@ -71,6 +71,16 @@ class CPHF(object):
         # HFwfn builds the full MO space).
         self.eps = np.asarray(diag(wfn.H.F))
         self._G: dict = {}  # kind -> reshaped (no*nv, no*nv) orbital Hessian
+        # Persistent nuclear response, keyed by atom (geometry-bound -- valid for the
+        # life of this CPHF object, which is tied to one wfn / structure). Built once
+        # by solve_nuclear() and SHARED by every consumer of the nuclear response (the
+        # molecular Hessian and the dipole derivatives / APTs), so an IR workflow
+        # (Hessian -> normal modes, then APTs) never rebuilds the per-atom nmo**4
+        # derivative ERIs or re-solves the CPHF equations.
+        self._U_nuc: dict = {}  # atom -> list of 3 (no, nv) nuclear response U^X
+        self._B_nuc: dict = {}  # atom -> list of 3 (no, nv) nuclear RHS B^X
+        self._F_nuc: dict = {}  # atom -> list of 3 (no, no) skeleton deriv Fock F^X_ij
+        self._S_nuc: dict = {}  # atom -> list of 3 (no, no) overlap deriv S^X_ij
 
     # ---- orbital Hessian ----
     def hessian(self, kind: str = "electric") -> np.ndarray:
@@ -128,9 +138,13 @@ class CPHF(object):
         """
         return -self._mu_ov(axis)
 
-    def rhs_nuclear(self, atom: int) -> List[np.ndarray]:
-        """Nuclear-perturbation CPHF RHS for ``atom``: list of 3 (x,y,z) ``(no, nv)``
-        arrays ``B^X_ia``.
+    def _build_nuclear(self, atom: int):
+        """One heavy pass over the derivative integrals for ``atom``; returns three
+        lists of 3 (x,y,z) arrays: the CPHF RHS ``B^X_ia`` ``(no, nv)``, the skeleton
+        derivative Fock oo block ``F^X_ij`` ``(no, no)``, and the overlap derivative oo
+        block ``S^X_ij`` ``(no, no)``. The latter two are free by-products of the RHS
+        build that the molecular Hessian's response terms need, so all are produced and
+        cached together (the full-MO ERI derivative is the dominant nmo**4 cost).
 
         Unlike the electric-field RHS, a nuclear displacement moves the basis
         functions, so the right-hand side folds in (a) the skeleton derivative Fock
@@ -167,14 +181,14 @@ class CPHF(object):
         gx = [g.swapaxes(1, 2) for g in                        # chemist -> physicist
               d.eri(atom, Call, Call, Call, Call)]             # 3 x (nmo^4) <pq|rs>^X
 
-        B = []
+        Lvooo = L[v, o, o, o]
+        B, Foo, Soo = [], [], []
         for c in range(3):
             Lx = 2.0 * gx[c] - gx[c].swapaxes(2, 3)            # derivative spin-adapted L
             # skeleton derivative Fock: F^X_pq = h^X + sum_k L[p,k,q,k]^X
             Fx = hx[c] + np.einsum('pkqk->pq', Lx[:, o, :, o])
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the
             # ov block:  -1/2 S^X_kl ( L[a,k,i,l] + L[a,l,i,k] ).
-            Lvooo = L[v, o, o, o]
             coupling = (np.einsum('akil,kl->ia', Lvooo, Sx[c][o, o])
                         + np.einsum('alik,kl->ia', Lvooo, Sx[c][o, o]))
             # The CPHF RHS is minus the first-order off-diagonal ("perturbation")
@@ -182,7 +196,57 @@ class CPHF(object):
             # field's B = -mu).
             Q = Fx[o, v] - eps_o[:, None] * Sx[c][o, v] - 0.5 * coupling
             B.append(-Q)
-        return B
+            Foo.append(Fx[o, o])
+            Soo.append(Sx[c][o, o])
+        return B, Foo, Soo
+
+    def rhs_nuclear(self, atom: int) -> List[np.ndarray]:
+        """Nuclear-perturbation CPHF RHS for ``atom``: list of 3 (x,y,z) ``(no, nv)``
+        arrays ``B^X_ia``. Thin accessor over the cached :meth:`_build_nuclear`."""
+        return self.rhs_nuclear_cached(atom)
+
+    # ---- cached nuclear response (shared by the Hessian and the APTs) ----
+    def solve_nuclear(self, atom: int) -> List[np.ndarray]:
+        """Nuclear CPHF response for ``atom`` -- list of 3 (x, y, z) ``(no, nv)``
+        ``U^X`` arrays -- solved once and cached.
+
+        Building the RHS (:meth:`rhs_nuclear`) regenerates the full-MO derivative
+        ERIs (nmo**4 per atom), the dominant cost; both the molecular Hessian and the
+        dipole derivatives / APTs need the same 3*natom ``U^X``, so this memoizes the
+        response (and the RHS, in ``self._B_nuc``) per atom and they share it. The
+        cache is geometry-bound: it lives for the life of this CPHF object.
+        """
+        if atom not in self._U_nuc:
+            B, Foo, Soo = self._build_nuclear(atom)
+            self._B_nuc[atom] = B
+            self._F_nuc[atom] = Foo
+            self._S_nuc[atom] = Soo
+            self._U_nuc[atom] = [self.solve(B[c], kind="electric") for c in range(3)]
+        return self._U_nuc[atom]
+
+    def rhs_nuclear_cached(self, atom: int) -> List[np.ndarray]:
+        """Nuclear RHS ``B^X`` for ``atom`` from the shared cache (populated by
+        :meth:`solve_nuclear`); the molecular Hessian's response term needs the RHS
+        as well as the response."""
+        if atom not in self._B_nuc:
+            self.solve_nuclear(atom)
+        return self._B_nuc[atom]
+
+    def fock_nuclear_cached(self, atom: int) -> List[np.ndarray]:
+        """Skeleton derivative Fock oo block ``F^X_ij`` for ``atom`` from the shared
+        cache (a by-product of :meth:`solve_nuclear`); used by the molecular Hessian's
+        first-derivative cross terms."""
+        if atom not in self._F_nuc:
+            self.solve_nuclear(atom)
+        return self._F_nuc[atom]
+
+    def overlap_nuclear_cached(self, atom: int) -> List[np.ndarray]:
+        """Overlap derivative oo block ``S^X_ij`` for ``atom`` from the shared cache
+        (a by-product of :meth:`solve_nuclear`); used by the molecular Hessian's
+        first-derivative cross terms."""
+        if atom not in self._S_nuc:
+            self.solve_nuclear(atom)
+        return self._S_nuc[atom]
 
     def dipole_derivatives(self) -> np.ndarray:
         """Analytic nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.),
@@ -208,8 +272,7 @@ class CPHF(object):
 
         dmu = np.zeros((natom, 3, 3))
         for A in range(natom):
-            Bx = self.rhs_nuclear(A)
-            Ux = [self.solve(Bx[c], kind="electric") for c in range(3)]
+            Ux = self.solve_nuclear(A)           # cached; shared with the Hessian
             Sx = d.overlap(A, Cocc, Cocc)        # 3 x (no,no)
             dip = d.dipole(A, Cocc, Cocc)        # 9 x (no,no): index alpha*3 + beta
             for beta in range(3):
@@ -220,6 +283,80 @@ class CPHF(object):
                     val += 4.0 * np.einsum('ia,ia->', Ux[beta], mu[alpha][o, v])
                     dmu[A, beta, alpha] = val
         return dmu
+
+    def molecular_hessian(self) -> np.ndarray:
+        """RHF nuclear (molecular) Hessian ``d^2 E / dX_Aa dX_Bb`` (a.u.), shape
+        ``(3*natom, 3*natom)`` indexed ``(A*3 + a, B*3 + b)`` -- the force-constant
+        matrix, matching ``psi4.hessian('scf')`` layout (gate 4).
+
+        Built from (i) the second-derivative ("skeleton") integral terms -- the
+        gradient's integrals differentiated a second time -- and (ii) the first-order
+        CPHF response, which is where the nuclear ``U^X`` (and its RHS ``B^X``) enter.
+        The response is taken from the shared :meth:`solve_nuclear` cache, so the
+        3*natom solves done here are reused for free by :meth:`dipole_derivatives`
+        (the APTs) in an IR workflow.
+
+        The assembly has two parts. (i) The skeleton second-derivative terms mirror the
+        validated CPHF-free gradient with the integrals differentiated twice::
+
+            2 h^{ab}_ii + (2(ii|jj) - (ij|ij))^{ab} - 2 eps_i S^{ab}_ii + V_NN^{ab}
+
+        (ii) The first-order CPHF response and the first-derivative *product* cross
+        terms (x = (A,a), y = (B,b); i,j,n,m occupied; spin-adapted ``L`` = H.L)::
+
+            -4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
+            + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
+
+        where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij``
+        are the skeleton derivative Fock and overlap oo blocks (cached by-products of
+        :meth:`solve_nuclear`). Validated against ``psi4.hessian('scf')`` (gate 4).
+        """
+        o, v = self.o, self.v
+        eps_o = self.eps[o]
+        d = self.wfn.derivatives
+        C = np.asarray(self.wfn.C)
+        Cocc = psi4.core.Matrix.from_array(C[:, o])
+        mol = self.wfn.ref.molecule()
+        natom = mol.natom()
+
+        Loooo = np.asarray(self.wfn.H.L)[o, o, o, o]       # i,m,j,n (spin-adapted)
+        Vnn2 = d.nuclear_repulsion2()                      # (3*natom, 3*natom)
+        # Pre-solve & cache the nuclear response for every atom (shared with the APTs).
+        # All four come from a single heavy per-atom pass (solve_nuclear).
+        U = [self.solve_nuclear(A) for A in range(natom)]          # U[A][a] -> (no,nv)
+        B = [self.rhs_nuclear_cached(A) for A in range(natom)]     # B[A][a] -> (no,nv)
+        Foo = [self.fock_nuclear_cached(A) for A in range(natom)]  # F^X_ij -> (no,no)
+        Soo = [self.overlap_nuclear_cached(A) for A in range(natom)]  # S^X_ij -> (no,no)
+
+        H = np.zeros((3 * natom, 3 * natom))
+        for A in range(natom):
+            for Bat in range(natom):
+                S2 = d.overlap2(A, Bat, Cocc, Cocc)               # 9 x (no,no)
+                h2 = d.core2(A, Bat, Cocc, Cocc)                  # 9 x (no,no)
+                g2 = d.eri2(A, Bat, Cocc, Cocc, Cocc, Cocc)       # 9 x (no,no,no,no) chemist
+                for a in range(3):
+                    for b in range(3):
+                        c = a * 3 + b
+                        Ux, Uy = U[A][a], U[Bat][b]
+                        Bx, By = B[A][a], B[Bat][b]
+                        Sx, Sy = Soo[A][a], Soo[Bat][b]
+                        Fx, Fy = Foo[A][a], Foo[Bat][b]
+                        # --- skeleton (second-derivative integrals), as in the gradient ---
+                        skel = (2.0 * np.trace(h2[c])
+                                + 2.0 * np.einsum('iijj->', g2[c])
+                                - np.einsum('ijij->', g2[c])
+                                - 2.0 * np.einsum('i,ii->', eps_o, S2[c])
+                                + Vnn2[A * 3 + a, Bat * 3 + b])
+                        # --- first-order CPHF response + first-derivative cross terms:
+                        #   -4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
+                        #   + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
+                        resp = (-4.0 * np.einsum('ia,ia->', Ux, By)
+                                - 2.0 * np.einsum('ij,ij->', Sx, Fy)
+                                - 2.0 * np.einsum('ij,ij->', Sy, Fx)
+                                + 4.0 * np.einsum('i,ij,ij->', eps_o, Sx, Sy)
+                                + 2.0 * np.einsum('ij,nm,imjn->', Sx, Sy, Loooo))
+                        H[A * 3 + a, Bat * 3 + b] = skel + resp
+        return H
 
     # ---- property drivers ----
     def polarizability(self) -> np.ndarray:
