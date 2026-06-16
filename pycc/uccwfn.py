@@ -61,8 +61,6 @@ class UCCWfn:
         self.ERI = ERI
 
         # ---- Fock denominators for amplitude updates ----
-        # D1[a,i] = eps_i - eps_a  (singles denominator)
-        # D2[a,b,i,j] = eps_i + eps_j - eps_a - eps_b  (doubles denominator)
         eps      = np.diag(F)         # full MO energies
         eps_o    = eps[:self.no]      # occupied
         eps_v    = eps[self.no:]      # virtual
@@ -100,10 +98,10 @@ class UCCWfn:
 
         Updates self.t1, self.t2 in place (PyCC convention).
         Returns final BCH4 correlation energy (float).
+        todo - add diis
         """
-        # Convert to Ajay convention for residuals/energy calls
-        t_vo   = self.t1.T.astype(complex)
-        t_vvoo = self.t2.transpose(2, 3, 0, 1).astype(complex)
+        t_vo   = np.zeros((self.nv, self.no), dtype=complex)
+        t_vvoo = np.zeros((self.nv, self.nv, self.no, self.no), dtype=complex)
 
         Eold = 0.0 + 0.0j
 
@@ -122,13 +120,9 @@ class UCCWfn:
             )
 
             # Amplitude update with Fock denominator (steepest descent)
-            # t_vo   -= R1_vo   / self.D1
-            # t_vvoo -= R2_vvoo / self.D2
-
-            # Amplitude update with damping
-            damp = 0.5
-            t_vo   -= damp * R1_vo   / self.D1
-            t_vvoo -= damp * R2_vvoo / self.D2
+            t_vo   -= R1_vo   / self.D1
+            t_vvoo -= R2_vvoo / self.D2
+            t_vvoo = 0.5 * (t_vvoo + t_vvoo.transpose(1, 0, 3, 2))  #very imp, we need to symmetrize T2!!
 
             # BCH4 energy on updated amplitudes
             tdag_vo   = t_vo.conj()
@@ -157,6 +151,7 @@ class UCCWfn:
         self.t1 = t_vo.T.real
         self.t2 = t_vvoo.transpose(2, 3, 0, 1).real
         self.last_energy = E.real
+        print(f"DEBUG last_energy set to: {self.last_energy}")
 
         return E.real
 
@@ -20508,5 +20503,4 @@ def make_ucc_fns(ccwfn, solve=True, e_conv=1e-12, r_conv=1e-8):
     ucc = UCCWfn(ccwfn)
     if solve:
         ucc.solve_ucc(e_conv=e_conv, r_conv=r_conv)
-    ucc.last_energy = ucc.solve_ucc.__self__ if False else None  # placeholder
     return ucc, ucc.energy, ucc.residuals
