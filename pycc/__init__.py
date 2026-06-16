@@ -9,6 +9,7 @@ PyCC: A Python-based coupled cluster implementation.
 from .ccwfn import ccwfn
 from .mpwfn import MPwfn
 from .hfwfn import HFwfn
+from .ciwfn import CIwfn
 from .cchbar import cchbar
 from .cclambda import cclambda
 from .ccdensity import ccdensity
@@ -17,7 +18,7 @@ from .ccresponse import pertbar
 from pycc.rt.rtcc import rtcc
 from .cceom import cceom
 
-__all__ = ['ccwfn', 'MPwfn', 'HFwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
+__all__ = ['ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
 
 # Handle versioneer
 from ._version import get_versions
