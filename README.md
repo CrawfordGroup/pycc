@@ -6,20 +6,28 @@ PyCC
 Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/CrawfordGroup/pycc/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/CrawfordGroup/pycc/branch/main)
 
-A Python-based coupled cluster implementation.  Current capabilities include:
+A Python-based electronic-structure package centered on coupled cluster, built on a
+shared `Wavefunction` base that also hosts Hartree-Fock and MP2.  Current capabilities
+include:
   - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
-  - Triples-drivers for various approximate triples methods
-  - RHF-CC2 and CCSD and densities
-  - EOM-CCSD
+  - Triples drivers for various approximate triples methods
+  - One- and two-electron (reduced) density matrices for CC2 and CCSD (with CC3 and (T) contributions)
+  - EOM-CCSD excitation energies
+  - Linear response functions (e.g. dynamic polarizability, optical rotation)
   - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
+  - Local (PAO, PNO, PNO++) CCSD energies, and local RT-CC
+  - Hartree-Fock (`HFwfn`) MO-basis analytic derivative properties: energy gradient,
+    static dipole polarizability, nuclear Hessian (force-constant matrix), atomic polar
+    tensors (APTs / dipole derivatives), and atomic axial tensors (AATs) -- the building
+    blocks for IR and VCD spectra
+  - MP2 (`MPwfn`) energies
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
-  - PAO-, PNO-, and PNO++-CCSD energies RT-CC
 
 Future plans:
-  - Linear and quadratic response functions
+  - Quadratic response functions (in development)
   - CC2 and CC3 excited states
-  - Analytic gradients
+  - Analytic CC gradients
 
 Notes on PNO-CC: 
 https://github.com/JoseMadriaga/Notes/blob/main/LocalCCSD.pdf
@@ -34,6 +42,14 @@ This package requires the following:
 
 Optional packages:
   - [pytorch](https://pytorch.org/)
+
+### Documentation
+
+The `docs/` directory holds the Sphinx documentation — a
+[getting-started guide](docs/getting_started.rst) with runnable examples and an
+[API reference](docs/api.rst). GitHub renders these `.rst` files in the browser; to
+build the full HTML site locally, install Sphinx (and the Read the Docs theme) and run
+`make html` from `docs/`.
 
 ### Authors
 

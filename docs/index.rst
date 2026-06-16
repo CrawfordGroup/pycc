@@ -3,10 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-PyCC: A Python implementation of coupled cluster theory
+PyCC: A Python electronic-structure package
 =========================================================
-This package provides simple functionality for the coupled cluster method
-of *ab initio* quantum chemistry.
+PyCC is a Python *ab initio* electronic-structure package centered on coupled
+cluster, built on a shared :class:`~pycc.wavefunction.Wavefunction` base that also
+hosts Hartree-Fock (with analytic derivative properties) and MP2. It is a reference
+implementation: the emphasis is on clear, equation-shaped code for validating
+production-level quantum-chemistry codes, rather than on raw performance.
 
 .. toctree::
    :maxdepth: 2

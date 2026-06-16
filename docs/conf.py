@@ -12,12 +12,10 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-# Incase the project was not installed
+# In case the project was not installed
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
-
-import pycc
 
 
 # -- Project information -----------------------------------------------------
@@ -53,6 +51,13 @@ extensions = [
 ]
 
 autosummary_generate = True
+
+# psi4 is conda-only (not pip-installable), so the docs builder mocks it: the package
+# is imported only to read docstrings/signatures for autosummary, and psi4 is used
+# inside method bodies, never at import time. torch is left unmocked -- it is already
+# guarded by a try/except in the package, so its absence is handled normally.
+autodoc_mock_imports = ['psi4']
+
 napoleon_google_docstring = False
 napoleon_use_param = False
 napoleon_use_ivar = True
@@ -74,7 +79,7 @@ master_doc = 'index'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
