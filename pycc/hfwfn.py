@@ -81,6 +81,18 @@ class HFwfn(Wavefunction):
         self.grad = grad
         return grad
 
+    def hessian(self) -> np.ndarray:
+        """RHF nuclear (molecular) Hessian (a.u.), shape ``(3*natom, 3*natom)`` --
+        the force-constant matrix, ``psi4.hessian('scf')`` layout.
+
+        Solves the nuclear CPHF orbital response for every atom (cached and shared
+        with :meth:`dipole_derivatives`, so a Hessian-then-APT IR workflow does the
+        3*natom solves only once) and assembles it with the second-derivative
+        skeleton integrals. Delegates to :class:`CPHF`.
+        """
+        self.hess = self.cphf.molecular_hessian()
+        return self.hess
+
     def polarizability(self) -> np.ndarray:
         """Static electric-dipole polarizability tensor (a.u.), shape (3, 3).
 
