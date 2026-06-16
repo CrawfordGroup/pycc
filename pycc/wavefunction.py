@@ -23,6 +23,7 @@ import numpy as np
 
 from .hamiltonian import Hamiltonian
 from .device import DeviceManager
+from .derivatives import Derivatives
 from .exceptions import InvalidKeywordError, PyCCError
 
 
@@ -48,6 +49,11 @@ class Wavefunction(object):
     H : Hamiltonian
         full-MO-basis Fock (F), ERIs, spin-adapted ERIs (L), and property integrals,
         device/precision-seeded
+    derivatives : Derivatives
+        lazy MO-basis derivative-integral provider (built on first access). Depends
+        only on base state (basis set, molecule, ``C``), so derivative property code in
+        any subclass -- HF gradients/Hessians/APTs/AATs today, MP2/CI/CC later -- reads
+        it from the base rather than constructing its own.
     device_manager : DeviceManager
         owns device/precision, device0/device1, and the contraction backend
     device, precision : str
@@ -178,6 +184,11 @@ class Wavefunction(object):
         self.H.ERI = mgr.seed_store(self.H.ERI)
         self.H.L = mgr.seed_store(self.H.L)
 
+        # Derivative-integral provider: built lazily on first access (see the
+        # ``derivatives`` property), so methods that never take derivatives pay
+        # nothing. Recorded here as part of the base so _from_shared_base carries it.
+        self._derivatives = None
+
         # The base is the final consumer of forwarded kwargs (each subclass pops
         # its own and passes the remainder through), so anything left over is an
         # unrecognized keyword -- flag it instead of silently ignoring it.
@@ -188,6 +199,15 @@ class Wavefunction(object):
         # subclass set first), so _from_shared_base can replicate this base onto a
         # new instance without re-running __init__ (and re-transforming integrals).
         self._base_attrs = tuple(k for k in vars(self) if k not in _preexisting)
+
+    @property
+    def derivatives(self) -> Derivatives:
+        """Lazy MO-basis derivative-integral provider, built on first access and
+        cached. Lives on the base (it depends only on base state) so any subclass's
+        derivative property code reaches it through ``self.derivatives``."""
+        if self._derivatives is None:
+            self._derivatives = Derivatives(self)
+        return self._derivatives
 
     @classmethod
     def _from_shared_base(cls, source: "Wavefunction") -> "Wavefunction":

@@ -10,7 +10,6 @@ import psi4
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .derivatives import Derivatives
 from .cphf import CPHF
 from .utils import diag
 
@@ -26,9 +25,11 @@ class HFwfn(Wavefunction):
     Attributes
     ----------
     derivatives : Derivatives
-        MO-basis derivative-integral provider (promotable to the base later)
+        MO-basis derivative-integral provider, inherited from the :class:`Wavefunction`
+        base (lazy ``self.derivatives``)
     cphf : CPHF
-        coupled-perturbed HF orbital-response solver (promotable to the base later)
+        coupled-perturbed HF orbital-response solver (promotable to the base later,
+        once a correlated-gradient consumer fixes the solver/assembly seam)
     grad : numpy.ndarray
         the most recently computed nuclear gradient, shape (natom, 3)
     """
@@ -38,7 +39,7 @@ class HFwfn(Wavefunction):
         # of any frozen core the reference was run with.
         kwargs.pop('frozen_core', None)
         super().__init__(scf_wfn, frozen_core=False, **kwargs)
-        self.derivatives = Derivatives(self)
+        # The derivative-integral provider now lives on the base (lazy ``self.derivatives``).
         self.cphf = CPHF(self)
 
     def gradient(self) -> np.ndarray:
