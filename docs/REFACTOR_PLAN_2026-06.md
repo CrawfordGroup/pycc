@@ -40,16 +40,23 @@ cached and shared across the Hessian and the APTs/AATs.
 APTs, AATs). The `Derivatives` and `CPHF` classes were written to depend only on
 base-level state, so they are **promotable to the base** for MP2/CI/CC derivative work.
 
+**`CIwfn` (CISD/CID) landed** (`pycc/ciwfn.py`): a fourth method class on the base,
+analogous to `MPwfn`. Intermediate normalization, projected equations (the linear part
+of the CCSD residual with bare integrals, energy-dependent denominators), composing an
+`MPwfn` for `Dijab` and the MP1 guess. Validated vs Psi4 DETCI (CISD, ~1e-13) and CFOUR
+(CID, ~1e-13).
+
 **To resume:** read this doc + `git log`. The structural refactor (Phases 1–4) is done;
-the canonical CC spine plus `MPwfn` and `HFwfn` all sit on the `Wavefunction` base. Open
-threads, in rough priority:
+the canonical CC spine plus `MPwfn`, `HFwfn`, and `CIwfn` all sit on the `Wavefunction`
+base. Open threads, in rough priority:
 1. **Promote the derivative engine to the base** — move `Derivatives` (and the promotable
    `CPHF`) off `HFwfn` onto `Wavefunction` so MP2/CI/CC gradient/response code can reach
    them. (Next up — see discussion below / decisions log.)
 2. **Assemble a full SCF VCD driver** from the now-complete pieces (frequencies + IR
    intensities + rotatory strengths); psi4numpy's `vcd.py` is the recipe.
-3. **Phase 5** — formally mark `local.py`/`lccwfn.py` frozen/CPU-only; or extend the base
-   to a `CIwfn`.
+3. **Phase 5** — formally mark `local.py`/`lccwfn.py` frozen/CPU-only.
+4. **Build out `CIwfn`** — densities/properties, or higher excitations, on the CISD/CID
+   foundation now in place.
 
 ## Governing principle
 
