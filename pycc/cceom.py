@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import psi4
 import pycc
-import pytest
 from pycc.data.molecules import *
 import numpy as np
 import scipy.linalg
