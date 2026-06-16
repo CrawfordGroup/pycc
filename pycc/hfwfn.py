@@ -91,3 +91,17 @@ class HFwfn(Wavefunction):
         """
         self.alpha = self.cphf.polarizability()
         return self.alpha
+
+    def dipole_derivatives(self) -> np.ndarray:
+        """Nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` -- the atomic polar tensors
+        (APTs), transposed.
+
+        Solves the nuclear CPHF orbital response (:class:`CPHF`) for each atom and
+        contracts it (plus the skeleton and overlap/Pulay terms) with the MO dipole
+        integrals. Unlike the energy gradient, the dipole derivative is sensitive to
+        the occupied-virtual orbital response, so this is what validates the nuclear
+        CPHF solution (against finite difference of the SCF dipole).
+        """
+        self.dipder = self.cphf.dipole_derivatives()
+        return self.dipder

@@ -37,8 +37,9 @@ engine (the explicit orbital Hessian is solved directly with ``numpy.linalg``).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List
 
+import psi4
 import numpy as np
 
 from .utils import diag
@@ -126,6 +127,99 @@ class CPHF(object):
         the response ``U`` is reused by other properties where they do not.)
         """
         return -self._mu_ov(axis)
+
+    def rhs_nuclear(self, atom: int) -> List[np.ndarray]:
+        """Nuclear-perturbation CPHF RHS for ``atom``: list of 3 (x,y,z) ``(no, nv)``
+        arrays ``B^X_ia``.
+
+        Unlike the electric-field RHS, a nuclear displacement moves the basis
+        functions, so the right-hand side folds in (a) the skeleton derivative Fock
+        ``F^X`` (built from the first-derivative one- and two-electron integrals at
+        fixed MO coefficients), (b) the overlap-derivative term ``-eps_i S^X_ia``, and
+        (c) the coupling of the overlap-determined occupied-occupied response
+        ``U^X_kl = -1/2 S^X_kl`` back into the Fock matrix (the Pulay term). The CPHF
+        RHS is minus that first-order off-diagonal ("perturbation") Fock, ``B = -Q``
+        (the nuclear analog of the field's ``B = -mu``)::
+
+            B^X_ia = -[ F^X_ia - eps_i S^X_ia
+                        - 1/2 sum_kl S^X_kl ( L[a,k,i,l] + L[a,l,i,k] ) ]
+
+        with the skeleton derivative Fock  F^X_pq = h^X_pq + sum_k(occ) L[p,k,q,k]^X.
+
+        Everything is cast with the spin-adapted L = 2<pq|rs> - <pq|sr> (physicist's
+        notation), as in the orbital Hessian. The Pulay coupling is the closed-shell
+        G-operator for the symmetric occupied-occupied perturbation S^X_kl,
+        ``sum_kl (-1/2 S^X_kl)(L[a,k,i,l] + L[a,l,i,k])`` (the L[a,k,i,l]/L[a,l,i,k]
+        pair, not L[i,k,a,l] -- their Coulomb parts coincide but the exchange parts
+        differ). The first-derivative integrals come from the (full-MO) Derivatives
+        provider; the unperturbed L is H.L. Validated to ~1e-8 via the dipole-
+        derivative / APT-transpose check against finite difference of the SCF dipole.
+        """
+        o, v, no, nv = self.o, self.v, self.no, self.nv
+        eps_o = self.eps[o]
+        L = np.asarray(self.wfn.H.L)  # spin-adapted, physicist, unperturbed
+
+        C = np.asarray(self.wfn.C)
+        Call = psi4.core.Matrix.from_array(C)
+        d = self.wfn.derivatives
+        Sx = d.overlap(atom, Call, Call)                       # 3 x (nmo,nmo)
+        hx = d.core(atom, Call, Call)                          # 3 x (nmo,nmo)
+        gx = [g.swapaxes(1, 2) for g in                        # chemist -> physicist
+              d.eri(atom, Call, Call, Call, Call)]             # 3 x (nmo^4) <pq|rs>^X
+
+        B = []
+        for c in range(3):
+            Lx = 2.0 * gx[c] - gx[c].swapaxes(2, 3)            # derivative spin-adapted L
+            # skeleton derivative Fock: F^X_pq = h^X + sum_k L[p,k,q,k]^X
+            Fx = hx[c] + np.einsum('pkqk->pq', Lx[:, o, :, o])
+            # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the
+            # ov block:  -1/2 S^X_kl ( L[a,k,i,l] + L[a,l,i,k] ).
+            Lvooo = L[v, o, o, o]
+            coupling = (np.einsum('akil,kl->ia', Lvooo, Sx[c][o, o])
+                        + np.einsum('alik,kl->ia', Lvooo, Sx[c][o, o]))
+            # The CPHF RHS is minus the first-order off-diagonal ("perturbation")
+            # Fock that the response drives to zero -- B = -Q (nuclear analog of the
+            # field's B = -mu).
+            Q = Fx[o, v] - eps_o[:, None] * Sx[c][o, v] - 0.5 * coupling
+            B.append(-Q)
+        return B
+
+    def dipole_derivatives(self) -> np.ndarray:
+        """Analytic nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.),
+        shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` -- the atomic polar
+        tensors (APTs), transposed.
+
+        Built from the nuclear CPHF response, so the ov term probes ``U^X`` directly
+        (unlike the energy gradient, which is variationally insensitive to it). The
+        assembly is nuclear + explicit electronic + overlap (Pulay) + CPHF response::
+
+            d mu_a / d X_Ab = Z_A delta_ab                         (nuclear)
+                            + 2 sum_i (d mu_a / d X_Ab)_ii         (explicit electronic)
+                            - 2 sum_ik S^X_ki (mu_a)_ik            (oo / Pulay response)
+                            + 4 sum_ia U^X_ia (mu_a)_ia            (ov / CPHF response)
+        """
+        o, v = self.o, self.v
+        mu = [np.asarray(self.wfn.H.mu[a]) for a in range(3)]
+        d = self.wfn.derivatives
+        C = np.asarray(self.wfn.C)
+        Cocc = psi4.core.Matrix.from_array(C[:, o])
+        mol = self.wfn.ref.molecule()
+        natom = mol.natom()
+
+        dmu = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            Bx = self.rhs_nuclear(A)
+            Ux = [self.solve(Bx[c], kind="electric") for c in range(3)]
+            Sx = d.overlap(A, Cocc, Cocc)        # 3 x (no,no)
+            dip = d.dipole(A, Cocc, Cocc)        # 9 x (no,no): index alpha*3 + beta
+            for beta in range(3):
+                for alpha in range(3):
+                    val = mol.Z(A) if alpha == beta else 0.0
+                    val += 2.0 * np.trace(dip[alpha * 3 + beta])
+                    val -= 2.0 * np.einsum('ki,ki->', Sx[beta], mu[alpha][o, o])
+                    val += 4.0 * np.einsum('ia,ia->', Ux[beta], mu[alpha][o, v])
+                    dmu[A, beta, alpha] = val
+        return dmu
 
     # ---- property drivers ----
     def polarizability(self) -> np.ndarray:

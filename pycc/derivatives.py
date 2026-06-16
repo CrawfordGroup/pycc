@@ -72,8 +72,16 @@ class Derivatives(object):
     def dipole(self, atom: int, C1, C2) -> List[np.ndarray]:
         """Electric-dipole derivatives for ``atom``: list of 9 arrays, the
         d(mu_alpha)/d(X_beta) blocks (3 dipole components x 3 Cartesians). Used by
-        the APT machinery."""
-        return [np.asarray(m) for m in self.mints.mo_elec_dip_deriv1(atom, C1, C2)]
+        the APT machinery.
+
+        The AO-basis derivatives (``ao_elec_dip_deriv1``) are transformed into the
+        (C1, C2) MO block here rather than via ``mo_elec_dip_deriv1`` -- the latter
+        segfaults on the linux build of Psi4 1.10.1 (the mo_oei/mo_tei deriv routines
+        are unaffected). The two routes are numerically identical."""
+        npC1 = np.asarray(C1)
+        npC2 = np.asarray(C2)
+        return [npC1.T @ np.asarray(m) @ npC2
+                for m in self.mints.ao_elec_dip_deriv1(atom)]
 
     # ---- two-electron (heavy: lazy, per atom) ----
     def eri(self, atom: int, C1, C2, C3, C4) -> List[np.ndarray]:
