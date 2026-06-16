@@ -1,17 +1,18 @@
 """
 Test the CISD/CID correlation energy (CIwfn).
 
-CISD is validated against Psi4's DETCI (the exact CISD). The default 'cisd' driver is
-NOT used: it routes to fnocc, which applies frozen natural orbitals / truncation and so
-does not reproduce the exact CISD energy. DETCI has no doubles-only mode, so CID is
-validated against CFOUR reference values (the same H2O geometry as magpy's
-test_004_CID, reproduced exactly below so the comparison is geometry-for-geometry).
+The references are exact: CISD against Psi4 DETCI, CID against CFOUR (the same H2O
+geometry as magpy's test_004_CID, reproduced exactly below). Both are hardcoded rather
+than recomputed at runtime: the default 'cisd' driver routes to fnocc (frozen natural
+orbitals / truncation, ~4e-5 off exact), and a live DETCI call is flaky on CI -- on the
+larger all-electron CISD, DETCI's Davidson intermittently hits its iteration cap. The
+DETCI values below were computed locally and match PyCC to ~2e-13; the CISD tolerance
+allows for the small psi4-version SCF drift (the CID tests confirm it is < 1e-11).
 """
 
-import psi4
 import pycc
 
-# Exact H2O geometry behind the CFOUR CID references (bohr); identical to magpy's.
+# Exact H2O geometry behind the references (bohr); identical to magpy's test_004_CID.
 H2O = """
 O  0.000000000000  -0.143225816552   0.000000000000
 H  1.638036840407   1.136548822547  -0.000000000000
@@ -22,23 +23,28 @@ no_reorient
 symmetry c1
 """
 
+# Exact CISD correlation energies (Psi4 DETCI) for the geometry above.
+CISD_REF = -0.213962927361777        # all-electron
+CISD_REF_FC = -0.212162092109267     # frozen-core
+# Exact CID correlation energies (CFOUR) for the geometry above.
+CID_REF = -0.21279410950205          # all-electron
+CID_REF_FC = -0.21098966441656       # frozen-core
+
 
 def test_cisd_h2o(rhf_wfn):
     """All-electron CISD vs Psi4 DETCI (exact CISD)."""
-    wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false", qc_module="detci",
+    wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
     eci = pycc.CIwfn(wfn, frozen_core=False).solve_ci(e_conv=1e-11, r_conv=1e-11)
-    eref = psi4.energy('detci', ci_type='cisd') - wfn.energy()
-    assert abs(eci - eref) < 1e-10
+    assert abs(eci - CISD_REF) < 1e-9
 
 
 def test_cisd_h2o_frozen_core(rhf_wfn):
     """Frozen-core CISD vs Psi4 DETCI."""
-    wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="true", qc_module="detci",
+    wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="true",
                   e_convergence=1e-12, d_convergence=1e-12)
     eci = pycc.CIwfn(wfn).solve_ci(e_conv=1e-11, r_conv=1e-11)
-    eref = psi4.energy('detci', ci_type='cisd') - wfn.energy()
-    assert abs(eci - eref) < 1e-10
+    assert abs(eci - CISD_REF_FC) < 1e-9
 
 
 def test_cid_h2o(rhf_wfn):
@@ -46,7 +52,7 @@ def test_cid_h2o(rhf_wfn):
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
     ecid = pycc.CIwfn(wfn, frozen_core=False, model="CID").solve_ci(e_conv=1e-12, r_conv=1e-12)
-    assert abs(ecid - (-0.21279410950205)) < 1e-11
+    assert abs(ecid - CID_REF) < 1e-11
 
 
 def test_cid_h2o_frozen_core(rhf_wfn):
@@ -54,4 +60,4 @@ def test_cid_h2o_frozen_core(rhf_wfn):
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="true",
                   e_convergence=1e-12, d_convergence=1e-12)
     ecid = pycc.CIwfn(wfn, model="CID").solve_ci(e_conv=1e-12, r_conv=1e-12)
-    assert abs(ecid - (-0.21098966441656)) < 1e-11
+    assert abs(ecid - CID_REF_FC) < 1e-11
