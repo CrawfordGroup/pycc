@@ -6,8 +6,9 @@ geometry as magpy's test_004_CID, reproduced exactly below). Both are hardcoded 
 than recomputed at runtime: the default 'cisd' driver routes to fnocc (frozen natural
 orbitals / truncation, ~4e-5 off exact), and a live DETCI call is flaky on CI -- on the
 larger all-electron CISD, DETCI's Davidson intermittently hits its iteration cap. The
-DETCI values below were computed locally and match PyCC to ~2e-13; the CISD tolerance
-allows for the small psi4-version SCF drift (the CID tests confirm it is < 1e-11).
+DETCI values below were computed locally and match PyCC to ~2e-13; with the tightly
+converged RHF (1e-12) the comparison is essentially code/version-independent, so the
+1e-10 tolerance is comfortable (the CID tests, hardcoded CFOUR values, pass at 1e-11).
 """
 
 import pycc
@@ -36,7 +37,7 @@ def test_cisd_h2o(rhf_wfn):
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
     eci = pycc.CIwfn(wfn, frozen_core=False).solve_ci(e_conv=1e-11, r_conv=1e-11)
-    assert abs(eci - CISD_REF) < 1e-9
+    assert abs(eci - CISD_REF) < 1e-10
 
 
 def test_cisd_h2o_frozen_core(rhf_wfn):
@@ -44,7 +45,7 @@ def test_cisd_h2o_frozen_core(rhf_wfn):
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="true",
                   e_convergence=1e-12, d_convergence=1e-12)
     eci = pycc.CIwfn(wfn).solve_ci(e_conv=1e-11, r_conv=1e-11)
-    assert abs(eci - CISD_REF_FC) < 1e-9
+    assert abs(eci - CISD_REF_FC) < 1e-10
 
 
 def test_cid_h2o(rhf_wfn):
