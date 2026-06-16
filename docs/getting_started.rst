@@ -39,7 +39,7 @@ Coupled-cluster energy
     _, wfn = psi4.energy('SCF', return_wfn=True)
 
     # model can be 'CCD', 'CC2', 'CCSD', 'CCSD(T)', or 'CC3'
-    cc = pycc.ccwfn(wfn, model='CCSD')
+    cc = pycc.CCwfn(wfn, model='CCSD')
     ecc = cc.solve_cc(e_conv=1e-8, r_conv=1e-7, maxiter=75)
 
 Lambda amplitudes and densities

@@ -16,7 +16,7 @@ from .cclambda import cclambda
 from ._typing import Tensor
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
     from pycc.ccdensity import ccdensity
 
 class ccresponse(object):
@@ -837,7 +837,7 @@ class ccresponse(object):
         return -2.0*(polar1 + polar2) 
         
 class pertbar(object):
-    def __init__(self, pert: Tensor, ccwfn: "ccwfn") -> None:
+    def __init__(self, pert: Tensor, ccwfn: "CCwfn") -> None:
         o = ccwfn.o
         v = ccwfn.v
         t1 = ccwfn.t1

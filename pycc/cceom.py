@@ -11,7 +11,7 @@ import scipy.linalg
 from pycc.exceptions import InvalidKeywordError
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
     from pycc.cchbar import cchbar
 
 class cceom(object):
@@ -42,7 +42,7 @@ class cceom(object):
         Build the doubles components of the sigma = C * HBAR vector
     """
 
-    def __init__(self, ccwfn: "ccwfn", cchbar: "cchbar") -> None:
+    def __init__(self, ccwfn: "CCwfn", cchbar: "cchbar") -> None:
         """
         Parameters
         ----------

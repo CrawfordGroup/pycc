@@ -11,7 +11,7 @@ if HAS_TORCH:
 from pycc.utils import zeros_like, diag, clone
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
 
 """Various triples drivers; useful for (T) corrections and CC3.  Each driver
 returns batches of triples amplitudes corresponding to the general expression:
@@ -187,7 +187,7 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
 
 
 # Lee and Rendell's formulation
-def t_tjl(ccwfn: "ccwfn") -> float:
+def t_tjl(ccwfn: "CCwfn") -> float:
     """Compute the (T) energy correction using the efficient formulation by Rendell
     and Lee, Chem. Phys. Lett. 178, 462-470 (1991).
 
@@ -247,7 +247,7 @@ def t_tjl(ccwfn: "ccwfn") -> float:
 
 
 # Vikings' formulation
-def t_vikings(ccwfn: "ccwfn") -> float:
+def t_vikings(ccwfn: "CCwfn") -> float:
     """Compute the (T) energy correction using the formulation by Helgaker,
     Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
     New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
@@ -295,7 +295,7 @@ def t_vikings(ccwfn: "ccwfn") -> float:
 
 
 # Vikings' formulation – inverted algorithm
-def t_vikings_inverted(ccwfn: "ccwfn") -> float:
+def t_vikings_inverted(ccwfn: "CCwfn") -> float:
     """Compute the (T) energy correction using the formulation by Helgaker,
     Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
     New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm

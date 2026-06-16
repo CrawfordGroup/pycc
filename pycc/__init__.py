@@ -6,7 +6,7 @@ PyCC: A Python-based coupled cluster implementation.
 """
 
 # Add imports here
-from .ccwfn import ccwfn
+from .ccwfn import CCwfn, ccwfn  # ccwfn: backward-compat alias for CCwfn
 from .mpwfn import MPwfn
 from .hfwfn import HFwfn
 from .ciwfn import CIwfn
@@ -18,7 +18,7 @@ from .ccresponse import pertbar
 from pycc.rt.rtcc import rtcc
 from .cceom import cceom
 
-__all__ = ['ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
+__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
 
 # Handle versioneer
 from ._version import get_versions
