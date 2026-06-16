@@ -93,6 +93,18 @@ class HFwfn(Wavefunction):
         self.hess = self.cphf.molecular_hessian()
         return self.hess
 
+    def atomic_axial_tensors(self) -> np.ndarray:
+        """RHF atomic axial tensors (AATs) ``I^lambda_{alpha,beta}`` (a.u.), shape
+        ``(natom, 3, 3)`` -- the electronic magnetic-dipole vibrational transition
+        moment (common gauge origin), for VCD.
+
+        Solves the magnetic-field CPHF response (antisymmetric Hessian) and reuses the
+        cached nuclear response plus the nuclear half-derivative overlaps. Delegates to
+        :class:`CPHF`.
+        """
+        self.aat = self.cphf.atomic_axial_tensors()
+        return self.aat
+
     def polarizability(self) -> np.ndarray:
         """Static electric-dipole polarizability tensor (a.u.), shape (3, 3).
 
