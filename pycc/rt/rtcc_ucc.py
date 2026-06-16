@@ -129,6 +129,1122 @@ class rtcc_ucc:
 
         get SeQuant equations from Ajay and update
         """
+        """
+        UCC ACF C(t) = <Psi(0)|Psi(t)> at BCH2 level.
+        SeQuant-generated equations from Ajay (uccsd_autocorr_k2_cs.py),
+        converted from file-based to in-memory.
+
+        y0 : packed amplitudes at t=0
+        yt : packed amplitudes at time t
+        """
+        
+        no, nv = self.no, self.nv
+        nocc, nvirt = no, nv
+
+        # Unpack amplitudes
+        t1_0, t2_0, ph_0 = self.extract_amps(y0)
+        t1_t, t2_t, ph_t = self.extract_amps(yt)
+
+        # Convert to Ajay convention and conjugate t=0 amplitudes
+        tp_vo_0   = t1_0.T.conj()                      # (nv, no) conj
+        tp_vvoo_0 = t2_0.transpose(2,3,0,1).conj()     # (nv, nv, no, no) conj
+        t_vo_t    = t1_t.T                              # (nv, no)
+        t_vvoo_t  = t2_t.transpose(2,3,0,1)            # (nv, nv, no, no)
+
+
+
+        # ======================================================================
+        # Autocorrelation
+        # ======================================================================
+
+        C = 0.0
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', tp_vo, tp_vo, optimize=True)
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_ov += np.einsum('iabc,ic->ab', I_oovv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_oovv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += -1 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ov += np.einsum('ia,abci->cb', tp_dag_ov, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_dag_ov
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iceg->abdf', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,bd->iace', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 1/2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iced->abfg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        t_vvoo = t_vvoo_t.copy()
+        C += -1 * np.einsum('iabc,bcia->', t_dag_oovv, t_vvoo, optimize=True)
+        del t_vvoo
+        del t_dag_oovv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        t_vo = t_vo_t.copy()
+        C += -1 * np.einsum('ia,ai->', t_dag_ov, t_vo, optimize=True)
+        del t_vo
+        del t_dag_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,ad->ibce', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', t_vo, tp_vo, optimize=True)
+        del tp_vo
+        del t_vo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibdf->aceg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', t_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vvoo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_oovv += np.einsum('iabcdefg,bcfg->iade', I_oooovvvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1/2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', tp_vo, tp_vo, optimize=True)
+        del tp_vo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        C += 1
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,id->abce', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,bd->iace', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ov += np.einsum('ia,abic->cb', t_dag_ov, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_dag_ov
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += 2 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_ov += np.einsum('iabcde,abed->ic', I_ooovvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_ooovvv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += -1/2 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        tp_vo = tp_vo_0.copy()
+        C += -1 * np.einsum('ia,ai->', tp_dag_ov, tp_vo, optimize=True)
+        del tp_vo
+        del tp_dag_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iade->bcfg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibeg->acdf', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', tp_vo, tp_vo, optimize=True)
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_ov += np.einsum('iabc,ib->ac', I_oovv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_oovv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += 2 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,ad->ibce', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', t_vo, tp_vo, optimize=True)
+        del tp_vo
+        del t_vo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        t_vvoo = t_vvoo_t.copy()
+        C += 1/2 * np.einsum('iabc,cbia->', t_dag_oovv, t_vvoo, optimize=True)
+        del t_vvoo
+        del t_dag_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vo = tp_vo_0.copy()
+        I_ooovvv += np.einsum('abic,de->iceabd', t_vvoo, tp_vo, optimize=True)
+        del tp_vo
+        del t_vvoo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,be->iacd', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1/2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iaef->bcdg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ov += np.einsum('ia,baci->cb', tp_dag_ov, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_dag_ov
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += -2 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iagf->bcde', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1/2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        tp_vvoo = tp_vvoo_0.copy()
+        C += 1/2 * np.einsum('iabc,cbia->', tp_dag_oovv, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_dag_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iade->bcfg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,be->iacd', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibfd->aceg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', tp_vo, tp_vo, optimize=True)
+        del tp_vo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibgf->acde', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibgd->acef', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', t_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vvoo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_oovv += np.einsum('iabcdefg,bcgf->iade', I_oooovvvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 1/4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,bd->iace', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,ae->ibcd', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,ic->abde', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        tp_vvoo = tp_vvoo_0.copy()
+        C += -1 * np.einsum('iabc,cbia->', t_dag_oovv, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_dag_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iceg->abdf', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iafg->bcde', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,be->iacd', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 8 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,ie->abcd', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iadf->bceg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', t_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vvoo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_oovv += np.einsum('iabcdefg,bcfg->iade', I_oooovvvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ov += np.einsum('ia,baic->cb', t_dag_ov, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_dag_ov
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += -1 * np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', t_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vvoo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_oovv += np.einsum('iabcdefg,bcgf->iade', I_oooovvvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1/2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vo = tp_vo_0.copy()
+        I_oovv += np.einsum('ai,bc->icab', t_vo, tp_vo, optimize=True)
+        del tp_vo
+        del t_vo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_ov += np.einsum('iabc,ac->ib', I_oovv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_oovv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibfd->aceg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        tp_vo = tp_vo_0.copy()
+        I_ooovvv += np.einsum('abic,de->iceabd', t_vvoo, tp_vo, optimize=True)
+        del tp_vo
+        del t_vvoo
+        tp_dag_ov = np.zeros((nocc, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_dag_ov += np.einsum('ai->ia', tp_vo, optimize=True)
+        del tp_vo
+        I_oovv += np.einsum('iabcde,be->iacd', I_ooovvv, tp_dag_ov, optimize=True)
+        del tp_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        tp_vvoo = tp_vvoo_0.copy()
+        C += -1 * np.einsum('iabc,bcia->', tp_dag_oovv, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_dag_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,bc->iade', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -4 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_ov = np.zeros((nocc, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', t_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_vo
+        tp_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        tp_dag_oovv += np.einsum('abic->icab', tp_vvoo, optimize=True)
+        del tp_vvoo
+        I_ov += np.einsum('iabcde,abde->ic', I_ooovvv, tp_dag_oovv, optimize=True)
+        del tp_dag_oovv
+        del I_ooovvv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        C += np.einsum('ia,ia->', I_ov, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ov
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,ibeg->acdf', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iaeg->bcdf', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iced->abfg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -1 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,ic->abde', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += -2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,icfe->abdg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_oooovvvv = np.zeros((nocc, nocc, nocc, nocc, nvirt, nvirt, nvirt, nvirt), order='F')
+        tp_vvoo = tp_vvoo_0.copy()
+        I_oooovvvv += np.einsum('abic,defg->icfgabde', tp_vvoo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        I_oovv += np.einsum('iabcdefg,iaed->bcfg', I_oooovvvv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oooovvvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 1/2 * np.einsum('iabc,iacb->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        I_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        I_ooovvv = np.zeros((nocc, nocc, nocc, nvirt, nvirt, nvirt), order='F')
+        tp_vo = tp_vo_0.copy()
+        tp_vvoo = tp_vvoo_0.copy()
+        I_ooovvv += np.einsum('ai,bcde->ideabc', tp_vo, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del tp_vo
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        I_oovv += np.einsum('iabcde,bc->iade', I_ooovvv, t_dag_ov, optimize=True)
+        del t_dag_ov
+        del I_ooovvv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        C += 2 * np.einsum('iabc,iabc->', I_oovv, t_dag_oovv, optimize=True)
+        del t_dag_oovv
+        del I_oovv
+        t_dag_oovv = np.zeros((nocc, nocc, nvirt, nvirt), order='F')
+        t_vvoo = t_vvoo_t.copy()
+        t_dag_oovv += np.einsum('abic->icab', t_vvoo, optimize=True)
+        del t_vvoo
+        tp_vvoo = tp_vvoo_0.copy()
+        C += 2 * np.einsum('iabc,bcia->', t_dag_oovv, tp_vvoo, optimize=True)
+        del tp_vvoo
+        del t_dag_oovv
+        t_dag_ov = np.zeros((nocc, nvirt), order='F')
+        t_vo = t_vo_t.copy()
+        t_dag_ov += np.einsum('ai->ia', t_vo, optimize=True)
+        del t_vo
+        tp_vo = tp_vo_0.copy()
+        C += 2 * np.einsum('ia,ai->', t_dag_ov, tp_vo, optimize=True)
+        del tp_vo
+        del t_dag_ov
+        return C * np.exp(-ph_0) * np.exp(ph_t)
 
 
     def dipole(self, t1, t2):
