@@ -28,7 +28,7 @@ from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError
 
-class ccwfn(Wavefunction):
+class CCwfn(Wavefunction):
     """
     An RHF-CC wave function and energy object.
 
@@ -1000,3 +1000,8 @@ class ccwfn(Wavefunction):
         ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
 
         return ET
+
+
+# Backward-compatibility alias: the class was renamed ccwfn -> CCwfn to match the
+# HFwfn/MPwfn/CIwfn method-class convention. Existing code using ``ccwfn`` still works.
+ccwfn = CCwfn

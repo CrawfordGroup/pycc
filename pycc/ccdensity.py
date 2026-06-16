@@ -18,7 +18,7 @@ from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_
 from .utils import zeros, zeros_like, clone
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
     from pycc.cclambda import cclambda
 
 class ccdensity(object):
@@ -56,7 +56,7 @@ class ccdensity(object):
     compute_onepdm() :
         Compute the one-electron density for a given set of amplitudes (useful for RTCC)
     """
-    def __init__(self, ccwfn: "ccwfn", cclambda: "cclambda", onlyone: bool = False) -> None:
+    def __init__(self, ccwfn: "CCwfn", cclambda: "cclambda", onlyone: bool = False) -> None:
         """
         Parameters
         ----------

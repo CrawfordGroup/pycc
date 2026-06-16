@@ -20,7 +20,7 @@ if HAS_TORCH:
 from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
     from pycc.cchbar import cchbar
 
 
@@ -46,7 +46,7 @@ class cclambda(object):
     residuals()
         Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
-    def __init__(self, ccwfn: "ccwfn", hbar: "cchbar") -> None:
+    def __init__(self, ccwfn: "CCwfn", hbar: "cchbar") -> None:
         """
         Parameters
         ----------

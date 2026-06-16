@@ -18,7 +18,7 @@ if HAS_TORCH:
 from pycc.utils import clone
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
 
 
 class cchbar(object):
@@ -51,7 +51,7 @@ class cchbar(object):
         The occ,vir,occ,occ block of the two-body component HBAR.
 
     """
-    def __init__(self, ccwfn: "ccwfn") -> None:
+    def __init__(self, ccwfn: "CCwfn") -> None:
         """
         Parameters
         ----------

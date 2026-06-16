@@ -19,7 +19,7 @@ import opt_einsum
 from pycc._typing import Tensor
 
 if TYPE_CHECKING:
-    from pycc.ccwfn import ccwfn
+    from pycc.ccwfn import CCwfn
     from pycc.cclambda import cclambda
     from pycc.ccdensity import ccdensity
 
@@ -69,7 +69,7 @@ class rtcc(object):
     lagrangian()
         Compute the CC Lagrangian energy for a given time t
     """
-    def __init__(self, ccwfn: "ccwfn", cclambda: "cclambda", ccdensity: "ccdensity", V: Tensor, magnetic: bool = False, kick: Any = None) -> None:
+    def __init__(self, ccwfn: "CCwfn", cclambda: "cclambda", ccdensity: "ccdensity", V: Tensor, magnetic: bool = False, kick: Any = None) -> None:
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
