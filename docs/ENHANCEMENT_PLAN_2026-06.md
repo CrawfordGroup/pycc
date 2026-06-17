@@ -136,7 +136,8 @@ _Last updated 2026-06-17._
 | 3 — SO CCSD | ✅ done | PR #135 |
 | 4a — SO CCSD(T) | ✅ done | PR #136 |
 | 4b — SO CC3 | ✅ done | PR #137 |
-| 5 — ROHF (semicanonical) | 🟡 in review | branch `feature/spinorbital-rohf` |
+| 5 — ROHF (semicanonical) | ✅ done | PR #138 |
+| 6 — SO CISD/CID (UHF/ROHF) | 🟡 in review | branch `feature/spinorbital-cisd` |
 
 ### Phase 1 — what landed
 
@@ -234,6 +235,21 @@ path (open shell), and the SO machinery is made correct for a non-canonical refe
   antisymmetrization now reuses one contraction via `tmp - tmp.swapaxes(0,1)`.)
 - `conftest.py` `rohf_wfn` fixture; `test_054_rohf.py`: ROHF MP2/CCSD/CCSD(T) (cc-pVDZ)
   and CC3 (6-31G) on .OH vs Psi4's semicanonical CCENERGY (all ~1e-13/1e-14).
+
+### Phase 6 — what landed (spin-orbital CISD/CID)
+
+Beyond the original energies-first scope, extends `CIwfn` to UHF/ROHF.
+
+- `pycc/ciwfn.py`: `ci_energy`/`sigma1`/`sigma2` branch on `orbital_basis` to spin-orbital
+  siblings -- the linear part of the spin-orbital CCSD residual with bare integrals.
+  The doubles sigma carries an extra **non-canonical singles->doubles Fock coupling**
+  `<Phi_ij^ab|F_N|Phi_k^c> = P(ij)P(ab) f_jb c1_ia`: zero for canonical refs and for CID,
+  absorbed by the T1 transformation in CCSD, but required explicitly in linear CISD for
+  ROHF. (Found via CFOUR: ROHF-CID matched but ROHF-CISD was 5.5e-5 off until this term.)
+- Validation (`test_051`): closed-shell keystone (SO-RHF == spatial); 2-electron CISD =
+  FCI (exact) for UHF/ROHF vs Psi4 FCI; and a **CFOUR** cross-check (UHF/ROHF x CISD/CID,
+  .OH cc-pVDZ, ~1e-13). Note: Psi4 has no UHF-CISD, and its DETCI ROHF-CISD is
+  spin-adapted -- a different method that disagrees with both PyCC and CFOUR (~3e-4).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
