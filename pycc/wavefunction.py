@@ -21,7 +21,7 @@ from typing import Any
 import psi4
 import numpy as np
 
-from .hamiltonian import Hamiltonian
+from .hamiltonian import Hamiltonian, SpinOrbitalHamiltonian
 from .device import DeviceManager
 from .derivatives import Derivatives
 from .exceptions import InvalidKeywordError, PyCCError
@@ -36,19 +36,33 @@ class Wavefunction(object):
         the reference wave function (from Psi4's energy() method)
     eref : float
         reference energy (including nuclear repulsion)
+    orbital_basis : str
+        ``'spatial'`` (spin-adapted, closed-shell RHF) or ``'spinorbital'``
+        (UHF/ROHF). Resolved from the reference (or an explicit override) and read
+        by the method subclasses to select their spatial vs spin-orbital kernels.
+        See :meth:`_init_spatial` / :meth:`_init_spinorbital` for what each path
+        builds.
     nfzc, no, nv, nmo, nact : int
-        frozen-core / active-occupied / active-virtual / total-MO / active counts
+        frozen-core / active-occupied / active-virtual / total-MO / active counts.
+        In the spin-orbital path these are spin-orbital counts (``nmo`` is twice the
+        number of spatial MOs, etc.).
     o, v : slice
-        active occupied and virtual subspaces, as offsets into the full MO space:
-        ``o = slice(nfzc, nfzc+no)`` skips the frozen core and ``v`` is the
-        virtuals. With no frozen core (``nfzc == 0``) ``o`` starts at 0 as usual.
+        active occupied and virtual subspaces. Spatial path: offsets into the full
+        MO space, ``o = slice(nfzc, nfzc+no)`` (skips the frozen core), ``v`` the
+        virtuals. Spin-orbital path: contiguous slices into the active space,
+        ``o = slice(0, no)`` and ``v = slice(no, nact)`` (the frozen core is already
+        excluded via the ACTIVE orbital subset).
     C : Psi4 Matrix
-        full-space MO coefficients (all ``nmo`` columns, global energy order; the
-        frozen core occupies columns ``[0:nfzc]``). The active occupied block is
-        localized in place if ``localize_occ``.
-    H : Hamiltonian
-        full-MO-basis Fock (F), ERIs, spin-adapted ERIs (L), and property integrals,
-        device/precision-seeded
+        (spatial path) full-space MO coefficients (all ``nmo`` columns, global
+        energy order; the frozen core occupies columns ``[0:nfzc]``). The active
+        occupied block is localized in place if ``localize_occ``.
+    Ca, Cb : Psi4 Matrix
+        (spin-orbital path) active alpha/beta MO coefficients.
+    H : Hamiltonian or SpinOrbitalHamiltonian
+        full-MO-basis Fock (F), ERIs, and property integrals, device/precision-seeded.
+        The spatial ``Hamiltonian`` additionally carries the spin-adapted ERIs (L);
+        the ``SpinOrbitalHamiltonian`` has none (its ERI is the antisymmetrized
+        <pq||rs>).
     derivatives : Derivatives
         lazy MO-basis derivative-integral provider (built on first access). Depends
         only on base state (basis set, molecule, ``C``), so derivative property code in
@@ -77,15 +91,22 @@ class Wavefunction(object):
         ``localize_occ`` is True.
     frozen_core : bool
         whether to honor the reference's frozen core (default True, for correlated
-        methods). The Hamiltonian is ALWAYS built over the full MO space; this flag
-        only sets ``nfzc`` -- i.e. how far the active occupied slice ``o`` is offset
-        past the core. False means no core (``nfzc = 0``); HFwfn passes this, since
-        HF properties are all-electron.
+        methods). In the spatial path the Hamiltonian is built over the full MO
+        space and this flag only sets ``nfzc`` -- how far the active occupied slice
+        ``o`` is offset past the core; in the spin-orbital path it selects the
+        ACTIVE (core-excluded) vs ALL orbital subset. False means no core
+        (``nfzc = 0``); HFwfn passes this, since HF properties are all-electron.
+    orbital_basis : str or None
+        force the orbital basis: ``'spatial'`` or ``'spinorbital'``. Default None
+        auto-selects from the reference -- closed-shell RHF uses the spin-adapted
+        spatial path; any open-shell (UHF/ROHF) reference uses spin orbitals.
+        Passing ``'spinorbital'`` on a closed shell is supported (and used to
+        validate the spin-orbital path against the spatial one).
     """
 
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
                  localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
-                 frozen_core: bool = True, **kwargs) -> None:
+                 frozen_core: bool = True, orbital_basis: Any = None, **kwargs) -> None:
         # A subclass may set its own attributes before calling super().__init__;
         # snapshot them so _base_attrs (recorded at the end) captures only what the
         # base itself adds -- which _from_shared_base then replicates.
@@ -104,12 +125,84 @@ class Wavefunction(object):
         self.ref = scf_wfn
         self.eref = self.ref.energy()
 
-        # Always build the FULL-space Hamiltonian; a frozen core is handled purely as
-        # a slice OFFSET -- the active occupied slice ``o`` starts past the core
-        # rather than at 0. ``frozen_core`` only sets how many core orbitals to skip.
-        # This gives every method one MO/integral layout: correlated codes work on
-        # the active blocks via ``o``/``v``, while all-electron properties (HFwfn)
-        # pass frozen_core=False so the slices span the whole space.
+        # Closed-shell RHF takes the spin-adapted spatial path; open-shell
+        # (UHF/ROHF) takes the spin-orbital path. An explicit orbital_basis overrides
+        # the auto-choice (e.g. forcing 'spinorbital' on a closed shell to validate
+        # the spin-orbital code against the spatial one).
+        self.orbital_basis = self._resolve_orbital_basis(orbital_basis)
+
+        if self.orbital_basis == 'spatial':
+            self._init_spatial(localize_occ, frozen_core)
+        else:
+            if localize_occ:
+                raise PyCCError("Local correlation (localize_occ) is not supported "
+                                "in the spin-orbital path.")
+            self._init_spinorbital(frozen_core)
+
+        # Device / precision policy: validates the kwargs (fallback warnings for
+        # GPU-without-torch / GPU-without-CUDA), resolves device0/device1, and
+        # builds the contraction backend.
+        self.device_manager = DeviceManager(device=device, precision=precision)
+        mgr = self.device_manager
+        self.precision = mgr.precision
+        self.device = mgr.device
+        self.device0 = mgr.device0
+        self.device1 = mgr.device1
+        self.contract = mgr.contract
+
+        # Seed the integrals: F is compute-resident (device1); the big ERI/L stay
+        # CPU-resident (device0). On CPU+DP these are no-ops; on CPU+SP they
+        # real-cast to float32; on GPU they become real torch tensors at the
+        # matching width. The spin-adapted L exists only in the spatial path.
+        self.H.F = mgr.seed_compute(self.H.F)
+        self.H.ERI = mgr.seed_store(self.H.ERI)
+        if self.orbital_basis == 'spatial':
+            self.H.L = mgr.seed_store(self.H.L)
+
+        # Derivative-integral provider: built lazily on first access (see the
+        # ``derivatives`` property), so methods that never take derivatives pay
+        # nothing. Recorded here as part of the base so _from_shared_base carries it.
+        self._derivatives = None
+
+        # The base is the final consumer of forwarded kwargs (each subclass pops
+        # its own and passes the remainder through), so anything left over is an
+        # unrecognized keyword -- flag it instead of silently ignoring it.
+        if kwargs:
+            raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))
+
+        # Record exactly which attributes the base set (excluding anything the
+        # subclass set first), so _from_shared_base can replicate this base onto a
+        # new instance without re-running __init__ (and re-transforming integrals).
+        self._base_attrs = tuple(k for k in vars(self) if k not in _preexisting)
+
+    def _resolve_orbital_basis(self, orbital_basis: Any) -> str:
+        """Resolve the orbital basis from an explicit override or the reference.
+
+        Auto-choice (override is None): a closed-shell RHF reference -- identical
+        alpha/beta orbitals and densities -- uses the spin-adapted spatial path;
+        any open-shell reference (UHF, ROHF) uses spin orbitals. Spin orbitals are
+        always correct; spatial is the closed-shell optimization.
+        """
+        valid = ['spatial', 'spinorbital']
+        if orbital_basis is None:
+            closed_shell = (self.ref.same_a_b_orbs() and self.ref.same_a_b_dens())
+            return 'spatial' if closed_shell else 'spinorbital'
+        ob = str(orbital_basis).lower()
+        if ob not in valid:
+            raise InvalidKeywordError('orbital_basis', orbital_basis, valid)
+        return ob
+
+    def _init_spatial(self, localize_occ: bool, frozen_core: bool) -> None:
+        """Build the spatial (spin-adapted, closed-shell RHF) orbital spaces,
+        coefficients, and Hamiltonian.
+
+        Always builds the FULL-space Hamiltonian; a frozen core is handled purely as
+        a slice OFFSET -- the active occupied slice ``o`` starts past the core rather
+        than at 0. ``frozen_core`` only sets how many core orbitals to skip. This
+        gives every method one MO/integral layout: correlated codes work on the
+        active blocks via ``o``/``v``, while all-electron properties (HFwfn) pass
+        frozen_core=False so the slices span the whole space.
+        """
         self.nfzc = int(sum(self.ref.frzcpi())) if frozen_core else 0
         self.no   = int(sum(self.ref.doccpi())) - self.nfzc
         self.nmo  = self.ref.nmo()
@@ -165,40 +258,52 @@ class Wavefunction(object):
         # MO-basis integrals (built once from the final C).
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
-        # Device / precision policy: validates the kwargs (fallback warnings for
-        # GPU-without-torch / GPU-without-CUDA), resolves device0/device1, and
-        # builds the contraction backend.
-        self.device_manager = DeviceManager(device=device, precision=precision)
-        mgr = self.device_manager
-        self.precision = mgr.precision
-        self.device = mgr.device
-        self.device0 = mgr.device0
-        self.device1 = mgr.device1
-        self.contract = mgr.contract
+    def _init_spinorbital(self, frozen_core: bool) -> None:
+        """Build the spin-orbital (UHF/ROHF) orbital spaces, coefficients, and
+        Hamiltonian.
 
-        # Seed the integrals: F is compute-resident (device1); the big ERI/L stay
-        # CPU-resident (device0). On CPU+DP these are no-ops; on CPU+SP they
-        # real-cast to float32; on GPU they become real torch tensors at the
-        # matching width.
-        self.H.F = mgr.seed_compute(self.H.F)
-        self.H.ERI = mgr.seed_store(self.H.ERI)
-        self.H.L = mgr.seed_store(self.H.L)
+        Works on the ACTIVE orbital subset (frozen core already excluded), so the
+        active occupied/virtual slices are contiguous and 0-based. Spin orbitals are
+        ordered ``[alpha-occ, beta-occ, alpha-vir, beta-vir]``; the per-spin-orbital
+        ``spin`` (0=alpha, 1=beta) and ``spat`` (index into that spin's spatial
+        active space) maps drive the integral build.
+        """
+        ref = self.ref
+        self.nfzc = ref.nfrzc() if frozen_core else 0
+        nao = ref.nalpha() - self.nfzc       # active alpha occupied
+        nbo = ref.nbeta() - self.nfzc        # active beta occupied
+        nav = ref.nmo() - ref.nalpha()       # active alpha virtual
+        nbv = ref.nmo() - ref.nbeta()        # active beta virtual
+        self.no   = nao + nbo
+        self.nv   = nav + nbv
+        self.nmo  = 2 * ref.nmo()
+        self.nact = self.no + self.nv
 
-        # Derivative-integral provider: built lazily on first access (see the
-        # ``derivatives`` property), so methods that never take derivatives pay
-        # nothing. Recorded here as part of the base so _from_shared_base carries it.
-        self._derivatives = None
+        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
-        # The base is the final consumer of forwarded kwargs (each subclass pops
-        # its own and passes the remainder through), so anything left over is an
-        # unrecognized keyword -- flag it instead of silently ignoring it.
-        if kwargs:
-            raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))
+        self.o = slice(0, self.no)
+        self.v = slice(self.no, self.nact)
 
-        # Record exactly which attributes the base set (excluding anything the
-        # subclass set first), so _from_shared_base can replicate this base onto a
-        # new instance without re-running __init__ (and re-transforming integrals).
-        self._base_attrs = tuple(k for k in vars(self) if k not in _preexisting)
+        # Spin-orbital subspaces (ordered alpha-occ, beta-occ, alpha-vir, beta-vir)
+        # and the spin / spatial-index maps the Hamiltonian build needs.
+        ao = slice(0, nao)
+        bo = slice(nao, self.no)
+        av = slice(self.no, self.no + nav)
+        bv = slice(self.no + nav, self.nact)
+        spin = np.zeros(self.nact, dtype=int)
+        spin[bo] = 1
+        spin[bv] = 1
+        spat = np.zeros(self.nact, dtype=int)
+        spat[ao] = np.arange(nao)
+        spat[bo] = np.arange(nbo)
+        spat[av] = np.arange(nao, nao + nav)
+        spat[bv] = np.arange(nbo, nbo + nbv)
+        self.spin = spin
+        self.spat = spat
+
+        self.Ca = ref.Ca_subset("AO", "ACTIVE")
+        self.Cb = ref.Cb_subset("AO", "ACTIVE")
+        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat)
 
     @property
     def derivatives(self) -> Derivatives:

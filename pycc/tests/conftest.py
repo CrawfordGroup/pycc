@@ -94,6 +94,24 @@ def rhf_wfn(psi4_environment):
 
 
 @pytest.fixture
+def uhf_wfn(psi4_environment):
+    """Factory fixture that builds a UHF reference wavefunction.
+
+    Same interface as :func:`rhf_wfn`, but sets ``reference = 'uhf'`` so open-shell
+    species (radicals, etc.) can be used to exercise the spin-orbital path. The
+    geometry should carry its own charge/multiplicity line (e.g. ``"0 2\\n..."``).
+    """
+    def _build(molecule, basis="cc-pVDZ", geom_extra="", **options):
+        opts = {**DEFAULT_SCF_OPTIONS, 'basis': basis, 'reference': 'uhf', **options}
+        psi4.set_options(opts)
+        geometry = moldict.get(molecule, molecule)  # moldict key, else literal geometry
+        psi4.geometry(geometry + geom_extra)
+        _, wfn = psi4.energy('SCF', return_wfn=True)
+        return wfn
+    return _build
+
+
+@pytest.fixture
 def datadir(tmpdir, request):
     '''
     from: https://stackoverflow.com/a/29631801
