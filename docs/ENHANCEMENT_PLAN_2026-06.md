@@ -135,7 +135,8 @@ _Last updated 2026-06-17._
 | 2 — SO MP2 | ✅ done | PR #134 |
 | 3 — SO CCSD | ✅ done | PR #135 |
 | 4a — SO CCSD(T) | ✅ done | PR #136 |
-| 4b — SO CC3 | 🟡 in review | branch `feature/spinorbital-cc3` |
+| 4b — SO CC3 | ✅ done | PR #137 |
+| 5 — ROHF (semicanonical) | 🟡 in review | branch `feature/spinorbital-rohf` |
 
 ### Phase 1 — what landed
 
@@ -211,6 +212,28 @@ _Last updated 2026-06-17._
   Frozen-core UCC3 is deliberately not retested -- the SO frozen-core active space is
   covered by the MP2/CCSD/CCSD(T) frozen-core tests, and CC3 is the costliest solve.
 - Spin-orbital energies are now **complete for v1**: MP2, CCSD, CCSD(T), CC3.
+
+### Phase 5 — what landed (ROHF via semicanonical orbitals)
+
+Completes the plan's "UHF **and ROHF**" goal. ROHF auto-dispatches to the spin-orbital
+path (open shell), and the SO machinery is made correct for a non-canonical reference:
+
+- `pycc/hamiltonian.py`: `SpinOrbitalHamiltonian` semicanonicalizes each spin --
+  `_semicanonicalize` diagonalizes the occ-occ and vir-vir blocks of the MO Fock and
+  rotates the occ/vir MO column-blocks by the eigenvectors, then all AO->MO transforms
+  (Fock, ERI, properties) use the rotated coefficients. Well-defined orbital energies
+  (hence non-iterative MP2/(T)/CC3 denominators) for ROHF; a no-op for canonical
+  RHF/UHF (blocks already diagonal). The base passes the per-spin occupied counts so the
+  Hamiltonian knows the occ/vir split.
+- `pycc/mpwfn.py`: MP2 gains the first-order **singles** `t1 = f_ia/Dia` and the
+  `f_ia t1_ia` energy term (spin-orbital path) -- nonzero only for a non-canonical
+  reference. `CCwfn` starts its spin-orbital `t1` from this MP1 guess.
+- `pycc/cctriples.py`: the viking (T) gains the non-canonical occ-vir-Fock term
+  `x2[i,j] += f_kc t3` (the bare-Fock analog of CC3's `Fme[k]` term); zero for canonical
+  refs, so RHF/UHF (T) are unchanged. (Also folded in a CC3 micro-opt: the `Wvovv`
+  antisymmetrization now reuses one contraction via `tmp - tmp.swapaxes(0,1)`.)
+- `conftest.py` `rohf_wfn` fixture; `test_054_rohf.py`: ROHF MP2/CCSD/CCSD(T) (cc-pVDZ)
+  and CC3 (6-31G) on .OH vs Psi4's semicanonical CCENERGY (all ~1e-13/1e-14).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the

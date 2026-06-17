@@ -730,6 +730,9 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
             for k in range(no):
                 t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                 x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
+                # Occ-vir Fock term (cf. the CC3 Fme[k] term): nonzero only for a
+                # non-canonical (semicanonical ROHF) reference, where f_kc != 0.
+                x2[i,j] += contract('c,abc->ab', F[k,v], t3)
                 tmp = 0.5 * contract('dbc,abc->ad', ERI[v,k,v,v], t3)
                 x2[i,j] += tmp - tmp.swapaxes(0,1)
                 for l in range(no):
