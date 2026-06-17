@@ -130,6 +130,21 @@ class CCwfn(Wavefunction):
         # forward the rest (device/precision/local_mos) to the base, which owns
         # them -- so adding MPwfn/HFwfn/... needs no device/precision boilerplate.
         super().__init__(scf_wfn, localize_occ=(local is not None), **kwargs)
+
+        # The spin-orbital path (open-shell UHF/ROHF references) is a separate kernel
+        # selected by orbital_basis. Step-3 scope: CCSD energies only, CPU-only, no
+        # local correlation. Fail fast and clearly for anything outside that.
+        if self.orbital_basis == 'spinorbital':
+            if self.model != 'CCSD':
+                raise NotImplementedError(
+                    "Spin-orbital CC currently supports only model='CCSD' (got %r); "
+                    "CCSD(T)/CC3 are a later step." % self.model)
+            if self.local is not None:
+                raise NotImplementedError("Local correlation is not available in the "
+                                          "spin-orbital path.")
+            if self.device != 'CPU':
+                raise NotImplementedError("The spin-orbital CC path is CPU-only for now.")
+
         o = self.o
         v = self.v
         mgr = self.device_manager
@@ -187,7 +202,7 @@ class CCwfn(Wavefunction):
         o = self.o
         v = self.v
         F = self.H.F
-        L = self.H.L
+        L = self.H.L if self.orbital_basis == 'spatial' else None
         Dia = self.Dia
         Dijab = self.Dijab
 
@@ -262,6 +277,9 @@ class CCwfn(Wavefunction):
         r1, r2: NumPy arrays
             New T1 and T2 residuals: r_mu = <mu|HBAR|0>
         """
+
+        if self.orbital_basis == 'spinorbital':
+            return self._residuals_spinorbital(F, t1, t2)
 
         contract = self.contract
 
@@ -904,13 +922,145 @@ class CCwfn(Wavefunction):
 
                 CCD:   E = t2_ijab L_ijab
                 else:  E = 2 f_ia t_ia + tau_ijab L_ijab   (tau = t2 + t1 t1)
+
+        Spin-orbital path: E = f_ia t_ia + 1/4 t2_ijab <ij||ab> + 1/2 t_ia t_jb <ij||ab>.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._cc_energy_spinorbital(o, v, F, self.H.ERI, t1, t2)
         contract = self.contract
         if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
         else:
             ecc = 2.0 * contract('ia,ia->', F[o,v], t1)
             ecc = ecc + contract('ijab,ijab->', self.build_tau(t1, t2), L[o,o,v,v])
+        return ecc
+
+    # ------------------------------------------------------------------
+    # Spin-orbital CCSD kernel (open-shell UHF/ROHF references)
+    #
+    # The spin-adapted spatial residuals above ride on the closed-shell L tensor,
+    # which does not exist for UHF/ROHF. These siblings implement the standard
+    # spin-orbital CCSD equations directly from the antisymmetrized ERI = <pq||rs>
+    # (no L). They are selected by ``orbital_basis == 'spinorbital'`` via the
+    # branches in residuals()/cc_energy(). The Fock is not assumed diagonal.
+    # ------------------------------------------------------------------
+
+    def _so_build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
+        """Spin-orbital effective doubles tau = fact1*t2 + fact2*(t1 t1 antisymmetrized).
+
+        fact2=1.0 gives tau; fact2=0.5 gives the "tau-tilde" used in Fae/Fmi. Mirrors
+        the spatial :meth:`build_tau` signature (the t1 t1 term is antisymmetrized here
+        because spin orbitals are not spin-adapted).
+        """
+        contract = self.contract
+        return fact1 * t2 + fact2 * (contract('ia,jb->ijab', t1, t1)
+                                     - contract('ib,ja->ijab', t1, t1))
+
+    def _so_build_Fae(self, o, v, F, ERI, t1, t2):
+        contract = self.contract
+        Fae = clone(F[v,v])
+        Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
+        Fae = Fae + contract('mf,mafe->ae', t1, ERI[o,v,v,v])
+        Fae = Fae - 0.5 * contract('mnaf,mnef->ae', self._so_build_tau(t1, t2, 1.0, 0.5), ERI[o,o,v,v])
+        return Fae
+
+    def _so_build_Fmi(self, o, v, F, ERI, t1, t2):
+        contract = self.contract
+        Fmi = clone(F[o,o])
+        Fmi = Fmi + 0.5 * contract('me,ie->mi', F[o,v], t1)
+        Fmi = Fmi + contract('ne,mnie->mi', t1, ERI[o,o,o,v])
+        Fmi = Fmi + 0.5 * contract('inef,mnef->mi', self._so_build_tau(t1, t2, 1.0, 0.5), ERI[o,o,v,v])
+        return Fmi
+
+    def _so_build_Fme(self, o, v, F, ERI, t1):
+        contract = self.contract
+        Fme = clone(F[o,v])
+        Fme = Fme + contract('nf,mnef->me', t1, ERI[o,o,v,v])
+        return Fme
+
+    def _so_build_Wmnij(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        Wmnij = clone(ERI[o,o,o,o])
+        Wmnij = Wmnij + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+                         - contract('ie,mnje->mnij', t1, ERI[o,o,o,v]))
+        Wmnij = Wmnij + 0.25 * contract('ijef,mnef->mnij', self._so_build_tau(t1, t2), ERI[o,o,v,v])
+        return Wmnij
+
+    def _so_build_Wabef(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        Wabef = clone(ERI[v,v,v,v])
+        Wabef = Wabef - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
+                         - contract('ma,bmef->abef', t1, ERI[v,o,v,v]))
+        Wabef = Wabef + 0.25 * contract('mnab,mnef->abef', self._so_build_tau(t1, t2), ERI[o,o,v,v])
+        return Wabef
+
+    def _so_build_Wmbej(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        Wmbej = clone(ERI[o,v,v,o])
+        Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+        Wmbej = Wmbej - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+        Z = 0.5 * t2 + contract('jf,nb->jnfb', t1, t1)
+        Wmbej = Wmbej - contract('jnfb,mnef->mbej', Z, ERI[o,o,v,v])
+        return Wmbej
+
+    def _so_r_T1(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi):
+        contract = self.contract
+        r1 = clone(F[o,v])
+        r1 = r1 + contract('ie,ae->ia', t1, Fae)
+        r1 = r1 - contract('ma,mi->ia', t1, Fmi)
+        r1 = r1 + contract('imae,me->ia', t2, Fme)
+        r1 = r1 - contract('nf,naif->ia', t1, ERI[o,v,o,v])
+        r1 = r1 - 0.5 * contract('imef,maef->ia', t2, ERI[o,v,v,v])
+        r1 = r1 - 0.5 * contract('mnae,nmei->ia', t2, ERI[o,o,v,o])
+        return r1
+
+    def _so_r_T2(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wabef, Wmbej):
+        contract = self.contract
+        r2 = clone(ERI[o,o,v,v])
+        Z = clone(Fae) - 0.5 * contract('mb,me->be', t1, Fme)
+        r2 = r2 + (contract('ijae,be->ijab', t2, Z) - contract('ijbe,ae->ijab', t2, Z))
+        Z = clone(Fmi) + 0.5 * contract('je,me->mj', t1, Fme)
+        r2 = r2 - (contract('imab,mj->ijab', t2, Z) - contract('jmab,mi->ijab', t2, Z))
+        r2 = r2 + 0.5 * contract('mnab,mnij->ijab', self._so_build_tau(t1, t2), Wmnij)
+        r2 = r2 + 0.5 * contract('ijef,abef->ijab', self._so_build_tau(t1, t2), Wabef)
+        r2 = r2 + (contract('imae,mbej->ijab', t2, Wmbej)
+                   - contract('ie,ma,mbej->ijab', t1, t1, ERI[o,v,v,o]))
+        r2 = r2 - (contract('imbe,maej->ijab', t2, Wmbej)
+                   - contract('ie,mb,maej->ijab', t1, t1, ERI[o,v,v,o]))
+        r2 = r2 - (contract('jmae,mbei->ijab', t2, Wmbej)
+                   - contract('je,ma,mbei->ijab', t1, t1, ERI[o,v,v,o]))
+        r2 = r2 + (contract('jmbe,maei->ijab', t2, Wmbej)
+                   - contract('je,mb,maei->ijab', t1, t1, ERI[o,v,v,o]))
+        r2 = r2 + (contract('ie,abej->ijab', t1, ERI[v,v,v,o])
+                   - contract('je,abei->ijab', t1, ERI[v,v,v,o]))
+        r2 = r2 - (contract('ma,mbij->ijab', t1, ERI[o,v,o,o])
+                   - contract('mb,maij->ijab', t1, ERI[o,v,o,o]))
+        return r2
+
+    def _residuals_spinorbital(self, F, t1, t2):
+        """Spin-orbital CCSD T1/T2 residuals (the spin-orbital sibling of
+        :meth:`residuals`)."""
+        o = self.o
+        v = self.v
+        ERI = self.H.ERI
+
+        Fae = self._so_build_Fae(o, v, F, ERI, t1, t2)
+        Fmi = self._so_build_Fmi(o, v, F, ERI, t1, t2)
+        Fme = self._so_build_Fme(o, v, F, ERI, t1)
+        Wmnij = self._so_build_Wmnij(o, v, ERI, t1, t2)
+        Wabef = self._so_build_Wabef(o, v, ERI, t1, t2)
+        Wmbej = self._so_build_Wmbej(o, v, ERI, t1, t2)
+
+        r1 = self._so_r_T1(o, v, F, ERI, t1, t2, Fae, Fme, Fmi)
+        r2 = self._so_r_T2(o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wabef, Wmbej)
+        return r1, r2
+
+    def _cc_energy_spinorbital(self, o, v, F, ERI, t1, t2):
+        """Spin-orbital CCSD correlation energy."""
+        contract = self.contract
+        ecc = contract('ia,ia->', F[o,v], t1)
+        ecc = ecc + 0.25 * contract('ijab,ijab->', t2, ERI[o,o,v,v])
+        ecc = ecc + 0.5 * contract('ia,jb,ijab->', t1, t1, ERI[o,o,v,v])
         return ecc
 
     def t3_density(self):

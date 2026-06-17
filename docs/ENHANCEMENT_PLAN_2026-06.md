@@ -130,8 +130,8 @@ _Last updated 2026-06-17._
 |---|---|---|
 | Design / this document | ✅ done | — |
 | 1 — SO Hamiltonian + dispatch | ✅ done | PR #133 |
-| 2 — SO MP2 | 🟡 in review | branch `feature/spinorbital-mp2` |
-| 3 — SO CCSD | ⬜ not started | — |
+| 2 — SO MP2 | ✅ done | PR #134 |
+| 3 — SO CCSD | 🟡 in review | branch `feature/spinorbital-ccsd` |
 | 4 — SO CCSD(T)/CC3 | ⬜ not started | — |
 
 ### Phase 1 — what landed
@@ -162,6 +162,22 @@ _Last updated 2026-06-17._
 - `test_045_mp2.py`: added all-electron and frozen-core **UMP2** checks on the .OH
   doublet through the real `MPwfn`, vs Psi4 conventional UMP2 (~1e-10), alongside the
   existing RHF cases.
+
+### Phase 3 — what landed
+
+- `CCwfn` (`pycc/ccwfn.py`): a spin-orbital CCSD kernel ported from `socc`, selected
+  by `orbital_basis`. `residuals`/`cc_energy` gain an early branch to
+  `_residuals_spinorbital`/`_cc_energy_spinorbital`; `solve_cc` guards the (nonexistent)
+  `L`. The kernel is a set of `_so_*` builders (`tau/taut`, `Fae/Fmi/Fme`,
+  `Wmnij/Wabef/Wmbej`, `r_T1/r_T2`) working directly off the antisymmetrized
+  `ERI = <pq||rs>`; the Fock is not assumed diagonal. An `__init__` guard keeps the SO
+  path to CCSD-only, CPU-only, no local correlation (clear `NotImplementedError`
+  otherwise).
+- `test_002_ccsd_energy.py` (alongside the RHF CCSD cases): SO-RHF CCSD == spatial
+  CCSD on a closed shell (~1e-10, extends the MP2 keystone to the full kernel); UHF
+  CCSD vs Psi4 UCCSD, all-electron and frozen-core (~1e-10; measured agreement ~7e-14).
+- Folded in the carried-over step-2 cleanup: UHF/SO MP2 test tolerances tightened
+  1e-9 → 1e-10.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
