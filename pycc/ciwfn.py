@@ -93,7 +93,8 @@ class CIwfn(Wavefunction):
         ci_tstart = time.time()
 
         o, v = self.o, self.v
-        F, ERI, L = self.H.F, self.H.ERI, self.H.L
+        F, ERI = self.H.F, self.H.ERI
+        L = self.H.L if self.orbital_basis == 'spatial' else None  # no L in spin orbitals
         Dia, Dijab = self.Dia, self.Dijab
         contract = self.contract
 
@@ -139,10 +140,21 @@ class CIwfn(Wavefunction):
 
         The singles term is kept general (non-zero only for non-Brillouin references);
         the doubles term is the linear (CI) form of the CC energy (no t1.t1).
+
+        Spin-orbital path: E_c = f_ia c_ia + 1/4 <ij||ab> c_ijab.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._ci_energy_spinorbital(o, v, F, self.H.ERI, c1, c2)
         contract = self.contract
         e = 2.0 * contract('ia,ia->', F[o, v], c1)
         e = e + contract('ijab,ijab->', c2, L[o, o, v, v])
+        return e
+
+    def _ci_energy_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+        """Spin-orbital CISD correlation energy, E_c = f_ia c_ia + 1/4 <ij||ab> c_ijab."""
+        contract = self.contract
+        e = contract('ia,ia->', F[o, v], c1)
+        e = e + 0.25 * contract('ijab,ijab->', c2, ERI[o, o, v, v])
         return e
 
     def sigma1(self, o, v, F, ERI, L, c1, c2) -> "Tensor":
@@ -157,6 +169,9 @@ class CIwfn(Wavefunction):
         if not self.need_singles:
             return zeros_like(c1)
 
+        if self.orbital_basis == 'spinorbital':
+            return self._sigma1_spinorbital(o, v, F, self.H.ERI, c1, c2)
+
         contract = self.contract
         s1 = clone(F[o, v], device=self.device1)
         s1 = s1 + contract('ie,ae->ia', c1, F[v, v])
@@ -165,6 +180,20 @@ class CIwfn(Wavefunction):
         s1 = s1 + contract('nf,nafi->ia', c1, L[o, v, v, o])
         s1 = s1 + contract('amef,imef->ia', L[v, o, v, v], c2)
         s1 = s1 - contract('mnae,mnie->ia', c2, L[o, o, o, v])
+        return s1
+
+    def _sigma1_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+        """Spin-orbital singles sigma vector: the linear part of the spin-orbital CCSD
+        T1 residual (t -> c) with the dressed one-body intermediates replaced by the
+        bare Fock blocks (Fae -> f_vv, Fmi -> f_oo, Fme -> f_ov)."""
+        contract = self.contract
+        s1 = clone(F[o, v], device=self.device1)
+        s1 = s1 + contract('ie,ae->ia', c1, F[v, v])
+        s1 = s1 - contract('ma,mi->ia', c1, F[o, o])
+        s1 = s1 + contract('imae,me->ia', c2, F[o, v])
+        s1 = s1 - contract('nf,naif->ia', c1, ERI[o, v, o, v])
+        s1 = s1 - 0.5 * contract('imef,maef->ia', c2, ERI[o, v, v, v])
+        s1 = s1 - 0.5 * contract('mnae,nmei->ia', c2, ERI[o, o, v, o])
         return s1
 
     def sigma2(self, o, v, F, ERI, L, c1, c2) -> "Tensor":
@@ -180,6 +209,9 @@ class CIwfn(Wavefunction):
                          + c1_ie <ab|ej> - c1_ma <mb|ij>
             sigma2 = sigma2(half) + sigma2(half)[i<->j, a<->b]
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._sigma2_spinorbital(o, v, F, self.H.ERI, c1, c2)
+
         contract = self.contract
 
         s2 = 0.5 * clone(ERI[o, o, v, v], device=self.device1)
@@ -195,4 +227,37 @@ class CIwfn(Wavefunction):
             s2 = s2 - contract('ma,mbij->ijab', c1, ERI[o, v, o, o])
 
         s2 = s2 + s2.swapaxes(0, 1).swapaxes(2, 3)
+        return s2
+
+    def _sigma2_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+        """Spin-orbital doubles sigma vector: the linear part of the spin-orbital CCSD
+        T2 residual (t -> c) with the dressed two-body intermediates replaced by their
+        bare antisymmetrized integrals. Built as the full (already i<->j, a<->b
+        antisymmetric) residual, as in the spin-orbital ``_so_r_T2`` -- no separate
+        symmetrization step."""
+        contract = self.contract
+
+        s2 = clone(ERI[o, o, v, v], device=self.device1)
+        s2 = s2 + (contract('ijae,be->ijab', c2, F[v, v])
+                   - contract('ijbe,ae->ijab', c2, F[v, v]))
+        s2 = s2 - (contract('imab,mj->ijab', c2, F[o, o])
+                   - contract('jmab,mi->ijab', c2, F[o, o]))
+        s2 = s2 + 0.5 * contract('mnab,mnij->ijab', c2, ERI[o, o, o, o])
+        s2 = s2 + 0.5 * contract('ijef,abef->ijab', c2, ERI[v, v, v, v])
+        s2 = s2 + contract('imae,mbej->ijab', c2, ERI[o, v, v, o])
+        s2 = s2 - contract('imbe,maej->ijab', c2, ERI[o, v, v, o])
+        s2 = s2 - contract('jmae,mbei->ijab', c2, ERI[o, v, v, o])
+        s2 = s2 + contract('jmbe,maei->ijab', c2, ERI[o, v, v, o])
+        if self.need_singles:
+            s2 = s2 + (contract('ie,abej->ijab', c1, ERI[v, v, v, o])
+                       - contract('je,abei->ijab', c1, ERI[v, v, v, o]))
+            s2 = s2 - (contract('ma,mbij->ijab', c1, ERI[o, v, o, o])
+                       - contract('mb,maij->ijab', c1, ERI[o, v, o, o]))
+            # Bare-Fock singles->doubles coupling <Phi_ij^ab|F_N|Phi_k^c> =
+            # P(ij)P(ab) f_jb c1_ia. Zero for a canonical reference (f_ov = 0); in CCSD
+            # it is absorbed by the T1 similarity transformation, but linear CISD needs
+            # it explicitly for a non-canonical (ROHF) reference.
+            tmp = contract('ia,jb->ijab', c1, F[o, v])
+            s2 = s2 + (tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3)
+                       + tmp.swapaxes(0, 1).swapaxes(2, 3))
         return s2
