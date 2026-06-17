@@ -53,7 +53,7 @@ def test_ump2_oh(uhf_wfn):
     psi4.energy('mp2')
     ref = psi4.variable('MP2 CORRELATION ENERGY')
 
-    assert abs(emp2 - ref) < 1e-9
+    assert abs(emp2 - ref) < 1e-10
 
 
 def test_ump2_oh_frzc(uhf_wfn):
@@ -66,4 +66,4 @@ def test_ump2_oh_frzc(uhf_wfn):
     psi4.energy('mp2')
     ref = psi4.variable('MP2 CORRELATION ENERGY')
 
-    assert abs(emp2 - ref) < 1e-9
+    assert abs(emp2 - ref) < 1e-10

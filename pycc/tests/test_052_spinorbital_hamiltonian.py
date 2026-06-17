@@ -91,4 +91,4 @@ def test_uhf_so_mp2(uhf_wfn):
 
     psi4.energy('mp2')
     ref = psi4.variable('MP2 CORRELATION ENERGY')
-    assert abs(e_so - ref) < 1e-9
+    assert abs(e_so - ref) < 1e-10

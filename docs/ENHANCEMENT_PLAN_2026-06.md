@@ -149,7 +149,7 @@ _Last updated 2026-06-17._
   spatial path.
 - `uhf_wfn` fixture (`conftest.py`) and `test_052_spinorbital_hamiltonian.py`:
   **keystone** SO-RHF MP2 == spatial MP2 == Psi4 RMP2 (all-electron + frozen-core,
-  ~1e-12); auto-dispatch check; UHF SO-MP2 == Psi4 UMP2 (~1e-9). Full suite green
+  ~1e-12); auto-dispatch check; UHF SO-MP2 == Psi4 UMP2 (~1e-10). Full suite green
   (66 passed, no regressions).
 
 ### Phase 2 — what landed
@@ -160,7 +160,7 @@ _Last updated 2026-06-17._
   denominator hold in either basis), so `pycc.MPwfn(uhf_wfn)` now works end to end via
   auto-dispatch.
 - `test_045_mp2.py`: added all-electron and frozen-core **UMP2** checks on the .OH
-  doublet through the real `MPwfn`, vs Psi4 conventional UMP2 (~1e-9), alongside the
+  doublet through the real `MPwfn`, vs Psi4 conventional UMP2 (~1e-10), alongside the
   existing RHF cases.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
