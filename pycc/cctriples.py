@@ -678,3 +678,65 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
         return t3/denom
     else:
         return t3
+
+
+# ---- Spin-orbital (T) (open-shell UHF/ROHF references) -----------------------
+#
+# The spatial t_tjl / t_vikings(_inverted) drivers above are RHF-specific
+# (spin-adapted). These are the spin-orbital "viking" (T) driver and its T3 batch
+# builder, ported from ~/src/socc: they work directly off the antisymmetrized
+# ERI = <pq||rs> (docs/ENHANCEMENT_PLAN_2026-06.md, phase 4).
+
+def t3c_ijk_so(o, v, i, j, k, t2, F, ERI, contract, omega=0.0, WithDenom=True):
+    """Spin-orbital connected T3 amplitudes for fixed occupied i, j, k.
+
+    Uses the bare similarity-transformed integrals appropriate to (T):
+    Wvvvo = <ab||ei> = ERI[v,v,v,o] and Wovoo = <ia||jk> = ERI[o,v,o,o].
+    """
+    Wvvvo = ERI[v,v,v,o]
+    Wovoo = ERI[o,v,o,o]
+
+    abc = contract('ad,bcd->abc', t2[i,j], Wvvvo[:,:,:,k])
+    abc = abc - contract('ad,bcd->abc', t2[k,j], Wvvvo[:,:,:,i])
+    abc = abc - contract('ad,bcd->abc', t2[i,k], Wvvvo[:,:,:,j])
+    t3 = abc - abc.swapaxes(0,1) - abc.swapaxes(0,2)
+
+    abc = contract('lab,lc->abc', t2[i], Wovoo[:,:,j,k])
+    abc = abc - contract('lab,lc->abc', t2[j], Wovoo[:,:,i,k])
+    abc = abc - contract('lab,lc->abc', t2[k], Wovoo[:,:,j,i])
+    t3 = t3 - (abc - abc.swapaxes(0,2) - abc.swapaxes(1,2))
+
+    if WithDenom is True:
+        occ = diag(F)[o]
+        vir = diag(F)[v]
+        denom = (occ[i] + occ[j] + occ[k] + omega
+                 - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+        return t3/denom
+    return t3
+
+
+def t_vikings_so(o, v, t1, t2, F, ERI, contract):
+    """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
+
+    Builds the connected T3 in (i,j,k) batches and contracts each batch into the
+    disconnected (x1) and connected (x2) intermediates, then E(T) = t1.x1 +
+    1/4 t2.x2. The spatial RHF (T) drivers (t_tjl/t_vikings) are not used here.
+    """
+    x1 = zeros_like(t1)
+    x2 = zeros_like(t2)
+    no = t1.shape[0]
+
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3 = t3c_ijk_so(o, v, i, j, k, t2, F, ERI, contract)
+                x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
+                tmp = 0.5 * contract('dbc,abc->ad', ERI[v,k,v,v], t3)
+                x2[i,j] += tmp - tmp.swapaxes(0,1)
+                for l in range(no):
+                    tmp = 0.5 * contract('c,abc->ab', ERI[j,k,l,v], t3)
+                    x2[i,l] -= tmp
+                    x2[l,i] += tmp
+
+    et = contract('ia,ia->', t1, x1) + 0.25 * contract('ijab,ijab->', t2, x2)
+    return et

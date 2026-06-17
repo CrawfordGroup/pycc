@@ -117,10 +117,12 @@ open-shell physics is introduced.
 | 1 | `feature/spinorbital-hamiltonian` | base dispatch + `SpinOrbitalHamiltonian` (vectorized) + keystone SO-RHF==RHF test | **carries essentially all the architectural risk** |
 | 2 | `feature/spinorbital-mp2` | `MPwfn` SO branch + UHF-MP2 test | low |
 | 3 | `feature/spinorbital-ccsd` | `CCwfn` SO CCSD kernel + UHF-CCSD test | medium |
-| 4 | `feature/spinorbital-pt` | CCSD(T)/CC3 SO kernels + tests | low (transcription) |
+| 4a | `feature/spinorbital-pt-ccsdt` | CCSD(T) SO driver (viking) + UHF-CCSD(T) test | low (transcription) |
+| 4b | `feature/spinorbital-cc3` | CC3 SO kernel (iterative triples) + UHF-CC3 test | medium (triples module) |
 
 Step 1 is the real work and the real risk. Steps 2–4 are largely transcription from
-`socc` plus PyCC-style validation.
+`socc` plus PyCC-style validation. Phase 4 is split: CCSD(T) (a non-iterative
+post-convergence correction) lands first; CC3 (an iterative-triples solver) follows.
 
 ## Status / progress
 
@@ -131,8 +133,9 @@ _Last updated 2026-06-17._
 | Design / this document | ✅ done | — |
 | 1 — SO Hamiltonian + dispatch | ✅ done | PR #133 |
 | 2 — SO MP2 | ✅ done | PR #134 |
-| 3 — SO CCSD | 🟡 in review | branch `feature/spinorbital-ccsd` |
-| 4 — SO CCSD(T)/CC3 | ⬜ not started | — |
+| 3 — SO CCSD | ✅ done | PR #135 |
+| 4a — SO CCSD(T) | 🟡 in review | branch `feature/spinorbital-pt-ccsdt` |
+| 4b — SO CC3 | ⬜ not started | — |
 
 ### Phase 1 — what landed
 
@@ -178,6 +181,19 @@ _Last updated 2026-06-17._
   CCSD vs Psi4 UCCSD, all-electron and frozen-core (~1e-10; measured agreement ~7e-14).
 - Folded in the carried-over step-2 cleanup: UHF/SO MP2 test tolerances tightened
   1e-9 → 1e-10.
+
+### Phase 4a — what landed
+
+- `pycc/cctriples.py`: spin-orbital (T) driver `t_vikings_so` + its T3 batch builder
+  `t3c_ijk_so`, ported from `socc` (the occupied-batched "viking" algorithm), working
+  off the antisymmetrized `ERI = <pq||rs>`. The spatial `t_tjl`/`t_vikings(_inverted)`
+  are RHF-specific and untouched.
+- `pycc/ccwfn.py`: the `solve_cc` CCSD(T) block branches to `t_vikings_so` when
+  `orbital_basis == 'spinorbital'`; the `__init__` guard now admits `CCSD(T)` (CC3
+  still rejected). CCSD iterations are unchanged (the (T) is a post-convergence
+  correction).
+- `test_005_ccsd_t_energy.py`: SO-RHF CCSD(T) == spatial CCSD(T) on a closed shell;
+  UHF CCSD(T) vs Psi4 UCCSD(T), all-electron and frozen-core (~1e-10; measured ~7e-14).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the

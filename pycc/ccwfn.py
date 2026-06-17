@@ -23,7 +23,7 @@ from .utils import helper_diis, zeros_like, clone, sqrt
 from .wavefunction import Wavefunction
 from .mpwfn import MPwfn
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk, t_vikings_so
 from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError
@@ -135,10 +135,10 @@ class CCwfn(Wavefunction):
         # selected by orbital_basis. Step-3 scope: CCSD energies only, CPU-only, no
         # local correlation. Fail fast and clearly for anything outside that.
         if self.orbital_basis == 'spinorbital':
-            if self.model != 'CCSD':
+            if self.model not in ('CCSD', 'CCSD(T)'):
                 raise NotImplementedError(
-                    "Spin-orbital CC currently supports only model='CCSD' (got %r); "
-                    "CCSD(T)/CC3 are a later step." % self.model)
+                    "Spin-orbital CC currently supports model='CCSD' and 'CCSD(T)' "
+                    "(got %r); CC3 is a later step." % self.model)
             if self.local is not None:
                 raise NotImplementedError("Local correlation is not available in the "
                                           "spin-orbital path.")
@@ -245,7 +245,9 @@ class CCwfn(Wavefunction):
                 print("E(REF)  = %20.15f" % self.eref)
                 if (self.model == 'CCSD(T)'):
                     print("E(CCSD) = %20.15f" % ecc)
-                    if self.make_t3_density is True:
+                    if self.orbital_basis == 'spinorbital':
+                        et = t_vikings_so(o, v, self.t1, self.t2, F, self.H.ERI, contract)
+                    elif self.make_t3_density is True:
                         et = self.t3_density()
                     else:
                         et = t_tjl(self)
