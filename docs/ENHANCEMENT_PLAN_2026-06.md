@@ -134,8 +134,8 @@ _Last updated 2026-06-17._
 | 1 — SO Hamiltonian + dispatch | ✅ done | PR #133 |
 | 2 — SO MP2 | ✅ done | PR #134 |
 | 3 — SO CCSD | ✅ done | PR #135 |
-| 4a — SO CCSD(T) | 🟡 in review | branch `feature/spinorbital-pt-ccsdt` |
-| 4b — SO CC3 | ⬜ not started | — |
+| 4a — SO CCSD(T) | ✅ done | PR #136 |
+| 4b — SO CC3 | 🟡 in review | branch `feature/spinorbital-cc3` |
 
 ### Phase 1 — what landed
 
@@ -194,6 +194,23 @@ _Last updated 2026-06-17._
   correction).
 - `test_005_ccsd_t_energy.py`: SO-RHF CCSD(T) == spatial CCSD(T) on a closed shell;
   UHF CCSD(T) vs Psi4 UCCSD(T), all-electron and frozen-core (~1e-10; measured ~7e-14).
+
+### Phase 4b — what landed
+
+- `pycc/ccwfn.py`: spin-orbital CC3. `_residuals_spinorbital` adds the connected-triples
+  contribution (`_so_cc3_t_residual`) to the CCSD residuals when `model == 'CC3'`; the
+  T1/T2 equations stay CCSD and T3 is rebuilt each iteration from the five T1-dressed
+  CC3 W-intermediates (`_so_build_W{oooo,ovoo,ooov,vovv,vvvo}_CC3`). `__init__` guard now
+  admits CC3.
+- `pycc/cctriples.py`: `t3c_ijk_so` refactored to take `Wvvvo`/`Wovoo` explicitly (bare
+  ERI slices for (T), T1-dressed intermediates for CC3); `t_vikings_so` updated to pass
+  the slices. Only the memory-light batched driver is ported -- the `store_triples`/field
+  CC3 path (socc `CC3_full`/`permute_triples`) is out of scope.
+- `test_031_cc3.py`: SO-RHF CC3 == spatial CC3 on a closed shell; UHF CC3 vs Psi4 UCC3,
+  all-electron (6-31G to keep the iterative SO run quick; ~1e-10, measured ~1e-13).
+  Frozen-core UCC3 is deliberately not retested -- the SO frozen-core active space is
+  covered by the MP2/CCSD/CCSD(T) frozen-core tests, and CC3 is the costliest solve.
+- Spin-orbital energies are now **complete for v1**: MP2, CCSD, CCSD(T), CC3.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the

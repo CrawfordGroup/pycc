@@ -1,5 +1,7 @@
 """
-Test CC3 equation solution using various molecule test cases.
+Test CC3 equation solution using various molecule test cases, for both the
+spatial (RHF) and spin-orbital (UHF) kernels (docs/ENHANCEMENT_PLAN_2026-06.md,
+phase 4b).
 """
 
 # Import package, test suite, and other packages as needed
@@ -8,6 +10,15 @@ import pycc
 import pytest
 from ..data.molecules import *
 import numpy as np
+
+# Open-shell doublet (hydroxyl radical) for the UHF CC3 checks. CC3 rebuilds the
+# triples every iteration, so a small basis keeps the spin-orbital runs quick.
+OH = """
+0 2
+O  0.000000  0.000000  0.000000
+H  0.000000  0.000000  0.969000
+symmetry c1
+"""
 
 # H2O/cc-pVDZ
 def test_cc3_h2o(rhf_wfn):
@@ -41,4 +52,39 @@ def test_cc3_h2o(rhf_wfn):
 
     assert (abs(ref[1] - np.real(mu_y)) < 1E-10)
     assert (abs(ref[2] - np.real(mu_z)) < 1E-10)
+
+
+def test_so_cc3_equals_spatial_rhf(rhf_wfn):
+    """Spin-orbital CC3 (forced) reproduces spin-adapted spatial CC3 on a closed
+    shell, isolating the spin-orbital CC3 kernel."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
+                  e_convergence=1e-12, d_convergence=1e-12)
+
+    e_spatial = pycc.CCwfn(wfn, model="CC3", frozen_core=False).solve_cc(
+        e_conv=1e-11, r_conv=1e-11)
+
+    so = pycc.CCwfn(wfn, model="CC3", frozen_core=False, orbital_basis="spinorbital")
+    assert so.orbital_basis == "spinorbital"
+    e_so = so.solve_cc(e_conv=1e-11, r_conv=1e-11)
+
+    assert abs(e_so - e_spatial) < 1e-10
+
+
+def test_ucc3_oh(uhf_wfn):
+    """Open-shell .OH 6-31G, all-electron UCC3 vs Psi4's UCC3."""
+    wfn = uhf_wfn(OH, "6-31G", freeze_core="false",
+                  e_convergence=1e-12, d_convergence=1e-12)
+
+    cc = pycc.CCwfn(wfn, model="CC3", frozen_core=False)
+    assert cc.orbital_basis == "spinorbital"
+    ecc3 = cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
+
+    psi4.energy('cc3')
+    ref = psi4.variable('CC3 CORRELATION ENERGY')
+
+    assert abs(ecc3 - ref) < 1e-10
+    # Frozen-core UCC3 is intentionally not retested here: the spin-orbital
+    # frozen-core active space is already validated by the MP2/CCSD/CCSD(T)
+    # frozen-core tests (CC3 reuses the same o/v slicing), and the iterative CC3
+    # solve is the costliest in the suite.
 
