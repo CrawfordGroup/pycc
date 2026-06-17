@@ -131,6 +131,7 @@ psi.*
 # Misc leftover test/profiling output
 ijk.dat
 profile.txt
+o.dat
 
 # macOS
 .DS_Store
