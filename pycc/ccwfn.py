@@ -170,6 +170,11 @@ class CCwfn(Wavefunction):
         if local is not None:
             self.t1, self.t2 = self.Local.filter_amps(np.zeros((self.no, self.nv)),
                                                        self.H.ERI[o,o,v,v])
+        elif self.orbital_basis == 'spinorbital':
+            # Start from the MP1 guess: doubles from MP2 and singles t1 = f_ia/Dia
+            # (zero for a canonical reference, nonzero for ROHF).
+            self.t1 = clone(self.mp.t1)
+            self.t2 = clone(self.mp.t2)
         else:
             self.t1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
             self.t2 = clone(self.mp.t2)
@@ -1140,8 +1145,8 @@ class CCwfn(Wavefunction):
                     t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                     x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
                     x2[i,j] += contract('c,abc->ab', Fme[k], t3)
-                    x2[i,j] += 0.5 * contract('dbc,abc->ad', Wvovv[:,k,:,:], t3)
-                    x2[i,j] -= 0.5 * contract('abc,dbc->ad', Wvovv[:,k,:,:], t3)
+                    tmp = 0.5 * contract('dbc,abc->ad', Wvovv[:,k,:,:], t3)
+                    x2[i,j] += tmp - tmp.swapaxes(0,1)
                     for l in range(no):
                         tmp = 0.5 * contract('c,abc->ab', Wooov[j,k,l,:], t3)
                         x2[i,l] -= tmp

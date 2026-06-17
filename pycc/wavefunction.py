@@ -303,7 +303,9 @@ class Wavefunction(object):
 
         self.Ca = ref.Ca_subset("AO", "ACTIVE")
         self.Cb = ref.Cb_subset("AO", "ACTIVE")
-        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat)
+        # nao/nbo are the per-spin active occupied counts: the Hamiltonian needs them to
+        # split each spin's MO set into occ/vir for the semicanonical rotation.
+        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat, nao, nbo)
 
     @property
     def derivatives(self) -> Derivatives:

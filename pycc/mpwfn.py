@@ -33,6 +33,9 @@ class MPwfn(Wavefunction):
     t2 : Tensor
         first-order (MP2) doubles amplitudes, ERI[o,o,v,v] / Dijab (i.e. <ij|ab>
         spatial, or the antisymmetrized <ij||ab> in the spin-orbital path)
+    Dia, t1 : Tensor
+        (spin-orbital path only) the singles denominator and first-order singles
+        t1 = f_ia / Dia, nonzero for a non-canonical (ROHF) reference
     emp2 : float
         the MP2 correlation energy (set by :meth:`compute_energy`)
     """
@@ -67,17 +70,27 @@ class MPwfn(Wavefunction):
                       - self.eps_vir.reshape(-1, 1) - self.eps_vir)
         self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
+        # First-order singles. For a semicanonical (e.g. ROHF) reference the occ-vir
+        # Fock block f_ia is nonzero, so t1 = f_ia / Dia contributes to MP2; for a
+        # canonical RHF/UHF reference f_ia = 0, so t1 vanishes. Only the spin-orbital
+        # path uses these (the spatial energy is the spin-adapted t2.L form).
+        if self.orbital_basis == 'spinorbital':
+            self.Dia = self.eps_occ.reshape(-1, 1) - self.eps_vir
+            self.t1 = clone(self.H.F[o, v], device=self.device1) / self.Dia
+
     def compute_energy(self) -> "Tensor":
         """Compute and return the MP2 correlation energy.
 
         Spatial (spin-adapted) path: ``E = t2_ijab L_ijab``. Spin-orbital path:
-        ``E = 1/4 <ij||ab> t2_ijab`` -- no ``L`` exists, and the 1/4 accounts for the
-        unrestricted sum over the antisymmetrized doubles.
+        ``E = f_ia t1_ia + 1/4 <ij||ab> t2_ijab`` -- no ``L`` exists, the 1/4 accounts
+        for the unrestricted sum over the antisymmetrized doubles, and the singles term
+        is nonzero only for a non-canonical (e.g. ROHF) reference.
         """
         o = self.o
         v = self.v
         if self.orbital_basis == 'spatial':
             self.emp2 = self.contract('ijab,ijab->', self.t2, self.H.L[o, o, v, v])
         else:
-            self.emp2 = 0.25 * self.contract('ijab,ijab->', self.t2, self.H.ERI[o, o, v, v])
+            self.emp2 = (0.25 * self.contract('ijab,ijab->', self.t2, self.H.ERI[o, o, v, v])
+                         + self.contract('ia,ia->', self.H.F[o, v], self.t1))
         return self.emp2

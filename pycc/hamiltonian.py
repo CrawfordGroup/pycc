@@ -111,7 +111,8 @@ class SpinOrbitalHamiltonian(object):
         with :class:`Hamiltonian`; used by later (deferred) response work, not by
         the energy.
     """
-    def __init__(self, ref: Any, Ca: Any, Cb: Any, spin: Any, spat: Any) -> None:
+    def __init__(self, ref: Any, Ca: Any, Cb: Any, spin: Any, spat: Any,
+                 nocc_a: int, nocc_b: int) -> None:
         npCa = np.asarray(Ca)
         npCb = np.asarray(Cb)
         nact = spin.shape[0]
@@ -123,18 +124,31 @@ class SpinOrbitalHamiltonian(object):
         sa = spat[a]                 # their spatial indices (alpha active space)
         sb = spat[b]                 # (beta active space)
 
-        # Fock matrix: alpha/beta MO Fock placed on the matching spin blocks; the
-        # alpha-beta blocks vanish. The AO-basis Fock ("AO" subset) is symmetry-
-        # collapsed to a single irrep, so it transforms cleanly even when the
-        # reference carries point-group symmetry.
+        # Semicanonicalize each spin: form the MO Fock, diagonalize its occ-occ and
+        # vir-vir blocks, and rotate the occupied/virtual MO column-blocks by the
+        # eigenvectors. This makes each spin's Fock block-diagonal (occ and vir
+        # separately), so the orbital energies -- and hence the non-iterative MP2/(T)/CC3
+        # denominators -- are well-defined even for ROHF (whose occ-vir Fock block stays
+        # nonzero, feeding the MP2 singles). The AO-basis Fock ("AO" subset) is
+        # symmetry-collapsed to a single irrep, so it transforms cleanly under symmetry.
+        # For a canonical reference (RHF/UHF) the blocks are already diagonal, so the
+        # rotation is the identity -- a no-op. ROHF feeds identical Ca/Cb but distinct
+        # Fa/Fb, so its semicanonical alpha/beta orbitals diverge (UHF-like), as intended.
         Fa_ao = np.asarray(ref.Fa_subset("AO"))
         Fb_ao = np.asarray(ref.Fb_subset("AO"))
-        Fa = npCa.T @ Fa_ao @ npCa
-        Fb = npCb.T @ Fb_ao @ npCb
+        npCa, Fa = self._semicanonicalize(npCa, Fa_ao, nocc_a)
+        npCb, Fb = self._semicanonicalize(npCb, Fb_ao, nocc_b)
+
+        # Spin-orbital Fock: alpha/beta MO Fock placed on the matching spin blocks; the
+        # alpha-beta blocks vanish.
         F = np.zeros((nact, nact))
         F[np.ix_(a, a)] = Fa[np.ix_(sa, sa)]
         F[np.ix_(b, b)] = Fb[np.ix_(sb, sb)]
         self.F = F
+
+        # All subsequent AO->MO transforms use the semicanonical MOs.
+        Ca = psi4.core.Matrix.from_array(npCa)
+        Cb = psi4.core.Matrix.from_array(npCb)
 
         # Antisymmetrized two-electron integrals <pq||rs>. Build the chemist-notation
         # spin-orbital integral (pr|qs) first -- nonzero only when spin_p==spin_r and
@@ -183,3 +197,24 @@ class SpinOrbitalHamiltonian(object):
         # Traceless quadrupole (6 unique Cartesian components)
         Q_ints = mints.ao_traceless_quadrupole()
         self.Q = [_spin_block(np.asarray(Q_ints[ij])) for ij in range(6)]
+
+    @staticmethod
+    def _semicanonicalize(npC, F_ao, nocc):
+        """Rotate the occupied and virtual MO blocks of ``npC`` so the occ-occ and
+        vir-vir blocks of the MO Fock become diagonal (semicanonical).
+
+        ``npC`` columns are ordered [occupied (nocc), virtual]. Returns the rotated
+        coefficients and the resulting MO Fock; its occ-occ and vir-vir blocks are
+        diagonal (orbital energies on the diagonal), while the occ-vir block may be
+        nonzero (as for ROHF -- this is what feeds the MP2 singles). For a canonical
+        reference both blocks are already diagonal and the rotation is the identity.
+        """
+        Fmo = npC.T @ F_ao @ npC
+        C = npC.copy()
+        if nocc > 0:
+            _, Uo = np.linalg.eigh(Fmo[:nocc, :nocc])
+            C[:, :nocc] = npC[:, :nocc] @ Uo
+        if nocc < npC.shape[1]:
+            _, Uv = np.linalg.eigh(Fmo[nocc:, nocc:])
+            C[:, nocc:] = npC[:, nocc:] @ Uv
+        return C, C.T @ F_ao @ C
