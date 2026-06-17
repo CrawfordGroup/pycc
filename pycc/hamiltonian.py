@@ -80,3 +80,106 @@ class Hamiltonian(object):
                 Q_ao = np.asarray(Q_ints[ij])
                 self.Q.append(npCp.T @ Q_ao @ npCr)
                 ij += 1
+
+
+class SpinOrbitalHamiltonian(object):
+    """A molecular spin-orbital Hamiltonian object.
+
+    The spin-orbital sibling of :class:`Hamiltonian`, used for open-shell
+    (UHF/ROHF) references. It exposes the same attribute surface (``F``, ``ERI``,
+    and the property integrals ``mu``/``m``/``p``/``Q``) so the correlation code
+    can read either Hamiltonian uniformly -- with one deliberate difference: the
+    spin-adapted ``L`` does not exist in spin orbitals, so there is no ``L``
+    attribute. The natural object is the antisymmetrized ``ERI = <pq||rs>``.
+
+    Spin orbitals are ordered ``[alpha-occ, beta-occ, alpha-vir, beta-vir]``; the
+    caller supplies the per-spin-orbital ``spin`` (0=alpha, 1=beta) and ``spat``
+    (index into that spin's spatial active space) maps. Everything is built by
+    spin-masked assignment from the spatial MO integrals -- no Python loops over
+    orbital quadruples.
+
+    Attributes
+    ----------
+    F : NumPy array
+        spin-orbital Fock matrix, block-diagonal in spin (can be non-diagonal
+        within a spin block, e.g. ROHF/semicanonical -- not assumed diagonal)
+    ERI : NumPy array
+        antisymmetrized spin-orbital ERIs in Dirac notation: <pq||rs>
+    mu, m, p, Q : list of NumPy array
+        spin-orbital property integrals (electric dipole, magnetic dipole, linear
+        momentum, traceless quadrupole), block-diagonal in spin. Built for parity
+        with :class:`Hamiltonian`; used by later (deferred) response work, not by
+        the energy.
+    """
+    def __init__(self, ref: Any, Ca: Any, Cb: Any, spin: Any, spat: Any) -> None:
+        npCa = np.asarray(Ca)
+        npCb = np.asarray(Cb)
+        nact = spin.shape[0]
+
+        # Spin-orbital indices grouped by spin, and their spatial indices. ix_ on
+        # these reproduces the spin-block structure without explicit loops.
+        a = np.where(spin == 0)[0]   # spin orbitals that are alpha
+        b = np.where(spin == 1)[0]   # spin orbitals that are beta
+        sa = spat[a]                 # their spatial indices (alpha active space)
+        sb = spat[b]                 # (beta active space)
+
+        # Fock matrix: alpha/beta MO Fock placed on the matching spin blocks; the
+        # alpha-beta blocks vanish. The AO-basis Fock ("AO" subset) is symmetry-
+        # collapsed to a single irrep, so it transforms cleanly even when the
+        # reference carries point-group symmetry.
+        Fa_ao = np.asarray(ref.Fa_subset("AO"))
+        Fb_ao = np.asarray(ref.Fb_subset("AO"))
+        Fa = npCa.T @ Fa_ao @ npCa
+        Fb = npCb.T @ Fb_ao @ npCb
+        F = np.zeros((nact, nact))
+        F[np.ix_(a, a)] = Fa[np.ix_(sa, sa)]
+        F[np.ix_(b, b)] = Fb[np.ix_(sb, sb)]
+        self.F = F
+
+        # Antisymmetrized two-electron integrals <pq||rs>. Build the chemist-notation
+        # spin-orbital integral (pr|qs) first -- nonzero only when spin_p==spin_r and
+        # spin_q==spin_s, i.e. on the four spin-conserving blocks -- then convert to
+        # physicist <pq|rs> (swap the middle indices) and antisymmetrize.
+        mints = psi4.core.MintsHelper(ref.basisset())
+        ERI_AA = np.asarray(mints.mo_eri(Ca, Ca, Ca, Ca))  # (pr|qs), alpha electrons
+        ERI_BB = np.asarray(mints.mo_eri(Cb, Cb, Cb, Cb))  # (pr|qs), beta electrons
+        ERI_AB = np.asarray(mints.mo_eri(Ca, Ca, Cb, Cb))  # (aa|bb)
+        ERI_BA = ERI_AB.transpose(2, 3, 0, 1)              # (bb|aa)
+
+        chem = np.zeros((nact, nact, nact, nact))
+        chem[np.ix_(a, a, a, a)] = ERI_AA[np.ix_(sa, sa, sa, sa)]
+        chem[np.ix_(b, b, b, b)] = ERI_BB[np.ix_(sb, sb, sb, sb)]
+        chem[np.ix_(a, a, b, b)] = ERI_AB[np.ix_(sa, sa, sb, sb)]
+        chem[np.ix_(b, b, a, a)] = ERI_BA[np.ix_(sb, sb, sa, sa)]
+
+        phys = chem.swapaxes(1, 2)                  # (pr|qs) -> <pq|rs>
+        self.ERI = phys - phys.swapaxes(2, 3)       # <pq|rs> - <pq|sr> = <pq||rs>
+
+        self.mol = ref.molecule()
+        self.basisset = ref.basisset()
+
+        ## One-electron property integrals (block-diagonal in spin)
+
+        def _spin_block(O_ao):
+            Oa = npCa.T @ O_ao @ npCa
+            Ob = npCb.T @ O_ao @ npCb
+            O = np.zeros((nact, nact))
+            O[np.ix_(a, a)] = Oa[np.ix_(sa, sa)]
+            O[np.ix_(b, b)] = Ob[np.ix_(sb, sb)]
+            return O
+
+        # Electric dipole (length): -e r
+        dipole_ints = mints.ao_dipole()
+        self.mu = [_spin_block(np.asarray(dipole_ints[axis])) for axis in range(3)]
+
+        # Magnetic dipole: -(e/2 m_e) L  (imaginary, matching Hamiltonian's convention)
+        m_ints = mints.ao_angular_momentum()
+        self.m = [_spin_block(np.asarray(m_ints[axis]) * -0.5) * 1.0j for axis in range(3)]
+
+        # Linear momentum: (-e)(-i hbar) Del
+        p_ints = mints.ao_nabla()
+        self.p = [_spin_block(np.asarray(p_ints[axis])) * 1.0j for axis in range(3)]
+
+        # Traceless quadrupole (6 unique Cartesian components)
+        Q_ints = mints.ao_traceless_quadrupole()
+        self.Q = [_spin_block(np.asarray(Q_ints[ij])) for ij in range(6)]
