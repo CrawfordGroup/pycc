@@ -84,7 +84,7 @@ class ccdensity(object):
         nv = ccwfn.nv
         F = ccwfn.H.F
         ERI = ccwfn.H.ERI
-        L = ccwfn.H.L
+        L = ccwfn.H.L if ccwfn.orbital_basis == 'spatial' else None  # no L in spin orbitals
         t1 = ccwfn.t1
         t2 = ccwfn.t2
         l1 = cclambda.l1
@@ -96,6 +96,11 @@ class ccdensity(object):
         self.Doo = self.build_Doo(t1, t2, l1, l2)
 
         self.onlyone = onlyone
+
+        if onlyone is False and ccwfn.orbital_basis == 'spinorbital':
+            raise NotImplementedError("Spin-orbital two-particle density is not "
+                                      "implemented; pass onlyone=True (the dipole needs "
+                                      "only the one-particle density).")
 
         if onlyone is False:
             self.Doooo = self.build_Doooo(t1, t2, l2)
@@ -182,8 +187,8 @@ class ccdensity(object):
         nt = no + nv
         F = self.ccwfn.H.F
         ERI = self.ccwfn.H.ERI
-        L = self.ccwfn.H.L
- 
+        L = self.ccwfn.H.L if self.ccwfn.orbital_basis == 'spatial' else None
+
         opdm = zeros((nt, nt), like=t1)
         opdm[o,o] = self.build_Doo(t1, t2, l1, l2)
         opdm[v,v] = self.build_Dvv(t1, t2, l1, l2)
@@ -210,8 +215,27 @@ class ccdensity(object):
         else:
             return opdm
 
+    def dipole(self, t1, t2, l1, l2):
+        """Correlated (CC) contribution to the electric dipole moment.
+
+        Returns the three Cartesian components of ``mu_axis = sum_pq mu_pq D_pq`` --
+        the CC one-particle (correlation) density contracted with the MO-basis dipole
+        integrals (``H.mu``). The reference (SCF) and nuclear dipole are NOT included;
+        add them separately for the total molecular dipole. CCSD/CCD only -- the CC3
+        dipole (T1-transformed integrals) is handled by ``rtcc.dipole``.
+        """
+        if self.ccwfn.model == 'CC3':
+            raise NotImplementedError("CC3 dipole: use rtcc.dipole.")
+        contract = self.contract
+        opdm = self.compute_onepdm(t1, t2, l1, l2)
+        mu = self.ccwfn.H.mu
+        return [contract('pq,pq->', mu[axis], opdm) for axis in range(3)]
+
     def build_Doo(self, t1, t2, l1, l2):  # complete
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return (-1.0 * contract('ie,je->ij', t1, l1)
+                    - 0.5 * contract('imef,jmef->ij', t2, l2))
         if self.ccwfn.model == 'CCD':
             Doo = -contract('imef,jmef->ij', t2, l2)
         else:
@@ -226,6 +250,9 @@ class ccdensity(object):
 
     def build_Dvv(self, t1, t2, l1, l2):  # complete
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return (contract('mb,ma->ab', t1, l1)
+                    + 0.5 * contract('mnbe,mnae->ab', t2, l2))
         if self.ccwfn.model == 'CCD':
             Dvv = contract('mnbe,mnae->ab', t2, l2)
         else:
@@ -243,6 +270,15 @@ class ccdensity(object):
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            Dov = clone(t1)
+            Dov = Dov + contract('me,imae->ia', l1, t2)
+            Dov = Dov - contract('me,ie,ma->ia', l1, t1, t1)
+            tmp = contract('mnef,mnaf->ea', l2, t2)
+            Dov = Dov - 0.5 * contract('ea,ie->ia', tmp, t1)
+            tmp = contract('mnef,inef->mi', l2, t2)
+            Dov = Dov - 0.5 * contract('mi,ma->ia', tmp, t1)
+            return Dov
         if self.ccwfn.model == 'CCD':
             Dov = zeros_like(t1)
         else:

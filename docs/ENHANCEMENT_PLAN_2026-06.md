@@ -138,7 +138,8 @@ _Last updated 2026-06-17._
 | 4b — SO CC3 | ✅ done | PR #137 |
 | 5 — ROHF (semicanonical) | ✅ done | PR #138 |
 | 6 — SO CISD/CID (UHF/ROHF) | ✅ done | PR #139 |
-| 7 — SO Lambda (CCSD) | 🟡 in review | branch `feature/spinorbital-lambda` |
+| 7 — SO Lambda (CCSD) | ✅ done | PR #140 |
+| 8 — SO density + CC dipole | 🟡 in review | branch `feature/spinorbital-density` |
 
 ### Phase 1 — what landed
 
@@ -266,6 +267,22 @@ The first step toward open-shell **properties** (Lambda -> density -> response).
   cross-check of the Lambda pseudoenergy for UHF and ROHF (.OH cc-pVDZ, exact to 12
   digits -- CFOUR `PRINT=2` reports the total Lambda pseudoenergy with the same
   definition).
+
+### Phase 8 — what landed (spin-orbital density + CC dipole)
+
+Turns Lambda into an open-shell **property** -- the first CC dipole for UHF/ROHF.
+
+- `pycc/ccdensity.py`: `build_Doo`/`build_Dvv`/`build_Dov` branch on `orbital_basis` to
+  the spin-orbital one-particle density blocks (socc's, no RHF spin factors; `Dvo = l1.T`
+  is shared). A new `ccdensity.dipole(t1,t2,l1,l2)` returns the unrelaxed (expectation-
+  value) CC dipole `sum_pq mu_pq D_pq` (correlation only; reference/nuclear not included),
+  CCSD/CCD. The spin-orbital two-particle density is not implemented (one-particle/dipole
+  only -- pass `onlyone=True`; raises otherwise).
+- Validation (`test_007`): keystone (SO-RHF CC dipole == spatial, ~1e-12) and a **CFOUR**
+  cross-check of the UHF/ROHF CC dipole (.OH cc-pVDZ) via `PROP=FIRST_ORDER`,
+  `DIFF_TYPE=UNRELAXED`, `CC_PROG=ECC`, `ABCDTYPE=AOBASIS`, plus `FIXGEOM=ON` (Cartesian
+  input) so CFOUR keeps the input frame -- its SCF dipole then matches Psi4's exactly and
+  the reference is simply CFOUR's `CCSD - SCF` electronic dipole (~1e-10).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
