@@ -137,7 +137,8 @@ _Last updated 2026-06-17._
 | 4a — SO CCSD(T) | ✅ done | PR #136 |
 | 4b — SO CC3 | ✅ done | PR #137 |
 | 5 — ROHF (semicanonical) | ✅ done | PR #138 |
-| 6 — SO CISD/CID (UHF/ROHF) | 🟡 in review | branch `feature/spinorbital-cisd` |
+| 6 — SO CISD/CID (UHF/ROHF) | ✅ done | PR #139 |
+| 7 — SO Lambda (CCSD) | 🟡 in review | branch `feature/spinorbital-lambda` |
 
 ### Phase 1 — what landed
 
@@ -250,6 +251,21 @@ Beyond the original energies-first scope, extends `CIwfn` to UHF/ROHF.
   FCI (exact) for UHF/ROHF vs Psi4 FCI; and a **CFOUR** cross-check (UHF/ROHF x CISD/CID,
   .OH cc-pVDZ, ~1e-13). Note: Psi4 has no UHF-CISD, and its DETCI ROHF-CISD is
   spin-adapted -- a different method that disagrees with both PyCC and CFOUR (~3e-4).
+
+### Phase 7 — what landed (spin-orbital Lambda)
+
+The first step toward open-shell **properties** (Lambda -> density -> response).
+
+- `pycc/cchbar.py`: `cchbar` builds the 10 spin-orbital HBAR blocks (no separate `Hovov`;
+  an inline `Zovov` feeds `Hvvvo`/`Hovoo`) from the antisymmetrized ERI, via a
+  `_build_spinorbital` dispatch + `_so_build_*` methods (ported from socc).
+- `pycc/cclambda.py`: `__init__`/`solve_lambda`/`build_Goo`/`build_Gvv`/`pseudoenergy`/
+  `r_L1`/`r_L2` branch on `orbital_basis` to spin-orbital siblings. SO guess l1=t1, l2=t2;
+  pseudoenergy 1/4 <ij||ab> l2. CCSD/CCD only (CC3 Lambda raises in the SO path).
+- Validation (`test_003`): keystone (SO-RHF Lambda == spatial, ~1e-13) and a **CFOUR**
+  cross-check of the Lambda pseudoenergy for UHF and ROHF (.OH cc-pVDZ, exact to 12
+  digits -- CFOUR `PRINT=2` reports the total Lambda pseudoenergy with the same
+  definition).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
