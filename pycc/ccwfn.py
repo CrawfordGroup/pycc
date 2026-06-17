@@ -23,7 +23,7 @@ from .utils import helper_diis, zeros_like, clone, sqrt
 from .wavefunction import Wavefunction
 from .mpwfn import MPwfn
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk, t_vikings_so
+from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk, t_vikings_so, t3c_ijk_so
 from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError
@@ -135,10 +135,10 @@ class CCwfn(Wavefunction):
         # selected by orbital_basis. Step-3 scope: CCSD energies only, CPU-only, no
         # local correlation. Fail fast and clearly for anything outside that.
         if self.orbital_basis == 'spinorbital':
-            if self.model not in ('CCSD', 'CCSD(T)'):
+            if self.model not in ('CCSD', 'CCSD(T)', 'CC3'):
                 raise NotImplementedError(
-                    "Spin-orbital CC currently supports model='CCSD' and 'CCSD(T)' "
-                    "(got %r); CC3 is a later step." % self.model)
+                    "Spin-orbital CC currently supports model in {'CCSD', 'CCSD(T)', "
+                    "'CC3'} (got %r)." % self.model)
             if self.local is not None:
                 raise NotImplementedError("Local correlation is not available in the "
                                           "spin-orbital path.")
@@ -1055,15 +1055,98 @@ class CCwfn(Wavefunction):
 
         r1 = self._so_r_T1(o, v, F, ERI, t1, t2, Fae, Fme, Fmi)
         r2 = self._so_r_T2(o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wabef, Wmbej)
+
+        # CC3: add the connected-triples contribution to the CCSD residuals (the T1/T2
+        # equations are CCSD; T3 is built per-iteration from T1-dressed integrals).
+        if self.model == 'CC3':
+            x1, x2 = self._so_cc3_t_residual(o, v, F, ERI, Fme, t1, t2)
+            r1 = r1 + x1
+            r2 = r2 + x2
+
         return r1, r2
 
     def _cc_energy_spinorbital(self, o, v, F, ERI, t1, t2):
-        """Spin-orbital CCSD correlation energy."""
+        """Spin-orbital CCSD correlation energy. CC3 shares this -- the triples enter
+        through the residuals, not the energy expression."""
         contract = self.contract
         ecc = contract('ia,ia->', F[o,v], t1)
         ecc = ecc + 0.25 * contract('ijab,ijab->', t2, ERI[o,o,v,v])
         ecc = ecc + 0.5 * contract('ia,jb,ijab->', t1, t1, ERI[o,o,v,v])
         return ecc
+
+    # --- Spin-orbital CC3: T1-dressed W-intermediates + connected-triples residual ---
+
+    def _so_build_Woooo_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Woooo = clone(ERI[o,o,o,o])
+        Woooo = Woooo + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+                         - contract('ie,mnje->mnij', t1, ERI[o,o,o,v]))
+        tau = contract('ia,jb->ijab', t1, t1) - contract('ib,ja->ijab', t1, t1)
+        Woooo = Woooo + 0.5 * contract('ijef,mnef->mnij', tau, ERI[o,o,v,v])
+        return Woooo
+
+    def _so_build_Wovoo_CC3(self, o, v, ERI, t1, Woooo):
+        contract = self.contract
+        Wovoo = clone(ERI[o,v,o,o])
+        Wovoo = Wovoo - contract('nb,mnij->mbij', t1, Woooo)
+        tau = contract('ia,jb->ijab', t1, t1) - contract('ib,ja->ijab', t1, t1)
+        Wovoo = Wovoo + 0.5 * contract('ijef,mbef->mbij', tau, ERI[o,v,v,v])
+        Wovoo = Wovoo + (contract('ie,mbej->mbij', t1, ERI[o,v,v,o])
+                         - contract('je,mbei->mbij', t1, ERI[o,v,v,o]))
+        return Wovoo
+
+    def _so_build_Wooov_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Wooov = clone(ERI[o,o,o,v])
+        Wooov = Wooov - contract('if,mnef->mnie', t1, ERI[o,o,v,v])
+        return Wooov
+
+    def _so_build_Wvovv_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Wvovv = clone(ERI[v,o,v,v])
+        Wvovv = Wvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
+        return Wvovv
+
+    def _so_build_Wvvvo_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Z1 = contract('if,amef->amei', t1, ERI[v,o,v,v])
+        Z2 = clone(ERI[o,o,v,o]) + contract('if,mnef->mnei', t1, ERI[o,o,v,v])
+        tau = contract('ia,jb->ijab', t1, t1) - contract('ib,ja->ijab', t1, t1)
+        Wvvvo = clone(ERI[v,v,v,o])
+        Wvvvo = Wvvvo + contract('if,abef->abei', t1, ERI[v,v,v,v])
+        Wvvvo = Wvvvo - (contract('mb,amei->abei', t1, Z1) - contract('ma,bmei->abei', t1, Z1))
+        Wvvvo = Wvvvo + 0.5 * contract('mnei,mnab->abei', Z2, tau)
+        Wvvvo = Wvvvo - (contract('ma,mbei->abei', t1, ERI[o,v,v,o])
+                         - contract('mb,maei->abei', t1, ERI[o,v,v,o]))
+        return Wvvvo
+
+    def _so_cc3_t_residual(self, o, v, F, ERI, Fme, t1, t2):
+        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        residuals, via per-(i,j,k) batched T3 built from the T1-dressed
+        intermediates."""
+        contract = self.contract
+        Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wooov = self._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self._so_build_Wvovv_CC3(o, v, ERI, t1)
+        Wvvvo = self._so_build_Wvvvo_CC3(o, v, ERI, t1)
+
+        x1 = zeros_like(t1)
+        x2 = zeros_like(t2)
+        no = t1.shape[0]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
+                    x2[i,j] += contract('c,abc->ab', Fme[k], t3)
+                    x2[i,j] += 0.5 * contract('dbc,abc->ad', Wvovv[:,k,:,:], t3)
+                    x2[i,j] -= 0.5 * contract('abc,dbc->ad', Wvovv[:,k,:,:], t3)
+                    for l in range(no):
+                        tmp = 0.5 * contract('c,abc->ab', Wooov[j,k,l,:], t3)
+                        x2[i,l] -= tmp
+                        x2[l,i] += tmp
+        return x1, x2
 
     def t3_density(self):
         """

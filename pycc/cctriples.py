@@ -687,15 +687,12 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
 # builder, ported from ~/src/socc: they work directly off the antisymmetrized
 # ERI = <pq||rs> (docs/ENHANCEMENT_PLAN_2026-06.md, phase 4).
 
-def t3c_ijk_so(o, v, i, j, k, t2, F, ERI, contract, omega=0.0, WithDenom=True):
+def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDenom=True):
     """Spin-orbital connected T3 amplitudes for fixed occupied i, j, k.
 
-    Uses the bare similarity-transformed integrals appropriate to (T):
-    Wvvvo = <ab||ei> = ERI[v,v,v,o] and Wovoo = <ia||jk> = ERI[o,v,o,o].
+    ``Wvvvo`` (<ab||ei>) and ``Wovoo`` (<ia||jk>) are passed explicitly: bare ERI
+    slices for (T), or the T1-dressed CC3 intermediates for CC3.
     """
-    Wvvvo = ERI[v,v,v,o]
-    Wovoo = ERI[o,v,o,o]
-
     abc = contract('ad,bcd->abc', t2[i,j], Wvvvo[:,:,:,k])
     abc = abc - contract('ad,bcd->abc', t2[k,j], Wvvvo[:,:,:,i])
     abc = abc - contract('ad,bcd->abc', t2[i,k], Wvvvo[:,:,:,j])
@@ -725,11 +722,13 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
     x1 = zeros_like(t1)
     x2 = zeros_like(t2)
     no = t1.shape[0]
+    Wvvvo = ERI[v,v,v,o]
+    Wovoo = ERI[o,v,o,o]
 
     for i in range(no):
         for j in range(no):
             for k in range(no):
-                t3 = t3c_ijk_so(o, v, i, j, k, t2, F, ERI, contract)
+                t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                 x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
                 tmp = 0.5 * contract('dbc,abc->ad', ERI[v,k,v,v], t3)
                 x2[i,j] += tmp - tmp.swapaxes(0,1)
