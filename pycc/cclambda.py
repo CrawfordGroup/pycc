@@ -62,10 +62,16 @@ class cclambda(object):
 
         self.ccwfn = ccwfn
         self.hbar = hbar
-        self.contract = self.ccwfn.contract 
+        self.contract = self.ccwfn.contract
 
-        self.l1 = 2.0 * self.ccwfn.t1
-        self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            # Spin-orbital guess: l1 = t1, l2 = t2 (the spin-adapted 2*t1 / 2(2t2-t2.T)
+            # form has no analog without L).
+            self.l1 = clone(self.ccwfn.t1)
+            self.l2 = clone(self.ccwfn.t2)
+        else:
+            self.l1 = 2.0 * self.ccwfn.t1
+            self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
     def solve_lambda(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> float:
         """
@@ -103,7 +109,11 @@ class cclambda(object):
         Dijab = self.ccwfn.Dijab
         F = self.ccwfn.H.F
         ERI = self.ccwfn.H.ERI
-        L = self.ccwfn.H.L
+        L = self.ccwfn.H.L if self.ccwfn.orbital_basis == 'spatial' else None
+
+        if self.ccwfn.orbital_basis == 'spinorbital' and self.ccwfn.model == 'CC3':
+            raise NotImplementedError("Spin-orbital Lambda currently supports CCSD/CCD, "
+                                      "not CC3.")
 
         Hov = self.hbar.Hov
         Hvv = self.hbar.Hvv
@@ -113,7 +123,7 @@ class cclambda(object):
         Hvovv = self.hbar.Hvovv
         Hooov = self.hbar.Hooov
         Hovvo = self.hbar.Hovvo
-        Hovov = self.hbar.Hovov
+        Hovov = self.hbar.Hovov if self.ccwfn.orbital_basis == 'spatial' else None
         Hvvvo = self.hbar.Hvvvo
         Hovoo = self.hbar.Hovoo
 
@@ -422,6 +432,8 @@ class cclambda(object):
             G_mi = t2_mjab l2_ijab
         """
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return 0.5 * contract('mnef,inef->mi', t2, l2)
         return contract('mjab,ijab->mi', t2, l2)
 
 
@@ -440,6 +452,8 @@ class cclambda(object):
             G_ae = - t2_ijeb l2_ijab
         """
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return -0.5 * contract('mnef,mnaf->ae', t2, l2)
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
@@ -467,6 +481,9 @@ class cclambda(object):
                     - G_mn (2 H_mina - H_imna)
         """
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._r_L1_spinorbital(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
+                                          Hovoo, Hvovv, Hooov, Gvv, Goo)
         if self.ccwfn.model == 'CCD':
             r_l1 = zeros_like(l1)
         else:
@@ -523,6 +540,10 @@ class cclambda(object):
                       + G_ae L_ijeb - G_mi L_mjab
         """
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._r_L2_spinorbital(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
+                                          Hoooo, Hvvvv, Hovvo, Hvvvo, Hovoo, Hvovv, Hooov,
+                                          Gvv, Goo)
         if self.ccwfn.model == 'CCD':
             r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
 
@@ -632,6 +653,44 @@ class cclambda(object):
         W = W + contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)
         return W
                                          
+    def _r_L1_spinorbital(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
+                          Hvovv, Hooov, Gvv, Goo):
+        """Spin-orbital L1 (lambda singles) residual, built from the antisymmetrized
+        spin-orbital HBAR blocks (no Hovov)."""
+        contract = self.contract
+        r_l1 = clone(Hov)
+        r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
+        r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
+        r_l1 = r_l1 + 0.5 * contract('imef,efam->ia', l2, Hvvvo)
+        r_l1 = r_l1 - 0.5 * contract('mnae,iemn->ia', l2, Hovoo)
+        r_l1 = r_l1 + contract('me,ieam->ia', l1, Hovvo)
+        r_l1 = r_l1 - contract('ef,eifa->ia', Gvv, Hvovv)
+        r_l1 = r_l1 - contract('mn,mina->ia', Goo, Hooov)
+        return r_l1
+
+    def _r_L2_spinorbital(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
+                          Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+        """Spin-orbital L2 (lambda doubles) residual. Built as the full residual,
+        already antisymmetric in i<->j and a<->b (no separate symmetrization)."""
+        contract = self.contract
+        r_l2 = clone(ERI[o,o,v,v])
+        r_l2 = r_l2 + (contract('ia,jb->ijab', l1, Hov) - contract('ja,ib->ijab', l1, Hov))
+        r_l2 = r_l2 + (contract('jb,ia->ijab', l1, Hov) - contract('ib,ja->ijab', l1, Hov))
+        r_l2 = r_l2 + (contract('ijae,eb->ijab', l2, Hvv) - contract('ijbe,ea->ijab', l2, Hvv))
+        r_l2 = r_l2 - (contract('imab,jm->ijab', l2, Hoo) - contract('jmab,im->ijab', l2, Hoo))
+        r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+        r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+        r_l2 = r_l2 + (contract('ie,ejab->ijab', l1, Hvovv) - contract('je,eiab->ijab', l1, Hvovv))
+        r_l2 = r_l2 - (contract('ma,ijmb->ijab', l1, Hooov) - contract('mb,ijma->ijab', l1, Hooov))
+        tmp = contract('imae,jebm->ijab', l2, Hovvo)
+        r_l2 = r_l2 + (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3)
+                       + tmp.swapaxes(0,1).swapaxes(2,3))
+        r_l2 = r_l2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v])
+                       - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
+        r_l2 = r_l2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v])
+                       - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
+        return r_l2
+
     def pseudoenergy(self, o, v, ERI, l2):
         """Compute the CC pseudoenergy from the L2 amplitudes.
 
@@ -641,4 +700,6 @@ class cclambda(object):
             The lambda pseudoenergy 1/2 <ij|ab> l2_ijab.
         """
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return 0.25 * contract('ijab,ijab->', ERI[o,o,v,v], l2)
         return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)

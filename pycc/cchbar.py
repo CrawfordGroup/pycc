@@ -70,13 +70,18 @@ class cchbar(object):
  
         F = ccwfn.H.F
         ERI = ccwfn.H.ERI
-        L = ccwfn.H.L
+        L = ccwfn.H.L if ccwfn.orbital_basis == 'spatial' else None  # no L in spin orbitals
         t1 = ccwfn.t1
         t2 = ccwfn.t2
         o = self.o = ccwfn.o
         v = self.v = ccwfn.v
         self.no = ccwfn.no
         self.nv = ccwfn.nv
+
+        if ccwfn.orbital_basis == 'spinorbital':
+            self._build_spinorbital(o, v, F, ERI, t1, t2)
+            print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
+            return
 
         self.Hov = self.build_Hov(o, v, F, L, t1)
         self.Hvv = self.build_Hvv(o, v, F, L, t1, t2)
@@ -97,6 +102,124 @@ class cchbar(object):
     2-index tensors are stored on GPU
     4-index tensors are stored on CPU
     """
+
+    # ------------------------------------------------------------------
+    # Spin-orbital HBAR (open-shell UHF/ROHF references)
+    #
+    # The spatial blocks above ride on the spin-adapted L tensor (no L in spin
+    # orbitals). These siblings build the HBAR blocks directly from the
+    # antisymmetrized ERI = <pq||rs>, ported from ~/src/socc. There is no separate
+    # Hovov block; the spin-orbital Lambda residuals fold it into the antisymmetrized
+    # Hovvo, using an inline Zovov intermediate in Hvvvo/Hovoo.
+    # ------------------------------------------------------------------
+
+    def _build_spinorbital(self, o, v, F, ERI, t1, t2):
+        self.Hov = self._so_build_Hov(o, v, F, ERI, t1)
+        self.Hvv = self._so_build_Hvv(o, v, F, ERI, self.Hov, t1, t2)
+        self.Hoo = self._so_build_Hoo(o, v, F, ERI, self.Hov, t1, t2)
+        self.Hoooo = self._so_build_Hoooo(o, v, ERI, t1, t2)
+        self.Hvvvv = self._so_build_Hvvvv(o, v, ERI, t1, t2)
+        self.Hvovv = self._so_build_Hvovv(o, v, ERI, t1)
+        self.Hooov = self._so_build_Hooov(o, v, ERI, t1)
+        self.Hovvo = self._so_build_Hovvo(o, v, ERI, t1, t2)
+        Zovov = self._so_build_Zovov(o, v, ERI, t2)
+        self.Hvvvo = self._so_build_Hvvvo(o, v, ERI, self.Hov, self.Hvvvv, Zovov, t1, t2)
+        self.Hovoo = self._so_build_Hovoo(o, v, ERI, self.Hov, self.Hoooo, Zovov, t1, t2)
+
+    def _so_build_Hov(self, o, v, F, ERI, t1):
+        contract = self.contract
+        Hov = clone(F[o,v])
+        Hov = Hov + contract('nf,mnef->me', t1, ERI[o,o,v,v])
+        return Hov
+
+    def _so_build_Hvv(self, o, v, F, ERI, Hov, t1, t2):
+        contract = self.contract
+        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
+        Hvv = clone(F[v,v])
+        Hvv = Hvv - 0.5 * contract('me,ma->ae', F[o,v], t1)
+        Hvv = Hvv - 0.5 * contract('me,ma->ae', Hov, t1)
+        Hvv = Hvv + contract('mf,amef->ae', t1, ERI[v,o,v,v])
+        Hvv = Hvv - 0.5 * contract('mnaf,mnef->ae', taut, ERI[o,o,v,v])
+        return Hvv
+
+    def _so_build_Hoo(self, o, v, F, ERI, Hov, t1, t2):
+        contract = self.contract
+        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
+        Hoo = clone(F[o,o])
+        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, F[o,v])
+        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, Hov)
+        Hoo = Hoo + contract('ne,mnie->mi', t1, ERI[o,o,o,v])
+        Hoo = Hoo + 0.5 * contract('inef,mnef->mi', taut, ERI[o,o,v,v])
+        return Hoo
+
+    def _so_build_Hoooo(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hoooo = clone(ERI[o,o,o,o])
+        Hoooo = Hoooo + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+                         - contract('ie,mnje->mnij', t1, ERI[o,o,o,v]))
+        Hoooo = Hoooo + 0.5 * contract('ijef,mnef->mnij', tau, ERI[o,o,v,v])
+        return Hoooo
+
+    def _so_build_Hvvvv(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hvvvv = clone(ERI[v,v,v,v])
+        Hvvvv = Hvvvv - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
+                         - contract('ma,bmef->abef', t1, ERI[v,o,v,v]))
+        Hvvvv = Hvvvv + 0.5 * contract('mnab,mnef->abef', tau, ERI[o,o,v,v])
+        return Hvvvv
+
+    def _so_build_Hvovv(self, o, v, ERI, t1):
+        contract = self.contract
+        Hvovv = clone(ERI[v,o,v,v])
+        Hvovv = Hvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
+        return Hvovv
+
+    def _so_build_Hooov(self, o, v, ERI, t1):
+        contract = self.contract
+        Hooov = clone(ERI[o,o,o,v])
+        Hooov = Hooov + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
+        return Hooov
+
+    def _so_build_Hovvo(self, o, v, ERI, t1, t2):
+        contract = self.contract
+        Hovvo = clone(ERI[o,v,v,o])
+        Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+        Hovvo = Hovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+        tau = t2 + contract('ia,jb->ijab', t1, t1)
+        Hovvo = Hovvo - contract('jnfb,mnef->mbej', tau, ERI[o,o,v,v])
+        return Hovvo
+
+    def _so_build_Zovov(self, o, v, ERI, t2):
+        contract = self.contract
+        return clone(ERI[o,v,o,v]) + contract('nibf,mnef->mbie', t2, ERI[o,o,v,v])
+
+    def _so_build_Hvvvo(self, o, v, ERI, Hov, Hvvvv, Zovov, t1, t2):
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hvvvo = clone(ERI[v,v,v,o])
+        Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
+        Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
+        Hvvvo = Hvvvo + 0.5 * contract('mnab,mnei->abei', tau, ERI[o,o,v,o])
+        Hvvvo = Hvvvo - (contract('miaf,mbef->abei', t2, ERI[o,v,v,v])
+                         - contract('mibf,maef->abei', t2, ERI[o,v,v,v]))
+        Hvvvo = Hvvvo + (contract('ma,mbie->abei', t1, Zovov)
+                         - contract('mb,maie->abei', t1, Zovov))
+        return Hvvvo
+
+    def _so_build_Hovoo(self, o, v, ERI, Hov, Hoooo, Zovov, t1, t2):
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hovoo = clone(ERI[o,v,o,o])
+        Hovoo = Hovoo - contract('me,ijbe->mbij', Hov, t2)
+        Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
+        Hovoo = Hovoo + 0.5 * contract('ijef,mbef->mbij', tau, ERI[o,v,v,v])
+        Hovoo = Hovoo + (contract('jnbe,mnie->mbij', t2, ERI[o,o,o,v])
+                         - contract('inbe,mnje->mbij', t2, ERI[o,o,o,v]))
+        Hovoo = Hovoo - (contract('ie,mbje->mbij', t1, Zovov)
+                         - contract('je,mbie->mbij', t1, Zovov))
+        return Hovoo
     def build_Hov(self, o, v, F, L, t1):
         """Build the occupied-virtual block H_me of the one-body HBAR.
 
