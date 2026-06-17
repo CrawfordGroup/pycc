@@ -31,7 +31,8 @@ class MPwfn(Wavefunction):
     Dijab : Tensor
         two-electron energy denominator, eps_i + eps_j - eps_a - eps_b
     t2 : Tensor
-        first-order (MP2) doubles amplitudes, <ij|ab> / Dijab
+        first-order (MP2) doubles amplitudes, ERI[o,o,v,v] / Dijab (i.e. <ij|ab>
+        spatial, or the antisymmetrized <ij||ab> in the spin-orbital path)
     emp2 : float
         the MP2 correlation energy (set by :meth:`compute_energy`)
     """
@@ -53,6 +54,10 @@ class MPwfn(Wavefunction):
         """Build the energy denominators and MP2 doubles amplitudes from the seeded
         MO integrals. The ERI oovv block is staged onto the compute device with
         clone(..., device1) so the divide lands where the amplitudes live.
+
+        Basis-agnostic: ``t2 = <ij|ab> / Dijab`` (spatial) and
+        ``t2 = <ij||ab> / Dijab`` (spin-orbital) are the same expression in the
+        respective ``H.ERI``, and the denominator from the Fock diagonal is too.
         """
         o = self.o
         v = self.v
@@ -63,8 +68,16 @@ class MPwfn(Wavefunction):
         self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
     def compute_energy(self) -> "Tensor":
-        """Compute and return the MP2 correlation energy, E = t2_ijab L_ijab."""
+        """Compute and return the MP2 correlation energy.
+
+        Spatial (spin-adapted) path: ``E = t2_ijab L_ijab``. Spin-orbital path:
+        ``E = 1/4 <ij||ab> t2_ijab`` -- no ``L`` exists, and the 1/4 accounts for the
+        unrestricted sum over the antisymmetrized doubles.
+        """
         o = self.o
         v = self.v
-        self.emp2 = self.contract('ijab,ijab->', self.t2, self.H.L[o, o, v, v])
+        if self.orbital_basis == 'spatial':
+            self.emp2 = self.contract('ijab,ijab->', self.t2, self.H.L[o, o, v, v])
+        else:
+            self.emp2 = 0.25 * self.contract('ijab,ijab->', self.t2, self.H.ERI[o, o, v, v])
         return self.emp2

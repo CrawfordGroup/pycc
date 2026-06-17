@@ -129,8 +129,8 @@ _Last updated 2026-06-17._
 | Phase | Status | Landed |
 |---|---|---|
 | Design / this document | ✅ done | — |
-| 1 — SO Hamiltonian + dispatch | 🟡 in review | branch `feature/spinorbital-hamiltonian` |
-| 2 — SO MP2 | ⬜ not started | — |
+| 1 — SO Hamiltonian + dispatch | ✅ done | PR #133 |
+| 2 — SO MP2 | 🟡 in review | branch `feature/spinorbital-mp2` |
 | 3 — SO CCSD | ⬜ not started | — |
 | 4 — SO CCSD(T)/CC3 | ⬜ not started | — |
 
@@ -151,6 +151,17 @@ _Last updated 2026-06-17._
   **keystone** SO-RHF MP2 == spatial MP2 == Psi4 RMP2 (all-electron + frozen-core,
   ~1e-12); auto-dispatch check; UHF SO-MP2 == Psi4 UMP2 (~1e-9). Full suite green
   (66 passed, no regressions).
+
+### Phase 2 — what landed
+
+- `MPwfn` (`pycc/mpwfn.py`): `compute_energy` branches on `orbital_basis` --
+  spatial `E = t2_ijab L_ijab`, spin-orbital `E = 1/4 <ij||ab> t2_ijab`. `_build_mp2`
+  was already basis-agnostic (`t2 = ERI[o,o,v,v]/Dijab` and a Fock-diagonal
+  denominator hold in either basis), so `pycc.MPwfn(uhf_wfn)` now works end to end via
+  auto-dispatch.
+- `test_045_mp2.py`: added all-electron and frozen-core **UMP2** checks on the .OH
+  doublet through the real `MPwfn`, vs Psi4 conventional UMP2 (~1e-9), alongside the
+  existing RHF cases.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
