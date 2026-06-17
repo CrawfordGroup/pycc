@@ -35,9 +35,7 @@ class rtcc_ucc:
         else:
             self.mu_tot = sum(self.mu) / np.sqrt(3.0)
 
-    # ------------------------------------------------------------------
     # Index-convention adapters
-    # ------------------------------------------------------------------
 
     def _to_ajay(self, t1, t2):
         """PyCC (no,nv),(no,no,nv,nv)  ->  Ajay (nv,no),(nv,nv,no,no)."""
@@ -52,48 +50,36 @@ class rtcc_ucc:
 
     def _prep_tdag(self, t_vo, t_vvoo):
         """
-        Pre-conjugate so Ajay's transpose-only t_dag gives correct T†
-        for complex RT amplitudes. 
+        Pre-conjugate so Ajay's transpose-only t_dag gives correct T_dagger for complex RT amplitudes. 
         """
         return t_vo.conj(), t_vvoo.conj()
 
     def _build_F(self, t):
         return self.ccwfn.H.F.copy() + self.mu_tot * self.V(t)
 
-    # ------------------------------------------------------------------
     # Amplitude packing / unpacking
-    # ------------------------------------------------------------------
 
     def collect_amps(self, t1, t2, phase):
         """Pack t1, t2, phase -> flat complex128 vector."""
-        return np.concatenate(
-            (t1.ravel(), t2.ravel(), np.array([phase]))
-        ).astype("complex128")
+        return np.concatenate((t1.ravel(), t2.ravel(), np.array([phase]))).astype("complex128")
 
     def extract_amps(self, y):
         """Unpack flat vector -> t1 (no,nv), t2 (no,no,nv,nv), phase."""
         no, nv = self.no, self.nv
         n1 = no * nv
         n2 = no * no * nv * nv
-        return (y[:n1].reshape(no, nv),
-                y[n1:n1 + n2].reshape(no, no, nv, nv),
-                y[-1])
+        return (y[:n1].reshape(no, nv), y[n1:n1 + n2].reshape(no, no, nv, nv), y[-1])
 
-    # ------------------------------------------------------------------
-    # Energy  (replaces lagrangian)
-    # ------------------------------------------------------------------
+    # Energy
 
     def energy(self, t, t1, t2):
         """UCC BCH energy <Phi_0| exp(-A) H(t) exp(A) |Phi_0>."""
         F = self._build_F(t)
         t_vo,    t_vvoo    = self._to_ajay(t1, t2)
         tdag_vo, tdag_vvoo = self._prep_tdag(t_vo, t_vvoo)
-        return self._energy_fn(F, self.ccwfn.H.ERI,
-                               t_vo, t_vvoo, tdag_vo, tdag_vvoo)
+        return self._energy_fn(F, self.ccwfn.H.ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo)
 
-    # ------------------------------------------------------------------
     # ODE RHS
-    # ------------------------------------------------------------------
 
     def f(self, t, y):
         """dy/dt = f(t,y). Returns flat [rt1 | rt2 | dphase]."""
@@ -102,23 +88,19 @@ class rtcc_ucc:
         t_vo,    t_vvoo    = self._to_ajay(t1, t2)
         tdag_vo, tdag_vvoo = self._prep_tdag(t_vo, t_vvoo)
 
-        R1_vo, R2_vvoo = self._residuals_fn(F, self.ccwfn.H.ERI,
-                                             t_vo, t_vvoo, tdag_vo, tdag_vvoo)
+        R1_vo, R2_vvoo = self._residuals_fn(F, self.ccwfn.H.ERI, t_vo, t_vvoo, tdag_vo, tdag_vvoo)
         rt1, rt2 = self._from_ajay(R1_vo, R2_vvoo)
         rt1 *= -1.0j
         rt2 *= -1.0j
         dphase = -1.0j * self.energy(t, t1, t2)
         return self.collect_amps(rt1, rt2, dphase)
 
-    # ------------------------------------------------------------------
     # Autocorrelation  C(t) = <Psi(0)|Psi(t)>
-    # ------------------------------------------------------------------
 
     def autocorrelation(self, y0, yt):
         """
         UCC ACF C(t) = <Psi(0)|Psi(t)> at BCH2 level.
         SeQuant-generated equations from Ajay (uccsd_autocorr_k2_cs.py).
-        Converted from file-based to in-memory — no .conj() per uccwfn convention.
         """
         no, nv = self.no, self.nv
         nocc, nvirt = no, nv
@@ -127,21 +109,10 @@ class rtcc_ucc:
         t1_0, t2_0, ph_0 = self.extract_amps(y0)
         t1_t, t2_t, ph_t = self.extract_amps(yt)
 
-        # Convert to Ajay convention — NO .conj(), per uccwfn.py convention
-        # _prep_tdag in energy/residuals handles conjugation for complex T
-        # For ACF: tp = t(0) bra, t = t(t) ket
-        # The t_dag operations inside (einsum 'abic->icab') are pure transposes
-        # For complex RT: we pass conj of t0 as tp (bra state)
         tp_vo_0   = t1_0.T.conj()               # bra: conj for complex
         tp_vvoo_0 = t2_0.transpose(2, 3, 0, 1).conj()
         t_vo_t    = t1_t.T                       # ket: no conj
         t_vvoo_t  = t2_t.transpose(2, 3, 0, 1)
-
-
-
-        # ======================================================================
-        # Autocorrelation
-        # ======================================================================
 
         C = 0.0
         I_ov = np.zeros((nocc, nvirt), dtype=complex, order='F')
