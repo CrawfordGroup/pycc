@@ -7,20 +7,20 @@ Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://g
 [![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/CrawfordGroup/pycc/branch/main)
 
 A Python-based electronic-structure package centered on coupled cluster, built on a
-shared `Wavefunction` base that also hosts Hartree-Fock and MP2.  Current capabilities
+shared `Wavefunction` base that also hosts Hartree-Fock, MP2, and CI.  Current capabilities
 include:
-  - Spin-adapted CCD, CC2, CCSD, CCSD(T), and CC3 energies
+  - RHF-/UHF-/ROHF-based CCD, CC2, CCSD, CCSD(T), and CC3 energies
   - Triples drivers for various approximate triples methods
   - One- and two-electron (reduced) density matrices for CC2 and CCSD (with CC3 and (T) contributions)
-  - EOM-CCSD excitation energies
-  - Linear response functions (e.g. dynamic polarizability, optical rotation)
+  - RHF-EOM-CCSD excitation energies
+  - Linear response functions (dynamic polarizability, optical rotation)
   - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
   - Local (PAO, PNO, PNO++) CCSD energies, and local RT-CC
   - Hartree-Fock (`HFwfn`) MO-basis analytic derivative properties: energy gradient,
     static dipole polarizability, nuclear Hessian (force-constant matrix), atomic polar
     tensors (APTs / dipole derivatives), and atomic axial tensors (AATs) -- the building
     blocks for IR and VCD spectra
-  - MP2 (`MPwfn`) energies
+  - MP2 (`MPwfn`) and CISD/CID (`CIwfn`) energies
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
 
@@ -28,9 +28,6 @@ Future plans:
   - Quadratic response functions (in development)
   - CC2 and CC3 excited states
   - Analytic CC gradients
-
-Notes on PNO-CC: 
-https://github.com/JoseMadriaga/Notes/blob/main/LocalCCSD.pdf
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
@@ -64,3 +61,4 @@ Copyright (c) 2026, T. Daniel Crawford
  
 Project structure based on the 
 [MolSSI's](https://molssi.org) [Computational Molecular Science Python Cookiecutter](https://github.com/molssi/cookiecutter-cms) Version 1.5.
+</content>
