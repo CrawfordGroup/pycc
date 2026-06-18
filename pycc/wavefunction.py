@@ -281,6 +281,34 @@ class Wavefunction(object):
 
         print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
 
+        # Reference MO summary, alpha and beta side by side -- the spin-orbital analog of
+        # the _init_spatial table. Shows the symmetry-adapted SCF MOs Psi4 produced (their
+        # irreps and energies) with an occupied marker per spin. These are the reference
+        # orbital energies; for ROHF the semicanonical energies actually used in the
+        # correlation are the diagonal of the (rotated) per-spin Fock, self.H.F.
+        nirrep = ref.nirrep()
+        irrep_labels = ref.molecule().irrep_labels()
+        nmopi = ref.nmopi()
+        mo_irreps = np.array([h for h in range(nirrep) for _ in range(nmopi[h])])
+
+        def _spin_mos(eps_subset):
+            eps = np.concatenate([np.array(eps_subset.nph[h]) for h in range(nirrep)])
+            order = np.argsort(eps, kind='stable')
+            return eps[order], [irrep_labels[mo_irreps[i]] for i in order]
+
+        a_eps, a_lab = _spin_mos(ref.epsilon_a_subset("SO", "ALL"))
+        b_eps, b_lab = _spin_mos(ref.epsilon_b_subset("SO", "ALL"))
+        na, nb = ref.nalpha(), ref.nbeta()
+
+        print("\nMOs by energy (alpha | beta):")
+        print(f"  {'#':>4}   {'irr':>5} {'o':>1} {'energy':>16}    {'irr':>5} {'o':>1} {'energy':>16}")
+        print(f"  {'-'*4}   {'-'*5} {'-'*1} {'-'*16}    {'-'*5} {'-'*1} {'-'*16}")
+        for i in range(ref.nmo()):
+            aocc = 'o' if i < na else ' '
+            bocc = 'o' if i < nb else ' '
+            print(f"  {i:>4}   {a_lab[i]:>5} {aocc:>1} {a_eps[i]:>16.10f}"
+                  f"    {b_lab[i]:>5} {bocc:>1} {b_eps[i]:>16.10f}")
+
         self.o = slice(0, self.no)
         self.v = slice(self.no, self.nact)
 
