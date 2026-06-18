@@ -214,165 +214,6 @@ class ccresponse(object):
         return check
 
 
-    def linresp(self, A: str, B: str, omega: float, e_conv: float = 1e-13, r_conv: float = 1e-13, maxiter: int = 200, max_diis: int = 8, start_diis: int = 1) -> Tensor:
-        """
-        Calculate the CC linear-response function for one-electron perturbations A and B at field-frequency omega (w).
-
-        The linear response function, <<A;B>>w, generally requires the following perturbed wave functions and frequencies:
-            A(-w), A*(w), B(w), B*(-w)
-        If the external field is static (w=0), then we need:
-            A(0), A*(0), B(0), B*(0)
-        If the perturbation A is real and B is pure imaginary:
-            A(-w), A(w), B(w), B*(-w)
-        or vice versa:
-            A(-w), A*(w), B(w), B(-w)
-        If the perturbations are both real and the field is static:
-            A(0), B(0)
-        If the perturbations are identical then:
-            A(w), A*(-w) or A(0), A*(0)
-        If the perturbations are identical, the field is dynamic and the operator is real:
-            A(-w), A(w)
-        If the perturbations are identical, the field is static and the operator is real:
-            A(0)
-
-        Parameters:
-        -----------
-        A: string
-            String identifying the left-hand perturbation operator.
-        B: string
-            String identifying the right-hand perturbation operator.
-        NB: Allowed values for A and B are:
-            "MU": Electric dipole operator (length)
-            "P": Electric dipole operator (velocity)
-            "P*": Complex conjugate of electric dipole operator (velocity)
-            "M": Magnetic dipole operator
-            "M*": Complex conjugate of Magnetic dipole operator
-            "Q": Traceless quadrupole operator
-        omega: float
-            The external field frequency.
-        e_conv : float
-            convergence condition for the pseudoresponse value (default if 1e-13)
-        r_conv : float
-            convergence condition for perturbed wave function rmsd (default if 1e-13)
-        maxiter : int
-            maximum allowed number of iterations of the wave function equations (default is 100)
-        max_diis : int
-            maximum number of error vectors in the DIIS extrapolation (default is 8; set to 0 to deactivate)
-        start_diis : int
-            earliest iteration to start DIIS extrapolations (default is 1)
-
-        Returns:
-        --------
-        linresp: NumPy array
-            A 3x3 or 9 x 3 x 3 array of values of the chosen linear response function.
-        """
-
-        A = A.upper()
-        B = B.upper()
-
-        # dictionaries for perturbed wave functions
-        X1 = {}
-        X2 = {}
-        for axis in range(3):
-            # A(-w) or A(0)
-            pertkey = A + "_" + self.cart[axis]
-            X_key = pertkey + "_" + f"{-omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-
-            # A(w) or A*(w) 
-            if (omega != 0.0):
-                if (np.iscomplexobj(self.pertbar[pertkey].Aoo)):
-                    pertkey = A + "*_" + self.cart[axis]
-                X_key = pertkey + "_" + f"{omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-
-
-        if (B != A):
-            for axis in range(3):
-                pertkey = B + "_" + self.cart[axis]
-                X_key = pertkey + "_" + f"{omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X_2[pertkey] = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-                check.append(polar)
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-                check.append(polar)
-                if (omega != 0.0):
-                    X_key = pertkey + "_" + f"{-omega:0.6f}"
-                    print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                    X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
-                    check.append(polar)
-
-
-    def linresp_asym(self, pertkey_a: str, X1_B: Tensor, X2_B: Tensor, Y1_B: Tensor, Y2_B: Tensor):
-        """
-	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
-
-	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
-	
-	Parameters
-	----------
-	pertkey_a: string
-		String identifying the one-electron perturbation, A along a cartesian axis
-	
-
-	Return
-	------
-	polar: float
-	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
-        """
-
-        contract = self.ccwfn.contract
-
-        # Defining the l1 and l2
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-
-        # Please refer to eqn 78 of [Crawford: https://crawford.chem.vt.edu/wp-content/uploads/2022/06/cc_response.pdf].
-        # Writing H(1)(omega) = B, T(1)(omega) = X, L(1)(omega) = y
-        # <<A;B>> = <0|Y(B) * A_bar|0> + <0| (1 + L(0))[A_bar, X(B)}|0>
-        #                 polar1                polar2
-        polar1 = 0
-        polar2 = 0
-        pertbar_A = self.pertbar[pertkey_a]
-        Avvoo = pertbar_A.Avvoo.swapaxes(0, 2).swapaxes(1, 3)
-        # <0|Y1(B) * A_bar|0>
-        polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
-        # <0|Y2(B) * A_bar|0>
-        polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
-        polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
-        # <0|[A_bar, X(B)]|0>
-        polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
-        # <0|L1(0) [A_bar, X2(B)]|0>
-        tmp = contract("ia, ic -> ac", l1, X1_B)
-        polar2 += contract("ac, ac -> ", tmp, pertbar_A.Avv)
-        tmp = contract("ia, ka -> ik", l1, X1_B)
-        polar2 -= contract("ik, ki -> ", tmp, pertbar_A.Aoo)
-        # <0|L1(0)[a_bar, X2(B)]|0>
-        tmp = contract("ia, jb -> ijab", l1, pertbar_A.Aov)
-        polar2 += 2.0 * contract("ijab, ijab -> ", tmp, X2_B)
-        polar2 += -1.0 * contract("ijab, ijba -> ", tmp, X2_B)
-        # <0|L2(0)[A_bar, X1(B)]|0>
-        tmp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
-        polar2 += contract("ia, ia -> ", tmp, X1_B)
-        tmp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
-        polar2 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
-        tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
-        polar2 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
-        # <0|L2(0)[A_bar, X1(B)]|0>
-        tmp = contract("ijab, kjab -> ik", l2, X2_B)
-        polar2 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
-        tmp = contract("ijab, kiba-> jk", l2, X2_B)
-        polar2 -= 0.5 * contract("jk, kj -> ", tmp, pertbar_A.Aoo)
-        tmp = contract("ijab, ijac -> bc", l2, X2_B)
-        polar2 += 0.5 * contract("bc, bc -> ", tmp, pertbar_A.Avv)
-        tmp = contract("ijab, ijcb -> ac", l2, X2_B)
-        polar2 += 0.5 * contract("ac, ac -> ", tmp, pertbar_A.Avv)
-
-        return -1.0 * (polar1 + polar2)
-
-
     def solve_right(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
         solver_start = time.time()
 
@@ -419,71 +260,6 @@ class ccresponse(object):
             diis.add_error_vector(self.X1, self.X2)
             if niter >= start_diis:
                 self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
-
-    def solve_left(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
-        """
-	Notes
-	-----
-	The first-order lambda equations are partition into two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2),
-	the inhomogeneous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. 
-	Therefore, it is computed only once and is called when solving for the homogeneous terms.
-        """
- 
-        solver_start = time.time()
-
-        Dia = self.Dia
-        Dijab = self.Dijab
-
-        # initial guess
-        X1_guess = pertbar.Avo.T/(Dia + omega)
-        X2_guess = pertbar.Avvoo/(Dijab + omega)
-
-        # initial guess
-        Y1 = 2.0 * X1_guess.copy()
-        Y2 = 4.0 * X2_guess.copy()
-        Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)              
-
-        # need to understand this
-        pseudo = self.pseudoresponse(pertbar, Y1, Y2)
-        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
-        
-        diis = helper_diis(Y1, Y2, max_diis)
-        contract = self.ccwfn.contract
-
-        self.Y1 = Y1
-        self.Y2 = Y2 
-        
-        # uses updated X1 and X2
-        self.im_Y1 = self.in_Y1(pertbar, self.X1, self.X2)
-        self.im_Y2 = self.in_Y2(pertbar, self.X1, self.X2)
-
-        for niter in range(1, maxiter+1):
-            pseudo_last = pseudo
-            
-            Y1 = self.Y1
-            Y2 = self.Y2
-            
-            r1 = self.r_Y1(pertbar, omega)
-            r2 = self.r_Y2(pertbar, omega)
-            
-            self.Y1 += r1/(Dia + omega)
-            self.Y2 += r2/(Dijab + omega)
-            
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
-            rms = np.sqrt(rms)
-            
-            pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
-            pseudodiff = np.abs(pseudo - pseudo_last)
-            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
-                
-            if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
-                print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
-                return self.Y1, self.Y2 , pseudo
-            
-            diis.add_error_vector(self.Y1, self.Y2)
-            if niter >= start_diis:
-                self.Y1, self.Y2 = diis.extrapolate(self.Y1, self.Y2)
 
     def r_X1(self, pertbar, omega):
         contract = self.contract
@@ -569,6 +345,448 @@ class ccresponse(object):
         r_X2 = r_X2 + r_X2.swapaxes(0,1).swapaxes(2,3)
 
         return r_X2
+
+    def pseudoresponse(self, pertbar: "pertbar", X1: Tensor, X2: Tensor):
+        contract = self.ccwfn.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            polar1 = contract('ai,ia->', pertbar.Avo, X1)
+            polar2 = 0.25 * contract('ijab,ijab->', pertbar.Avvoo, X2)
+            return -2.0 * (polar1 + polar2)
+        polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
+#polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
+        polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
+
+        return -2.0*(polar1 + polar2)
+
+    # ==================================================================
+    # Symmetric linear response -- the X-only formulation: only the
+    # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
+    # Top-level entry points polarizability() and optrot() dispatch the
+    # basis-specific assembly through linresp_sym(). The asymmetric (X and Y)
+    # machinery is retained, deprecated for linear response, at the bottom of
+    # the class for the future quadratic response function.
+    #
+    # The linear response function <<A;B>>_w generally requires the following
+    # right-hand perturbed wave functions and frequencies:
+    #     A(-w), A*(w), B(w), B*(-w)
+    # If the external field is static (w=0), then we need:
+    #     A(0), A*(0), B(0), B*(0)
+    # If the perturbation A is real and B is pure imaginary:
+    #     A(-w), A(w), B(w), B*(-w)
+    # or vice versa:
+    #     A(-w), A*(w), B(w), B(-w)
+    # If the perturbations are both real and the field is static:
+    #     A(0), B(0)
+    # If the perturbations are identical then:
+    #     A(w), A*(-w)  or  A(0), A*(0)
+    # If the perturbations are identical, the field is dynamic and the operator
+    # is real:
+    #     A(-w), A(w)
+    # If the perturbations are identical, the field is static and the operator
+    # is real:
+    #     A(0)
+    # ==================================================================
+
+    def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+                       max_diis=7, start_diis=1):
+        """Dipole polarizability tensor (length gauge) at frequency omega via the
+        symmetric response function (right-hand perturbed amplitudes only):
+
+            alpha_w = -<<mu;mu>>_w
+                    = -<0|(1+L){ [muBAR,X(mu,-w)] + [muBAR,X(mu,w)]
+                                 + [[HBAR,X(mu,-w)],X(mu,w)] }|0>
+
+        Returns a 3x3 array. Basis-agnostic: all basis-specific work lives in
+        solve_right and linresp_sym."""
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+        Xp, Xm = [], []
+        for axis in range(3):
+            A = self.pertbar["MU_" + self.cart[axis]]
+            X1, X2, _ = self.solve_right(A, omega, *args)
+            Xp.append([X1.copy(), X2.copy()])
+            if omega == 0.0:
+                Xm.append([X1.copy(), X2.copy()])
+            else:
+                X1, X2, _ = self.solve_right(A, -omega, *args)
+                Xm.append([X1.copy(), X2.copy()])
+
+        polar = np.zeros((3, 3))
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["MU_" + self.cart[b]]
+                polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
+        return polar
+
+    def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+               max_diis=7, start_diis=1):
+        """Optical-rotation tensor (length gauge) at frequency omega via the symmetric
+        response function (right-hand perturbed amplitudes only):
+
+            G'_w = <<mu;m>>_w
+                 = (1/2) <0|(1+L){ [muBAR,X(m,w)] + [mBAR,X(mu,-w)]
+                                   + [[HBAR,X(mu,-w)],X(m,w)] }|0>
+                 + (1/2) <0|(1+L){ [muBAR,X(m*,-w)] + [m*BAR,X(mu,w)]
+                                   + [[HBAR,X(m*,-w)],X(mu,w)] }|0>
+
+        assembled from the right-hand perturbed amplitudes X(mu,-w), X(m,+w),
+        X(mu,+w), X(m*,-w). Returns a 3x3 array. Basis-agnostic: all basis-specific
+        work lives in solve_right and linresp_sym.
+        """
+        if omega == 0.0:
+            raise ValueError("Optical rotation requires a nonzero field frequency.")
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+
+        Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
+        for axis in range(3):
+            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
+            Xmu_p.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
+            Xmu_m.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
+            Xm_p.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
+            Xmstar_m.append([X1.copy(), X2.copy()])
+
+        tensor = np.zeros((3, 3))
+        # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M_" + self.cart[b]]
+                tensor[a, b] = 0.5 * self.linresp_sym(A, Xmu_m[a], B, Xm_p[b])
+        # (1/2) <<mu; m*>>_{-omega}  with X(mu,+omega) and X(m*,-omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M*_" + self.cart[b]]
+                tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
+        return tensor
+
+    # ------------------------------------------------------------------
+    # Symmetric linear-response assembly. Each component dispatches on
+    # orbital_basis: the spin-orbital form (_*_spinorbital) is implemented;
+    # the spin-adapted (spatial) form is phase 9a-ii (stubbed). The call
+    # structure (linresp_sym -> LCX / LHX1Y1 / LHX2Y2 / LHX1Y2) is identical
+    # for both bases; only the tensor contractions differ.
+    # ------------------------------------------------------------------
+
+    def linresp_sym(self, A, X_A, B, X_B):
+        """Half of the symmetric CC linear-response function for one-electron
+        perturbations A and B at frequency omega (w):
+
+            <<A;B>>_w = (1/2) <0|(1+L){ [ABAR,X(B,w)] + [BBAR,X(A,-w)]
+                                        + [[HBAR,X(A,-w)],X(B,w)] }|0>
+
+        The other half -- using the complex conjugates of the operators and the
+        swapped frequencies -- comes from a separate call (see optrot; for the real,
+        symmetric polarizability the two halves are equal). This is for specific
+        Cartesian components: both the perturbed wave functions (X_A, X_B) and the
+        similarity-transformed operators (A, B) are built by the caller.
+
+        Parameters
+        ----------
+        A, B : pertbar
+            Similarity-transformed left- (A) and right-hand (B) perturbation operators.
+        X_A, X_B : [singles, doubles]
+            Right-hand perturbed wave functions for A (at -w) and B (at +w).
+
+        Returns
+        -------
+        float
+            The requested component of the linear-response tensor (sum of the LCX,
+            HXY, LHX1Y1, LHX2Y2, and LHX1Y2 contributions).
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._linresp_sym_spinorbital(A, X_A, B, X_B)
+        # spin-adapted (spatial) assembly -- phase 9a-ii (to be derived)
+        raise NotImplementedError(
+            "Spatial spin-adapted linresp_sym not yet implemented (phase 9a-ii); "
+            "see _linresp_sym_spinorbital for the spin-orbital structure.")
+
+    def _linresp_sym_spinorbital(self, A, X_A, B, X_B):
+        o, v = self.ccwfn.o, self.ccwfn.v
+        contract = self.contract
+        ERI = self.H.ERI
+        # <0|(1+L)[ABAR,X_B]|0> + <0|(1+L)[BBAR,X_A]|0>
+        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
+        # <0|[[HBAR,X1_A],X1_B]|0>
+        polar += contract('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])
+        # <0|L[[HBAR,X1_A],X1_B]|0>
+        polar += self.LHX1Y1(X_A, X_B)
+        # <0|L[[HBAR,X2_A],X2_B]|0>
+        polar += self.LHX2Y2(X_A, X_B)
+        # <0|L[[HBAR,X1_A],X2_B]|0>
+        polar += self.LHX1Y2(X_A, X_B)
+        # <0|L[[HBAR,X1_B],X2_A]|0>
+        polar += self.LHX1Y2(X_B, X_A)
+        return polar
+
+    def LCX(self, pert, X):
+        """One-particle-density (LCX) term of the symmetric response function."""
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._LCX_spinorbital(pert, X)
+        raise NotImplementedError(
+            "Spatial spin-adapted LCX not yet implemented (phase 9a-ii); "
+            "see _LCX_spinorbital for the spin-orbital structure.")
+
+    def _LCX_spinorbital(self, pert, X):
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        X1, X2 = X[0], X[1]
+        polar = contract('ia,ia->', pert.Aov, X1)              # diagram 1
+        tmp = contract('ae,ie->ia', pert.Avv, X1)              # diagram 2
+        tmp -= contract('mi,ma->ia', pert.Aoo, X1)             # diagram 3
+        tmp += contract('me,imae->ia', pert.Aov, X2)           # diagram 8
+        polar += contract('ia,ia->', l1, tmp)
+        tmp = contract('abej,ie->ijab', pert.Avvvo, X1)        # diagram 4
+        tmp -= contract('mbij,ma->ijab', pert.Aovoo, X1)       # diagram 5
+        tmp += contract('be,ijae->ijab', pert.Avv, X2)         # diagram 6
+        tmp -= contract('mj,imab->ijab', pert.Aoo, X2)         # diagram 7
+        polar += 0.5 * contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX1Y1(self, X, Y):
+        """X1*Y1 (LHX1Y1) term of the symmetric response function."""
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._LHX1Y1_spinorbital(X, Y)
+        raise NotImplementedError(
+            "Spatial spin-adapted LHX1Y1 not yet implemented (phase 9a-ii); "
+            "see _LHX1Y1_spinorbital for the spin-orbital structure.")
+
+    def _LHX1Y1_spinorbital(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y1 = X[0], Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
+        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)        # diagrams 1 and 2
+        tmp += contract('amef,imef->ia', hbar.Hvovv, tau)          # diagrams 7 and 8
+        tmp -= contract('mnie,mnae->ia', hbar.Hooov, tau)          # diagrams 9 and 10
+        polar = contract('ia,ia->', l1, tmp)
+        Zvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], tau)
+        Zoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], tau)
+        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)   # diagram 3
+        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)  # diagram 4
+        tmp -= contract('mbej,imea->ijab', hbar.Hovvo, tau)        # diagrams 5 and 6
+        tmp -= contract('ijaf,fb->ijab', t2, Zvv)                  # diagrams 11 and 12
+        tmp -= contract('inab,nj->ijab', t2, Zoo)                  # diagrams 13 and 14
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX2Y2(self, X, Y):
+        """X2*Y2 (LHX2Y2) term of the symmetric response function."""
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._LHX2Y2_spinorbital(X, Y)
+        raise NotImplementedError(
+            "Spatial spin-adapted LHX2Y2 not yet implemented (phase 9a-ii); "
+            "see _LHX2Y2_spinorbital for the spin-orbital structure.")
+
+    def _LHX2Y2_spinorbital(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l2 = self.cclambda.l2
+        ERI = self.H.ERI
+        X2, Y2 = X[1], Y[1]
+        Zovvo = contract('mnef,njfb->mbej', ERI[o,o,v,v], Y2)
+        Zoooo_A = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], X2)
+        Zoooo_B = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], Y2)
+        Zvv_A = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], Y2)
+        Zvv_B = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], X2)
+        Zoo_A = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], Y2)
+        Zoo_B = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], X2)
+        tmp = contract('mbej,imae->ijab', Zovvo, X2)              # diagram 1
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_A, Y2)    # diagram 2
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_B, X2)    # diagram 3
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_A, X2)         # diagram 4
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_B, Y2)         # diagram 6
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_A, X2)         # diagram 5
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_B, Y2)         # diagram 7
+        return contract('ijab,ijab->', l2, tmp)
+
+    def LHX1Y2(self, X, Y):
+        """X1*Y2 (LHX1Y2) term of the symmetric response function."""
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._LHX1Y2_spinorbital(X, Y)
+        raise NotImplementedError(
+            "Spatial spin-adapted LHX1Y2 not yet implemented (phase 9a-ii); "
+            "see _LHX1Y2_spinorbital for the spin-orbital structure.")
+
+    def _LHX1Y2_spinorbital(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y2 = X[0], Y[1]
+        Zov = contract('mnef,me->nf', ERI[o,o,v,v], X1)
+        Zvv = -0.5 * contract('mnef,mnaf->ea', ERI[o,o,v,v], Y2)
+        Zoo = -0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], Y2)
+        tmp = contract('nf,nifa->ia', Zov, Y2)                    # diagram 3
+        tmp += contract('ea,ie->ia', Zvv, X1)                     # diagram 4
+        tmp += contract('mi,ma->ia', Zoo, X1)                     # diagram 5
+        polar = contract('ia,ia->', l1, tmp)
+        Zoo = contract('me,ie->mi', hbar.Hov, X1)
+        Zoo += contract('mnie,ne->mi', hbar.Hooov, X1)
+        Zvv = contract('me,ma->ea', hbar.Hov, X1)
+        Zvv -= contract('amef,mf->ea', hbar.Hvovv, X1)
+        Zvoov = contract('anfe,if->anie', hbar.Hvovv, X1)
+        Zvoov -= contract('mnie,ma->anie', hbar.Hooov, X1)
+        Zoooo = 0.5 * contract('mnie,je->mnij', hbar.Hooov, X1)
+        Zoovo = 0.5 * contract('amef,ijef->ijam', hbar.Hvovv, Y2)
+        tmp = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)           # diagrams 1 and 7
+        tmp -= 0.5 * contract('ea,ijeb->ijab', Zvv, Y2)           # diagrams 2 and 9
+        tmp += contract('anie,njeb->ijab', Zvoov, Y2)             # diagrams 6 and 8
+        tmp += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)       # diagram 10
+        tmp -= 0.5 * contract('ijam,mb->ijab', Zoovo, X1)         # diagram 11
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    # ==================================================================
+    # DEPRECATED for linear response: the *asymmetric* formulation, which
+    # solves both the right- (X) and left-hand (Y) perturbed amplitudes.
+    # Superseded by the symmetric path above (polarizability / optrot /
+    # linresp_sym, X only). Retained, not deleted: the quadratic response
+    # function will need the left-hand (Y) contributions.
+    # ==================================================================
+
+    def linresp_asym(self, pertkey_a: str, X1_B: Tensor, X2_B: Tensor, Y1_B: Tensor, Y2_B: Tensor):
+        """
+	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
+
+	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
+	
+	Parameters
+	----------
+	pertkey_a: string
+		String identifying the one-electron perturbation, A along a cartesian axis
+	
+
+	Return
+	------
+	polar: float
+	     A value of the chosen linear response function corresponding to compute polariazabiltity in a specified cartesian diresction.
+        """
+
+        contract = self.ccwfn.contract
+
+        # Defining the l1 and l2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+
+        # Please refer to eqn 78 of [Crawford: https://crawford.chem.vt.edu/wp-content/uploads/2022/06/cc_response.pdf].
+        # Writing H(1)(omega) = B, T(1)(omega) = X, L(1)(omega) = y
+        # <<A;B>> = <0|Y(B) * A_bar|0> + <0| (1 + L(0))[A_bar, X(B)}|0>
+        #                 polar1                polar2
+        polar1 = 0
+        polar2 = 0
+        pertbar_A = self.pertbar[pertkey_a]
+        Avvoo = pertbar_A.Avvoo.swapaxes(0, 2).swapaxes(1, 3)
+        # <0|Y1(B) * A_bar|0>
+        polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
+        # <0|Y2(B) * A_bar|0>
+        polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
+        polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
+        # <0|[A_bar, X(B)]|0>
+        polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
+        # <0|L1(0) [A_bar, X2(B)]|0>
+        tmp = contract("ia, ic -> ac", l1, X1_B)
+        polar2 += contract("ac, ac -> ", tmp, pertbar_A.Avv)
+        tmp = contract("ia, ka -> ik", l1, X1_B)
+        polar2 -= contract("ik, ki -> ", tmp, pertbar_A.Aoo)
+        # <0|L1(0)[a_bar, X2(B)]|0>
+        tmp = contract("ia, jb -> ijab", l1, pertbar_A.Aov)
+        polar2 += 2.0 * contract("ijab, ijab -> ", tmp, X2_B)
+        polar2 += -1.0 * contract("ijab, ijba -> ", tmp, X2_B)
+        # <0|L2(0)[A_bar, X1(B)]|0>
+        tmp = contract("ijbc, bcaj -> ia", l2, pertbar_A.Avvvo)
+        polar2 += contract("ia, ia -> ", tmp, X1_B)
+        tmp = contract("ijab, kbij -> ak", l2, pertbar_A.Aovoo)
+        polar2 -= 0.5 * contract("ak, ka -> ", tmp, X1_B)
+        tmp = contract("ijab, kaji -> bk", l2, pertbar_A.Aovoo)
+        polar2 -= 0.5 * contract("bk, kb -> ", tmp, X1_B)
+        # <0|L2(0)[A_bar, X1(B)]|0>
+        tmp = contract("ijab, kjab -> ik", l2, X2_B)
+        polar2 -= 0.5 * contract("ik, ki -> ", tmp, pertbar_A.Aoo)
+        tmp = contract("ijab, kiba-> jk", l2, X2_B)
+        polar2 -= 0.5 * contract("jk, kj -> ", tmp, pertbar_A.Aoo)
+        tmp = contract("ijab, ijac -> bc", l2, X2_B)
+        polar2 += 0.5 * contract("bc, bc -> ", tmp, pertbar_A.Avv)
+        tmp = contract("ijab, ijcb -> ac", l2, X2_B)
+        polar2 += 0.5 * contract("ac, ac -> ", tmp, pertbar_A.Avv)
+
+        return -1.0 * (polar1 + polar2)
+
+    def solve_left(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
+        """
+	Notes
+	-----
+	The first-order lambda equations are partition into two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2),
+	the inhomogeneous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. 
+	Therefore, it is computed only once and is called when solving for the homogeneous terms.
+        """
+ 
+        solver_start = time.time()
+
+        Dia = self.Dia
+        Dijab = self.Dijab
+
+        # initial guess
+        X1_guess = pertbar.Avo.T/(Dia + omega)
+        X2_guess = pertbar.Avvoo/(Dijab + omega)
+
+        # initial guess
+        Y1 = 2.0 * X1_guess.copy()
+        Y2 = 4.0 * X2_guess.copy()
+        Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)              
+
+        # need to understand this
+        pseudo = self.pseudoresponse(pertbar, Y1, Y2)
+        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
+        
+        diis = helper_diis(Y1, Y2, max_diis)
+        contract = self.ccwfn.contract
+
+        self.Y1 = Y1
+        self.Y2 = Y2 
+        
+        # uses updated X1 and X2
+        self.im_Y1 = self.in_Y1(pertbar, self.X1, self.X2)
+        self.im_Y2 = self.in_Y2(pertbar, self.X1, self.X2)
+
+        for niter in range(1, maxiter+1):
+            pseudo_last = pseudo
+            
+            Y1 = self.Y1
+            Y2 = self.Y2
+            
+            r1 = self.r_Y1(pertbar, omega)
+            r2 = self.r_Y2(pertbar, omega)
+            
+            self.Y1 += r1/(Dia + omega)
+            self.Y2 += r2/(Dijab + omega)
+            
+            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
+            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+            rms = np.sqrt(rms)
+            
+            pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
+            pseudodiff = np.abs(pseudo - pseudo_last)
+            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
+                
+            if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
+                print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
+                return self.Y1, self.Y2 , pseudo
+            
+            diis.add_error_vector(self.Y1, self.Y2)
+            if niter >= start_diis:
+                self.Y1, self.Y2 = diis.extrapolate(self.Y1, self.Y2)
 
     def in_Y1(self, pertbar, X1, X2):
         contract = self.contract
@@ -687,7 +905,7 @@ class ccresponse(object):
         r_Y1 += contract('ionf,nofa->ia', tmp, l2) 
 
         return r_Y1
- 
+
     def r_Y1(self, pertbar, omega):
         contract = self.contract
         o = self.ccwfn.o
@@ -720,7 +938,7 @@ class ccresponse(object):
         r_Y1 += contract('imna,mn->ia', hbar.Hooov, cclambda.build_Goo(t2, Y2))
 
         return r_Y1
-   
+
     def in_Y2(self, pertbar, X1, X2):
         contract = self.contract
         o = self.ccwfn.o
@@ -863,202 +1081,6 @@ class ccresponse(object):
 
         return r_Y2
 
-    def pseudoresponse(self, pertbar: "pertbar", X1: Tensor, X2: Tensor):
-        contract = self.ccwfn.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            polar1 = contract('ai,ia->', pertbar.Avo, X1)
-            polar2 = 0.25 * contract('ijab,ijab->', pertbar.Avvoo, X2)
-            return -2.0 * (polar1 + polar2)
-        polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
-#polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
-        polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
-
-        return -2.0*(polar1 + polar2)
-
-    # ------------------------------------------------------------------
-    # Symmetric linear response (top-level polarizability) -- the X-only
-    # (right-hand perturbed amplitudes at +/-omega) formulation. Spin-orbital
-    # for now; the spin-adapted (spatial) branch is added next. The asymmetric
-    # solve_left / in_Y*/r_Y* / linresp_asym machinery above is retained
-    # (deprecated for linear response) for the future quadratic response.
-    # ------------------------------------------------------------------
-
-    def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-                       max_diis=7, start_diis=1):
-        """Dipole polarizability tensor at frequency omega via the symmetric response
-        function (right-hand perturbed amplitudes only). Returns a 3x3 array."""
-        if self.ccwfn.orbital_basis != 'spinorbital':
-            raise NotImplementedError("The symmetric polarizability is currently "
-                                      "implemented for the spin-orbital path only.")
-        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
-        Xp, Xm = [], []
-        for axis in range(3):
-            A = self.pertbar["MU_" + self.cart[axis]]
-            X1, X2, _ = self.solve_right(A, omega, *args)
-            Xp.append([X1.copy(), X2.copy()])
-            if omega == 0.0:
-                Xm.append([X1.copy(), X2.copy()])
-            else:
-                X1, X2, _ = self.solve_right(A, -omega, *args)
-                Xm.append([X1.copy(), X2.copy()])
-
-        polar = np.zeros((3, 3))
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["MU_" + self.cart[b]]
-                polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
-        return polar
-
-    def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-               max_diis=7, start_diis=1):
-        """Optical-rotation tensor (length gauge, <<mu;m>>) at frequency omega via the
-        symmetric response function. Returns a 3x3 array.
-
-        G'_omega = (1/2) <<mu; m>>_omega + (1/2) <<mu; m*>>_{-omega}, assembled from the
-        right-hand perturbed amplitudes X(mu,-omega), X(m,+omega), X(mu,+omega),
-        X(m*,-omega).
-        """
-        if self.ccwfn.orbital_basis != 'spinorbital':
-            raise NotImplementedError("The symmetric optical rotation is currently "
-                                      "implemented for the spin-orbital path only.")
-        if omega == 0.0:
-            raise ValueError("Optical rotation requires a nonzero field frequency.")
-        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
-
-        Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
-        for axis in range(3):
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
-            Xmu_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
-            Xmu_m.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
-            Xm_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
-            Xmstar_m.append([X1.copy(), X2.copy()])
-
-        tensor = np.zeros((3, 3))
-        # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["M_" + self.cart[b]]
-                tensor[a, b] = 0.5 * self.linresp_sym(A, Xmu_m[a], B, Xm_p[b])
-        # (1/2) <<mu; m*>>_{-omega}  with X(mu,+omega) and X(m*,-omega)
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["M*_" + self.cart[b]]
-                tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
-        return tensor
-
-    def linresp_sym(self, A, X_A, B, X_B):
-        """Symmetric CC linear-response function value <<A;B>>_omega, built from the
-        right-hand perturbed amplitudes X_A = X(A,-omega), X_B = X(B,+omega)."""
-        o, v = self.ccwfn.o, self.ccwfn.v
-        contract = self.contract
-        ERI = self.H.ERI
-        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
-        polar += contract('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])
-        polar += self.LHX1Y1(X_A, X_B)
-        polar += self.LHX2Y2(X_A, X_B)
-        polar += self.LHX1Y2(X_A, X_B)
-        polar += self.LHX1Y2(X_B, X_A)
-        return polar
-
-    def LCX(self, pert, X):
-        contract = self.contract
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        X1, X2 = X[0], X[1]
-        polar = contract('ia,ia->', pert.Aov, X1)
-        tmp = contract('ae,ie->ia', pert.Avv, X1)
-        tmp -= contract('mi,ma->ia', pert.Aoo, X1)
-        tmp += contract('me,imae->ia', pert.Aov, X2)
-        polar += contract('ia,ia->', l1, tmp)
-        tmp = contract('abej,ie->ijab', pert.Avvvo, X1)
-        tmp -= contract('mbij,ma->ijab', pert.Aovoo, X1)
-        tmp += contract('be,ijae->ijab', pert.Avv, X2)
-        tmp -= contract('mj,imab->ijab', pert.Aoo, X2)
-        polar += 0.5 * contract('ijab,ijab->', l2, tmp)
-        return polar
-
-    def LHX1Y1(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        t2 = self.ccwfn.t2
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        ERI = self.H.ERI
-        X1, Y1 = X[0], Y[0]
-        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
-        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)
-        tmp += contract('amef,imef->ia', hbar.Hvovv, tau)
-        tmp -= contract('mnie,mnae->ia', hbar.Hooov, tau)
-        polar = contract('ia,ia->', l1, tmp)
-        Zvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], tau)
-        Zoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], tau)
-        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)
-        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)
-        tmp -= contract('mbej,imea->ijab', hbar.Hovvo, tau)
-        tmp -= contract('ijaf,fb->ijab', t2, Zvv)
-        tmp -= contract('inab,nj->ijab', t2, Zoo)
-        polar += contract('ijab,ijab->', l2, tmp)
-        return polar
-
-    def LHX2Y2(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l2 = self.cclambda.l2
-        ERI = self.H.ERI
-        X2, Y2 = X[1], Y[1]
-        Zovvo = contract('mnef,njfb->mbej', ERI[o,o,v,v], Y2)
-        Zoooo_A = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], X2)
-        Zoooo_B = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], Y2)
-        Zvv_A = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], Y2)
-        Zvv_B = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], X2)
-        Zoo_A = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], Y2)
-        Zoo_B = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], X2)
-        tmp = contract('mbej,imae->ijab', Zovvo, X2)
-        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_A, Y2)
-        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_B, X2)
-        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_A, X2)
-        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_B, Y2)
-        tmp += 0.5 * contract('mj,imab->ijab', Zoo_A, X2)
-        tmp += 0.5 * contract('mj,imab->ijab', Zoo_B, Y2)
-        return contract('ijab,ijab->', l2, tmp)
-
-    def LHX1Y2(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        ERI = self.H.ERI
-        X1, Y2 = X[0], Y[1]
-        Zov = contract('mnef,me->nf', ERI[o,o,v,v], X1)
-        Zvv = -0.5 * contract('mnef,mnaf->ea', ERI[o,o,v,v], Y2)
-        Zoo = -0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], Y2)
-        tmp = contract('nf,nifa->ia', Zov, Y2)
-        tmp += contract('ea,ie->ia', Zvv, X1)
-        tmp += contract('mi,ma->ia', Zoo, X1)
-        polar = contract('ia,ia->', l1, tmp)
-        Zoo = contract('me,ie->mi', hbar.Hov, X1)
-        Zoo += contract('mnie,ne->mi', hbar.Hooov, X1)
-        Zvv = contract('me,ma->ea', hbar.Hov, X1)
-        Zvv -= contract('amef,mf->ea', hbar.Hvovv, X1)
-        Zvoov = contract('anfe,if->anie', hbar.Hvovv, X1)
-        Zvoov -= contract('mnie,ma->anie', hbar.Hooov, X1)
-        Zoooo = 0.5 * contract('mnie,je->mnij', hbar.Hooov, X1)
-        Zoovo = 0.5 * contract('amef,ijef->ijam', hbar.Hvovv, Y2)
-        tmp = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)
-        tmp -= 0.5 * contract('ea,ijeb->ijab', Zvv, Y2)
-        tmp += contract('anie,njeb->ijab', Zvoov, Y2)
-        tmp += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)
-        tmp -= 0.5 * contract('ijam,mb->ijab', Zoovo, X1)
-        polar += contract('ijab,ijab->', l2, tmp)
-        return polar
 
 class pertbar(object):
     def __init__(self, pert: Tensor, ccwfn: "CCwfn") -> None:
