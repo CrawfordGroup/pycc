@@ -523,12 +523,44 @@ class ccresponse(object):
         return polar
 
     def LCX(self, pert, X):
-        """One-particle-density (LCX) term of the symmetric response function."""
+        """One-particle-density (LCX) term of the symmetric response function:
+        <0|(1+L)[Abar, X]|0>. (Diagram labels match _LCX_spinorbital; this is the same
+        quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)"""
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LCX_spinorbital(pert, X)
-        raise NotImplementedError(
-            "Spatial spin-adapted LCX not yet implemented (phase 9a-ii); "
-            "see _LCX_spinorbital for the spin-orbital structure.")
+        # spin-adapted (spatial) LCX
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        X1, X2 = X[0], X[1]
+        # <0|[Abar, X1]|0>                                          (diagram 1)
+        polar = 2.0 * contract('ia,ia->', pert.Aov, X1)
+        # <0|L1[Abar, X1]|0>                                        (diagrams 2, 3)
+        tmp = contract('ia,ic->ac', l1, X1)
+        polar += contract('ac,ac->', tmp, pert.Avv)
+        tmp = contract('ia,ka->ik', l1, X1)
+        polar -= contract('ik,ki->', tmp, pert.Aoo)
+        # <0|L1[Abar, X2]|0>                                        (diagram 8)
+        tmp = contract('ia,jb->ijab', l1, pert.Aov)
+        polar += 2.0 * contract('ijab,ijab->', tmp, X2)
+        polar -= contract('ijab,ijba->', tmp, X2)
+        # <0|L2[Abar, X1]|0>                                        (diagrams 4, 5)
+        tmp = contract('ijbc,bcaj->ia', l2, pert.Avvvo)
+        polar += contract('ia,ia->', tmp, X1)
+        tmp = contract('ijab,kbij->ak', l2, pert.Aovoo)
+        polar -= 0.5 * contract('ak,ka->', tmp, X1)
+        tmp = contract('ijab,kaji->bk', l2, pert.Aovoo)
+        polar -= 0.5 * contract('bk,kb->', tmp, X1)
+        # <0|L2[Abar, X2]|0>                                        (diagrams 6, 7)
+        tmp = contract('ijab,kjab->ik', l2, X2)
+        polar -= 0.5 * contract('ik,ki->', tmp, pert.Aoo)
+        tmp = contract('ijab,kiba->jk', l2, X2)
+        polar -= 0.5 * contract('jk,kj->', tmp, pert.Aoo)
+        tmp = contract('ijab,ijac->bc', l2, X2)
+        polar += 0.5 * contract('bc,bc->', tmp, pert.Avv)
+        tmp = contract('ijab,ijcb->ac', l2, X2)
+        polar += 0.5 * contract('ac,ac->', tmp, pert.Avv)
+        return polar
 
     def _LCX_spinorbital(self, pert, X):
         contract = self.contract
