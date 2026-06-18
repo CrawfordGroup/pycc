@@ -580,12 +580,41 @@ class ccresponse(object):
         return polar
 
     def LHX1Y1(self, X, Y):
-        """X1*Y1 (LHX1Y1) term of the symmetric response function."""
+        """X1*Y1 (LHX1Y1) term of the symmetric response function:
+        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _LHX1Y1_spinorbital.)"""
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LHX1Y1_spinorbital(X, Y)
-        raise NotImplementedError(
-            "Spatial spin-adapted LHX1Y1 not yet implemented (phase 9a-ii); "
-            "see _LHX1Y1_spinorbital for the spin-orbital structure.")
+        # spin-adapted (spatial) LHX1Y1
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        L = self.H.L
+        X1, Y1 = X[0], Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
+        # L1 part (diagrams 1-2, 7-10): naive Hov, L-combinations on Hvovv/Hooov
+        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2,3)
+        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0,1)
+        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)
+        tmp += contract('amef,imef->ia', HvL, tau)
+        tmp -= contract('mnie,mnae->ia', HoL, tau)
+        polar = contract('ia,ia->', l1, tmp)
+        # L2 part (diagrams 3-6, 11-14). The ring (diagrams 5,6) follows the
+        # _r_T2_ccsd t1*t1 disconnected ring, but with both singles orderings
+        # (X1(x)Y1 and Y1(x)X1, here folded into tau) since X1 != Y1 in general.
+        Zvv = 0.5 * contract('mnef,mneb->fb', L[o,o,v,v], tau)
+        Zoo = 0.5 * contract('mnef,mjef->nj', L[o,o,v,v], tau)
+        ring = (-contract('imea,mbej->ijab', tau, hbar.Hovvo)
+                - contract('imeb,maje->ijab', tau, hbar.Hovov))
+        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)
+        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)
+        tmp -= contract('ijaf,fb->ijab', t2, Zvv)
+        tmp -= contract('inab,nj->ijab', t2, Zoo)
+        tmp += 0.5 * ring
+        polar += 2.0 * contract('ijab,ijab->', l2, tmp)
+        return polar
 
     def _LHX1Y1_spinorbital(self, X, Y):
         contract = self.contract
@@ -1161,6 +1190,9 @@ class pertbar(object):
 
         self.Avvvo = -1.0*contract('miab,me->abei', t2, pert[o,v])
 
+        # TODO(spin-adapted pertbar): the formulation of this Avvoo term needs to be
+        # fixed (flagged by TDC, 2026-06-18) -- revisit before relying on the spatial
+        # symmetric response.
         # Note that Avvoo is permutationally symmetric, unlike the implementation in ugacc
         self.Avvoo = contract('ijeb,ae->ijab', t2, self.Avv)
         self.Avvoo -= contract('mjab,mi->ijab', t2, self.Aoo)
