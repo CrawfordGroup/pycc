@@ -139,7 +139,8 @@ _Last updated 2026-06-17._
 | 5 — ROHF (semicanonical) | ✅ done | PR #138 |
 | 6 — SO CISD/CID (UHF/ROHF) | ✅ done | PR #139 |
 | 7 — SO Lambda (CCSD) | ✅ done | PR #140 |
-| 8 — SO density + CC dipole | 🟡 in review | branch `feature/spinorbital-density` |
+| 8 — SO density + CC dipole | ✅ done | PR #142 |
+| 9a — SO symmetric polarizability | 🟡 in review | branch `feature/spinorbital-response-polar` |
 
 ### Phase 1 — what landed
 
@@ -283,6 +284,27 @@ Turns Lambda into an open-shell **property** -- the first CC dipole for UHF/ROHF
   `DIFF_TYPE=UNRELAXED`, `CC_PROG=ECC`, `ABCDTYPE=AOBASIS`, plus `FIXGEOM=ON` (Cartesian
   input) so CFOUR keeps the input frame -- its SCF dipole then matches Psi4's exactly and
   the reference is simply CFOUR's `CCSD - SCF` electronic dipole (~1e-10).
+
+### Phase 9 — response (in progress)
+
+Decision: a NEW **symmetric** linear-response framework (socc-style: top-level
+`polarizability`/`optrot`, right-hand X amplitudes only at +/-omega, no Y) serving BOTH
+bases, eventually superseding the asymmetric `ccresponse` for *linear* response. The
+asymmetric machinery (`solve_left`, `in_Y*`/`r_Y*`, `linresp_asym`) is **kept (deprecated
+for linear response)** -- the quadratic response function will need the left-hand
+contributions. Split: 9a polarizability (9a-i spin-orbital, 9a-ii spatial spin-adapted),
+9b optical rotation.
+
+**Phase 9a-i (SO symmetric polarizability):**
+- `pycc/ccresponse.py`: `pertbar`, `pseudoresponse`, `r_X1`, `r_X2` branch on
+  `orbital_basis` to spin-orbital siblings (ported from socc). New top-level
+  `polarizability(omega)` + symmetric `linresp_sym` + `LCX`/`LHX1Y1`/`LHX2Y2`/`LHX1Y2`
+  (spin-orbital). The spatial branch of `polarizability` raises for now (9a-ii).
+- Validation (`test_055`): SO-RHF dynamic polarizability (isotropic, omega=0.1) ==
+  Psi4 CCSD polarizability (~1.8e-12); UHF/ROHF **static** polarizability == in-place
+  finite difference of the CCSD energy (~1e-8/1e-9). No code does open-shell CC
+  *dynamic* polarizabilities, so static-via-finite-difference is the open-shell check
+  (the dynamic kernel is validated for RHF and is identical for UHF/ROHF).
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the

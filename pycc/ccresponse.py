@@ -489,6 +489,16 @@ class ccresponse(object):
         X2 = self.X2
         hbar = self.hbar
 
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            r_X1 = (pertbar.Avo.T - omega * X1).copy()
+            r_X1 += contract('ie,ae->ia', X1, hbar.Hvv)
+            r_X1 -= contract('ma,mi->ia', X1, hbar.Hoo)
+            r_X1 += contract('me,maei->ia', X1, hbar.Hovvo)
+            r_X1 += contract('me,imae->ia', hbar.Hov, X2)
+            r_X1 += 0.5 * contract('imef,amef->ia', X2, hbar.Hvovv)
+            r_X1 -= 0.5 * contract('mnae,mnie->ia', X2, hbar.Hooov)
+            return r_X1
+
         r_X1 = (pertbar.Avo.T - omega * X1).copy()
         r_X1 += contract('ie,ae->ia', X1, hbar.Hvv)
         r_X1 -= contract('ma,mi->ia', X1, hbar.Hoo)
@@ -508,8 +518,29 @@ class ccresponse(object):
         X2 = self.X2
         t2 = self.ccwfn.t2
         hbar = self.hbar
-        L = self.H.L
 
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            ERI = self.H.ERI
+            Zvv = contract('amef,me->af', hbar.Hvovv, X1)
+            Zoo = contract('mnie,me->ni', hbar.Hooov, X1)
+            Yoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], X2)
+            Yvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], X2)
+            r_X2 = (pertbar.Avvoo - omega * X2).copy()
+            r_X2 += contract('ie,abej->ijab', X1, hbar.Hvvvo) - contract('je,abei->ijab', X1, hbar.Hvvvo)
+            r_X2 -= contract('ma,mbij->ijab', X1, hbar.Hovoo) - contract('mb,maij->ijab', X1, hbar.Hovoo)
+            r_X2 += contract('ni,njab->ijab', Zoo, t2) - contract('nj,niab->ijab', Zoo, t2)
+            r_X2 -= contract('af,ijfb->ijab', Zvv, t2) - contract('bf,ijfa->ijab', Zvv, t2)
+            r_X2 -= contract('nj,inab->ijab', Yoo, t2) - contract('ni,jnab->ijab', Yoo, t2)
+            r_X2 -= contract('fb,ijaf->ijab', Yvv, t2) - contract('fa,ijbf->ijab', Yvv, t2)
+            r_X2 += contract('ijae,be->ijab', X2, hbar.Hvv) - contract('ijbe,ae->ijab', X2, hbar.Hvv)
+            r_X2 -= contract('imab,mj->ijab', X2, hbar.Hoo) - contract('jmab,mi->ijab', X2, hbar.Hoo)
+            r_X2 += 0.5 * contract('mnab,mnij->ijab', X2, hbar.Hoooo)
+            r_X2 += 0.5 * contract('ijef,abef->ijab', X2, hbar.Hvvvv)
+            tmp = contract('imae,mbej->ijab', X2, hbar.Hovvo)
+            r_X2 += tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3) + tmp.swapaxes(0,1).swapaxes(2,3)
+            return r_X2
+
+        L = self.H.L
         Zvv = contract('amef,mf->ae', (2.0*hbar.Hvovv - hbar.Hvovv.swapaxes(2,3)), X1)
         Zvv -= contract('mnef,mnaf->ae', L[o,o,v,v], X2)
 
@@ -830,12 +861,159 @@ class ccresponse(object):
 
     def pseudoresponse(self, pertbar: "pertbar", X1: Tensor, X2: Tensor):
         contract = self.ccwfn.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            polar1 = contract('ai,ia->', pertbar.Avo, X1)
+            polar2 = 0.25 * contract('ijab,ijab->', pertbar.Avvoo, X2)
+            return -2.0 * (polar1 + polar2)
         polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
 #polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
         polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
-        return -2.0*(polar1 + polar2) 
-        
+        return -2.0*(polar1 + polar2)
+
+    # ------------------------------------------------------------------
+    # Symmetric linear response (top-level polarizability) -- the X-only
+    # (right-hand perturbed amplitudes at +/-omega) formulation. Spin-orbital
+    # for now; the spin-adapted (spatial) branch is added next. The asymmetric
+    # solve_left / in_Y*/r_Y* / linresp_asym machinery above is retained
+    # (deprecated for linear response) for the future quadratic response.
+    # ------------------------------------------------------------------
+
+    def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+                       max_diis=7, start_diis=1):
+        """Dipole polarizability tensor at frequency omega via the symmetric response
+        function (right-hand perturbed amplitudes only). Returns a 3x3 array."""
+        if self.ccwfn.orbital_basis != 'spinorbital':
+            raise NotImplementedError("The symmetric polarizability is currently "
+                                      "implemented for the spin-orbital path only.")
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+        Xp, Xm = [], []
+        for axis in range(3):
+            A = self.pertbar["MU_" + self.cart[axis]]
+            X1, X2, _ = self.solve_right(A, omega, *args)
+            Xp.append([X1.copy(), X2.copy()])
+            if omega == 0.0:
+                Xm.append([X1.copy(), X2.copy()])
+            else:
+                X1, X2, _ = self.solve_right(A, -omega, *args)
+                Xm.append([X1.copy(), X2.copy()])
+
+        polar = np.zeros((3, 3))
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["MU_" + self.cart[b]]
+                polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
+        return polar
+
+    def linresp_sym(self, A, X_A, B, X_B):
+        """Symmetric CC linear-response function value <<A;B>>_omega, built from the
+        right-hand perturbed amplitudes X_A = X(A,-omega), X_B = X(B,+omega)."""
+        o, v = self.ccwfn.o, self.ccwfn.v
+        contract = self.contract
+        ERI = self.H.ERI
+        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
+        polar += contract('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])
+        polar += self.LHX1Y1(X_A, X_B)
+        polar += self.LHX2Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_B, X_A)
+        return polar
+
+    def LCX(self, pert, X):
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        X1, X2 = X[0], X[1]
+        polar = contract('ia,ia->', pert.Aov, X1)
+        tmp = contract('ae,ie->ia', pert.Avv, X1)
+        tmp -= contract('mi,ma->ia', pert.Aoo, X1)
+        tmp += contract('me,imae->ia', pert.Aov, X2)
+        polar += contract('ia,ia->', l1, tmp)
+        tmp = contract('abej,ie->ijab', pert.Avvvo, X1)
+        tmp -= contract('mbij,ma->ijab', pert.Aovoo, X1)
+        tmp += contract('be,ijae->ijab', pert.Avv, X2)
+        tmp -= contract('mj,imab->ijab', pert.Aoo, X2)
+        polar += 0.5 * contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX1Y1(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y1 = X[0], Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
+        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)
+        tmp += contract('amef,imef->ia', hbar.Hvovv, tau)
+        tmp -= contract('mnie,mnae->ia', hbar.Hooov, tau)
+        polar = contract('ia,ia->', l1, tmp)
+        Zvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], tau)
+        Zoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], tau)
+        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)
+        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)
+        tmp -= contract('mbej,imea->ijab', hbar.Hovvo, tau)
+        tmp -= contract('ijaf,fb->ijab', t2, Zvv)
+        tmp -= contract('inab,nj->ijab', t2, Zoo)
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX2Y2(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l2 = self.cclambda.l2
+        ERI = self.H.ERI
+        X2, Y2 = X[1], Y[1]
+        Zovvo = contract('mnef,njfb->mbej', ERI[o,o,v,v], Y2)
+        Zoooo_A = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], X2)
+        Zoooo_B = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], Y2)
+        Zvv_A = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], Y2)
+        Zvv_B = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], X2)
+        Zoo_A = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], Y2)
+        Zoo_B = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], X2)
+        tmp = contract('mbej,imae->ijab', Zovvo, X2)
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_A, Y2)
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_B, X2)
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_A, X2)
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_B, Y2)
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_A, X2)
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_B, Y2)
+        return contract('ijab,ijab->', l2, tmp)
+
+    def LHX1Y2(self, X, Y):
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y2 = X[0], Y[1]
+        Zov = contract('mnef,me->nf', ERI[o,o,v,v], X1)
+        Zvv = -0.5 * contract('mnef,mnaf->ea', ERI[o,o,v,v], Y2)
+        Zoo = -0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], Y2)
+        tmp = contract('nf,nifa->ia', Zov, Y2)
+        tmp += contract('ea,ie->ia', Zvv, X1)
+        tmp += contract('mi,ma->ia', Zoo, X1)
+        polar = contract('ia,ia->', l1, tmp)
+        Zoo = contract('me,ie->mi', hbar.Hov, X1)
+        Zoo += contract('mnie,ne->mi', hbar.Hooov, X1)
+        Zvv = contract('me,ma->ea', hbar.Hov, X1)
+        Zvv -= contract('amef,mf->ea', hbar.Hvovv, X1)
+        Zvoov = contract('anfe,if->anie', hbar.Hvovv, X1)
+        Zvoov -= contract('mnie,ma->anie', hbar.Hooov, X1)
+        Zoooo = 0.5 * contract('mnie,je->mnij', hbar.Hooov, X1)
+        Zoovo = 0.5 * contract('amef,ijef->ijam', hbar.Hvovv, Y2)
+        tmp = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)
+        tmp -= 0.5 * contract('ea,ijeb->ijab', Zvv, Y2)
+        tmp += contract('anie,njeb->ijab', Zvoov, Y2)
+        tmp += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)
+        tmp -= 0.5 * contract('ijam,mb->ijab', Zoovo, X1)
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
 class pertbar(object):
     def __init__(self, pert: Tensor, ccwfn: "CCwfn") -> None:
         o = ccwfn.o
@@ -843,6 +1021,27 @@ class pertbar(object):
         t1 = ccwfn.t1
         t2 = ccwfn.t2
         contract = ccwfn.contract
+
+        if ccwfn.orbital_basis == 'spinorbital':
+            # Spin-orbital similarity-transformed perturbation (no RHF spin factors).
+            self.Aov = pert[o,v].copy()
+            self.Aoo = pert[o,o].copy()
+            self.Aoo += contract('ie,me->mi', t1, pert[o,v])
+            self.Avv = pert[v,v].copy()
+            self.Avv -= contract('ma,me->ae', t1, pert[o,v])
+            self.Avo = pert[v,o].copy()
+            self.Avo += contract('ie,ae->ai', t1, pert[v,v])
+            self.Avo -= contract('ma,mi->ai', t1, pert[o,o])
+            self.Avo += contract('miea,me->ai', t2, pert[o,v])
+            self.Avo -= contract('ie,ma,me->ai', t1, t1, pert[o,v])
+            self.Aovoo = contract('ijeb,me->mbij', t2, pert[o,v])
+            self.Avvvo = -1.0 * contract('miab,me->abei', t2, pert[o,v])
+            # Stored oovv-ordered to match X2/t2/l2; full (antisymmetric) form.
+            self.Avvoo = (contract('ijae,be->ijab', t2, self.Avv)
+                          - contract('ijbe,ae->ijab', t2, self.Avv))
+            self.Avvoo -= (contract('imab,mj->ijab', t2, self.Aoo)
+                           - contract('jmab,mi->ijab', t2, self.Aoo))
+            return
 
         self.Aov = pert[o,v].copy()
 
