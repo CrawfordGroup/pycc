@@ -58,46 +58,50 @@ class ccresponse(object):
         # Cartesian indices
         self.cart = ["X", "Y", "Z"]
 
-        # Build dictionary of similarity-transformed property integrals
-        self.pertbar = {}
-
-        # Electric-dipole operator (length)
-        for axis in range(3):
-            key = "MU_" + self.cart[axis]
-            self.pertbar[key] = pertbar(self.H.mu[axis], self.ccwfn)
-
-        # Magnetic-dipole (m) and velocity-gauge electric-dipole / linear-momentum (p)
-        # integrals are stored *pure imaginary* in hamiltonian.py (H.m, H.p = i * real)
-        # because the RT-CC code relies on that. For response, factor the i out here so
-        # the perturbed amplitudes X1/X2 stay real: a pure-imaginary perturbation i*A
-        # gives X = i*x (x real), and the pseudoresponse/polarizability are bilinear in
-        # the perturbation (~ conj(c)*c = |c|^2), so dropping the i leaves every property
-        # value unchanged while halving the amplitude storage and removing complex
-        # arithmetic. np.real(-1.0j * pert) returns a real-dtype A (not a complex array
-        # with zero imaginary part); the -1.0j is applied to the conjugate operators too,
-        # so M* = -M (and P* = -P) stays distinct from M (P).
-        for axis in range(3):
-            self.pertbar["M_" + self.cart[axis]] = pertbar(np.real(-1.0j * self.H.m[axis]), self.ccwfn)
-            self.pertbar["M*_" + self.cart[axis]] = pertbar(np.real(-1.0j * np.conj(self.H.m[axis])), self.ccwfn)
-            self.pertbar["P_" + self.cart[axis]] = pertbar(np.real(-1.0j * self.H.p[axis]), self.ccwfn)
-            self.pertbar["P*_" + self.cart[axis]] = pertbar(np.real(-1.0j * np.conj(self.H.p[axis])), self.ccwfn)
-
-        # Traceless quadrupole
-        ij = 0
-        for axis1 in range(3):
-            for axis2 in range(axis1,3):
-                key = "Q_" + self.cart[axis1] + self.cart[axis2]
-                self.pertbar[key] = pertbar(self.H.Q[ij], self.ccwfn)
-                if (axis1 != axis2):
-                    key2 = "Q_" + self.cart[axis2] + self.cart[axis1]
-                    self.pertbar[key2] = self.pertbar[key]
-                ij += 1
+        # Similarity-transformed property integrals are built lazily, on first access
+        # (see _build_pertbar / _PertbarCache), so each response function constructs only
+        # the operators it actually uses -- polarizability needs MU, optical rotation
+        # needs MU and M/M* -- rather than all of them (MU, M, M*, P, P*, Q) up front.
+        self.pertbar = _PertbarCache(self)
 
         # HBAR-based denominators
         eps_occ = np.diag(self.hbar.Hoo)
         eps_vir = np.diag(self.hbar.Hvv)
         self.Dia = eps_occ.reshape(-1,1) - eps_vir
         self.Dijab = eps_occ.reshape(-1,1,1,1) + eps_occ.reshape(-1,1,1) - eps_vir.reshape(-1,1) - eps_vir
+
+    def _build_pertbar(self, key):
+        """Build the similarity-transformed perturbation operator for a single key
+        (e.g. 'MU_X', 'M_Y', 'M*_Z', 'P_X', 'Q_XY'). Called lazily by ``self.pertbar``
+        on first access, so a response function pays only for the operators it uses.
+
+        The magnetic-dipole (M) and velocity-gauge (P) integrals are stored *pure
+        imaginary* in hamiltonian.py (H.m, H.p = i * real) for the RT-CC code; the i is
+        factored out here so the perturbed amplitudes stay real (the property values are
+        bilinear in the perturbation, so dropping the i changes nothing). np.real(-1.0j *
+        pert) returns a real-dtype operator; applied to the conjugates too, so M* = -M
+        (P* = -P) stays distinct from M (P).
+        """
+        ax = {"X": 0, "Y": 1, "Z": 2}
+        name, comp = key.split("_", 1)
+        if name == "MU":
+            pert = self.H.mu[ax[comp]]
+        elif name == "M":
+            pert = np.real(-1.0j * self.H.m[ax[comp]])
+        elif name == "M*":
+            pert = np.real(-1.0j * np.conj(self.H.m[ax[comp]]))
+        elif name == "P":
+            pert = np.real(-1.0j * self.H.p[ax[comp]])
+        elif name == "P*":
+            pert = np.real(-1.0j * np.conj(self.H.p[ax[comp]]))
+        elif name == "Q":
+            a1, a2 = sorted((ax[comp[0]], ax[comp[1]]))
+            # H.Q is ordered XX, XY, XZ, YY, YZ, ZZ
+            qidx = {(0,0): 0, (0,1): 1, (0,2): 2, (1,1): 3, (1,2): 4, (2,2): 5}[(a1, a2)]
+            pert = self.H.Q[qidx]
+        else:
+            raise KeyError("Unknown perturbation operator key: %r" % key)
+        return pertbar(pert, self.ccwfn)
 
     def pertcheck(self, omega: float, e_conv: float = 1e-13, r_conv: float = 1e-13, maxiter: int = 200, max_diis: int = 8, start_diis: int = 1):
         """
@@ -906,6 +910,48 @@ class ccresponse(object):
                 polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
         return polar
 
+    def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+               max_diis=7, start_diis=1):
+        """Optical-rotation tensor (length gauge, <<mu;m>>) at frequency omega via the
+        symmetric response function. Returns a 3x3 array.
+
+        G'_omega = (1/2) <<mu; m>>_omega + (1/2) <<mu; m*>>_{-omega}, assembled from the
+        right-hand perturbed amplitudes X(mu,-omega), X(m,+omega), X(mu,+omega),
+        X(m*,-omega).
+        """
+        if self.ccwfn.orbital_basis != 'spinorbital':
+            raise NotImplementedError("The symmetric optical rotation is currently "
+                                      "implemented for the spin-orbital path only.")
+        if omega == 0.0:
+            raise ValueError("Optical rotation requires a nonzero field frequency.")
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+
+        Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
+        for axis in range(3):
+            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
+            Xmu_p.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
+            Xmu_m.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
+            Xm_p.append([X1.copy(), X2.copy()])
+            X1, X2, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
+            Xmstar_m.append([X1.copy(), X2.copy()])
+
+        tensor = np.zeros((3, 3))
+        # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M_" + self.cart[b]]
+                tensor[a, b] = 0.5 * self.linresp_sym(A, Xmu_m[a], B, Xm_p[b])
+        # (1/2) <<mu; m*>>_{-omega}  with X(mu,+omega) and X(m*,-omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M*_" + self.cart[b]]
+                tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
+        return tensor
+
     def linresp_sym(self, A, X_A, B, X_B):
         """Symmetric CC linear-response function value <<A;B>>_omega, built from the
         right-hand perturbed amplitudes X_A = X(A,-omega), X_B = X(B,+omega)."""
@@ -1066,3 +1112,18 @@ class pertbar(object):
         self.Avvoo -= contract('mjab,mi->ijab', t2, self.Aoo)
 #self.Avvoo = self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3)
         self.Avvoo = 0.5*(self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3))
+
+
+class _PertbarCache(dict):
+    """A dict of similarity-transformed perturbation operators (pertbar objects) that
+    builds each entry on first access via ``ccresponse._build_pertbar``. This defers
+    pertbar construction so a response function only builds the operators it uses,
+    instead of building all of them (MU, M, M*, P, P*, Q) in the constructor."""
+    def __init__(self, owner):
+        super().__init__()
+        self._owner = owner
+
+    def __missing__(self, key):
+        value = self._owner._build_pertbar(key)
+        self[key] = value
+        return value

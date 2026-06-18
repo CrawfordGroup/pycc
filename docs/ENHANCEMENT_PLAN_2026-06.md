@@ -140,7 +140,8 @@ _Last updated 2026-06-17._
 | 6 — SO CISD/CID (UHF/ROHF) | ✅ done | PR #139 |
 | 7 — SO Lambda (CCSD) | ✅ done | PR #140 |
 | 8 — SO density + CC dipole | ✅ done | PR #142 |
-| 9a — SO symmetric polarizability | 🟡 in review | branch `feature/spinorbital-response-polar` |
+| 9a — SO symmetric polarizability | ✅ done | PR #143 |
+| 9b — SO optical rotation | 🟡 in review | branch `feature/spinorbital-response-optrot` |
 
 ### Phase 1 — what landed
 
@@ -305,6 +306,19 @@ contributions. Split: 9a polarizability (9a-i spin-orbital, 9a-ii spatial spin-a
   finite difference of the CCSD energy (~1e-8/1e-9). No code does open-shell CC
   *dynamic* polarizabilities, so static-via-finite-difference is the open-shell check
   (the dynamic kernel is validated for RHF and is identical for UHF/ROHF).
+
+**Phase 9b (SO optical rotation):**
+- `pycc/ccresponse.py`: new top-level `optrot(omega)` (length gauge, `<<mu;m>>` two-term
+  assembly), reusing the X-solver + `linresp_sym`. Also made `pertbar` construction
+  **lazy**: the constructor no longer builds all operators (MU/M/M*/P/P*/Q); `self.pertbar`
+  is a `_PertbarCache` that builds each via `_build_pertbar` on first access, so a response
+  function pays only for the operators it uses (socc's efficiency, transparent to the
+  deprecated asymmetric callers/tests).
+- Validation (`test_056`): SO-RHF optical-rotation tensor (chiral H2O2/STO-3G,
+  omega=0.077357) == Psi4 CCSD optrot (length gauge) ~6.5e-13 (also confirms the SO
+  magnetic-dipole H.m integrals). UHF/ROHF: no open-shell CC optrot reference exists (a
+  dynamic magnetic property, no finite-difference), so validated by composition; the tests
+  only confirm the open-shell path runs and returns a finite tensor.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
