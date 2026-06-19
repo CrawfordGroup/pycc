@@ -641,12 +641,35 @@ class ccresponse(object):
         return polar
 
     def LHX2Y2(self, X, Y):
-        """X2*Y2 (LHX2Y2) term of the symmetric response function."""
+        """X2*Y2 (LHX2Y2) term of the symmetric response function:
+        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _LHX2Y2_spinorbital.)"""
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LHX2Y2_spinorbital(X, Y)
-        raise NotImplementedError(
-            "Spatial spin-adapted LHX2Y2 not yet implemented (phase 9a-ii); "
-            "see _LHX2Y2_spinorbital for the spin-orbital structure.")
+        # spin-adapted (spatial) LHX2Y2
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l2 = self.cclambda.l2
+        ERI = self.H.ERI[o, o, v, v]
+        L = self.H.L[o, o, v, v]
+        X2, Y2 = X[1], Y[1]
+        # diagram 1 (ph-ring): the T2-equation Wmbej/Wmbje intermediates (the 1/2-
+        # weighted ones from build_Wmbej/build_Wmbje) built from Y2, contracted with X2
+        # via the three-term _r_T2_ccsd ring.
+        Wmbej = -0.5 * contract('jnfb,mnef->mbej', Y2, ERI) + 0.5 * contract('njfb,mnef->mbej', Y2, L)
+        Wmbje = 0.5 * contract('jnfb,mnfe->mbje', Y2, ERI)
+        tmp = contract('imae,mbej->ijab', X2 - X2.swapaxes(2,3), Wmbej)
+        tmp += contract('imae,mbej->ijab', X2, Wmbej + Wmbje.swapaxes(2,3))
+        tmp += contract('mjae,mbie->ijab', X2, Wmbje)
+        # diagrams 2,3 (oo ladder)
+        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, X2), Y2)
+        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, Y2), X2)
+        # diagrams 4,6 (vv ladder)
+        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, Y2), X2)
+        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, X2), Y2)
+        # diagrams 5,7 (oo ladder)
+        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, Y2), X2)
+        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, X2), Y2)
+        return 2.0 * contract('ijab,ijab->', l2, tmp)
 
     def _LHX2Y2_spinorbital(self, X, Y):
         contract = self.contract
