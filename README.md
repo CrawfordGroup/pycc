@@ -5,6 +5,7 @@ PyCC
 [![GitHub Actions Build
 Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://github.com/CrawfordGroup/pycc/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/CrawfordGroup/pycc/branch/main/graph/badge.svg)](https://codecov.io/gh/CrawfordGroup/pycc/branch/main)
+[![Documentation Status](https://readthedocs.org/projects/crawfordgrouppycc/badge/?version=latest)](https://crawfordgrouppycc.readthedocs.io/en/latest/?badge=latest)
 
 A Python-based electronic-structure package centered on coupled cluster, built on a
 shared `Wavefunction` base that also hosts Hartree-Fock, MP2, and CI.  Current capabilities
