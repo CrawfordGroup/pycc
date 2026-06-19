@@ -14,8 +14,10 @@ Done & committed (spatial branch fills the `raise NotImplementedError` stubs):
 - `LHX1Y1` (`f543949`)
 - `LHX2Y2` (`7d5acf2`)
 
-In progress: **`LHX1Y2`** — 7 of its 8 sub-terms derived & validated; the 8th
-(the **voov ring**, diagrams 6,8) is open. Then only **`linresp_sym`** remains.
+**`LHX1Y2`** — DONE & validated (all 8 sub-terms, incl. the voov ring L6_8). Full
+term matches `_LHX1Y2_spinorbital` to ~1e-14 with distinct X,Y across all 3 axes;
+existing response tests (027/036/055/056) still pass. Then only **`linresp_sym`**
+remains.
 
 ## Validation methodology (proven, reusable)
 
@@ -96,7 +98,7 @@ tmp2 += -0.5 * c('ijam,mb->ijab', Zoovo, X1)
 ```
 All 7 validated to ~1e-13 vs the SO sub-values above.
 
-## OPEN: L6_8, the voov ring (diagrams 6,8)
+## SOLVED: L6_8, the voov ring (diagrams 6,8)
 
 SO (`_LHX1Y2_spinorbital`, lines 723-729):
 ```
@@ -104,43 +106,57 @@ Zvoov  = c('anfe,if->anie', hbar.Hvovv, X1)     # +Hvovv part
 Zvoov -= c('mnie,ma->anie', hbar.Hooov, X1)     # -Hooov part
 tmp   += c('anie,njeb->ijab', Zvoov, Y2)        # diagrams 6 and 8
 ```
-SO target -0.004343057400. Split: **Hvovv-part = -0.001506153**, **Hooov-part =
--0.002836904** (the bigger half).
+SO target -0.004343057400 — matched to 4.5e-14.
 
-TDC's recipe (uses Hvovv only; `Hovvv[mbef] = Hvovv[bmfe]`, no swapaxes needed):
-- **"diagram 6"**: `Zmbij = c('bmfe,ijef->mbij', Hvovv, Y2)`; `dia6 = -c('ma,mbij->ijab', X1, Zmbij)`.
-  Mirrors the `Zmbij*T1` term in `_r_T2_ccsd` (ccwfn build_Zmbij line 611; contraction
-  line 776).
-- **"diagram 8"**: `Zmbej = -c('jf,bmfe->mbej', X1, Hvovv)`, `Zmbje = -c('jf,bmef->mbje', X1, Hvovv)`;
-  then the **same three-term ring as LHX2Y2 D1** with Y2 as the external doubles:
-  `ring8 = c('imae,mbej->ijab', Y2-Y2.swapaxes(2,3), Zmbej) + c('imae,mbej->ijab', Y2, Zmbej+Zmbje.swapaxes(2,3)) + c('mjae,mbie->ijab', Y2, Zmbje)`.
+It's **one ph ring**, the `_r_T2_ccsd` three-term ring (ccwfn lines 777-779) with Y2 as
+the external doubles and the **X1-dressed** ph intermediate. The key was that Zvoov uses
+the *dressed* Hbar blocks, so ERI index symmetries don't apply — the intermediates must be
+built from the native `hbar.Hvovv`/`hbar.Hooov` orderings, matching `build_Wmbej`/
+`build_Wmbje`'s t1-part term-by-term (t1->X1, ERI->Hbar). Derivation: cast the SO ring
+into the canonical `D[imae] W[mbej]` form (relabel via l2's i<->j,a<->b symmetry); the
+transposed Y2 external collapses back to Y2 by its own permutational symmetry.
 
-Findings (l2-contracted, outer factor under test):
-- `dia6` (f=1) = **-0.000088757679 == L11 exactly** — appears identical to diagram 11
-  (related by a<->b, which l2 absorbs). So "diagram 6" looks like it IS diagram 11
-  (already counted) — **do not double-count**.
-- `dia8` ring (f=2) = -0.002031815676 (ratio 0.468 of target).
-- Hovvv-only recipe tops out near half; the **-Hooov*X1 half is unaccounted for**.
+Final spatial form (in `LHX1Y2`, folded into `tmp2` which carries the outer 2.0; the ring
+needs relative weight 0.5 because the SO l2 contraction has factor 1, not 2):
+```
+Wmbej =  c('jf,bmfe->mbej', X1, Hvovv) - c('nb,nmje->mbej', X1, Hooov)
+Wmbje = -c('jf,bmef->mbje', X1, Hvovv) + c('nb,mnje->mbje', X1, Hooov)
+ring  = c('imae,mbej->ijab', Y2 - Y2.swapaxes(2,3), Wmbej)
+ring += c('imae,mbej->ijab', Y2, Wmbej + Wmbje.swapaxes(2,3))
+ring += c('mjae,mbie->ijab', Y2, Wmbje)
+tmp2 += 0.5 * ring
+```
+Resolved both prior open questions: there is no standalone "diagram 6" (the dia6==L11
+coincidence was an artifact of the Hvovv-only split); and the missing half WAS the
+`-Hooov*X1` dressing, which enters as the second term of each of Wmbej/Wmbje (mirroring
+the `-t1*ERI` term in build_Wmbej/build_Wmbje).
 
-### Open questions for TDC (pending when session resumes)
-1. Is "diagram 6" the same as diagram 11 (numbers say yes)? If so, drop it from L6_8.
-2. The `-Hooov[mnie]*X1[ma]` part of Zvoov (the larger half) — it parallels the
-   `-t1*ERI[oovo]` piece of `build_Wmbej` (ccwfn line 552). Likely the diagram-8 ring
-   intermediate `Zmbej/Zmbje` should be built from **both** the Hvovv (ovvv) AND a
-   Hooov-type (oovo) dressing, not Hvovv alone. i.e. extend Zmbej/Zmbje to include the
-   `-X1[nb]*Hooov`-type term, then re-run the three-term ring. **Try this next.**
+## DONE: `linresp_sym` (spatial assembly)
 
-## Remaining after L6_8
-1. Assemble full spatial `LHX1Y2`; validate vs `_LHX1Y2_spinorbital` with **distinct**
-   X,Y (mu_a -w/+w, all 3 axes ~1e-13); write into the source stub; run response tests
-   (test_027/036/055/056); commit.
-2. **`linresp_sym`** — only basis-specific piece is the HXY direct term
-   `c('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])` which spin-adapts to the L-combo
-   (`2<ij|ab> - <ij|ba>`); everything else is the assembly already written for SO.
-   Then `polarizability()`/`optrot()` work for spatial RHF -> cross-validate vs the
-   existing asymmetric `linresp_asym`, and vs Psi4 optrot. Then deprecate the
-   asymmetric linear-response path.
-3. Also pending (separate): the `Avvoo` TODO in the spatial `pertbar`
+Identical in structure to `_linresp_sym_spinorbital`: LCX/LHX1Y1/LHX2Y2/LHX1Y2 each
+dispatch to their own (validated) spatial code. The ONLY basis-specific piece is the HXY
+direct term. **Correction to the earlier note:** it spin-adapts to **2*L**, not L. Spin-
+summing `<ij||ab> X_A[ia] X_B[jb]` over (sigma_i, sigma_j): the direct `<ij|ab>` survives
+all 4 spin combos, the exchange `<ij|ba>` only the 2 with sigma_i==sigma_j, giving
+`4<ij|ab> - 2<ij|ba> = 2*L`. (Found via a per-term polar decomposition: HXY was the lone
+term off, by exactly 2x.)
+```
+polar += 2.0 * c('ijab,ia,jb->', self.H.L[o,o,v,v], X_A[0], X_B[0])
+```
+Validation (H2O/STO-3G, omega=0.1):
+- `polarizability(0.1)`: spatial == spinorbital to 1.2e-12; spatial isotropic ==
+  Psi4 CCSD to 9.9e-13.
+- `optrot(0.1)`: spatial == spinorbital to 8.5e-14 (so the M / M* pertbar path through
+  the same kernel also works).
+- Existing response tests 027/036/055/056 still pass.
+
+The `Avvoo` TODO did NOT break either property -- the perturbed X2 it yields gives
+polarizability matching Psi4 to ~1e-12. Leave the TODO note but it is not blocking 9a-ii.
+
+## Remaining
+1. (Optional) cross-validate spatial symmetric vs the existing asymmetric `linresp_asym`,
+   then deprecate the asymmetric linear-response path.
+2. Separate/non-blocking: the `Avvoo` TODO in the spatial `pertbar`
    (ccresponse.py, `TODO(spin-adapted pertbar)`), flagged by TDC.
-4. Flip the plan doc's 9b row to "done / PR #144" and add the 9a-ii rows inside this
+3. Flip the plan doc's 9b row to "done / PR #144" and add the 9a-ii rows inside this
    branch's commits before the PR.

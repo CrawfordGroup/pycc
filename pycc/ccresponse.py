@@ -327,8 +327,7 @@ class ccresponse(object):
         Zoo = -1.0*contract('mnie,ne->mi', (2.0*hbar.Hooov - hbar.Hooov.swapaxes(0,1)), X1)
         Zoo -= contract('mnef,inef->mi', L[o,o,v,v], X2)
 
-#r_X2 = 0.5 * (pertbar.Avvoo - omega * X2)
-        r_X2 = pertbar.Avvoo - 0.5 * omega * X2
+        r_X2 = 0.5 * (pertbar.Avvoo - omega * X2)
         r_X2 += contract('ie,abej->ijab', X1, hbar.Hvvvo)
         r_X2 -= contract('ma,mbij->ijab', X1, hbar.Hovoo)
         r_X2 += contract('mi,mjab->ijab', Zoo, t2)
@@ -353,8 +352,7 @@ class ccresponse(object):
             polar2 = 0.25 * contract('ijab,ijab->', pertbar.Avvoo, X2)
             return -2.0 * (polar1 + polar2)
         polar1 = 2.0 * contract('ai,ia->', np.conj(pertbar.Avo), X1)
-#polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
-        polar2 = 2.0 * contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
+        polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
         return -2.0*(polar1 + polar2)
 
@@ -496,13 +494,42 @@ class ccresponse(object):
         float
             The requested component of the linear-response tensor (sum of the LCX,
             HXY, LHX1Y1, LHX2Y2, and LHX1Y2 contributions).
+
+        Notes
+        -----
+        Spin-adapted (spatial) assembly (the spin-orbital path has the same
+        structure; each component dispatches to its own basis-specific code). The
+        only explicit contraction is the HXY direct term: spin-summing the
+        antisymmetrized <ij||ab> X_A1_ia X_B1_jb over the (sigma_i, sigma_j) spin
+        cases gives 4<ij|ab> - 2<ij|ba> = 2 L_ijab (L = 2<ij|ab> - <ij|ba>) -- the
+        direct integral survives all four spin combinations, the exchange only the
+        two with sigma_i == sigma_j::
+
+            <<A;B>>_w = LCX(A, X_B) + LCX(B, X_A)              (LCX)
+                      + 2 L_ijab X_A1_ia X_B1_jb               (HXY)
+                      + LHX1Y1(X_A, X_B)                       (LHX1Y1)
+                      + LHX2Y2(X_A, X_B)                       (LHX2Y2)
+                      + LHX1Y2(X_A, X_B) + LHX1Y2(X_B, X_A)    (LHX1Y2)
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._linresp_sym_spinorbital(A, X_A, B, X_B)
-        # spin-adapted (spatial) assembly -- phase 9a-ii (to be derived)
-        raise NotImplementedError(
-            "Spatial spin-adapted linresp_sym not yet implemented (phase 9a-ii); "
-            "see _linresp_sym_spinorbital for the spin-orbital structure.")
+        # spin-adapted (spatial) assembly. Identical in structure to the spin-orbital
+        # path: LCX/LHX1Y1/LHX2Y2/LHX1Y2 each dispatch to their own spatial code. The
+        # only basis-specific piece is the HXY direct term. Spin-summing the
+        # antisymmetrized <ij||ab> X_A[ia] X_B[jb] over the (sigma_i, sigma_j) spin
+        # cases gives 4<ij|ab> - 2<ij|ba> = 2*L (L = 2<ij|ab> - <ij|ba> = self.H.L):
+        # the direct integral survives all four spin combinations, the exchange only
+        # the two with sigma_i == sigma_j.
+        o, v = self.ccwfn.o, self.ccwfn.v
+        contract = self.contract
+        L = self.H.L
+        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
+        polar += 2.0 * contract('ijab,ia,jb->', L[o,o,v,v], X_A[0], X_B[0])
+        polar += self.LHX1Y1(X_A, X_B)
+        polar += self.LHX2Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_B, X_A)
+        return polar
 
     def _linresp_sym_spinorbital(self, A, X_A, B, X_B):
         o, v = self.ccwfn.o, self.ccwfn.v
@@ -525,7 +552,22 @@ class ccresponse(object):
     def LCX(self, pert, X):
         """One-particle-density (LCX) term of the symmetric response function:
         <0|(1+L)[Abar, X]|0>. (Diagram labels match _LCX_spinorbital; this is the same
-        quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)"""
+        quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). A_* are the
+        similarity-transformed perturbation blocks (pert.Aov / Avv / Aoo / Avvvo /
+        Aovoo)::
+
+            LCX = 2 A_ia X1_ia                                         (diagram 1)
+                + l1_ia X1_ic A_ac - l1_ia X1_ka A_ki                  (diagrams 2, 3)
+                + l1_ia A_jb (2 X2_ijab - X2_ijba)                     (diagram 8)
+                + l2_ijbc A_bcaj X1_ia                                 (diagram 4)
+                - 1/2 l2_ijab A_kbij X1_ka - 1/2 l2_ijab A_kaji X1_kb  (diagram 5)
+                + 1/2 l2_ijab X2_ijac A_bc + 1/2 l2_ijab X2_ijcb A_ac  (diagram 6)
+                - 1/2 l2_ijab X2_kjab A_ki - 1/2 l2_ijab X2_kiba A_kj  (diagram 7)
+        """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LCX_spinorbital(pert, X)
         # spin-adapted (spatial) LCX
@@ -581,7 +623,27 @@ class ccresponse(object):
 
     def LHX1Y1(self, X, Y):
         """X1*Y1 (LHX1Y1) term of the symmetric response function:
-        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _LHX1Y1_spinorbital.)"""
+        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _LHX1Y1_spinorbital.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). H_* are hbar blocks
+        (H_me = H_ov, H_amef = H_vovv, H_mnie = H_ooov, H_mnij = H_oooo,
+        H_abef = H_vvvv, H_mbej = H_ovvo, H_maje = H_ovov); L_mnef = 2<mn|ef> -
+        <mn|fe>; HvL_amef = 2 H_amef - H_amfe and HoL_mnie = 2 H_mnie - H_nmie are
+        the L-combinations of H_vovv / H_ooov. The singles enter through
+        tau_ijab = X1_ia Y1_jb + Y1_ia X1_jb (both orderings, since X1 != Y1)::
+
+            # l1-part (diagrams 1, 2, 7-10)
+            tmp_ia = -H_me tau_imea + HvL_amef tau_imef - HoL_mnie tau_mnae
+            # l2-part (diagrams 3-6, 11-14)
+            Z_fb   = 1/2 L_mnef tau_mneb
+            Z_nj   = 1/2 L_mnef tau_mjef
+            ring   = -tau_imea H_mbej - tau_imeb H_maje               (diagrams 5, 6)
+            tmp_ijab = 1/2 H_mnij X1_ma Y1_nb + 1/2 H_abef X1_ie Y1_jf
+                     - t2_ijaf Z_fb - t2_inab Z_nj + 1/2 ring_ijab
+            LHX1Y1 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
+        """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LHX1Y1_spinorbital(X, Y)
         # spin-adapted (spatial) LHX1Y1
@@ -642,7 +704,29 @@ class ccresponse(object):
 
     def LHX2Y2(self, X, Y):
         """X2*Y2 (LHX2Y2) term of the symmetric response function:
-        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _LHX2Y2_spinorbital.)"""
+        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _LHX2Y2_spinorbital.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). <mn|ef> = ERI[o,o,v,v],
+        L_mnef = 2<mn|ef> - <mn|fe>; W_mbje[e<->j] swaps the last two axes; W_mbie is
+        W_mbje with j -> i. Diagram 1 is the particle-hole ring (the 1/2-weighted
+        W_mbej / W_mbje built from Y2, contracted with X2 through the _r_T2_ccsd
+        three-term ring); diagrams 2-7 are the oo/vv ladders, symmetrized over
+        X2 <-> Y2::
+
+            W_mbej = -1/2 Y2_jnfb <mn|ef> + 1/2 Y2_njfb L_mnef
+            W_mbje =  1/2 Y2_jnfb <mn|fe>
+            tmp_ijab = (X2_imae - X2_imea) W_mbej + X2_imae (W_mbej + W_mbje[e<->j])
+                     + X2_mjae W_mbie                                   (diagram 1)
+                     + 1/2 (1/2 <mn|ef> X2_ijef) Y2_mnab
+                     + 1/2 (1/2 <mn|ef> Y2_ijef) X2_mnab               (diagrams 2, 3)
+                     + 1/2 (-L_mnef Y2_mnbf) X2_ijae
+                     + 1/2 (-L_mnef X2_mnbf) Y2_ijae                   (diagrams 4, 6)
+                     + 1/2 (-L_mnef Y2_jnef) X2_imab
+                     + 1/2 (-L_mnef X2_jnef) Y2_imab                   (diagrams 5, 7)
+            LHX2Y2 = 2 l2_ijab tmp_ijab
+        """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LHX2Y2_spinorbital(X, Y)
         # spin-adapted (spatial) LHX2Y2
@@ -694,12 +778,80 @@ class ccresponse(object):
         return contract('ijab,ijab->', l2, tmp)
 
     def LHX1Y2(self, X, Y):
-        """X1*Y2 (LHX1Y2) term of the symmetric response function."""
+        """X1*Y2 (LHX1Y2) term of the symmetric response function:
+        <0|L[[HBAR,X1],Y2]|0>. (Diagram labels match _LHX1Y2_spinorbital.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). X1 = X[0], Y2 = Y[1];
+        H_me = H_ov, and H_bmfe / H_bmef are the H_vovv block while H_nmje / H_mnje /
+        H_mnie are the H_ooov block (read with the index slots shown); L_mnef =
+        2<mn|ef> - <mn|fe>; HvL_amef = 2 H_amef - H_amfe, HoL_mnie = 2 H_mnie -
+        H_nmie, Y2L_ijab = 2 Y2_ijab - Y2_ijba. The l2-part voov ring (diagrams 6, 8)
+        is the _r_T2_ccsd three-term ring with X1-dressed ph intermediates W_mbej /
+        W_mbje (W_mbje[e<->j] swaps the last two axes; W_mbie is W_mbje with j -> i)
+        and Y2 as the external doubles::
+
+            # l1-part
+            Z_nf  = L_mnef X1_me
+            Z_ea  = -L_mnef Y2_mnaf
+            Z_mi  = -L_mnef Y2_inef
+            tmp_ia = Z_nf Y2L_nifa + Z_ea X1_ie + Z_mi X1_ma           (diagrams 3, 4, 5)
+            # l2-part
+            Z_mi   = H_me X1_ie + HoL_mnie X1_ne
+            Z_ea   = H_me X1_ma - HvL_amef X1_mf
+            Z_mnij = H_mnie X1_je
+            Z_ijam = H_amef Y2_ijef
+            tmp_ijab = -1/2 Z_mi Y2_mjab - 1/2 Z_ea Y2_ijeb           (diagrams 1/7, 2/9)
+                     + 1/2 Z_mnij Y2_mnab - 1/2 Z_ijam X1_mb          (diagrams 10, 11)
+            W_mbej =  X1_jf H_bmfe - X1_nb H_nmje
+            W_mbje = -X1_jf H_bmef + X1_nb H_mnje
+            ring = (Y2_imae - Y2_imea) W_mbej + Y2_imae (W_mbej + W_mbje[e<->j])
+                 + Y2_mjae W_mbie                                      (diagrams 6, 8)
+            tmp_ijab += 1/2 ring_ijab
+            LHX1Y2 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
+        """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._LHX1Y2_spinorbital(X, Y)
-        raise NotImplementedError(
-            "Spatial spin-adapted LHX1Y2 not yet implemented (phase 9a-ii); "
-            "see _LHX1Y2_spinorbital for the spin-orbital structure.")
+        # spin-adapted (spatial) LHX1Y2
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        L = self.H.L[o, o, v, v]
+        X1, Y2 = X[0], Y[1]
+        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)
+        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0, 1)
+        Y2L = 2.0 * Y2 - Y2.swapaxes(2, 3)
+        # l1-part (diagrams 3,4,5)
+        Zov = contract('mnef,me->nf', L, X1)                       # L3
+        tmp1 = contract('nf,nifa->ia', Zov, Y2L)
+        Zvv = -contract('mnef,mnaf->ea', L, Y2)                    # L4
+        tmp1 += contract('ea,ie->ia', Zvv, X1)
+        Zoo = -contract('mnef,inef->mi', L, Y2)                    # L5
+        tmp1 += contract('mi,ma->ia', Zoo, X1)
+        polar = contract('ia,ia->', l1, tmp1)
+        # l2-part (diagrams 1,2,6,7,8,9,10,11)
+        Zoo = contract('me,ie->mi', hbar.Hov, X1) + contract('mnie,ne->mi', HoL, X1)
+        tmp2 = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)          # L1_7
+        Zvv = contract('me,ma->ea', hbar.Hov, X1) - contract('amef,mf->ea', HvL, X1)
+        tmp2 += -0.5 * contract('ea,ijeb->ijab', Zvv, Y2)        # L2_9
+        Zoooo = contract('mnie,je->mnij', hbar.Hooov, X1)         # L10
+        tmp2 += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)
+        Zoovo = contract('amef,ijef->ijam', hbar.Hvovv, Y2)       # L11
+        tmp2 += -0.5 * contract('ijam,mb->ijab', Zoovo, X1)
+        # L6_8 (voov ring, diagrams 6,8): one ph ring, structurally the LHX2Y2-D1
+        # three-term ring with the X1-dressed ph intermediate (both Hvovv and Hooov
+        # dressings, mirroring build_Hovvo/build_Hovov) and Y2 as external doubles.
+        Wmbej = contract('jf,bmfe->mbej', X1, hbar.Hvovv) - contract('nb,nmje->mbej', X1, hbar.Hooov)
+        Wmbje = -contract('jf,bmef->mbje', X1, hbar.Hvovv) + contract('nb,mnje->mbje', X1, hbar.Hooov)
+        ring = contract('imae,mbej->ijab', Y2 - Y2.swapaxes(2, 3), Wmbej)
+        ring += contract('imae,mbej->ijab', Y2, Wmbej + Wmbje.swapaxes(2, 3))
+        ring += contract('mjae,mbie->ijab', Y2, Wmbje)
+        tmp2 += 0.5 * ring
+        polar += 2.0 * contract('ijab,ijab->', l2, tmp2)
+        return polar
 
     def _LHX1Y2_spinorbital(self, X, Y):
         contract = self.contract
@@ -775,8 +927,8 @@ class ccresponse(object):
         # <0|Y1(B) * A_bar|0>
         polar1 += contract("ai, ia -> ", pertbar_A.Avo, Y1_B)
         # <0|Y2(B) * A_bar|0>
-        polar1 += 0.5 * contract("abij, ijab -> ", Avvoo, Y2_B)
-        polar1 += 0.5 * contract("baji, ijab -> ", Avvoo, Y2_B)
+        polar1 += 0.25 * contract("abij, ijab -> ", Avvoo, Y2_B)
+        polar1 += 0.25 * contract("baji, ijab -> ", Avvoo, Y2_B)
         # <0|[A_bar, X(B)]|0>
         polar2 += 2.0 * contract("ia, ia -> ", pertbar_A.Aov, X1_B)
         # <0|L1(0) [A_bar, X2(B)]|0>
@@ -1213,14 +1365,12 @@ class pertbar(object):
 
         self.Avvvo = -1.0*contract('miab,me->abei', t2, pert[o,v])
 
-        # TODO(spin-adapted pertbar): the formulation of this Avvoo term needs to be
-        # fixed (flagged by TDC, 2026-06-18) -- revisit before relying on the spatial
-        # symmetric response.
-        # Note that Avvoo is permutationally symmetric, unlike the implementation in ugacc
+        # Avvoo is the permutationally symmetric (un-halved) form, unlike the
+        # implementation in ugacc. The compensating 0.5 lives in r_X2 (the residual
+        # constant term), and linresp_asym carries 0.25 on its Y2 contractions.
         self.Avvoo = contract('ijeb,ae->ijab', t2, self.Avv)
         self.Avvoo -= contract('mjab,mi->ijab', t2, self.Aoo)
-#self.Avvoo = self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3)
-        self.Avvoo = 0.5*(self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3))
+        self.Avvoo = self.Avvoo + self.Avvoo.swapaxes(0,1).swapaxes(2,3)
 
 
 class _PertbarCache(dict):
