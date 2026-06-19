@@ -126,7 +126,7 @@ post-convergence correction) lands first; CC3 (an iterative-triples solver) foll
 
 ## Status / progress
 
-_Last updated 2026-06-17._
+_Last updated 2026-06-19._
 
 | Phase | Status | Landed |
 |---|---|---|
@@ -140,8 +140,9 @@ _Last updated 2026-06-17._
 | 6 — SO CISD/CID (UHF/ROHF) | ✅ done | PR #139 |
 | 7 — SO Lambda (CCSD) | ✅ done | PR #140 |
 | 8 — SO density + CC dipole | ✅ done | PR #142 |
-| 9a — SO symmetric polarizability | ✅ done | PR #143 |
-| 9b — SO optical rotation | 🟡 in review | branch `feature/spinorbital-response-optrot` |
+| 9a-i — SO symmetric polarizability | ✅ done | PR #143 |
+| 9b — SO optical rotation | ✅ done | PR #144 |
+| 9a-ii — spatial spin-adapted response | ✅ done | PR #145 |
 
 ### Phase 1 — what landed
 
@@ -286,7 +287,7 @@ Turns Lambda into an open-shell **property** -- the first CC dipole for UHF/ROHF
   input) so CFOUR keeps the input frame -- its SCF dipole then matches Psi4's exactly and
   the reference is simply CFOUR's `CCSD - SCF` electronic dipole (~1e-10).
 
-### Phase 9 — response (in progress)
+### Phase 9 — response (linear response complete)
 
 Decision: a NEW **symmetric** linear-response framework (socc-style: top-level
 `polarizability`/`optrot`, right-hand X amplitudes only at +/-omega, no Y) serving BOTH
@@ -319,6 +320,27 @@ contributions. Split: 9a polarizability (9a-i spin-orbital, 9a-ii spatial spin-a
   magnetic-dipole H.m integrals). UHF/ROHF: no open-shell CC optrot reference exists (a
   dynamic magnetic property, no finite-difference), so validated by composition; the tests
   only confirm the open-shell path runs and returns a finite tensor.
+
+**Phase 9a-ii (spatial spin-adapted symmetric response):** completes the spatial branch
+of the symmetric framework, so `polarizability()`/`optrot()` now run spin-adapted for
+closed-shell RHF (not just spin-orbital). With this, linear response is done in both bases.
+- `pycc/ccresponse.py`: fill the spatial stubs of `linresp_sym` and `LCX`/`LHX1Y1`/
+  `LHX2Y2`/`LHX1Y2`, each derived term-by-term against its `_*_spinorbital` sibling. The
+  ph-ring terms reuse the `_r_T2_ccsd` three-term ring (`build_Wmbej`/`build_Wmbje`-style
+  intermediates); the `LHX1Y2` voov ring uses X1-dressed intermediates with Y2 as the
+  external doubles. The only basis-specific piece of the `linresp_sym` assembly is the HXY
+  direct term, which spin-adapts to `2*L` (= 4<ij|ab> - 2<ij|ba>). Each spatial method
+  carries a Notes-block docstring with the spin-adapted expressions (ccwfn.py style).
+- Also refactored the spatial `pertbar.Avvoo` factor placement (spin-orbital code
+  unchanged): store the un-halved, permutationally symmetric `Avvoo`, with the
+  compensating factors moved to the consumers (0.5 in `r_X2`, drop the 2.0 in
+  `pseudoresponse`, 0.25 in `linresp_asym`). Net results unchanged.
+- Validation (`test_057`/`test_058`): spatial-RHF dynamic polarizability (isotropic,
+  omega=0.1) and optical-rotation tensor (chiral H2O2, length gauge) == Psi4 CCSD at
+  cc-pVDZ; full 3x3 tensors == the spin-orbital path at STO-3G (spatial-vs-SO kept at
+  STO-3G to keep the spin-orbital response cheap). These tests are the only coverage of
+  the spatial symmetric path -- the 9a-i/9b tests run RHF in the spin-orbital basis and
+  their open-shell references auto-resolve to spin orbitals.
 
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
