@@ -265,11 +265,26 @@ The first step toward open-shell **properties** (Lambda -> density -> response).
   `_build_spinorbital` dispatch + `_so_build_*` methods (ported from socc).
 - `pycc/cclambda.py`: `__init__`/`solve_lambda`/`build_Goo`/`build_Gvv`/`pseudoenergy`/
   `r_L1`/`r_L2` branch on `orbital_basis` to spin-orbital siblings. SO guess l1=t1, l2=t2;
-  pseudoenergy 1/4 <ij||ab> l2. CCSD/CCD only (CC3 Lambda raises in the SO path).
+  pseudoenergy 1/4 <ij||ab> l2.
 - Validation (`test_003`): keystone (SO-RHF Lambda == spatial, ~1e-13) and a **CFOUR**
   cross-check of the Lambda pseudoenergy for UHF and ROHF (.OH cc-pVDZ, exact to 12
   digits -- CFOUR `PRINT=2` reports the total Lambda pseudoenergy with the same
   definition).
+
+#### Increment: spin-orbital CC3 Lambda
+
+Extends the SO Lambda kernel from CCSD to CC3 (removing the `CC3 Lambda raises` guard).
+- `pycc/cctriples.py` `l3_ijk_so` (spin-orbital connected lambda-L3 per i,j,k) and
+  `pycc/ccwfn.py` `_so_build_{Wvvvv,Wovvo}_CC3` (the two T1-dressed CC3 W-blocks the
+  `_so_*_CC3` set lacked).
+- `pycc/cclambda.py` `_build_cc3_lambda_intermediates_spinorbital` (once-only `Zijal`/
+  `Ziabd`) + `_cc3_lambda_triples_spinorbital` (per-iteration `Y1`/`Y2`), loop-over-(i,j,k)
+  like `_so_cc3_t_residual` (no stored T3); ported from the socc CC3 Lambda IJK reference.
+  SO `Y1`/`Y2` are antisymmetric by construction, added to the residuals directly.
+- Validation (`test_031`): keystone SO-RHF CC3 Lambda pseudoenergy == spatial (~1e-10;
+  spatial is CFOUR-pinned). UHF/ROHF CC3 Lambda validation deferred to the response stage.
+- Out of scope (separate follow-on): spin-orbital CC3 **density/dipole** -- the CC3 density
+  blocks are spatial-only, so `ccdensity.compute_onepdm` raises for SO + CC3.
 
 ### Phase 8 — what landed (spin-orbital density + CC dipole)
 

@@ -17,7 +17,7 @@ from .utils import helper_diis, zeros, zeros_like, clone, sqrt
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk
+from .cctriples import t3c_ijk, l3_ijk, l3_ijk_alt, t3_pert_ijk, t3c_ijk_so, l3_ijk_so
 
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
@@ -111,10 +111,6 @@ class cclambda(object):
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L if self.ccwfn.orbital_basis == 'spatial' else None
 
-        if self.ccwfn.orbital_basis == 'spinorbital' and self.ccwfn.model == 'CC3':
-            raise NotImplementedError("Spin-orbital Lambda currently supports CCSD/CCD, "
-                                      "not CC3.")
-
         Hov = self.hbar.Hov
         Hvv = self.hbar.Hvv
         Hoo = self.hbar.Hoo
@@ -138,7 +134,10 @@ class cclambda(object):
         if self.ccwfn.model == 'CC3':
             # T-dependent CC3 intermediates: t1/t2 are fixed during the Lambda
             # solve, so build them once here and reuse every iteration.
-            cc3_ints = self._build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI, L)
+            if self.ccwfn.orbital_basis == 'spinorbital':
+                cc3_ints = self._build_cc3_lambda_intermediates_spinorbital(o, v, t1, t2, F, ERI)
+            else:
+                cc3_ints = self._build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI, L)
 
         for niter in range(1, maxiter+1):
             lecc_last = lecc
@@ -152,9 +151,16 @@ class cclambda(object):
             r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
    
             if self.ccwfn.model == 'CC3':
-                Y1, Y2 = self._cc3_lambda_triples(o, v, l1, l2, t2, F, ERI, L, cc3_ints)
-                r1 += Y1
-                r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3)
+                if self.ccwfn.orbital_basis == 'spinorbital':
+                    # The spin-orbital Y1/Y2 come out fully antisymmetric already,
+                    # so they are added directly (no i<->j / a<->b symmetrization).
+                    Y1, Y2 = self._cc3_lambda_triples_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
+                    r1 += Y1
+                    r2 += Y2
+                else:
+                    Y1, Y2 = self._cc3_lambda_triples(o, v, l1, l2, t2, F, ERI, L, cc3_ints)
+                    r1 += Y1
+                    r2 += Y2 + Y2.swapaxes(0,1).swapaxes(2,3)
 
             if self.ccwfn.local is not None:
                 inc1, inc2 = self.ccwfn.Local.filter_amps(r1, r2)
@@ -248,6 +254,109 @@ class cclambda(object):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
                                              
         return r1, r2
+
+    def _build_cc3_lambda_intermediates_spinorbital(self, o, v, t1, t2, F, ERI):
+        """Build the T-dependent spin-orbital CC3 intermediates for the Lambda
+        equations: the T1-dressed CC3 W-intermediates plus the once-only T3
+        intermediates ``Zijal``/``Ziabd`` (the <0|L2 [[H~,T3],nu1]|0> -> L1 piece,
+        which is independent of Lambda). Loop-over-(i,j,k), mirroring
+        :meth:`pycc.ccwfn.CCwfn._so_cc3_t_residual` and the socc reference; no full
+        T3 is stored.
+
+        Returns
+        -------
+        dict
+            the W-intermediates plus ``Fov``, ``Zijal`` and ``Ziabd``
+        """
+        contract = self.contract
+        Fov = self.hbar.Hov
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+
+        no = self.ccwfn.no
+        Zijal = zeros_like(ERI[o,o,v,o])
+        Ziabd = zeros_like(ERI[o,v,v,v])
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    Zijal[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
+                    Ziabd[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+
+        return {'Fov': Fov, 'Woooo': Woooo, 'Wovoo': Wovoo, 'Wooov': Wooov,
+                'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
+                'Zijal': Zijal, 'Ziabd': Ziabd}
+
+    def _cc3_lambda_triples_spinorbital(self, o, v, l1, l2, t2, F, ERI, ints):
+        """Spin-orbital CC3 triples contributions (Y1, Y2) to the Lambda residuals.
+
+        Loop-over-(i,j,k): per ijk rebuild the ground-state T3 (:func:`t3c_ijk_so`)
+        and the lambda L3 (:func:`l3_ijk_so`) and accumulate the connected-triples
+        contributions. ``Y1``/``Y2`` come out fully antisymmetric, so the caller
+        adds them to the residuals directly. Ports the socc ``CC3_iter`` (IJK)
+        reference.
+
+        Returns
+        -------
+        Y1, Y2 : ndarray or torch.Tensor
+            the CC3 triples contributions to the L1 and L2 residuals
+        """
+        contract = self.contract
+        no = self.ccwfn.no
+        nv = self.ccwfn.nv
+
+        Fov = ints['Fov']
+        Woooo = ints['Woooo']
+        Wovoo = ints['Wovoo']
+        Wooov = ints['Wooov']
+        Wvovv = ints['Wvovv']
+        Wvvvo = ints['Wvvvo']
+        Wvvvv = ints['Wvvvv']
+        Wovvo = ints['Wovvo']
+        Zijal = ints['Zijal']
+        Ziabd = ints['Ziabd']
+
+        Y2 = zeros_like(l2)
+        Zia = zeros_like(l1)                       # <0|L2 [[H~,T3],nu1]|0> -> L1
+        Ziabe = zeros((no, nv, nv, nv), like=l2)   # <0|L3 [[H~,T2],nu1]|0> -> L1
+        Zijam = zeros((no, no, nv, no), like=l2)
+        Woovv = ERI[o,o,v,v]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    Zia[i] += 0.25 * contract('abc,bc->a', t3, l2[j,k])
+
+                    l3 = l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract)
+
+                    # <0|L3 [[H~,T2],nu1]|0> -> L1
+                    Ziabe[i] += 0.5 * contract('abc,ec->abe', l3, t2[j,k])
+                    Zijam[i,j] += 0.5 * contract('abc,mbc->am', l3, t2[o,k])
+
+                    # <0|L3 [H~,nu2]|0> -> L2
+                    Y2[i,j] += 0.5 * contract('abc,bcd->ad', l3, Wvvvo[:,:,:,k])
+                    Y2[i,j] -= 0.5 * contract('dbc,bca->ad', l3, Wvvvo[:,:,:,k])
+                    for l in range(no):
+                        tmp = 0.5 * contract('abc,c->ab', l3, Wovoo[l,:,j,k])
+                        Y2[i,l] -= tmp
+                        Y2[l,i] += tmp
+
+        # <0|L2 [[H~,T3],nu1]|0> -> L1
+        Y1 = contract('ia,lida->ld', Zia, Woovv)
+        Y1 += 0.5 * contract('ijal,ijad->ld', Zijal, l2)
+        Y1 += 0.5 * contract('iabd,ilab->ld', Ziabd, l2)
+        # <0|L3 [[H~,T2],nu1]|0> -> L1
+        Y1 += 0.5 * contract('iabe,abde->id', Ziabe, Wvvvv)
+        Y1 += 0.5 * contract('ijam,lmij->la', Zijam, Woooo)
+        Y1 += contract('iabe,lbei->la', Ziabe, Wovvo)
+        Y1 += contract('ijam,madj->id', Zijam, Wovvo)
+
+        return Y1, Y2
 
     def _build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI, L, real_time=False):
         """Build the T-dependent CC3 intermediates shared by the Lambda equations.
