@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from .utils import helper_diis
 from .cclambda import cclambda
+from .cctriples import t3c_ijk_so, t3c_abc_so, l3_ijk_so
 from ._typing import Tensor
 
 if TYPE_CHECKING:
@@ -233,6 +234,14 @@ class ccresponse(object):
         self.X1 = X1
         self.X2 = X2
 
+        cc3_ints = None
+        if self.ccwfn.model == 'CC3':
+            if self.ccwfn.orbital_basis != 'spinorbital':
+                raise NotImplementedError(
+                    "Spatial CC3 response is not implemented; use the spin-orbital "
+                    "path (orbital_basis='spinorbital').")
+            cc3_ints = self._cc3_response_setup_spinorbital(pertbar)
+
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
 
@@ -241,6 +250,11 @@ class ccresponse(object):
 
             r1 = self.r_X1(pertbar, omega)
             r2 = self.r_X2(pertbar, omega)
+
+            if self.ccwfn.model == 'CC3':
+                z1, z2 = self._cc3_iter_spinorbital(pertbar, omega, cc3_ints)
+                r1 += z1
+                r2 += z2
 
             self.X1 += r1/(Dia + omega)
             self.X2 += r2/(Dijab + omega)
@@ -355,6 +369,129 @@ class ccresponse(object):
         polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
         return -2.0*(polar1 + polar2)
+
+    def _cc3_response_setup_spinorbital(self, pertbar):
+        """Build the T-dependent spin-orbital CC3 response intermediates that are
+        reused across solve_right iterations: the CC3 W-intermediates and the
+        once-only Yoovo/Yovvv (ground-state T3 . ERI) and Zovoo/Zvvvo
+        (perturbation . T2). Ports socc CC3_noniter (IJK). Returns a dict."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t1, t2 = self.ccwfn.t1, self.ccwfn.t2
+        no = self.ccwfn.no
+
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+
+        Yoovo = np.zeros_like(ERI[o,o,v,o])
+        Yovvv = np.zeros_like(ERI[o,v,v,v])
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    Yoovo[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
+                    Yovvv[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+        Zovoo = 0.5 * contract('ld,jkdc->lcjk', pertbar.Aov, t2)
+        Zvvvo = -0.5 * contract('ld,lkbc->bcdk', pertbar.Aov, t2)
+
+        return {'Fov': self.hbar.Hov, 'Woooo': Woooo, 'Wovoo': Wovoo,
+                'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
+                'Yoovo': Yoovo, 'Yovvv': Yovvv, 'Zovoo': Zovoo, 'Zvvvo': Zvvvo}
+
+    def _cc3_iter_spinorbital(self, pertbar, omega, ints):
+        """Per-iteration spin-orbital CC3 contributions (z1, z2) to the perturbed
+        r_X1/r_X2. Rebuilds the perturbed triples X3 (loop-over-ijk and -abc, no
+        stored X3) from the current X1/X2 and folds them back. Ports socc
+        CC3_iter (IJK + ABC)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        X1, X2 = self.X1, self.X2
+        no, nv = X1.shape
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+        Yoovo, Yovvv = ints['Yoovo'], ints['Yovvv']
+        Zovoo, Zvvvo = ints['Zovoo'], ints['Zvvvo']
+
+        z1 = np.zeros_like(X1)
+        z2 = np.zeros_like(X2)
+
+        # <mu2|[[H~,T3],X1]|0> --> X2 (the X1-dressed once-only pieces)
+        Yov = contract('ld,klcd->kc', X1, ERI[o,o,v,v])
+        tmp = contract('ld,ijal->ijad', X1, Yoovo)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('ld,iabd->ilab', X1, Yovvv)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        # <mu3|[[H~,T2],X1]|0> --> X3 dressings (X1-dressed W intermediates)
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        Zlcjk = -contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+
+        # occupied-batched (IJK): X3 from [A,T3]_Avv + [[A,T2],T2]+[[H,T2],X1] + [H,X2]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    z2[i,j] += contract('abc,c->ab', t3, Yov[k])
+
+                    tmp = contract('abc,dc->abd', t3, pertbar.Avv)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ[i] + occ[j] + occ[k] + omega
+                             - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+                    x3 = x3/denom
+                    x3 += t3c_ijk_so(o, v, i, j, k, t2, Zvvvo+Zbcdk, Zovoo+Zlcjk, F, contract, omega)
+                    x3 += t3c_ijk_so(o, v, i, j, k, X2, Wvvvo, Wovoo, F, contract, omega)
+
+                    z1[i] += 0.25 * contract('abc,bc->a', x3, ERI[j,k,v,v])
+                    z2[i,j] += contract('abc,c->ab', x3, hbar.Hov[k])
+                    tmp = 0.5 * contract('abc,dbc->ad', x3, hbar.Hvovv[:,k,:,:])
+                    z2[i,j] += tmp - tmp.swapaxes(0,1)
+                    for l in range(no):
+                        tmp = -0.5 * contract('abc,c->ab', x3, hbar.Hooov[j,k,l,:])
+                        z2[i,l] += tmp
+                        z2[l,i] -= tmp
+
+        # virtual-batched (ABC): X3 from [A,T3]_Aoo
+        y1 = np.zeros_like(z1.T)
+        y2 = np.zeros_like(z2.T)
+        for a in range(nv):
+            for b in range(nv):
+                for c in range(nv):
+                    t3 = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = -contract('ijk,kl->ijl', t3, pertbar.Aoo)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ + omega
+                             - (vir[a] + vir[b] + vir[c]))
+                    x3 = x3/denom
+
+                    y1[a] += 0.25 * contract('ijk,jk->i', x3, ERI[o,o,b+no,c+no])
+                    y2[a,b] += contract('ijk,k->ij', x3, hbar.Hov[:,c])
+                    tmp = -0.5 * contract('ijk,jkl->il', x3, hbar.Hooov[:,:,:,c])
+                    y2[a,b] += tmp - tmp.swapaxes(0,1)
+                    for d in range(nv):
+                        tmp = 0.5 * contract('ijk,k->ij', x3, hbar.Hvovv[d,:,b,c])
+                        y2[a,d] += tmp
+                        y2[d,a] -= tmp
+
+        z1 += y1.T
+        z2 += y2.T
+        return z1, z2
 
     # ==================================================================
     # Symmetric linear response -- the X-only formulation: only the
@@ -1345,6 +1482,20 @@ class pertbar(object):
                           - contract('ijbe,ae->ijab', t2, self.Avv))
             self.Avvoo -= (contract('imab,mj->ijab', t2, self.Aoo)
                            - contract('jmab,mi->ijab', t2, self.Aoo))
+            if ccwfn.model == 'CC3':
+                # CC3: ground-state T3 contribution to Avvoo (loop-over-ijk, no
+                # stored T3). Avvoo[ij] += <kc> t3_ijkabc.
+                F = ccwfn.H.F
+                ERI = ccwfn.H.ERI
+                Woooo = ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+                Wovoo = ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+                Wvvvo = ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+                no = ccwfn.no
+                for i in range(no):
+                    for j in range(no):
+                        for k in range(no):
+                            t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                            self.Avvoo[i,j] += contract('c,abc->ab', pert[k,v], t3)
             return
 
         self.Aov = pert[o,v].copy()

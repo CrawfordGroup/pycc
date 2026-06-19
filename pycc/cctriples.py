@@ -744,6 +744,32 @@ def l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract, With
     return l3
 
 
+def t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDenom=True):
+    """Spin-orbital connected T3 amplitudes for fixed virtual a, b, c.
+
+    The virtual-batched companion to :func:`t3c_ijk_so` (same spin-orbital
+    convention and ``Wvvvo`` (<ab||ei>) / ``Wovoo`` (<ia||jk>) inputs). Result is
+    antisymmetric in i,j,k. Used by the CC3 response ABC loop.
+    """
+    ijk = contract('ijd,dk->ijk', t2[:,:,a], Wvvvo[b,c])
+    ijk = ijk - contract('ijd,dk->ijk', t2[:,:,b], Wvvvo[a,c])
+    ijk = ijk - contract('ijd,dk->ijk', t2[:,:,c], Wvvvo[b,a])
+    t3 = ijk - ijk.swapaxes(0,2) - ijk.swapaxes(1,2)
+
+    ijk = contract('il,ljk->ijk', t2[:,:,a,b], Wovoo[:,c])
+    ijk = ijk - contract('il,ljk->ijk', t2[:,:,c,b], Wovoo[:,a])
+    ijk = ijk - contract('il,ljk->ijk', t2[:,:,a,c], Wovoo[:,b])
+    t3 = t3 - (ijk - ijk.swapaxes(0,1) - ijk.swapaxes(0,2))
+
+    if WithDenom is True:
+        occ = diag(F)[o]
+        vir = diag(F)[v]
+        denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ
+                 - (vir[a] + vir[b] + vir[c]) + omega)
+        return t3/denom
+    return t3
+
+
 def t_vikings_so(o, v, t1, t2, F, ERI, contract):
     """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
 
