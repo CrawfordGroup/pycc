@@ -70,6 +70,25 @@ def test_so_cc3_equals_spatial_rhf(rhf_wfn):
     assert abs(e_so - e_spatial) < 1e-10
 
 
+def test_so_cc3_lambda_equals_spatial_rhf(rhf_wfn):
+    """Spin-orbital CC3 Lambda (forced) reproduces the spin-adapted spatial CC3
+    Lambda pseudoenergy on a closed shell -- keystone for the spin-orbital CC3
+    Lambda kernel. The spatial value is itself CFOUR-pinned in test_cc3_h2o."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
+                  e_convergence=1e-12, d_convergence=1e-12)
+
+    def _lcc(basis):
+        cc = pycc.CCwfn(wfn, model="CC3", frozen_core=False, orbital_basis=basis)
+        cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
+        hbar = pycc.cchbar(cc)
+        lam = pycc.cclambda(cc, hbar)
+        return lam.solve_lambda(e_conv=1e-11, r_conv=1e-11)
+
+    l_spatial = _lcc("spatial")
+    l_so = _lcc("spinorbital")
+    assert abs(l_so - l_spatial) < 1e-10
+
+
 def test_ucc3_oh(uhf_wfn):
     """Open-shell .OH 6-31G, all-electron UCC3 vs Psi4's UCC3."""
     wfn = uhf_wfn(OH, "6-31G", freeze_core="false",

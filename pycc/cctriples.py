@@ -712,6 +712,38 @@ def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDeno
     return t3
 
 
+def l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract, WithDenom=True):
+    """Spin-orbital connected lambda-L3 amplitudes for fixed occupied i, j, k.
+
+    Mirrors :func:`t3c_ijk_so` (spin-orbital convention, antisymmetrized
+    ``<pq||rs>`` integrals) for the lambda equations. ``Woovv`` is ``ERI[o,o,v,v]``;
+    ``Wvovv`` (<am||ef>) and ``Wooov`` (<mn||ie>) are the T1-dressed CC3
+    intermediates. The result is antisymmetric in a,b,c.
+    """
+    abc = contract('ad,dbc->abc', l2[i,j], Wvovv[:,k,:,:])
+    abc = abc - contract('ad,dbc->abc', l2[k,j], Wvovv[:,i,:,:])
+    abc = abc - contract('ad,dbc->abc', l2[i,k], Wvovv[:,j,:,:])
+    l3 = abc - abc.swapaxes(0,1) - abc.swapaxes(0,2)
+
+    abc = contract('lab,lc->abc', l2[j], Wooov[i,k])
+    abc = abc - contract('lab,lc->abc', l2[i], Wooov[j,k])
+    abc = abc + contract('lab,lc->abc', l2[k], Wooov[j,i])
+    l3 = l3 + (abc - abc.swapaxes(0,2) - abc.swapaxes(1,2))
+
+    abc = contract('a,bc->abc', l1[i], Woovv[j,k]) + contract('a,bc->abc', Fov[i], l2[j,k])
+    abc = abc - (contract('a,bc->abc', l1[j], Woovv[i,k]) + contract('a,bc->abc', Fov[j], l2[i,k]))
+    abc = abc - (contract('a,bc->abc', l1[k], Woovv[j,i]) + contract('a,bc->abc', Fov[k], l2[j,i]))
+    l3 = l3 + (abc - abc.swapaxes(0,1) - abc.swapaxes(0,2))
+
+    if WithDenom is True:
+        occ = diag(F)[o]
+        vir = diag(F)[v]
+        denom = (occ[i] + occ[j] + occ[k]
+                 - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+        return l3/denom
+    return l3
+
+
 def t_vikings_so(o, v, t1, t2, F, ERI, contract):
     """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
 

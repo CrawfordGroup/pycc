@@ -195,6 +195,13 @@ class ccdensity(object):
         opdm[o,v] = self.build_Dov(t1, t2, l1, l2)
         opdm[v,o] = self.build_Dvo(l1)
 
+        if self.ccwfn.model == 'CC3' and self.ccwfn.orbital_basis == 'spinorbital':
+            # Spin-orbital CC3 Lambda exists, but the CC3 one-particle density
+            # (T1-transformed blocks below) is still spatial-only -- a separate
+            # follow-on. Fail clearly rather than crash on the spatial builders.
+            raise NotImplementedError("Spin-orbital CC3 one-particle density is not "
+                                      "implemented (Lambda is); use the spatial path.")
+
         if self.ccwfn.model == 'CC3':
             Fov = self.ccwfn.build_Fme(o, v, F, L, t1)
             Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)

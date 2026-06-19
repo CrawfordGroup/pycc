@@ -132,8 +132,10 @@ class CCwfn(Wavefunction):
         super().__init__(scf_wfn, localize_occ=(local is not None), **kwargs)
 
         # The spin-orbital path (open-shell UHF/ROHF references) is a separate kernel
-        # selected by orbital_basis. Step-3 scope: CCSD energies only, CPU-only, no
-        # local correlation. Fail fast and clearly for anything outside that.
+        # selected by orbital_basis. Supports CCSD/CCSD(T)/CC3 energies and Lambda
+        # (CCSD and CC3), plus the one-particle density and dipole for CCSD; the CC3
+        # density/dipole remain spatial-only. CPU-only, no local correlation. Fail
+        # fast and clearly for anything outside that.
         if self.orbital_basis == 'spinorbital':
             if self.model not in ('CCSD', 'CCSD(T)', 'CC3'):
                 raise NotImplementedError(
@@ -1124,6 +1126,23 @@ class CCwfn(Wavefunction):
         Wvvvo = Wvvvo - (contract('ma,mbei->abei', t1, ERI[o,v,v,o])
                          - contract('mb,maei->abei', t1, ERI[o,v,v,o]))
         return Wvvvo
+
+    def _so_build_Wvvvv_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Wvvvv = clone(ERI[v,v,v,v])
+        Wvvvv = Wvvvv - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
+                         - contract('ma,bmef->abef', t1, ERI[v,o,v,v]))
+        tau = contract('ia,jb->ijab', t1, t1) - contract('ib,ja->ijab', t1, t1)
+        Wvvvv = Wvvvv + 0.5 * contract('mnab,mnef->abef', tau, ERI[o,o,v,v])
+        return Wvvvv
+
+    def _so_build_Wovvo_CC3(self, o, v, ERI, t1):
+        contract = self.contract
+        Wovvo = clone(ERI[o,v,v,o])
+        Wovvo = Wovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+        Wovvo = Wovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+        Wovvo = Wovvo - contract('jf,nb,mnef->mbej', t1, t1, ERI[o,o,v,v])
+        return Wovvo
 
     def _so_cc3_t_residual(self, o, v, F, ERI, Fme, t1, t2):
         """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
