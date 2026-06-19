@@ -1,0 +1,21 @@
+# Read the Docs build configuration. See:
+# https://docs.readthedocs.io/en/stable/config-file/v2.html
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.11"
+
+sphinx:
+  configuration: docs/conf.py
+
+# autodoc imports pycc to read docstrings/signatures, so the package and its
+# pip-installable deps (numpy, scipy, opt_einsum) must be installed. psi4 is
+# conda-only and mocked in docs/conf.py; torch is optional and guarded in the
+# package, so neither is installed here.
+python:
+  install:
+    - requirements: docs/requirements.txt
+    - method: pip
+      path: .
