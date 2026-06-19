@@ -9,18 +9,22 @@ Status](https://github.com/CrawfordGroup/pycc/workflows/CI/badge.svg)](https://g
 A Python-based electronic-structure package centered on coupled cluster, built on a
 shared `Wavefunction` base that also hosts Hartree-Fock, MP2, and CI.  Current capabilities
 include:
-  - RHF-/UHF-/ROHF-based CCD, CC2, CCSD, CCSD(T), and CC3 energies
+  - RHF-/UHF-/ROHF-based CCD, CC2, CCSD, CCSD(T), and CC3 energies, via either a
+    spin-adapted (closed-shell RHF) or a spin-orbital formalism; the latter enables the
+    open-shell (UHF/ROHF) correlated methods
   - Triples drivers for various approximate triples methods
-  - One- and two-electron (reduced) density matrices for CC2 and CCSD (with CC3 and (T) contributions)
+  - One- and two-electron (reduced) density matrices for CC2 and CCSD (with CC3 and (T)
+    contributions), and CC one-electron properties (e.g. dipole moments)
   - RHF-EOM-CCSD excitation energies
-  - Linear response functions (dynamic polarizability, optical rotation)
+  - Linear response functions (dynamic polarizability, optical rotation) for both the
+    spin-adapted (closed-shell) and spin-orbital references
   - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
   - Local (PAO, PNO, PNO++) CCSD energies, and local RT-CC
   - Hartree-Fock (`HFwfn`) MO-basis analytic derivative properties: energy gradient,
     static dipole polarizability, nuclear Hessian (force-constant matrix), atomic polar
     tensors (APTs / dipole derivatives), and atomic axial tensors (AATs) -- the building
     blocks for IR and VCD spectra
-  - MP2 (`MPwfn`) and CISD/CID (`CIwfn`) energies
+  - MP2 (`MPwfn`) and CISD/CID (`CIwfn`) energies (closed- and open-shell)
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
 
