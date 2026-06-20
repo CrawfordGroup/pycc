@@ -357,6 +357,33 @@ closed-shell RHF (not just spin-orbital). With this, linear response is done in 
   the spatial symmetric path -- the 9a-i/9b tests run RHF in the spin-orbital basis and
   their open-shell references auto-resolve to spin orbitals.
 
+**Phase 9c (spin-orbital CC3 linear response):** extends the symmetric response to
+CC3, spin-orbital only (spatial CC3 response stays deferred/guarded). CC3 response needs
+the full connected triples T3/L3/X3, so this introduced a first-class **`store_triples`**
+pathway, set as a `CCwfn` constructor kwarg (default `False`) and threaded through:
+- `ccwfn` (`_so_cc3_t_residual_full`), `cclambda` (`_cc3_lambda_triples_full_spinorbital`),
+  and `ccresponse.solve_right` (`_cc3_iter_full_spinorbital`) gain full-array kernels
+  (whole-array contractions + `utils.permute_triples`, no per-ijk batching) that store
+  `self.t3` / `self.l3` / `self.X3`. The batched kernels remain as the `store_triples=False`
+  path (energy/Lambda; and the batched perturbed-X + `_cc3_build_X3` + `_cc3_full_triples`
+  response materializers stay for the planned batched-triples response function).
+- `ccresponse`: four CC3 terms (`_LCX_CC3` / `_L2HX1Y3_CC3` / `_L3HX1Y2_CC3` /
+  `_L3HX1Y1T2_CC3`, spin-orbital), wired into `_linresp_sym_spinorbital` under
+  `if model=='CC3'`. `_cc3_triples_spinorbital` sources t3/l3 from the stored arrays
+  (store=True) or materializes them batched (store=False), so the response runs either way.
+  `solve_right` returns `([X1,X2,X3], pseudo)` for CC3.
+- Validation: each leg `store=True == batched == socc` to ~1e-16 (energy, Lambda
+  pseudoenergy, perturbed X3, and all four response terms by scalar value -- the gauge note
+  below means term-by-term must be compared by VALUE, not element-wise). `test_059` (slow):
+  CC3 dynamic polarizability (omega=0.1, H2O/STO-3G) == Dalton reference to ~1e-8 for both
+  store settings, and store=True == store=False to ~1e-15.
+- Gauge note: pycc semicanonicalizes the MOs (independent `eigh` per spin/occ/vir block);
+  socc uses Psi4's raw MOs. The resulting per-MO-column sign differences are a benign
+  gauge: every integral transforms as `eps_p eps_q ...` and all fully-contracted (physical)
+  quantities are invariant, so cross-code checks use scalar values, not tensor elements.
+- Remaining: validate CC3 `optrot` (shares the kernel; uncomfirmed); the batched-triples
+  response function (no full T3/L3/X3) is a planned follow-on.
+
 **To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
 `~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
 Fock/ERI build and `socc/ccwfn.py` for the residual kernels.
