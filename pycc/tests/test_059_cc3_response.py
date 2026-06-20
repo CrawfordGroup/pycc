@@ -37,6 +37,37 @@ DALTON_POLAR = np.array([[0.061593757, 0.0, 0.0],
                          [0.0, 0.0, 3.0604929]])
 
 
+def test_cc3_polarizability_zz():
+    """Fast (non-slow) CC3 coverage: a single polarizability component, alpha_zz,
+    via two perturbed-wave-function solves (X(mu_z, -+omega)) + the symmetric
+    response, vs the Dalton reference. Uses the full-array store_triples=True path
+    (cheaper than the batched per-ijk kernels at this size). The full tensor and
+    the store_triples True/False equivalence are checked in the slow test below."""
+    psi4.core.clean()
+    psi4.core.be_quiet()
+    psi4.geometry(H2O)
+    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'mp2_type': 'conv',
+                      'freeze_core': 'false', 'reference': 'rhf',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12,
+                      'r_convergence': 1e-12})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+
+    cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
+                    orbital_basis='spinorbital', store_triples=True)
+    cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
+    hbar = pycc.cchbar(cc)
+    lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-12, r_conv=1e-12)
+    dens = pycc.ccdensity(cc, lam, onlyone=True)
+    resp = pycc.ccresponse(dens)
+
+    # alpha_zz = -<<mu_z; mu_z>>_omega, from X(mu_z, -omega) and X(mu_z, +omega).
+    A = resp.pertbar["MU_Z"]
+    Xm, _ = resp.solve_right(A, -0.1)
+    Xp, _ = resp.solve_right(A, 0.1)
+    alpha_zz = -resp.linresp_sym(A, Xm, A, Xp)
+    assert abs(alpha_zz - DALTON_POLAR[2, 2]) < 1e-6
+
+
 @pytest.mark.slow
 def test_cc3_polarizability():
     """Spin-orbital CC3 dynamic polarizability (omega=0.1) vs Dalton, for both
