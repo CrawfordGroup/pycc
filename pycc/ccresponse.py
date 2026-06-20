@@ -269,6 +269,9 @@ class ccresponse(object):
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
+                if self.ccwfn.model == 'CC3':
+                    X3 = self._cc3_build_X3_spinorbital(pertbar, omega, cc3_ints)
+                    return self.X1, self.X2, X3, pseudo
                 return self.X1, self.X2, pseudo
 
             diis.add_error_vector(self.X1, self.X2)
@@ -597,15 +600,17 @@ class ccresponse(object):
         solve_right and linresp_sym."""
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
         Xp, Xm = [], []
+        # solve_right returns (X1, X2, pseudo) for CCSD and (X1, X2, X3, pseudo)
+        # for CC3; "*X, _" captures the X-list [X1, X2(, X3)] either way.
         for axis in range(3):
             A = self.pertbar["MU_" + self.cart[axis]]
-            X1, X2, _ = self.solve_right(A, omega, *args)
-            Xp.append([X1.copy(), X2.copy()])
+            *X, _ = self.solve_right(A, omega, *args)
+            Xp.append([a.copy() for a in X])
             if omega == 0.0:
-                Xm.append([X1.copy(), X2.copy()])
+                Xm.append([a.copy() for a in X])
             else:
-                X1, X2, _ = self.solve_right(A, -omega, *args)
-                Xm.append([X1.copy(), X2.copy()])
+                *X, _ = self.solve_right(A, -omega, *args)
+                Xm.append([a.copy() for a in X])
 
         polar = np.zeros((3, 3))
         for a in range(3):
@@ -635,15 +640,17 @@ class ccresponse(object):
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
 
         Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
+        # "*X, _" captures the X-list [X1, X2(, X3)] for both CCSD and CC3 (see
+        # polarizability).
         for axis in range(3):
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
-            Xmu_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
-            Xmu_m.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
-            Xm_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
-            Xmstar_m.append([X1.copy(), X2.copy()])
+            *X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
+            Xmu_p.append([a.copy() for a in X])
+            *X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
+            Xmu_m.append([a.copy() for a in X])
+            *X, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
+            Xm_p.append([a.copy() for a in X])
+            *X, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
+            Xmstar_m.append([a.copy() for a in X])
 
         tensor = np.zeros((3, 3))
         # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
