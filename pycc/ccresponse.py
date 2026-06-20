@@ -557,6 +557,44 @@ class ccresponse(object):
 
         return X3
 
+    def _cc3_full_triples_spinorbital(self):
+        """Build (and cache) the full ground-state spin-orbital connected T3 and
+        Lambda-L3 arrays, shape (no, no, no, nv, nv, nv), by looping over (i,j,k)
+        and filling with t3c_ijk_so / l3_ijk_so.
+
+        pycc does not store t3/l3 for the ground state (the energy/Lambda kernels
+        rebuild them per ijk), but the CC3 *response-function* terms (LCX_CC3,
+        L2HX1Y3, L3HX1Y2, L3HX1Y1T2) contract them against the already-stored full
+        X3 in several different index patterns, so we materialize them once here --
+        mirroring socc's validated store_triples=True path. Cached on self."""
+        if getattr(self, '_cc3_t3', None) is not None:
+            return self._cc3_t3, self._cc3_l3
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.H.ERI
+        t1, t2 = self.ccwfn.t1, self.ccwfn.t2
+        l1, l2 = self.cclambda.l1, self.cclambda.l2
+        no, nv = self.ccwfn.no, self.ccwfn.nv
+
+        Fov = self.hbar.Hov
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
+        Woovv = ERI[o,o,v,v]
+
+        t3 = np.zeros((no, no, no, nv, nv, nv), dtype=t2.dtype)
+        l3 = np.zeros((no, no, no, nv, nv, nv), dtype=l2.dtype)
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3[i,j,k] = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    l3[i,j,k] = l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract)
+        self._cc3_t3, self._cc3_l3 = t3, l3
+        return t3, l3
+
     # ==================================================================
     # Symmetric linear response -- the X-only formulation: only the
     # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
@@ -753,6 +791,51 @@ class ccresponse(object):
         # <0|L[[HBAR,X1_B],X2_A]|0>
         polar += self.LHX1Y2(X_B, X_A)
         return polar
+
+    def _LCX_CC3_spinorbital(self, pert, X):
+        """CC3 triples contribution to the LCX term of the symmetric response
+        function, <0|(1+L)[Abar,X]|0>. Port of socc LCX_CC3 (store_triples path).
+
+        Returns the sum of the four sub-terms (socc component names in brackets):
+          <0|L2[C,X3]|0>        (L2CX3)
+          <0|L3[C^,X3]|0>       (L3CX3)
+          <0|L3[[C,X1],T3]|0>   (L3CX1T3)
+          <0|L3[[C,X2],T2]|0>   (L3CX2T2)
+        where C = pert (similarity-transformed one-electron operator) and
+        X = [X1, X2, X3] the right-hand perturbed wave function."""
+        contract = self.contract
+        t2 = self.ccwfn.t2
+        l2 = self.cclambda.l2
+        X1, X2, X3 = X[0], X[1], X[2]
+        t3, l3 = self._cc3_full_triples_spinorbital()
+
+        # <0|L2[C,X3]|0>
+        tmp = 0.25 * contract('ijab,ijkabc->kc', l2, X3)
+        polar_L2CX3 = contract('kc,kc->', tmp, pert.Aov)
+
+        # <0|L3[C^,X3]|0>
+        tmp = contract('ijkabc,ijkabe->ce', l3, X3)
+        polar_L3CX3 = (1/12) * contract('ce,ce->', tmp, pert.Avv)
+        tmp = contract('ijkabc,ijmabc->mk', l3, X3)
+        polar_L3CX3 -= (1/12) * contract('mk,mk->', tmp, pert.Aoo)
+
+        # <0|L3[[C,X1],T3]|0>
+        tmp1 = contract('mc,me->ce', X1, pert.Aov)
+        tmp2 = -(1/12) * contract('ijkabc,ijkabe->ce', l3, t3)
+        polar_L3CX1T3 = contract('ce,ce->', tmp1, tmp2)
+        tmp1 = contract('ke,me->mk', X1, pert.Aov)
+        tmp2 = -(1/12) * contract('ijkabc,ijmabc->mk', l3, t3)
+        polar_L3CX1T3 += contract('mk,mk->', tmp1, tmp2)
+
+        # <0|L3[[C,X2],T2]|0>
+        tmp = 0.5 * contract('ijkabc,mkbc->ijam', l3, t2)
+        tmp = -0.5 * contract('ijam,ijae->me', tmp, X2)
+        polar_L3CX2T2 = contract('me,me->', tmp, pert.Aov)
+        tmp = 0.5 * contract('ijkabc,imab->jkcm', l3, X2)
+        tmp = -0.5 * contract('jkcm,jkec->me', tmp, t2)
+        polar_L3CX2T2 += contract('me,me->', tmp, pert.Aov)
+
+        return polar_L2CX3 + polar_L3CX3 + polar_L3CX1T3 + polar_L3CX2T2
 
     def LCX(self, pert, X):
         """One-particle-density (LCX) term of the symmetric response function:
