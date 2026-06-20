@@ -663,6 +663,15 @@ class ccresponse(object):
 
         return z1, z2
 
+    def _cc3_triples_spinorbital(self):
+        """Return the full ground-state spin-orbital T3 and Lambda-L3 for the CC3
+        response-function terms: the arrays stored on ccwfn/cclambda when
+        store_triples=True, else materialized (and cached) on the fly from the
+        batched builders via _cc3_full_triples_spinorbital."""
+        if self.ccwfn.store_triples:
+            return self.ccwfn.t3, self.cclambda.l3
+        return self._cc3_full_triples_spinorbital()
+
     def _cc3_full_triples_spinorbital(self):
         """Build (and cache) the full ground-state spin-orbital connected T3 and
         Lambda-L3 arrays, shape (no, no, no, nv, nv, nv), by looping over (i,j,k)
@@ -913,7 +922,7 @@ class ccresponse(object):
         t2 = self.ccwfn.t2
         l2 = self.cclambda.l2
         X1, X2, X3 = X[0], X[1], X[2]
-        t3, l3 = self._cc3_full_triples_spinorbital()
+        t3, l3 = self._cc3_triples_spinorbital()
 
         # <0|L2[C,X3]|0>
         tmp = 0.25 * contract('ijab,ijkabc->kc', l2, X3)
