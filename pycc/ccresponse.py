@@ -11,7 +11,7 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-from .utils import helper_diis
+from .utils import helper_diis, permute_triples
 from .cclambda import cclambda
 from .cctriples import t3c_ijk_so, t3c_abc_so, l3_ijk_so
 from ._typing import Tensor
@@ -239,7 +239,10 @@ class ccresponse(object):
                 raise NotImplementedError(
                     "Spatial CC3 response is not implemented; use the spin-orbital "
                     "path (orbital_basis='spinorbital').")
-            cc3_ints = self._cc3_response_setup_spinorbital(pertbar)
+            if self.ccwfn.store_triples:
+                cc3_ints = self._cc3_response_setup_full_spinorbital(pertbar)
+            else:
+                cc3_ints = self._cc3_response_setup_spinorbital(pertbar)
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
@@ -251,7 +254,10 @@ class ccresponse(object):
             r2 = self.r_X2(pertbar, omega)
 
             if self.ccwfn.model == 'CC3':
-                z1, z2 = self._cc3_iter_spinorbital(pertbar, omega, cc3_ints)
+                if self.ccwfn.store_triples:
+                    z1, z2 = self._cc3_iter_full_spinorbital(pertbar, omega, cc3_ints)
+                else:
+                    z1, z2 = self._cc3_iter_spinorbital(pertbar, omega, cc3_ints)
                 r1 += z1
                 r2 += z2
 
@@ -269,7 +275,11 @@ class ccresponse(object):
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
                 if self.ccwfn.model == 'CC3':
-                    X3 = self._cc3_build_X3_spinorbital(pertbar, omega, cc3_ints)
+                    if self.ccwfn.store_triples:
+                        # full X3 was formed and stored each iteration
+                        X3 = self.X3
+                    else:
+                        X3 = self._cc3_build_X3_spinorbital(pertbar, omega, cc3_ints)
                     return [self.X1, self.X2, X3], pseudo
                 return [self.X1, self.X2], pseudo
 
@@ -556,6 +566,102 @@ class ccresponse(object):
                     X3[:,:,:,a,b,c] += x3
 
         return X3
+
+    def _cc3_response_setup_full_spinorbital(self, pertbar):
+        """Build the T1-dressed CC3 W-intermediates reused across solve_right
+        iterations in the full-array (store_triples=True) perturbed-X path.
+
+        Unlike the batched setup, no once-only batched-T3 intermediates
+        (Yoovo/Yovvv/Zovoo/Zvvvo) are needed: the full ground-state T3 is already
+        stored on self.ccwfn.t3 and contracted whole-array in _cc3_iter_full."""
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.ccwfn.H.ERI
+        t1 = self.ccwfn.t1
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+        return {'Woooo': Woooo, 'Wovoo': Wovoo, 'Wvvvo': Wvvvo,
+                'Wvvvv': Wvvvv, 'Wovvo': Wovvo}
+
+    def _cc3_iter_full_spinorbital(self, pertbar, omega, ints):
+        """Full-array (store_triples=True) per-iteration spin-orbital CC3 perturbed
+        triples contribution (z1, z2).
+
+        Forms the whole perturbed X3 from the stored ground-state T3 and the
+        current X1/X2 with whole-array contractions (permute_triples
+        antisymmetrization, omega-shifted denominator), stores it on self.X3, and
+        folds it into z1/z2. Port of socc CC3_iter_full (ccresponse). Full-array
+        counterpart of the batched _cc3_iter_spinorbital."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t2 = self.ccwfn.t2
+        t3 = self.ccwfn.t3
+        hbar = self.hbar
+        X1, X2 = self.X1, self.X2
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+
+        # <mu3|[ABAR,T3]|0>
+        tmp = contract('ijkabc,dc->ijkabd', t3, pertbar.Avv)
+        X3 = tmp - tmp.swapaxes(3,5) - tmp.swapaxes(4,5)
+        tmp = -contract('ijkabc,kl->ijlabc', t3, pertbar.Aoo)
+        X3 += tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+
+        # 1/2 <mu3|[[A,T2],T2]|0>
+        tmp = contract('lkbc,ld->bcdk', t2, pertbar.Aov)
+        X3_a = -contract('ijad,bcdk->ijkabc', t2, tmp)
+        # <mu3|[[H^,T2],X1]|0>
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        X3_a += contract('ijad,bcdk->ijkabc', t2, Zbcdk)
+        # <mu3|[H^,X2]|0>
+        X3_a += contract('ijad,bcdk->ijkabc', X2, Wvvvo)
+        X3 += permute_triples(X3_a, 'k/ij', 'a/bc')
+
+        # <mu3|[[H^,T2],X1]|0>
+        Zlcjk = contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = -contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+        X3_b = contract('ilab,lcjk->ijkabc', t2, Zlcjk)
+        # <mu3|[H^,X2]|0>
+        X3_b += -contract('ilab,lcjk->ijkabc', X2, Wovoo)
+        X3 += permute_triples(X3_b, 'i/jk', 'c/ab')
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+        denom = (occ.reshape(-1,1,1,1,1,1) + occ.reshape(-1,1,1,1,1) + occ.reshape(-1,1,1,1)
+                 - vir.reshape(-1,1,1) - vir.reshape(-1,1) - vir)
+        denom = denom + omega
+        self.X3 = X3/denom
+        X3 = self.X3
+
+        # <mu1|[H,X3]|0>
+        z1 = 0.25 * contract('ijkabc,jkbc->ia', X3, ERI[o,o,v,v])
+
+        # <mu2|[[H,T3],X1]|0>
+        tmp = contract('ld,klcd->kc', X1, ERI[o,o,v,v])
+        z2 = contract('ijkabc,kc->ijab', t3, tmp)
+        tmp = contract('ld,jlbc->djbc', X1, ERI[o,o,v,v])
+        tmp = -0.5 * contract('ijkabc,djbc->ikad', t3, tmp)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('ld,jkbd->jklb', X1, ERI[o,o,v,v])
+        tmp = -0.5 * contract('ijkabc,jklb->ilac', t3, tmp)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        # <mu2|[HBAR,X3]|0>
+        z2 += contract('ijkabc,kc->ijab', X3, hbar.Hov)
+        tmp = 0.5 * contract('ijkabc,dkbc->ijad', X3, hbar.Hvovv)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = -0.5 * contract('ijkabc,jklc->ilab', X3, hbar.Hooov)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        return z1, z2
 
     def _cc3_full_triples_spinorbital(self):
         """Build (and cache) the full ground-state spin-orbital connected T3 and
