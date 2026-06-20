@@ -16,6 +16,49 @@ def zeros_like(a):
     return np.zeros_like(a)
 
 
+def permute_triples(ijkabc, perm_ijk, perm_abc):
+    """Antisymmetric permutation operator P(perm_ijk) P(perm_abc) on a connected
+    six-index triples tensor ``ijkabc``.
+
+    ``perm_ijk``/``perm_abc`` are strings like ``'k/ij'`` / ``'a/bc'`` denoting the
+    one-vs-pair antisymmetrizers P(k/ij) = 1 - P(ik) - P(jk) and
+    P(a/bc) = 1 - P(ab) - P(ac); the product expands to nine signed swapaxes
+    terms. Backend-agnostic (only ``swapaxes``). Used by the full-array (store_triples)
+    CC3 T3/L3/X3 builds; the batched per-ijk builders fold this antisymmetry into
+    their explicit index terms instead. Port of socc utils.permute_triples."""
+    idx = {'i': 0, 'j': 1, 'k': 2, 'a': 3, 'b': 4, 'c': 5}
+
+    char_list = list(perm_ijk)
+    if char_list[1] != '/':
+        raise Exception('String format must be, e.g., i/jk.')
+    char = [char_list[0], char_list[2], char_list[3]]
+    if set(char).issubset(idx) is False:
+        raise Exception('Only allowed indices are i, j, k or a, b, c.')
+    ijk_perm1 = [idx[char[0]], idx[char[1]]]
+    ijk_perm2 = [idx[char[0]], idx[char[2]]]
+
+    char_list = list(perm_abc)
+    if char_list[1] != '/':
+        raise Exception('String format must be, e.g., c/ab.')
+    char = [char_list[0], char_list[2], char_list[3]]
+    if set(char).issubset(idx) is False:
+        raise Exception('Only allowed indices are i, j, k or a, b, c.')
+    abc_perm1 = [idx[char[0]], idx[char[1]]]
+    abc_perm2 = [idx[char[0]], idx[char[2]]]
+
+    t3 = (ijkabc
+          - ijkabc.swapaxes(abc_perm1[0], abc_perm1[1])
+          - ijkabc.swapaxes(abc_perm2[0], abc_perm2[1])
+          - ijkabc.swapaxes(ijk_perm1[0], ijk_perm1[1])
+          + ijkabc.swapaxes(ijk_perm1[0], ijk_perm1[1]).swapaxes(abc_perm1[0], abc_perm1[1])
+          + ijkabc.swapaxes(ijk_perm1[0], ijk_perm1[1]).swapaxes(abc_perm2[0], abc_perm2[1])
+          - ijkabc.swapaxes(ijk_perm2[0], ijk_perm2[1])
+          + ijkabc.swapaxes(ijk_perm2[0], ijk_perm2[1]).swapaxes(abc_perm1[0], abc_perm1[1])
+          + ijkabc.swapaxes(ijk_perm2[0], ijk_perm2[1]).swapaxes(abc_perm2[0], abc_perm2[1]))
+
+    return t3
+
+
 def zeros(shape, like):
     """Allocate a zero tensor of ``shape`` matching ``like``'s backend/dtype/device.
 
