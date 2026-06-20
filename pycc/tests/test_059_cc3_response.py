@@ -1,0 +1,74 @@
+"""
+Spin-orbital CC3 dynamic dipole polarizability via the symmetric linear-response
+function (right-hand perturbed amplitudes only); docs/ENHANCEMENT_PLAN_2026-06.md.
+
+CC3 response requires the full connected triples T3/L3/X3. The store_triples=True
+path forms and stores these via whole-array kernels; store_triples=False uses the
+batched (per-ijk) kernels and materializes the full arrays where the response
+needs them. Both must give the same response.
+
+Validation:
+  * CC3 polarizability tensor (omega=0.1, H2O/STO-3G) vs an independent Dalton
+    reference (matches socc test_008).
+  * store_triples=True == store_triples=False (the two triples algorithms agree).
+
+Marked slow: the polarizability solves six perturbed wave functions with full
+triples.
+"""
+
+import psi4
+import pycc
+import numpy as np
+import pytest
+
+# socc test_008 / Dalton-reference geometry (Cartesian, bohr).
+H2O = """
+0 1
+O 0.000000000000000   0.000000000000000   0.143225857166674
+H 0.000000000000000  -1.638037301628121  -1.136549142277225
+H 0.000000000000000   1.638037301628121  -1.136549142277225
+symmetry c1
+units bohr
+"""
+
+# Dalton CC3 dipole polarizability, omega = 0.1 a.u. (from socc test_008).
+DALTON_POLAR = np.array([[0.061593757, 0.0, 0.0],
+                         [0.0, 7.0661684, 0.0],
+                         [0.0, 0.0, 3.0604929]])
+
+
+@pytest.mark.slow
+def test_cc3_polarizability():
+    """Spin-orbital CC3 dynamic polarizability (omega=0.1) vs Dalton, for both
+    the full-array (store_triples=True) and batched (store_triples=False) triples
+    algorithms."""
+    psi4.core.clean()
+    psi4.set_memory('2 GB')
+    psi4.core.be_quiet()
+    psi4.geometry(H2O)
+    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'mp2_type': 'conv',
+                      'freeze_core': 'false', 'reference': 'rhf',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12,
+                      'r_convergence': 1e-12})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+
+    def polar(store_triples):
+        cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
+                        orbital_basis='spinorbital', store_triples=store_triples)
+        ecc = cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
+        hbar = pycc.cchbar(cc)
+        lam = pycc.cclambda(cc, hbar)
+        lcc = lam.solve_lambda(e_conv=1e-12, r_conv=1e-12)
+        dens = pycc.ccdensity(cc, lam, onlyone=True)
+        resp = pycc.ccresponse(dens)
+        return ecc, lcc, resp.polarizability(0.1)
+
+    # socc/Psi4 reference CC3 energy and Lambda pseudoenergy for this geometry.
+    e_full, l_full, P_full = polar(True)
+    assert abs(e_full - (-0.070778085758433)) < 1e-11
+    assert abs(l_full - (-0.068979529552146)) < 1e-11
+    assert np.allclose(P_full, DALTON_POLAR, atol=1e-6)
+
+    # The batched triples algorithm must reproduce the same response.
+    _, _, P_batched = polar(False)
+    assert np.allclose(P_full, P_batched, atol=1e-10)

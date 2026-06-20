@@ -905,6 +905,15 @@ class ccresponse(object):
         polar += self.LHX1Y2(X_A, X_B)
         # <0|L[[HBAR,X1_B],X2_A]|0>
         polar += self.LHX1Y2(X_B, X_A)
+
+        if self.ccwfn.model == 'CC3':
+            # CC3 connected-triples contributions to the symmetric response
+            # function (X3 = X[2] is the perturbed triples). socc linresp CC3 block.
+            polar += self._LCX_CC3_spinorbital(A, X_B) + self._LCX_CC3_spinorbital(B, X_A)
+            polar += self._L2HX1Y3_CC3_spinorbital(X_A, X_B) + self._L2HX1Y3_CC3_spinorbital(X_B, X_A)
+            polar += self._L3HX1Y2_CC3_spinorbital(X_A, X_B) + self._L3HX1Y2_CC3_spinorbital(X_B, X_A)
+            polar += self._L3HX1Y1T2_CC3_spinorbital(X_A, X_B)
+
         return polar
 
     def _LCX_CC3_spinorbital(self, pert, X):
@@ -951,6 +960,99 @@ class ccresponse(object):
         polar_L3CX2T2 += contract('me,me->', tmp, pert.Aov)
 
         return polar_L2CX3 + polar_L3CX3 + polar_L3CX1T3 + polar_L3CX2T2
+
+    def _L2HX1Y3_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L2[[H,X1],Y3]|0> term (L2HX1Y3) of the symmetric response
+        function. Port of socc L2HX1Y3_CC3. Uses X1 = X[0] and the perturbed
+        triples Y3 = Y[2]; needs only l2 and ERI (no ground-state t3/l3)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        l2 = self.cclambda.l2
+        X1 = X[0]
+        Y3 = Y[2]
+
+        tmp = contract('me,mnef->nf', X1, ERI[o,o,v,v])
+        tmp = contract('nijfab,nf->ijab', Y3, tmp)
+        polar = 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        tmp = contract('ie,mnef->mnif', X1, ERI[o,o,v,v])
+        tmp = contract('mnjafb,mnif->ijab', Y3, tmp)
+        polar -= 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        tmp = contract('ma,mnef->anef', X1, ERI[o,o,v,v])
+        tmp = contract('injefb,anef->ijab', Y3, tmp)
+        polar -= 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        return polar
+
+    def _L3HX1Y2_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L3[[H,X1],Y2]|0> term (L3HX1Y2). Port of socc L3HX1Y2_CC3. Uses
+        the ground-state L3, X1 = X[0], Y2 = Y[1], and the CC3 Woooo/Wvvvv/Wovvo
+        intermediates."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        t1 = self.ccwfn.t1
+        _, l3 = self._cc3_triples_spinorbital()
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+        X1 = X[0]
+        Y2 = Y[1]
+
+        tmp = contract('ie,abef->abif', X1, Wvvvv)
+        tmp = contract('ijkabc,abif->jkfc', l3, tmp)
+        polar = 0.25 * contract('jkfc,jkfc->', Y2, tmp)
+
+        tmp = contract('ma,mnij->anij', X1, Woooo)
+        tmp = contract('ijkabc,anij->nkbc', l3, tmp)
+        polar += 0.25 * contract('nkbc,nkbc->', Y2, tmp)
+
+        tmp = contract('ie,mbej->mbij', X1, Wovvo)
+        tmp = contract('ijkabc,mbij->mkac', l3, tmp)
+        polar -= 0.5 * contract('mkac,mkac->', Y2, tmp)
+
+        tmp = contract('ma,mbej->abej', X1, Wovvo)
+        tmp = contract('ijkabc,abej->ikec', l3, tmp)
+        polar -= 0.5 * contract('ikec,ikec->', Y2, tmp)
+
+        return polar
+
+    def _L3HX1Y1T2_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L3[[[H,X1],Y1],T2]|0> term (L3HX1Y1T2). Port of socc
+        L3HX1Y1T2_CC3. Uses the ground-state L3 and T2, X1 = X[0], Y1 = Y[0], and
+        the CC3 Wooov/Wvovv. The tau = X1(x)Y1 + Y1(x)X1 construction makes this
+        symmetric under X<->Y, so it enters the response with no swapped partner."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        t1 = self.ccwfn.t1
+        t2 = self.ccwfn.t2
+        _, l3 = self._cc3_triples_spinorbital()
+        Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
+        X1 = X[0]
+        Y1 = Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('jb,ia->ijab', X1, Y1)
+
+        tmp = contract('kmfc,bmef->bcek', tau, Wvovv)
+        tmp = contract('ijkabc,bcek->ijae', l3, tmp)
+        polar = -0.5 * contract('ijae,ijae->', t2, tmp)
+
+        tmp = contract('ie,jf,amef->amij', X1, Y1, Wvovv)
+        tmp = contract('ijkabc,amij->mkbc', l3, tmp)
+        polar -= 0.5 * contract('mkbc,mkbc->', t2, tmp)
+
+        tmp = contract('knec,mnje->mcjk', tau, Wooov)
+        tmp = contract('ijkabc,mcjk->imab', l3, tmp)
+        polar += 0.5 * contract('imab,imab->', t2, tmp)
+
+        tmp = contract('ma,nb,mnie->abie', X1, Y1, Wooov)
+        tmp = contract('ijkabc,abie->jkec', l3, tmp)
+        polar += 0.5 * contract('jkec,jkec->', t2, tmp)
+
+        return polar
 
     def LCX(self, pert, X):
         """One-particle-density (LCX) term of the symmetric response function:
