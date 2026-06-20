@@ -42,6 +42,29 @@ Perturbed triples X3 coupling in the perturbed-wavefunction solver.
   the two pseudo scalars. socc ccwfn: `socc.ccwfn(wfn, model='CC3')`,
   `solve_cc(1e-12,1e-12,store_triples=False)`, then cchbar/cclambda/ccresponse.
 
+## Phase B — IN PROGRESS
+
+### Step 1 — DONE & validated (uncommitted as of this note)
+`_cc3_build_X3_spinorbital(pertbar, omega, ints)` in `pycc/ccresponse.py`: builds the
+full converged perturbed triples `X3[ijkabc]` from converged X1/X2, replicating the IJK
+(+ ABC) block construction inside `_cc3_iter_spinorbital` (correct-by-construction — the
+same blocks the validated Phase A loop folds into z1/z2). Note: pycc does NOT store
+t3/l3/X3 (no `store_triples`); this separate post-convergence builder is the agreed
+near-term approach (vs teaching the hot `_cc3_iter` loop to also store).
+Validated vs socc stored `self.X3` (store_triples=True), H2O/STO-3G, omega=0.1: pseudo
+6e-16, X1 8e-15, X3 norm/`<X3|X3>` ~13 digits, `1/4 X3.<jk||bc>` (singles space) 7e-16.
+
+### CRITICAL: pycc-vs-socc spin-block PHASE convention (affects ALL Phase B validation)
+pycc and socc differ by a benign relative **phase convention** in certain spin blocks:
+~32/1600 X2 elements and ~864/64000 X3 elements are EXACTLY NEGATED (norms match to ~13
+digits). pycc's `pertbar` carries the matching sign, so this cancels out of every
+physical full-contraction quantity (pseudoresponse, energies). CONSEQUENCE: validate
+Phase B **term-by-term by SCALAR value** against socc's printed component breakdown — the
+response terms are all full contractions (physical scalars, convention-invariant).
+Do NOT element-wise-compare intermediate l3/t3/X3 tensors against socc; they differ by
+phase. (socc has no X3_ijk/X3_abc builders — the doc below speculated wrongly; socc
+builds X3 holistically in CC3_iter_full.)
+
 ## Phase B — TODO (response-function CC3 terms)
 The 7 CC3 terms add to the symmetric response in `_linresp_sym_spinorbital`. socc
 reference: `linresp` CC3 block (socc ccresponse **281-412**) and the term methods:

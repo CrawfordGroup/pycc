@@ -493,6 +493,68 @@ class ccresponse(object):
         z2 += y2.T
         return z1, z2
 
+    def _cc3_build_X3_spinorbital(self, pertbar, omega, ints):
+        """Build and return the full converged spin-orbital perturbed triples X3
+        from the converged X1/X2 (self.X1/self.X2).
+
+        This replicates the X3-block construction inside _cc3_iter_spinorbital
+        (occupied-batched IJK + virtual-batched ABC, omega-shifted denominators)
+        but accumulates into the full X3[ijkabc] array instead of folding into
+        z1/z2. Called once after solve_right converges so the response-function
+        terms (Phase B) can contract against a stored X3. Counterpart of socc
+        CC3_iter_full's stored self.X3 (store_triples=True path)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        t2 = self.ccwfn.t2
+        X1, X2 = self.X1, self.X2
+        no, nv = X1.shape
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+        Zovoo, Zvvvo = ints['Zovoo'], ints['Zvvvo']
+
+        # X1-dressed W intermediates (same as _cc3_iter_spinorbital)
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        Zlcjk = -contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+
+        X3 = np.zeros((no, no, no, nv, nv, nv), dtype=X2.dtype)
+
+        # occupied-batched (IJK): X3 from [A,T3]_Avv + dressed-t3 ([[H,T2],X1]) + [H,X2]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = contract('abc,dc->abd', t3, pertbar.Avv)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ[i] + occ[j] + occ[k] + omega
+                             - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+                    x3 = x3/denom
+                    x3 += t3c_ijk_so(o, v, i, j, k, t2, Zvvvo+Zbcdk, Zovoo+Zlcjk, F, contract, omega)
+                    x3 += t3c_ijk_so(o, v, i, j, k, X2, Wvvvo, Wovoo, F, contract, omega)
+                    X3[i,j,k] += x3
+
+        # virtual-batched (ABC): X3 from [A,T3]_Aoo
+        for a in range(nv):
+            for b in range(nv):
+                for c in range(nv):
+                    t3 = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = -contract('ijk,kl->ijl', t3, pertbar.Aoo)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ + omega
+                             - (vir[a] + vir[b] + vir[c]))
+                    x3 = x3/denom
+                    X3[:,:,:,a,b,c] += x3
+
+        return X3
+
     # ==================================================================
     # Symmetric linear response -- the X-only formulation: only the
     # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
