@@ -372,14 +372,19 @@ pathway, set as a `CCwfn` constructor kwarg (default `False`) and threaded throu
   `if model=='CC3'`. `_cc3_triples_spinorbital` sources t3/l3 from the stored arrays
   (store=True) or materializes them batched (store=False), so the response runs either way.
   `solve_right` returns `([X1,X2,X3], pseudo)` for CC3.
+- Both **polarizability** and **optical rotation** are covered: `optrot` shares the same
+  X-solver + `_linresp_sym_spinorbital` kernel, so the four CC3 terms feed it automatically;
+  optrot adds the spin-orbital magnetic-dipole (M / M*) perturbations to the mix.
 - Validation: each leg `store=True == batched == socc` to ~1e-16 (energy, Lambda
   pseudoenergy, perturbed X3, and all four response terms by scalar value -- the gauge note
-  below means term-by-term must be compared by VALUE, not element-wise). `test_059` (slow):
-  CC3 dynamic polarizability (omega=0.1, H2O/STO-3G) == Dalton reference to ~1e-8 for both
-  store settings, and store=True == store=False to ~1e-15.
+  below means term-by-term must be compared by VALUE, not element-wise). `test_059`:
+  (fast, non-slow) CC3 polarizability `alpha_zz` (omega=0.1, H2O/STO-3G) == Dalton to ~1e-8;
+  (slow) the full polarizability tensor == Dalton + store=True == store=False (~1e-15); and
+  (slow) CC3 optical rotation `G'_zz` (omega=0.077357, length gauge, chiral H2O2/STO-3G) ==
+  Dalton reference (socc test_009) to ~2e-6.
 - Gauge note: pycc semicanonicalizes the MOs (independent `eigh` per spin/occ/vir block);
   socc uses Psi4's raw MOs. The resulting per-MO-column sign differences are a benign
   gauge: every integral transforms as `eps_p eps_q ...` and all fully-contracted (physical)
   quantities are invariant, so cross-code checks use scalar values, not tensor elements.
-- Remaining: validate CC3 `optrot` (shares the kernel; unconfirmed); the batched-triples
-  response function (no full T3/L3/X3) is a planned follow-on.
+- Remaining: the batched-triples response function (no full T3/L3/X3) is a planned follow-on
+  -- the batched perturbed-X + materialize-at-end machinery is kept for it.
