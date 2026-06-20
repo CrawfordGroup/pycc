@@ -51,7 +51,7 @@ def test_linresp(rhf_wfn):
         for b in range(0,3):
             string_b = "MU_" + resp.cart[b]
             Y1_B, Y2_B, _ = Y_2[string_b]
-            X1_B, X2_B, _ = X_2[string_b]
+            (X1_B, X2_B), _ = X_2[string_b]
             polar_AB[a,b] = resp.linresp_asym(string_a, X1_B, X2_B, Y1_B, Y2_B)
 
     print("Dynamic Polarizability Tensor @ w=0.0656 a.u.:")
