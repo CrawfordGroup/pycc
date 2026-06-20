@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from opt_einsum import contract
-from .utils import helper_diis, zeros, zeros_like, clone, sqrt
+from .utils import helper_diis, zeros, zeros_like, clone, sqrt, permute_triples
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
@@ -154,7 +154,10 @@ class cclambda(object):
                 if self.ccwfn.orbital_basis == 'spinorbital':
                     # The spin-orbital Y1/Y2 come out fully antisymmetric already,
                     # so they are added directly (no i<->j / a<->b symmetrization).
-                    Y1, Y2 = self._cc3_lambda_triples_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
+                    if self.ccwfn.store_triples:
+                        Y1, Y2 = self._cc3_lambda_triples_full_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
+                    else:
+                        Y1, Y2 = self._cc3_lambda_triples_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
                     r1 += Y1
                     r2 += Y2
                 else:
@@ -279,14 +282,20 @@ class cclambda(object):
         Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
 
         no = self.ccwfn.no
-        Zijal = zeros_like(ERI[o,o,v,o])
-        Ziabd = zeros_like(ERI[o,v,v,v])
-        for i in range(no):
-            for j in range(no):
-                for k in range(no):
-                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                    Zijal[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
-                    Ziabd[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+        if self.ccwfn.store_triples:
+            # Whole-array from the stored ground-state T3 (store_triples=True path).
+            t3 = self.ccwfn.t3
+            Zijal = -0.5 * contract('ijkabc,lkbc->ijal', t3, ERI[o,o,v,v])
+            Ziabd = -0.5 * contract('ijkabc,jkdc->iabd', t3, ERI[o,o,v,v])
+        else:
+            Zijal = zeros_like(ERI[o,o,v,o])
+            Ziabd = zeros_like(ERI[o,v,v,v])
+            for i in range(no):
+                for j in range(no):
+                    for k in range(no):
+                        t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                        Zijal[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
+                        Ziabd[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
 
         return {'Fov': Fov, 'Woooo': Woooo, 'Wovoo': Wovoo, 'Wooov': Wooov,
                 'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
@@ -355,6 +364,69 @@ class cclambda(object):
         Y1 += 0.5 * contract('ijam,lmij->la', Zijam, Woooo)
         Y1 += contract('iabe,lbei->la', Ziabe, Wovvo)
         Y1 += contract('ijam,madj->id', Zijam, Wovvo)
+
+        return Y1, Y2
+
+    def _cc3_lambda_triples_full_spinorbital(self, o, v, l1, l2, t2, F, ERI, ints):
+        """Full-array (store_triples=True) spin-orbital CC3 triples contributions
+        (Y1, Y2) to the Lambda residuals.
+
+        Builds the whole Lambda-L3 with whole-array contractions (permute_triples
+        antisymmetrization, no per-(i,j,k) batching), stores it on ``self.l3``, and
+        folds the connected-triples pieces into Y1/Y2. Uses the stored ground-state
+        T3 (``self.ccwfn.t3``). Full-array counterpart of the batched
+        :meth:`_cc3_lambda_triples_spinorbital`; port of socc ``CC3_iter_full``.
+        Both paths must give identical Y1/Y2 (hence the same Lambda pseudoenergy)."""
+        contract = self.contract
+        Fov = ints['Fov']
+        Woooo = ints['Woooo']
+        Wovoo = ints['Wovoo']
+        Wooov = ints['Wooov']
+        Wvovv = ints['Wvovv']
+        Wvvvo = ints['Wvvvo']
+        Wvvvv = ints['Wvvvv']
+        Wovvo = ints['Wovvo']
+        Zijal = ints['Zijal']
+        Ziabd = ints['Ziabd']
+        t3 = self.ccwfn.t3
+        Woovv = ERI[o,o,v,v]
+
+        # full Lambda-L3 (connected, antisymmetrized)
+        tmp = contract('ia,jkbc->ijkabc', l1, Woovv) + contract('ia,jkbc->ijkabc', Fov, l2)
+        l3 = permute_triples(tmp, 'i/jk', 'a/bc')
+        tmp = contract('ijad,dkbc->ijkabc', l2, Wvovv)
+        l3 = l3 + permute_triples(tmp, 'k/ij', 'a/bc')
+        tmp = -contract('ilab,jklc->ijkabc', l2, Wooov)
+        l3 = l3 + permute_triples(tmp, 'i/jk', 'c/ab')
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+        denom = (occ.reshape(-1,1,1,1,1,1) + occ.reshape(-1,1,1,1,1) + occ.reshape(-1,1,1,1)
+                 - vir.reshape(-1,1,1) - vir.reshape(-1,1) - vir)
+        self.l3 = l3/denom
+        l3 = self.l3
+
+        # <0|L2[[H^,T3],nu1]|0> -> L1
+        tmp = 0.25 * contract('ijkabc,jkbc->ia', t3, l2)
+        Y1 = contract('ia,lida->ld', tmp, Woovv)
+        Y1 += 0.5 * contract('ijal,ijad->ld', Zijal, l2)
+        Y1 += 0.5 * contract('iabd,ilab->ld', Ziabd, l2)
+
+        # <0|L3[[H^,T2],nu1]|0> -> L1
+        tmp = 0.5 * contract('ijkabc,jkec->iabe', l3, t2)
+        Y1 += 0.5 * contract('iabe,abde->id', tmp, Wvvvv)
+        tmp = 0.5 * contract('ijkabc,mkbc->ijam', l3, t2)
+        Y1 += 0.5 * contract('ijam,lmij->la', tmp, Woooo)
+        tmp = -0.5 * contract('ijkabc,ikdc->jabd', l3, t2)
+        Y1 += contract('jabd,lbdj->la', tmp, Wovvo)
+        tmp = -0.5 * contract('ijkabc,lkac->ijlb', l3, t2)
+        Y1 += contract('ijlb,lbdj->id', tmp, Wovvo)
+
+        # <0|L3[H^,nu2]|0> -> L2
+        tmp = 0.5 * contract('ijkabc,bcdk->ijad', l3, Wvvvo)
+        Y2 = tmp - tmp.swapaxes(2,3)
+        tmp = -0.5 * contract('ijkabc,lcjk->ilab', l3, Wovoo)
+        Y2 = Y2 + tmp - tmp.swapaxes(0,1)
 
         return Y1, Y2
 
