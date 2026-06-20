@@ -381,9 +381,5 @@ pathway, set as a `CCwfn` constructor kwarg (default `False`) and threaded throu
   socc uses Psi4's raw MOs. The resulting per-MO-column sign differences are a benign
   gauge: every integral transforms as `eps_p eps_q ...` and all fully-contracted (physical)
   quantities are invariant, so cross-code checks use scalar values, not tensor elements.
-- Remaining: validate CC3 `optrot` (shares the kernel; uncomfirmed); the batched-triples
+- Remaining: validate CC3 `optrot` (shares the kernel; unconfirmed); the batched-triples
   response function (no full T3/L3/X3) is a planned follow-on.
-
-**To resume:** read this doc + `git log`. The spin-orbital equation seed lives in
-`~/src/socc` (machine-local, not part of this repo); see `socc/hamiltonian.py` for the
-Fock/ERI build and `socc/ccwfn.py` for the residual kernels.
