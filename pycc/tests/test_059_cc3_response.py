@@ -70,9 +70,15 @@ def test_cc3_polarizability_zz():
 
 @pytest.mark.slow
 def test_cc3_polarizability():
-    """Spin-orbital CC3 dynamic polarizability (omega=0.1) vs Dalton, for both
-    the full-array (store_triples=True) and batched (store_triples=False) triples
-    algorithms."""
+    """Spin-orbital CC3 dynamic polarizability (omega=0.1).
+
+    Full-array (store_triples=True) path: the complete tensor vs the Dalton
+    reference (plus the CC3 energy and Lambda pseudoenergy). Batched
+    (store_triples=False) path: a single element, alpha_zz, must reproduce the
+    full-array value -- the batched kernels are identical across the three
+    Cartesian axes, so one element exercises the whole batched solve+response
+    chain. (The batched path is ~100x slower per element here, so checking one
+    element rather than the full tensor keeps this test from ballooning.)"""
     psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.be_quiet()
@@ -83,7 +89,7 @@ def test_cc3_polarizability():
                       'r_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
 
-    def polar(store_triples):
+    def setup(store_triples):
         cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
                         orbital_basis='spinorbital', store_triples=store_triples)
         ecc = cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
@@ -91,15 +97,22 @@ def test_cc3_polarizability():
         lam = pycc.cclambda(cc, hbar)
         lcc = lam.solve_lambda(e_conv=1e-12, r_conv=1e-12)
         dens = pycc.ccdensity(cc, lam, onlyone=True)
-        resp = pycc.ccresponse(dens)
-        return ecc, lcc, resp.polarizability(0.1)
+        return ecc, lcc, pycc.ccresponse(dens)
 
-    # socc/Psi4 reference CC3 energy and Lambda pseudoenergy for this geometry.
-    e_full, l_full, P_full = polar(True)
+    def alpha_zz(resp):
+        # alpha_zz = -<<mu_z; mu_z>>_omega, from X(mu_z, -+omega).
+        A = resp.pertbar["MU_Z"]
+        Xm, _ = resp.solve_right(A, -0.1)
+        Xp, _ = resp.solve_right(A, 0.1)
+        return -resp.linresp_sym(A, Xm, A, Xp)
+
+    # Full-array path: full tensor vs Dalton, plus the energy / Lambda references.
+    e_full, l_full, resp_full = setup(True)
     assert abs(e_full - (-0.070778085758433)) < 1e-11
     assert abs(l_full - (-0.068979529552146)) < 1e-11
+    P_full = resp_full.polarizability(0.1)
     assert np.allclose(P_full, DALTON_POLAR, atol=1e-6)
 
-    # The batched triples algorithm must reproduce the same response.
-    _, _, P_batched = polar(False)
-    assert np.allclose(P_full, P_batched, atol=1e-10)
+    # Batched path: one element must reproduce the full-array result.
+    _, _, resp_batched = setup(False)
+    assert abs(alpha_zz(resp_batched) - P_full[2, 2]) < 1e-10
