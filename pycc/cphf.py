@@ -79,6 +79,11 @@ class CPHF(object):
         # HFwfn builds the full MO space).
         self.eps = np.asarray(diag(wfn.H.F))
         self._G: dict = {}  # kind -> reshaped (no*nv, no*nv) orbital Hessian
+        # ROHF: restricted orbitals (same_a_b_orbs) but spin-polarized occupation
+        # (not same_a_b_dens). UHF has same_a_b_orbs False; RHF has both True. The
+        # CPHF orbital response is not supported for ROHF yet -- see solve().
+        ref = wfn.ref
+        self.is_rohf = bool(ref.same_a_b_orbs() and not ref.same_a_b_dens())
         # Persistent nuclear response, keyed by atom (geometry-bound -- valid for the
         # life of this CPHF object, which is tied to one wfn / structure). Built once
         # by solve_nuclear() and SHARED by every consumer of the nuclear response (the
@@ -132,7 +137,21 @@ class CPHF(object):
 
     # ---- linear solve ----
     def solve(self, B: np.ndarray, kind: str = "electric") -> np.ndarray:
-        """Solve ``G U = B`` for the ov response. ``B`` is ``(no, nv)``; returns ``(no, nv)``."""
+        """Solve ``G U = B`` for the ov response. ``B`` is ``(no, nv)``; returns ``(no, nv)``.
+
+        Not implemented for ROHF: the semicanonical spin-orbital response lets alpha and
+        beta relax independently (UHF-like) and so does not reproduce the *restricted*
+        ROHF response. Matching it requires adopting the reference's ROHF Brillouin /
+        orbital-rotation conventions (docc-socc, socc-virt couplings), which are not
+        uniquely defined. RHF and UHF are supported. The CPHF-free HF gradient is
+        unaffected (it does not call this)."""
+        if self.is_rohf:
+            raise NotImplementedError(
+                "CPHF orbital response is not implemented for ROHF references: the "
+                "semicanonical spin-orbital response does not reproduce the restricted "
+                "ROHF response, and the ROHF Brillouin/orbital-rotation conventions "
+                "(not uniquely defined) must match the reference. RHF and UHF are "
+                "supported; the CPHF-free HF gradient works for ROHF.")
         G = self.hessian(kind)
         U = np.linalg.solve(G, np.asarray(B).reshape(-1))
         return U.reshape(self.no, self.nv)

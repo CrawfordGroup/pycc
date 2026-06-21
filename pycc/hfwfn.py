@@ -121,17 +121,22 @@ class HFwfn(Wavefunction):
         The field perturbation does not move the basis functions, so the response has
         no overlap/Pulay contribution: solve the electric-field CPHF response for each
         Cartesian axis (:class:`CPHF`) and contract with the MO dipole integrals,
-        ``alpha_ab = -4 sum_ia mu^a_ia U^b_ia`` (closed shell), where ``U^b`` solves
-        ``G U^b = -mu^b`` in the ov block. (The two minus signs -- the ``-mu`` RHS and
-        the ``-4`` contraction -- make alpha positive definite and cancel.)
+        ``alpha_ab = -k sum_ia mu^a_ia U^b_ia``, where ``U^b`` solves ``G U^b = -mu^b``
+        in the ov block. The prefactor counts the ``ov``+``vo`` response (factor 2) and,
+        on the spatial closed-shell path, the double occupancy (another factor 2 ->
+        ``k = 4``); the spin-orbital path has singly occupied spin orbitals, so ``k = 2``
+        and the orbital Hessian carries the spin structure. (The two minus signs -- the
+        ``-mu`` RHS and the ``-k`` contraction -- make alpha positive definite and
+        cancel.) Basis-aware.
         """
         o, v = self.o, self.v
+        k = 2.0 if self.orbital_basis == 'spinorbital' else 4.0
         mu = [np.asarray(self.H.mu[c])[o, v] for c in range(3)]
         U = [self.cphf.solve(self.cphf.rhs_field(b), kind="electric") for b in range(3)]
         alpha = np.zeros((3, 3))
         for a in range(3):
             for b in range(3):
-                alpha[a, b] = -4.0 * np.einsum('ia,ia->', mu[a], U[b])
+                alpha[a, b] = -k * np.einsum('ia,ia->', mu[a], U[b])
         self.alpha = alpha
         return self.alpha
 
