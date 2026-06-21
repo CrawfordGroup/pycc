@@ -154,7 +154,11 @@ class HFwfn(Wavefunction):
                             + 2 sum_i (d mu_a / d X_Ab)_ii         (explicit electronic)
                             - 2 sum_ik S^X_ki (mu_a)_ik            (oo / Pulay response)
                             + 4 sum_ia U^X_ia (mu_a)_ia            (ov / CPHF response)
+
+        The spin-orbital path dispatches to :meth:`_dipole_derivatives_spinorbital`.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._dipole_derivatives_spinorbital()
         o, v = self.o, self.v
         mu = [np.asarray(self.H.mu[a]) for a in range(3)]
         d = self.derivatives
@@ -174,6 +178,40 @@ class HFwfn(Wavefunction):
                     val += 2.0 * np.trace(dip[alpha * 3 + beta])
                     val -= 2.0 * np.einsum('ki,ki->', Sx[beta], mu[alpha][o, o])
                     val += 4.0 * np.einsum('ia,ia->', Ux[beta], mu[alpha][o, v])
+                    dmu[A, beta, alpha] = val
+        self.dipder = dmu
+        return self.dipder
+
+    def _dipole_derivatives_spinorbital(self) -> np.ndarray:
+        """Spin-orbital nuclear dipole derivatives (APTs), shape ``(natom, 3, 3)`` indexed
+        ``[A, beta, alpha]``. The spin-orbital form of :meth:`dipole_derivatives`: singly
+        occupied spin orbitals (the one-electron traces carry factor 1, the ov response
+        factor 2, vs 2 and 4 closed-shell), with the spin-orbital nuclear CPHF response
+        (:meth:`CPHF.solve_nuclear`) and spin-orbital dipole derivatives
+        (:meth:`Derivatives.so_dipole`)::
+
+            d mu_a / d X_Ab = Z_A delta_ab + sum_i (d mu_a / d X_Ab)_ii
+                            - sum_ik S^X_ki (mu_a)_ik + 2 sum_ia U^X_ia (mu_a)_ia
+
+        Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals;
+        ROHF raises (the nuclear response goes through :meth:`CPHF.solve`)."""
+        o, v = self.o, self.v
+        mu = [np.asarray(self.H.mu[a]) for a in range(3)]
+        d = self.derivatives
+        mol = self.ref.molecule()
+        natom = mol.natom()
+
+        dmu = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            Ux = self.cphf.solve_nuclear(A)      # 3 x (no,nv), spin-orbital response
+            Sx = d.so_overlap(A)                 # 3 x (nmo,nmo)
+            dip = d.so_dipole(A)                 # 9 x (nmo,nmo): index alpha*3 + beta
+            for beta in range(3):
+                for alpha in range(3):
+                    val = mol.Z(A) if alpha == beta else 0.0
+                    val += self.contract('ii->', dip[alpha * 3 + beta][o, o])
+                    val -= self.contract('ki,ki->', Sx[beta][o, o], mu[alpha][o, o])
+                    val += 2.0 * self.contract('ia,ia->', Ux[beta], mu[alpha][o, v])
                     dmu[A, beta, alpha] = val
         self.dipder = dmu
         return self.dipder

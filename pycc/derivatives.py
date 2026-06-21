@@ -190,6 +190,25 @@ class Derivatives(object):
             out.append(phys - phys.swapaxes(2, 3))
         return out
 
+    def so_dipole(self, atom: int) -> List[np.ndarray]:
+        """Spin-orbital MO electric-dipole derivatives ``d(mu_alpha)/d(X_atom,beta)`` for
+        ``atom``: 9 ``nmo x nmo`` arrays indexed ``alpha*3 + beta`` (block-diagonal in
+        spin). As in :meth:`dipole`, the AO derivatives (``ao_elec_dip_deriv1``) are
+        transformed here (the ``mo_elec_dip_deriv1`` route segfaults on linux Psi4
+        1.10.1); here each spin block is transformed with the semicanonical MOs."""
+        nmo, a, b, sa, sb, _, _ = self._so_spin_blocks()
+        Ca = np.asarray(self.wfn.H.Ca)
+        Cb = np.asarray(self.wfn.H.Cb)
+        aod = self.mints.ao_elec_dip_deriv1(atom)   # 9 x (nao, nao)
+        out = []
+        for c in range(9):
+            ao = np.asarray(aod[c])
+            M = np.zeros((nmo, nmo))
+            M[np.ix_(a, a)] = (Ca.T @ ao @ Ca)[np.ix_(sa, sa)]
+            M[np.ix_(b, b)] = (Cb.T @ ao @ Cb)[np.ix_(sb, sb)]
+            out.append(M)
+        return out
+
     # ---- nuclear repulsion ----
     def nuclear_repulsion(self) -> np.ndarray:
         """Nuclear-repulsion-energy gradient, shape (natom, 3)."""

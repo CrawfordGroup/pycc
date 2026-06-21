@@ -198,10 +198,23 @@ spin-orbital route (dispatch on `orbital_basis`, reusing the now basis-aware
   (docc-socc, socc-virt couplings), which are not uniquely defined. `CPHF.solve` raises
   `NotImplementedError` for ROHF (detected via `same_a_b_orbs and not same_a_b_dens`). The
   CPHF-free ROHF HF gradient is unaffected -- it does not solve the response.
-- **Remaining CPHF-dependent HF properties (Hessian, APT, AAT) -- TODO.** These need the
-  spin-orbital `CPHF` RHS builders (nuclear / magnetic), the layer deferred when `CPHF` was
-  made basis-aware. Build those, then add the SO branches to `HFwfn.hessian`/
-  `dipole_derivatives`/`atomic_axial_tensors`.
+- **APT (nuclear dipole derivatives) -- DONE (RHF/UHF).** A mixed field-nuclear second
+  derivative: it needed the spin-orbital *nuclear* CPHF RHS builder -- the deferred layer,
+  now built as `CPHF._build_nuclear_spinorbital` (the antisymmetrized `<pq||rs>` in place
+  of `L`, the spin-orbital skeleton derivative integrals from `Derivatives.so_*`, same
+  `B = -Q` structure) -- plus the spin-orbital dipole derivatives (`Derivatives.so_dipole`).
+  The assembly (`HFwfn._dipole_derivatives_spinorbital`) halves the closed-shell prefactors
+  (singly occupied spin orbitals). Validated (`test_064`): keystone RHF-forced-to-SO ==
+  spatial APT (6-31G C1 and cc-pVDZ C2v) ~1e-15, and UHF vs finite-difference of the SCF
+  dipole ~6e-10. ROHF raises (the nuclear response goes through `CPHF.solve`).
+- **Molecular Hessian -- TODO (assembly only).** The spin-orbital nuclear response/RHS and
+  the cached `F^X_ij`/`S^X_ij` oo by-products are now available from
+  `_build_nuclear_spinorbital`; what remains is the SO branch of `HFwfn.hessian` -- the
+  second-derivative skeleton terms (`so` analogues of `core2`/`eri2`/`overlap2`) plus the
+  response/cross terms with spin-orbital prefactors.
+- **AAT -- TODO.** Needs the spin-orbital *magnetic* CPHF RHS builder (`rhs_magnetic`/
+  `_m_ov` for the SO magnetic-dipole integral) plus the SO branch of
+  `HFwfn.atomic_axial_tensors` (and `Derivatives.overlap_half` for spin orbitals).
 
 Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
 lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.

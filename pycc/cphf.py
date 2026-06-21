@@ -230,7 +230,11 @@ class CPHF(object):
         differ). The first-derivative integrals come from the (full-MO) Derivatives
         provider; the unperturbed L is H.L. Validated to ~1e-8 via the dipole-
         derivative / APT-transpose check against finite difference of the SCF dipole.
+
+        The spin-orbital path dispatches to :meth:`_build_nuclear_spinorbital`.
         """
+        if self.wfn.orbital_basis == 'spinorbital':
+            return self._build_nuclear_spinorbital(atom)
         o, v, no, nv = self.o, self.v, self.no, self.nv
         eps_o = self.eps[o]
         L = np.asarray(self.wfn.H.L)  # spin-adapted, physicist, unperturbed
@@ -260,6 +264,41 @@ class CPHF(object):
             B.append(-Q)
             Foo.append(Fx[o, o])
             Soo.append(Sx[c][o, o])
+        return B, Foo, Soo
+
+    def _build_nuclear_spinorbital(self, atom: int):
+        """Spin-orbital nuclear CPHF RHS for ``atom`` -- the spin-orbital analogue of
+        :meth:`_build_nuclear`. Same structure with the antisymmetrized ``<pq||rs>`` in
+        place of the spin-adapted ``L``, the spin-orbital skeleton derivative integrals
+        from ``Derivatives.so_*``, and singly occupied spin orbitals::
+
+            F^X_pq = h^X_pq + sum_k(occ) <pk||qk>^X        (skeleton Fock derivative)
+            B^X_ia = -[ F^X_ia - eps_i S^X_ia
+                        - 1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ) ]
+
+        Returns ``(B, Foo, Soo)`` as for the spatial path."""
+        o, v = self.o, self.v
+        eps_o = self.eps[o]
+        ERI = np.asarray(self.wfn.H.ERI)         # antisymmetrized, unperturbed
+        d = self.wfn.derivatives
+        hx = d.so_core(atom)                     # 3 x (nmo,nmo)
+        Sxa = d.so_overlap(atom)                 # 3 x (nmo,nmo)
+        gx = d.so_eri(atom)                      # 3 x (nmo^4), antisymmetrized <pq||rs>^X
+
+        Evooo = ERI[v, o, o, o]
+        B, Foo, Soo = [], [], []
+        for c in range(3):
+            # skeleton derivative Fock F^X_pq = h^X + sum_k(occ) <pk||qk>^X
+            Fx = hx[c] + np.einsum('pkqk->pq', gx[c][:, o, :, o])
+            Sx = Sxa[c]
+            # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the ov
+            # block: -1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ).
+            coupling = (np.einsum('akil,kl->ia', Evooo, Sx[o, o])
+                        + np.einsum('alik,kl->ia', Evooo, Sx[o, o]))
+            Q = Fx[o, v] - eps_o[:, None] * Sx[o, v] - 0.5 * coupling
+            B.append(-Q)
+            Foo.append(Fx[o, o])
+            Soo.append(Sx[o, o])
         return B, Foo, Soo
 
     def rhs_nuclear(self, atom: int) -> List[np.ndarray]:
