@@ -107,6 +107,19 @@ class CCwfn(Wavefunction):
         # memory-lean batched kernels (energy/Lambda only).
         self.store_triples = kwargs.pop('store_triples', False)
 
+        # Static external electric-dipole field (length gauge), for finite-field CC
+        # properties: adds V = -field_strength * mu[field_axis] to the Fock (in
+        # SpinOrbitalHamiltonian). field_axis is 'X'/'Y'/'Z'. The field makes the Fock
+        # non-canonical; CC3 then requires the full T3 (store_triples) because the
+        # perturbation couples the triples ([V,T3]).
+        self.field = kwargs.pop('field', False)
+        self.field_strength = kwargs.pop('field_strength', 0.0)
+        self.field_axis = kwargs.pop('field_axis', 'Z')
+        if self.field and self.model == 'CC3' and not self.store_triples:
+            raise InvalidKeywordError(
+                'store_triples', self.store_triples,
+                ['True (required for finite-field CC3: the field couples the triples)'])
+
         # RT-CC3 calculations requiring additional terms when an external perturbation is present
         self.real_time = kwargs.pop('real_time', False)
 
@@ -222,6 +235,13 @@ class CCwfn(Wavefunction):
         Dijab = self.Dijab
 
         contract = self.contract
+
+        # Spin-orbital CC3 with stored triples: start from a zero full T3, both so the
+        # array exists for the iterative field coupling ([V,T3] reads the previous T3)
+        # and so repeated solve_cc calls (e.g. a finite-field sweep) start clean.
+        if (self.orbital_basis == 'spinorbital' and self.model == 'CC3'
+                and self.store_triples):
+            self.t3 = np.zeros((self.no, self.no, self.no, self.nv, self.nv, self.nv))
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
@@ -1192,8 +1212,10 @@ class CCwfn(Wavefunction):
         Builds the whole connected T3 with one set of whole-array contractions
         (no per-(i,j,k) batching), stores it on ``self.t3``, and folds it into the
         residuals. Full-array counterpart of the batched :func:`_so_cc3_t_residual`;
-        port of socc ``CC3_full`` (canonical/no-field case). Both paths must give
-        identical x1/x2 (and hence the same CC3 energy)."""
+        port of socc ``CC3_full``. With a static external field the T3 also picks up
+        the perturbation coupling: ``[V,T3]`` (iterative -- uses the previous
+        ``self.t3``) and ``1/2 [[V,T2],T2]``, and the (canonical) ``F0`` sets the
+        denominator. Without a field the two paths give identical x1/x2."""
         contract = self.contract
         Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
         Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
@@ -1207,8 +1229,27 @@ class CCwfn(Wavefunction):
         tmp = -contract('ilab,lcjk->ijkabc', t2, Wovoo)
         t3 = t3 + permute_triples(tmp, 'i/jk', 'c/ab')
 
-        occ = np.diag(F)[o]
-        vir = np.diag(F)[v]
+        if self.field:
+            # Field-perturbed, non-canonical Fock: add the field coupling and use the
+            # canonical F0 for the denominator. Port of socc CC3_full's field branch.
+            V = self.H.V
+            Voo = V[o,o] + contract('ie,me->mi', t1, V[o,v])
+            Vvv = V[v,v] - contract('ma,me->ae', t1, V[o,v])
+            # <mu3|[V,T3]|0>  (uses the previous iteration's full T3)
+            tmp = contract('ijkabc,dc->ijkabd', self.t3, Vvv)
+            t3 = t3 + (tmp - tmp.swapaxes(3,5) - tmp.swapaxes(4,5))
+            tmp = -contract('ijkabc,kl->ijlabc', self.t3, Voo)
+            t3 = t3 + (tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2))
+            # 1/2 <mu3|[[V,T2],T2]|0>
+            tmp = contract('lkbc,ld->bcdk', t2, V[o,v])
+            tmp = -contract('bcdk,ijad->ijkabc', tmp, t2)
+            t3 = t3 + permute_triples(tmp, 'k/ij', 'a/bc')
+            Fdenom = self.H.F0
+        else:
+            Fdenom = F
+
+        occ = np.diag(Fdenom)[o]
+        vir = np.diag(Fdenom)[v]
         denom = (occ.reshape(-1,1,1,1,1,1) + occ.reshape(-1,1,1,1,1) + occ.reshape(-1,1,1,1)
                  - vir.reshape(-1,1,1) - vir.reshape(-1,1) - vir)
         self.t3 = t3/denom

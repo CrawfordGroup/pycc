@@ -331,9 +331,16 @@ class Wavefunction(object):
 
         self.Ca = ref.Ca_subset("AO", "ACTIVE")
         self.Cb = ref.Cb_subset("AO", "ACTIVE")
+        # Optional static external field (finite-field CC properties); only CCwfn sets
+        # these attributes, so default to no field for the other method classes.
+        field_strength, field_axis = 0.0, 2
+        if getattr(self, 'field', False):
+            field_strength = getattr(self, 'field_strength', 0.0)
+            field_axis = {'X': 0, 'Y': 1, 'Z': 2}[str(getattr(self, 'field_axis', 'Z')).upper()]
         # nao/nbo are the per-spin active occupied counts: the Hamiltonian needs them to
         # split each spin's MO set into occ/vir for the semicanonical rotation.
-        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat, nao, nbo)
+        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat, nao, nbo,
+                                        field_strength=field_strength, field_axis=field_axis)
 
     @property
     def derivatives(self) -> Derivatives:

@@ -126,7 +126,7 @@ post-convergence correction) lands first; CC3 (an iterative-triples solver) foll
 
 ## Status / progress
 
-_Last updated 2026-06-19._
+_Last updated 2026-06-21._
 
 | Phase | Status | Landed |
 |---|---|---|
@@ -143,6 +143,9 @@ _Last updated 2026-06-19._
 | 9a-i — SO symmetric polarizability | ✅ done | PR #143 |
 | 9b — SO optical rotation | ✅ done | PR #144 |
 | 9a-ii — spatial spin-adapted response | ✅ done | PR #145 |
+| 7b — SO CC3 Lambda | ✅ done | PR #149 |
+| 9c — SO CC3 linear response | ✅ done | PR #150 |
+| 9d — finite-field SO CC energies | 🚧 in review | this branch |
 
 ### Phase 1 — what landed
 
@@ -388,3 +391,20 @@ pathway, set as a `CCwfn` constructor kwarg (default `False`) and threaded throu
   quantities are invariant, so cross-code checks use scalar values, not tensor elements.
 - Remaining: the batched-triples response function (no full T3/L3/X3) is a planned follow-on
   -- the batched perturbed-X + materialize-at-end machinery is kept for it.
+
+**Phase 9d (finite-field SO CC energies):** static external electric-dipole field for
+finite-difference CC properties -- the last socc capability the SO path was missing (socc
+tests 010/011). A `field` / `field_strength` / `field_axis` kwarg set on `CCwfn` makes
+`SpinOrbitalHamiltonian` add `V = -field_strength*mu[axis]` to the Fock (keeping the
+canonical `F0`); the field-perturbed, non-canonical `F` drives the CCSD residual (and the
+MP2/CC denominators, via `diag(F)`), exactly as socc.
+- CCSD: works through the existing Fock intermediates (already validated for a
+  non-canonical Fock by the ROHF path and `test_055`'s finite-difference).
+- CC3: requires `store_triples=True` -- the field couples the triples, so
+  `_so_cc3_t_residual_full` gains the `[V,T3]` (iterative, reads the previous `self.t3`)
+  and `1/2 [[V,T2],T2]` terms and uses `F0` for the (canonical) T3 denominator; port of
+  socc `CC3_full`'s field branch. `solve_cc` zero-inits `self.t3` so each finite-field
+  point starts clean. Guard: `field + CC3 + not store_triples` raises.
+- Validation (`test_060`): 5-point finite difference of the CC correlation energy
+  (H2O/STO-3G, F=1e-4) -- CCSD `mu_z`/`alpha_zz` vs CFOUR (~5e-10 / ~4e-8), CC3
+  `alpha_zz` vs Dalton 2.9989468 (~7e-8); all non-slow (store_triples CC3 on H2O is cheap).
