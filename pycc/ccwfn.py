@@ -19,7 +19,7 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, zeros_like, clone, sqrt
+from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples
 from .wavefunction import Wavefunction
 from .mpwfn import MPwfn
 from .local import Local
@@ -99,7 +99,15 @@ class CCwfn(Wavefunction):
 
         self.make_t3_density = kwargs.pop('make_t3_density', False)
 
-        # RT-CC3 calculations requiring additional terms when an external perturbation is present 
+        # CC3 only: store the full connected triples (T3, and downstream L3/X3) instead
+        # of rebuilding them per-(i,j,k). store_triples=True selects the full-array
+        # iterative kernels (whole-array contractions, easier to debug, required for
+        # CC3 properties/response and for finite-field CC3 where the perturbed,
+        # non-canonical Fock couples the T3 amplitudes); the default False uses the
+        # memory-lean batched kernels (energy/Lambda only).
+        self.store_triples = kwargs.pop('store_triples', False)
+
+        # RT-CC3 calculations requiring additional terms when an external perturbation is present
         self.real_time = kwargs.pop('real_time', False)
 
         valid_local_models = [None, 'PNO', 'PAO','CPNO++','PNO++']
@@ -1065,8 +1073,13 @@ class CCwfn(Wavefunction):
 
         # CC3: add the connected-triples contribution to the CCSD residuals (the T1/T2
         # equations are CCSD; T3 is built per-iteration from T1-dressed integrals).
+        # store_triples=True forms the whole T3 array (and stores it on self.t3);
+        # the default rebuilds T3 in per-(i,j,k) batches.
         if self.model == 'CC3':
-            x1, x2 = self._so_cc3_t_residual(o, v, F, ERI, Fme, t1, t2)
+            if self.store_triples:
+                x1, x2 = self._so_cc3_t_residual_full(o, v, F, ERI, Fme, t1, t2)
+            else:
+                x1, x2 = self._so_cc3_t_residual(o, v, F, ERI, Fme, t1, t2)
             r1 = r1 + x1
             r2 = r2 + x2
 
@@ -1170,6 +1183,44 @@ class CCwfn(Wavefunction):
                         tmp = 0.5 * contract('c,abc->ab', Wooov[j,k,l,:], t3)
                         x2[i,l] -= tmp
                         x2[l,i] += tmp
+        return x1, x2
+
+    def _so_cc3_t_residual_full(self, o, v, F, ERI, Fme, t1, t2):
+        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        residuals via the full T3 array (store_triples=True path).
+
+        Builds the whole connected T3 with one set of whole-array contractions
+        (no per-(i,j,k) batching), stores it on ``self.t3``, and folds it into the
+        residuals. Full-array counterpart of the batched :func:`_so_cc3_t_residual`;
+        port of socc ``CC3_full`` (canonical/no-field case). Both paths must give
+        identical x1/x2 (and hence the same CC3 energy)."""
+        contract = self.contract
+        Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wooov = self._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self._so_build_Wvovv_CC3(o, v, ERI, t1)
+        Wvvvo = self._so_build_Wvvvo_CC3(o, v, ERI, t1)
+
+        # <mu3|[H^,T2]|0>  (connected T3, antisymmetrized)
+        tmp = contract('ijad,bcdk->ijkabc', t2, Wvvvo)
+        t3 = permute_triples(tmp, 'k/ij', 'a/bc')
+        tmp = -contract('ilab,lcjk->ijkabc', t2, Wovoo)
+        t3 = t3 + permute_triples(tmp, 'i/jk', 'c/ab')
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+        denom = (occ.reshape(-1,1,1,1,1,1) + occ.reshape(-1,1,1,1,1) + occ.reshape(-1,1,1,1)
+                 - vir.reshape(-1,1,1) - vir.reshape(-1,1) - vir)
+        self.t3 = t3/denom
+
+        # <mu1|[H,T3]|0>
+        x1 = 0.25 * contract('ijkabc,jkbc->ia', self.t3, ERI[o,o,v,v])
+        # <mu2|[H,T3]|0>
+        x2 = contract('ijkabc,kc->ijab', self.t3, Fme)
+        tmp = 0.5 * contract('ijkabc,dkbc->ijad', self.t3, Wvovv)
+        x2 = x2 + tmp - tmp.swapaxes(2,3)
+        tmp = -0.5 * contract('ijkabc,jklc->ilab', self.t3, Wooov)
+        x2 = x2 + tmp - tmp.swapaxes(0,1)
         return x1, x2
 
     def t3_density(self):

@@ -11,8 +11,9 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-from .utils import helper_diis
+from .utils import helper_diis, permute_triples
 from .cclambda import cclambda
+from .cctriples import t3c_ijk_so, t3c_abc_so, l3_ijk_so
 from ._typing import Tensor
 
 if TYPE_CHECKING:
@@ -128,8 +129,7 @@ class ccresponse(object):
             Converged pseudoresponse values for all available perturbations.
         """
         # dictionaries for perturbed wave functions and test pseudoresponses
-        X1 = {}
-        X2 = {}
+        X = {}
         check = {}
 
         # Electric-dipole (length)
@@ -137,12 +137,12 @@ class ccresponse(object):
             pertkey = "MU_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
         # Magnetic-dipole
@@ -150,12 +150,12 @@ class ccresponse(object):
             pertkey = "M_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
         # Complex-conjugate of magnetic-dipole
@@ -163,12 +163,12 @@ class ccresponse(object):
             pertkey = "M*_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
         # Electric-dipole (velocity)
@@ -176,12 +176,12 @@ class ccresponse(object):
             pertkey = "P_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
         # Complex-conjugate of electric-dipole (velocity)
@@ -189,12 +189,12 @@ class ccresponse(object):
             pertkey = "P*_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
             print("Solving right-hand perturbed wave function for %s:" % (X_key))
-            X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+            X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
         # Traceless quadrupole
@@ -203,12 +203,12 @@ class ccresponse(object):
                 pertkey = "Q_" + self.cart[axis1] + self.cart[axis2]
                 X_key = pertkey + "_" + f"{omega:0.6f}"
                 print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
                 if (omega != 0.0):
                     X_key = pertkey + "_" + f"{-omega:0.6f}"
                     print("Solving right-hand perturbed wave function for %s:" % (X_key))
-                    X1[X_key], X2[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
+                    X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check[X_key] = polar
 
         return check
@@ -233,6 +233,17 @@ class ccresponse(object):
         self.X1 = X1
         self.X2 = X2
 
+        cc3_ints = None
+        if self.ccwfn.model == 'CC3':
+            if self.ccwfn.orbital_basis != 'spinorbital':
+                raise NotImplementedError(
+                    "Spatial CC3 response is not implemented; use the spin-orbital "
+                    "path (orbital_basis='spinorbital').")
+            if self.ccwfn.store_triples:
+                cc3_ints = self._cc3_response_setup_full_spinorbital(pertbar)
+            else:
+                cc3_ints = self._cc3_response_setup_spinorbital(pertbar)
+
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
 
@@ -241,6 +252,14 @@ class ccresponse(object):
 
             r1 = self.r_X1(pertbar, omega)
             r2 = self.r_X2(pertbar, omega)
+
+            if self.ccwfn.model == 'CC3':
+                if self.ccwfn.store_triples:
+                    z1, z2 = self._cc3_iter_full_spinorbital(pertbar, omega, cc3_ints)
+                else:
+                    z1, z2 = self._cc3_iter_spinorbital(pertbar, omega, cc3_ints)
+                r1 += z1
+                r2 += z2
 
             self.X1 += r1/(Dia + omega)
             self.X2 += r2/(Dijab + omega)
@@ -255,7 +274,14 @@ class ccresponse(object):
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
-                return self.X1, self.X2, pseudo
+                if self.ccwfn.model == 'CC3':
+                    if self.ccwfn.store_triples:
+                        # full X3 was formed and stored each iteration
+                        X3 = self.X3
+                    else:
+                        X3 = self._cc3_build_X3_spinorbital(pertbar, omega, cc3_ints)
+                    return [self.X1, self.X2, X3], pseudo
+                return [self.X1, self.X2], pseudo
 
             diis.add_error_vector(self.X1, self.X2)
             if niter >= start_diis:
@@ -356,6 +382,334 @@ class ccresponse(object):
 
         return -2.0*(polar1 + polar2)
 
+    def _cc3_response_setup_spinorbital(self, pertbar):
+        """Build the T-dependent spin-orbital CC3 response intermediates that are
+        reused across solve_right iterations: the CC3 W-intermediates and the
+        once-only Yoovo/Yovvv (ground-state T3 . ERI) and Zovoo/Zvvvo
+        (perturbation . T2). Ports socc CC3_noniter (IJK). Returns a dict."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t1, t2 = self.ccwfn.t1, self.ccwfn.t2
+        no = self.ccwfn.no
+
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+
+        Yoovo = np.zeros_like(ERI[o,o,v,o])
+        Yovvv = np.zeros_like(ERI[o,v,v,v])
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    Yoovo[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
+                    Yovvv[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+        Zovoo = 0.5 * contract('ld,jkdc->lcjk', pertbar.Aov, t2)
+        Zvvvo = -0.5 * contract('ld,lkbc->bcdk', pertbar.Aov, t2)
+
+        return {'Fov': self.hbar.Hov, 'Woooo': Woooo, 'Wovoo': Wovoo,
+                'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
+                'Yoovo': Yoovo, 'Yovvv': Yovvv, 'Zovoo': Zovoo, 'Zvvvo': Zvvvo}
+
+    def _cc3_iter_spinorbital(self, pertbar, omega, ints):
+        """Per-iteration spin-orbital CC3 contributions (z1, z2) to the perturbed
+        r_X1/r_X2. Rebuilds the perturbed triples X3 (loop-over-ijk and -abc, no
+        stored X3) from the current X1/X2 and folds them back. Ports socc
+        CC3_iter (IJK + ABC)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t2 = self.ccwfn.t2
+        hbar = self.hbar
+        X1, X2 = self.X1, self.X2
+        no, nv = X1.shape
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+        Yoovo, Yovvv = ints['Yoovo'], ints['Yovvv']
+        Zovoo, Zvvvo = ints['Zovoo'], ints['Zvvvo']
+
+        z1 = np.zeros_like(X1)
+        z2 = np.zeros_like(X2)
+
+        # <mu2|[[H~,T3],X1]|0> --> X2 (the X1-dressed once-only pieces)
+        Yov = contract('ld,klcd->kc', X1, ERI[o,o,v,v])
+        tmp = contract('ld,ijal->ijad', X1, Yoovo)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('ld,iabd->ilab', X1, Yovvv)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        # <mu3|[[H~,T2],X1]|0> --> X3 dressings (X1-dressed W intermediates)
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        Zlcjk = -contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+
+        # occupied-batched (IJK): X3 from [A,T3]_Avv + [[A,T2],T2]+[[H,T2],X1] + [H,X2]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    z2[i,j] += contract('abc,c->ab', t3, Yov[k])
+
+                    tmp = contract('abc,dc->abd', t3, pertbar.Avv)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ[i] + occ[j] + occ[k] + omega
+                             - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+                    x3 = x3/denom
+                    x3 += t3c_ijk_so(o, v, i, j, k, t2, Zvvvo+Zbcdk, Zovoo+Zlcjk, F, contract, omega)
+                    x3 += t3c_ijk_so(o, v, i, j, k, X2, Wvvvo, Wovoo, F, contract, omega)
+
+                    z1[i] += 0.25 * contract('abc,bc->a', x3, ERI[j,k,v,v])
+                    z2[i,j] += contract('abc,c->ab', x3, hbar.Hov[k])
+                    tmp = 0.5 * contract('abc,dbc->ad', x3, hbar.Hvovv[:,k,:,:])
+                    z2[i,j] += tmp - tmp.swapaxes(0,1)
+                    for l in range(no):
+                        tmp = -0.5 * contract('abc,c->ab', x3, hbar.Hooov[j,k,l,:])
+                        z2[i,l] += tmp
+                        z2[l,i] -= tmp
+
+        # virtual-batched (ABC): X3 from [A,T3]_Aoo
+        y1 = np.zeros_like(z1.T)
+        y2 = np.zeros_like(z2.T)
+        for a in range(nv):
+            for b in range(nv):
+                for c in range(nv):
+                    t3 = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = -contract('ijk,kl->ijl', t3, pertbar.Aoo)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ + omega
+                             - (vir[a] + vir[b] + vir[c]))
+                    x3 = x3/denom
+
+                    y1[a] += 0.25 * contract('ijk,jk->i', x3, ERI[o,o,b+no,c+no])
+                    y2[a,b] += contract('ijk,k->ij', x3, hbar.Hov[:,c])
+                    tmp = -0.5 * contract('ijk,jkl->il', x3, hbar.Hooov[:,:,:,c])
+                    y2[a,b] += tmp - tmp.swapaxes(0,1)
+                    for d in range(nv):
+                        tmp = 0.5 * contract('ijk,k->ij', x3, hbar.Hvovv[d,:,b,c])
+                        y2[a,d] += tmp
+                        y2[d,a] -= tmp
+
+        z1 += y1.T
+        z2 += y2.T
+        return z1, z2
+
+    def _cc3_build_X3_spinorbital(self, pertbar, omega, ints):
+        """Build and return the full converged spin-orbital perturbed triples X3
+        from the converged X1/X2 (self.X1/self.X2).
+
+        This replicates the X3-block construction inside _cc3_iter_spinorbital
+        (occupied-batched IJK + virtual-batched ABC, omega-shifted denominators)
+        but accumulates into the full X3[ijkabc] array instead of folding into
+        z1/z2. Called once after solve_right converges so the response-function
+        terms (Phase B) can contract against a stored X3. Counterpart of socc
+        CC3_iter_full's stored self.X3 (store_triples=True path)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        t2 = self.ccwfn.t2
+        X1, X2 = self.X1, self.X2
+        no, nv = X1.shape
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+        Zovoo, Zvvvo = ints['Zovoo'], ints['Zvvvo']
+
+        # X1-dressed W intermediates (same as _cc3_iter_spinorbital)
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        Zlcjk = -contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+
+        X3 = np.zeros((no, no, no, nv, nv, nv), dtype=X2.dtype)
+
+        # occupied-batched (IJK): X3 from [A,T3]_Avv + dressed-t3 ([[H,T2],X1]) + [H,X2]
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = contract('abc,dc->abd', t3, pertbar.Avv)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ[i] + occ[j] + occ[k] + omega
+                             - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+                    x3 = x3/denom
+                    x3 += t3c_ijk_so(o, v, i, j, k, t2, Zvvvo+Zbcdk, Zovoo+Zlcjk, F, contract, omega)
+                    x3 += t3c_ijk_so(o, v, i, j, k, X2, Wvvvo, Wovoo, F, contract, omega)
+                    X3[i,j,k] += x3
+
+        # virtual-batched (ABC): X3 from [A,T3]_Aoo
+        for a in range(nv):
+            for b in range(nv):
+                for c in range(nv):
+                    t3 = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                    tmp = -contract('ijk,kl->ijl', t3, pertbar.Aoo)
+                    x3 = tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+                    denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ + omega
+                             - (vir[a] + vir[b] + vir[c]))
+                    x3 = x3/denom
+                    X3[:,:,:,a,b,c] += x3
+
+        return X3
+
+    def _cc3_response_setup_full_spinorbital(self, pertbar):
+        """Build the T1-dressed CC3 W-intermediates reused across solve_right
+        iterations in the full-array (store_triples=True) perturbed-X path.
+
+        Unlike the batched setup, no once-only batched-T3 intermediates
+        (Yoovo/Yovvv/Zovoo/Zvvvo) are needed: the full ground-state T3 is already
+        stored on self.ccwfn.t3 and contracted whole-array in _cc3_iter_full."""
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.ccwfn.H.ERI
+        t1 = self.ccwfn.t1
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+        return {'Woooo': Woooo, 'Wovoo': Wovoo, 'Wvvvo': Wvvvo,
+                'Wvvvv': Wvvvv, 'Wovvo': Wovvo}
+
+    def _cc3_iter_full_spinorbital(self, pertbar, omega, ints):
+        """Full-array (store_triples=True) per-iteration spin-orbital CC3 perturbed
+        triples contribution (z1, z2).
+
+        Forms the whole perturbed X3 from the stored ground-state T3 and the
+        current X1/X2 with whole-array contractions (permute_triples
+        antisymmetrization, omega-shifted denominator), stores it on self.X3, and
+        folds it into z1/z2. Port of socc CC3_iter_full (ccresponse). Full-array
+        counterpart of the batched _cc3_iter_spinorbital."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.ccwfn.H.ERI
+        t2 = self.ccwfn.t2
+        t3 = self.ccwfn.t3
+        hbar = self.hbar
+        X1, X2 = self.X1, self.X2
+
+        Woooo, Wovoo = ints['Woooo'], ints['Wovoo']
+        Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
+
+        # <mu3|[ABAR,T3]|0>
+        tmp = contract('ijkabc,dc->ijkabd', t3, pertbar.Avv)
+        X3 = tmp - tmp.swapaxes(3,5) - tmp.swapaxes(4,5)
+        tmp = -contract('ijkabc,kl->ijlabc', t3, pertbar.Aoo)
+        X3 += tmp - tmp.swapaxes(0,2) - tmp.swapaxes(1,2)
+
+        # 1/2 <mu3|[[A,T2],T2]|0>
+        tmp = contract('lkbc,ld->bcdk', t2, pertbar.Aov)
+        X3_a = -contract('ijad,bcdk->ijkabc', t2, tmp)
+        # <mu3|[[H^,T2],X1]|0>
+        Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
+        tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
+        Zbcdk += tmp - tmp.swapaxes(0,1)
+        X3_a += contract('ijad,bcdk->ijkabc', t2, Zbcdk)
+        # <mu3|[H^,X2]|0>
+        X3_a += contract('ijad,bcdk->ijkabc', X2, Wvvvo)
+        X3 += permute_triples(X3_a, 'k/ij', 'a/bc')
+
+        # <mu3|[[H^,T2],X1]|0>
+        Zlcjk = contract('mc,lmjk->lcjk', X1, Woooo)
+        tmp = -contract('jd,lcdk->lcjk', X1, Wovvo)
+        Zlcjk += tmp - tmp.swapaxes(2,3)
+        X3_b = contract('ilab,lcjk->ijkabc', t2, Zlcjk)
+        # <mu3|[H^,X2]|0>
+        X3_b += -contract('ilab,lcjk->ijkabc', X2, Wovoo)
+        X3 += permute_triples(X3_b, 'i/jk', 'c/ab')
+
+        occ = np.diag(F)[o]
+        vir = np.diag(F)[v]
+        denom = (occ.reshape(-1,1,1,1,1,1) + occ.reshape(-1,1,1,1,1) + occ.reshape(-1,1,1,1)
+                 - vir.reshape(-1,1,1) - vir.reshape(-1,1) - vir)
+        denom = denom + omega
+        self.X3 = X3/denom
+        X3 = self.X3
+
+        # <mu1|[H,X3]|0>
+        z1 = 0.25 * contract('ijkabc,jkbc->ia', X3, ERI[o,o,v,v])
+
+        # <mu2|[[H,T3],X1]|0>
+        tmp = contract('ld,klcd->kc', X1, ERI[o,o,v,v])
+        z2 = contract('ijkabc,kc->ijab', t3, tmp)
+        tmp = contract('ld,jlbc->djbc', X1, ERI[o,o,v,v])
+        tmp = -0.5 * contract('ijkabc,djbc->ikad', t3, tmp)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('ld,jkbd->jklb', X1, ERI[o,o,v,v])
+        tmp = -0.5 * contract('ijkabc,jklb->ilac', t3, tmp)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        # <mu2|[HBAR,X3]|0>
+        z2 += contract('ijkabc,kc->ijab', X3, hbar.Hov)
+        tmp = 0.5 * contract('ijkabc,dkbc->ijad', X3, hbar.Hvovv)
+        z2 += tmp - tmp.swapaxes(2,3)
+        tmp = -0.5 * contract('ijkabc,jklc->ilab', X3, hbar.Hooov)
+        z2 += tmp - tmp.swapaxes(0,1)
+
+        return z1, z2
+
+    def _cc3_triples_spinorbital(self):
+        """Return the full ground-state spin-orbital T3 and Lambda-L3 for the CC3
+        response-function terms: the arrays stored on ccwfn/cclambda when
+        store_triples=True, else materialized (and cached) on the fly from the
+        batched builders via _cc3_full_triples_spinorbital."""
+        if self.ccwfn.store_triples:
+            return self.ccwfn.t3, self.cclambda.l3
+        return self._cc3_full_triples_spinorbital()
+
+    def _cc3_full_triples_spinorbital(self):
+        """Build (and cache) the full ground-state spin-orbital connected T3 and
+        Lambda-L3 arrays, shape (no, no, no, nv, nv, nv), by looping over (i,j,k)
+        and filling with t3c_ijk_so / l3_ijk_so.
+
+        pycc does not store t3/l3 for the ground state (the energy/Lambda kernels
+        rebuild them per ijk), but the CC3 *response-function* terms (LCX_CC3,
+        L2HX1Y3, L3HX1Y2, L3HX1Y1T2) contract them against the already-stored full
+        X3 in several different index patterns, so we materialize them once here --
+        mirroring socc's validated store_triples=True path. Cached on self."""
+        if getattr(self, '_cc3_t3', None) is not None:
+            return self._cc3_t3, self._cc3_l3
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        F = self.ccwfn.H.F
+        ERI = self.H.ERI
+        t1, t2 = self.ccwfn.t1, self.ccwfn.t2
+        l1, l2 = self.cclambda.l1, self.cclambda.l2
+        no, nv = self.ccwfn.no, self.ccwfn.nv
+
+        Fov = self.hbar.Hov
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wovoo = self.ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+        Wvvvo = self.ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+        Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
+        Woovv = ERI[o,o,v,v]
+
+        t3 = np.zeros((no, no, no, nv, nv, nv), dtype=t2.dtype)
+        l3 = np.zeros((no, no, no, nv, nv, nv), dtype=l2.dtype)
+        for i in range(no):
+            for j in range(no):
+                for k in range(no):
+                    t3[i,j,k] = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    l3[i,j,k] = l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract)
+        self._cc3_t3, self._cc3_l3 = t3, l3
+        return t3, l3
+
     # ==================================================================
     # Symmetric linear response -- the X-only formulation: only the
     # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
@@ -398,15 +752,17 @@ class ccresponse(object):
         solve_right and linresp_sym."""
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
         Xp, Xm = [], []
+        # solve_right returns (X, pseudo) where X is the list [X1, X2] (CCSD) or
+        # [X1, X2, X3] (CC3); the CC3 terms in linresp_sym pick up X[2].
         for axis in range(3):
             A = self.pertbar["MU_" + self.cart[axis]]
-            X1, X2, _ = self.solve_right(A, omega, *args)
-            Xp.append([X1.copy(), X2.copy()])
+            X, _ = self.solve_right(A, omega, *args)
+            Xp.append([a.copy() for a in X])
             if omega == 0.0:
-                Xm.append([X1.copy(), X2.copy()])
+                Xm.append([a.copy() for a in X])
             else:
-                X1, X2, _ = self.solve_right(A, -omega, *args)
-                Xm.append([X1.copy(), X2.copy()])
+                X, _ = self.solve_right(A, -omega, *args)
+                Xm.append([a.copy() for a in X])
 
         polar = np.zeros((3, 3))
         for a in range(3):
@@ -436,15 +792,17 @@ class ccresponse(object):
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
 
         Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
+        # solve_right returns (X, pseudo) where X is [X1, X2(, X3)] (see
+        # polarizability).
         for axis in range(3):
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
-            Xmu_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
-            Xmu_m.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
-            Xm_p.append([X1.copy(), X2.copy()])
-            X1, X2, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
-            Xmstar_m.append([X1.copy(), X2.copy()])
+            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
+            Xmu_p.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
+            Xmu_m.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
+            Xm_p.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
+            Xmstar_m.append([a.copy() for a in X])
 
         tensor = np.zeros((3, 3))
         # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
@@ -547,6 +905,153 @@ class ccresponse(object):
         polar += self.LHX1Y2(X_A, X_B)
         # <0|L[[HBAR,X1_B],X2_A]|0>
         polar += self.LHX1Y2(X_B, X_A)
+
+        if self.ccwfn.model == 'CC3':
+            # CC3 connected-triples contributions to the symmetric response
+            # function (X3 = X[2] is the perturbed triples). socc linresp CC3 block.
+            polar += self._LCX_CC3_spinorbital(A, X_B) + self._LCX_CC3_spinorbital(B, X_A)
+            polar += self._L2HX1Y3_CC3_spinorbital(X_A, X_B) + self._L2HX1Y3_CC3_spinorbital(X_B, X_A)
+            polar += self._L3HX1Y2_CC3_spinorbital(X_A, X_B) + self._L3HX1Y2_CC3_spinorbital(X_B, X_A)
+            polar += self._L3HX1Y1T2_CC3_spinorbital(X_A, X_B)
+
+        return polar
+
+    def _LCX_CC3_spinorbital(self, pert, X):
+        """CC3 triples contribution to the LCX term of the symmetric response
+        function, <0|(1+L)[Abar,X]|0>. Port of socc LCX_CC3 (store_triples path).
+
+        Returns the sum of the four sub-terms (socc component names in brackets):
+          <0|L2[C,X3]|0>        (L2CX3)
+          <0|L3[C^,X3]|0>       (L3CX3)
+          <0|L3[[C,X1],T3]|0>   (L3CX1T3)
+          <0|L3[[C,X2],T2]|0>   (L3CX2T2)
+        where C = pert (similarity-transformed one-electron operator) and
+        X = [X1, X2, X3] the right-hand perturbed wave function."""
+        contract = self.contract
+        t2 = self.ccwfn.t2
+        l2 = self.cclambda.l2
+        X1, X2, X3 = X[0], X[1], X[2]
+        t3, l3 = self._cc3_triples_spinorbital()
+
+        # <0|L2[C,X3]|0>
+        tmp = 0.25 * contract('ijab,ijkabc->kc', l2, X3)
+        polar_L2CX3 = contract('kc,kc->', tmp, pert.Aov)
+
+        # <0|L3[C^,X3]|0>
+        tmp = contract('ijkabc,ijkabe->ce', l3, X3)
+        polar_L3CX3 = (1/12) * contract('ce,ce->', tmp, pert.Avv)
+        tmp = contract('ijkabc,ijmabc->mk', l3, X3)
+        polar_L3CX3 -= (1/12) * contract('mk,mk->', tmp, pert.Aoo)
+
+        # <0|L3[[C,X1],T3]|0>
+        tmp1 = contract('mc,me->ce', X1, pert.Aov)
+        tmp2 = -(1/12) * contract('ijkabc,ijkabe->ce', l3, t3)
+        polar_L3CX1T3 = contract('ce,ce->', tmp1, tmp2)
+        tmp1 = contract('ke,me->mk', X1, pert.Aov)
+        tmp2 = -(1/12) * contract('ijkabc,ijmabc->mk', l3, t3)
+        polar_L3CX1T3 += contract('mk,mk->', tmp1, tmp2)
+
+        # <0|L3[[C,X2],T2]|0>
+        tmp = 0.5 * contract('ijkabc,mkbc->ijam', l3, t2)
+        tmp = -0.5 * contract('ijam,ijae->me', tmp, X2)
+        polar_L3CX2T2 = contract('me,me->', tmp, pert.Aov)
+        tmp = 0.5 * contract('ijkabc,imab->jkcm', l3, X2)
+        tmp = -0.5 * contract('jkcm,jkec->me', tmp, t2)
+        polar_L3CX2T2 += contract('me,me->', tmp, pert.Aov)
+
+        return polar_L2CX3 + polar_L3CX3 + polar_L3CX1T3 + polar_L3CX2T2
+
+    def _L2HX1Y3_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L2[[H,X1],Y3]|0> term (L2HX1Y3) of the symmetric response
+        function. Port of socc L2HX1Y3_CC3. Uses X1 = X[0] and the perturbed
+        triples Y3 = Y[2]; needs only l2 and ERI (no ground-state t3/l3)."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        l2 = self.cclambda.l2
+        X1 = X[0]
+        Y3 = Y[2]
+
+        tmp = contract('me,mnef->nf', X1, ERI[o,o,v,v])
+        tmp = contract('nijfab,nf->ijab', Y3, tmp)
+        polar = 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        tmp = contract('ie,mnef->mnif', X1, ERI[o,o,v,v])
+        tmp = contract('mnjafb,mnif->ijab', Y3, tmp)
+        polar -= 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        tmp = contract('ma,mnef->anef', X1, ERI[o,o,v,v])
+        tmp = contract('injefb,anef->ijab', Y3, tmp)
+        polar -= 0.25 * contract('ijab,ijab->', l2, tmp)
+
+        return polar
+
+    def _L3HX1Y2_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L3[[H,X1],Y2]|0> term (L3HX1Y2). Port of socc L3HX1Y2_CC3. Uses
+        the ground-state L3, X1 = X[0], Y2 = Y[1], and the CC3 Woooo/Wvvvv/Wovvo
+        intermediates."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        t1 = self.ccwfn.t1
+        _, l3 = self._cc3_triples_spinorbital()
+        Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+        Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
+        Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
+        X1 = X[0]
+        Y2 = Y[1]
+
+        tmp = contract('ie,abef->abif', X1, Wvvvv)
+        tmp = contract('ijkabc,abif->jkfc', l3, tmp)
+        polar = 0.25 * contract('jkfc,jkfc->', Y2, tmp)
+
+        tmp = contract('ma,mnij->anij', X1, Woooo)
+        tmp = contract('ijkabc,anij->nkbc', l3, tmp)
+        polar += 0.25 * contract('nkbc,nkbc->', Y2, tmp)
+
+        tmp = contract('ie,mbej->mbij', X1, Wovvo)
+        tmp = contract('ijkabc,mbij->mkac', l3, tmp)
+        polar -= 0.5 * contract('mkac,mkac->', Y2, tmp)
+
+        tmp = contract('ma,mbej->abej', X1, Wovvo)
+        tmp = contract('ijkabc,abej->ikec', l3, tmp)
+        polar -= 0.5 * contract('ikec,ikec->', Y2, tmp)
+
+        return polar
+
+    def _L3HX1Y1T2_CC3_spinorbital(self, X, Y):
+        """CC3 <0|L3[[[H,X1],Y1],T2]|0> term (L3HX1Y1T2). Port of socc
+        L3HX1Y1T2_CC3. Uses the ground-state L3 and T2, X1 = X[0], Y1 = Y[0], and
+        the CC3 Wooov/Wvovv. The tau = X1(x)Y1 + Y1(x)X1 construction makes this
+        symmetric under X<->Y, so it enters the response with no swapped partner."""
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        ERI = self.H.ERI
+        t1 = self.ccwfn.t1
+        t2 = self.ccwfn.t2
+        _, l3 = self._cc3_triples_spinorbital()
+        Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
+        Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
+        X1 = X[0]
+        Y1 = Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('jb,ia->ijab', X1, Y1)
+
+        tmp = contract('kmfc,bmef->bcek', tau, Wvovv)
+        tmp = contract('ijkabc,bcek->ijae', l3, tmp)
+        polar = -0.5 * contract('ijae,ijae->', t2, tmp)
+
+        tmp = contract('ie,jf,amef->amij', X1, Y1, Wvovv)
+        tmp = contract('ijkabc,amij->mkbc', l3, tmp)
+        polar -= 0.5 * contract('mkbc,mkbc->', t2, tmp)
+
+        tmp = contract('knec,mnje->mcjk', tau, Wooov)
+        tmp = contract('ijkabc,mcjk->imab', l3, tmp)
+        polar += 0.5 * contract('imab,imab->', t2, tmp)
+
+        tmp = contract('ma,nb,mnie->abie', X1, Y1, Wooov)
+        tmp = contract('ijkabc,abie->jkec', l3, tmp)
+        polar += 0.5 * contract('jkec,jkec->', t2, tmp)
+
         return polar
 
     def LCX(self, pert, X):
@@ -1345,6 +1850,20 @@ class pertbar(object):
                           - contract('ijbe,ae->ijab', t2, self.Avv))
             self.Avvoo -= (contract('imab,mj->ijab', t2, self.Aoo)
                            - contract('jmab,mi->ijab', t2, self.Aoo))
+            if ccwfn.model == 'CC3':
+                # CC3: ground-state T3 contribution to Avvoo (loop-over-ijk, no
+                # stored T3). Avvoo[ij] += <kc> t3_ijkabc.
+                F = ccwfn.H.F
+                ERI = ccwfn.H.ERI
+                Woooo = ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
+                Wovoo = ccwfn._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
+                Wvvvo = ccwfn._so_build_Wvvvo_CC3(o, v, ERI, t1)
+                no = ccwfn.no
+                for i in range(no):
+                    for j in range(no):
+                        for k in range(no):
+                            t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                            self.Avvoo[i,j] += contract('c,abc->ab', pert[k,v], t3)
             return
 
         self.Aov = pert[o,v].copy()
