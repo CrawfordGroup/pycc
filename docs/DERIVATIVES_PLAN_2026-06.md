@@ -117,10 +117,16 @@ _Last updated 2026-06-21._
 | Phase | Status | Landed |
 |---|---|---|
 | Design / this document | 🚧 in review | this branch |
-| A — CPHF / Z-vector access on MPwfn (spatial; seeds spin-adapted) | ✅ done | this branch |
-| B — MP2 unrelaxed densities, spatial (seeds spin-adapted) | ✅ done | this branch |
+| A/B — spatial CPHF access + MP2 densities | exploratory; **code removed** | this branch |
 | C — **spin-orbital** relaxed density (GSB Lagrangian + Z-vector) | ✅ done | this branch |
 | D — SO gradient assembly (2-PDM + SO derivative integrals + W) | ⬜ todo | — |
+
+The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
+spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while
+scoping the problem, then **removed** once the effort pivoted to spin-orbital -- the SO Phase C
+builds its own `_so_orbital_hessian` and `_so_mp2_corr_opdm` (with `l2 = t2`) and never used
+them. Their formulas/conventions remain in the commit history (`be02dea`, `b5219e3`) and will
+be re-introduced, validated by use, when the spin-adapted gradient is built.
 
 Phase C (SO): `MPwfn` gains `_so_mp2_corr_opdm` (`Doo = -1/2 t_imef t_jmef`,
 `Dvv = 1/2 t_mnbe t_mnae`), `_so_orbital_hessian` (`A_{ai,bj} = (eps_a-eps_i)delta +

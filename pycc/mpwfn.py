@@ -13,7 +13,6 @@ from .utils import diag, clone
 
 if TYPE_CHECKING:
     from ._typing import Tensor
-    from .cphf import CPHF
 
 
 class MPwfn(Wavefunction):
@@ -95,57 +94,6 @@ class MPwfn(Wavefunction):
             self.emp2 = (0.25 * self.contract('ijab,ijab->', self.t2, self.H.ERI[o, o, v, v])
                          + self.contract('ia,ia->', self.H.F[o, v], self.t1))
         return self.emp2
-
-    @property
-    def cphf(self) -> "CPHF":
-        """RHF coupled-perturbed-Hartree-Fock orbital-response solver for this
-        reference, built lazily and cached.
-
-        Exposes the orbital Hessian and the linear solve ``G z = B`` that the relaxed
-        MP2 gradient uses as its Z-vector solver. The orbital Hessian is reference-level
-        (built from ``H.L`` and the orbital energies), so it is identical to the one
-        ``HFwfn`` builds; this is an MP2-local accessor for now -- a promotion to the
-        :class:`Wavefunction` base can follow when the CC gradients arrive and a shared
-        derivative layer is lifted out. Spatial-RHF only (the orbital Hessian needs the
-        spin-adapted ``H.L``)."""
-        if getattr(self, '_cphf', None) is None:
-            if self.orbital_basis != 'spatial':
-                raise NotImplementedError(
-                    "CPHF orbital response is implemented for the spatial RHF path only.")
-            from .cphf import CPHF
-            self._cphf = CPHF(self)
-        return self._cphf
-
-    # ---- MP2 relaxed-gradient densities (spatial RHF) ----
-
-    def _mp2_lambda(self) -> "Tensor":
-        """First-order (MP2) Lambda doubles in the spatial spin-adapted convention,
-        ``l2 = 2 (2 t2 - t2^{ab<->ba})``. The leading factor of 2 is the Lambda
-        normalization that is part of the spin-adaptation -- the same convention used
-        by ``cclambda``/``ccdensity`` -- so the MP2 densities below close the energy."""
-        return 2.0 * (2.0 * self.t2 - self.t2.swapaxes(2, 3))
-
-    def mp2_opdm_corr(self):
-        """Unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``,
-        spatial RHF (the orbital-relaxation ``ov`` block comes later from the Z-vector).
-
-        ``Doo_ij = - t2_imef l2_jmef`` and ``Dvv_ab = t2_mnbe l2_mnae`` -- the MP2 limit
-        (``t1=l1=0``) of the spin-adapted CC one-particle density (``ccdensity``)."""
-        c = self.contract
-        t2 = self.t2
-        l2 = self._mp2_lambda()
-        Doo = -c('imef,jmef->ij', t2, l2)
-        Dvv = c('mnbe,mnae->ab', t2, l2)
-        return Doo, Dvv
-
-    def mp2_tpdm_oovv(self) -> "Tensor":
-        """Non-separable MP2 two-particle density ``oovv`` block,
-        ``Gamma_ijab = 2 (2 t2 - t2^{ab<->ba}) + l2`` -- the first-order (energy-carrying)
-        block of the spin-adapted two-particle density (``ccdensity.build_Doovv``, MP2
-        limit). The separable / HF cross pieces of the full 2-PDM are assembled later
-        (gradient phase)."""
-        t2 = self.t2
-        return 2.0 * (2.0 * t2 - t2.swapaxes(2, 3)) + self._mp2_lambda()
 
     # ---- spin-orbital MP2 relaxed-gradient densities ----
     # The orbital-response (Z-vector) machinery follows the spin-orbital CC gradient
