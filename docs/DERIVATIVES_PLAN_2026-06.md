@@ -111,7 +111,7 @@ _Last updated 2026-06-21._
 |---|---|---|
 | Design / this document | 🚧 in review | this branch |
 | A — CPHF / Z-vector access on MPwfn | ✅ done | this branch |
-| B — MP2 densities (1-PDM + 2-PDM) | ⬜ todo | — |
+| B — MP2 unrelaxed densities (1-PDM + 2-PDM) | ✅ done | this branch |
 | C — Lagrangian + Z-vector -> relaxed D, W | ⬜ todo | — |
 | D — gradient assembly (keystone) | ⬜ todo | — |
 

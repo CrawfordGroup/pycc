@@ -115,3 +115,34 @@ class MPwfn(Wavefunction):
             from .cphf import CPHF
             self._cphf = CPHF(self)
         return self._cphf
+
+    # ---- MP2 relaxed-gradient densities (spatial RHF) ----
+
+    def _mp2_lambda(self) -> "Tensor":
+        """First-order (MP2) Lambda doubles in the spatial spin-adapted convention,
+        ``l2 = 2 (2 t2 - t2^{ab<->ba})``. The leading factor of 2 is the Lambda
+        normalization that is part of the spin-adaptation -- the same convention used
+        by ``cclambda``/``ccdensity`` -- so the MP2 densities below close the energy."""
+        return 2.0 * (2.0 * self.t2 - self.t2.swapaxes(2, 3))
+
+    def mp2_opdm_corr(self):
+        """Unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``,
+        spatial RHF (the orbital-relaxation ``ov`` block comes later from the Z-vector).
+
+        ``Doo_ij = - t2_imef l2_jmef`` and ``Dvv_ab = t2_mnbe l2_mnae`` -- the MP2 limit
+        (``t1=l1=0``) of the spin-adapted CC one-particle density (``ccdensity``)."""
+        c = self.contract
+        t2 = self.t2
+        l2 = self._mp2_lambda()
+        Doo = -c('imef,jmef->ij', t2, l2)
+        Dvv = c('mnbe,mnae->ab', t2, l2)
+        return Doo, Dvv
+
+    def mp2_tpdm_oovv(self) -> "Tensor":
+        """Non-separable MP2 two-particle density ``oovv`` block,
+        ``Gamma_ijab = 2 (2 t2 - t2^{ab<->ba}) + l2`` -- the first-order (energy-carrying)
+        block of the spin-adapted two-particle density (``ccdensity.build_Doovv``, MP2
+        limit). The separable / HF cross pieces of the full 2-PDM are assembled later
+        (gradient phase)."""
+        t2 = self.t2
+        return 2.0 * (2.0 * t2 - t2.swapaxes(2, 3)) + self._mp2_lambda()
