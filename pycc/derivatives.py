@@ -7,10 +7,16 @@ derivatives of the one- and two-electron integrals, the overlap half-derivatives
 (for AATs), and the dipole derivatives (for APTs), in the MO basis -- consistent
 with PyCC's reference-implementation, MO-basis derivative-property formulations.
 
-The caller supplies the MO-coefficient blocks to transform into. Those should be
-the base's symmetry-handled ``self.C`` (or a slice of it): it is a single irrep
-block in global energy order, so derivative integrals work with molecular symmetry
-left on -- no need to drop to C1.
+For the spatial path the caller supplies the MO-coefficient blocks to transform into.
+Those should be the base's symmetry-handled ``self.C`` (or a slice of it): it is a
+single irrep block in global energy order, so derivative integrals work with molecular
+symmetry left on -- no need to drop to C1.
+
+For the spin-orbital path the ``so_*`` methods take just an atom: they spin-block the
+spatial MO derivative integrals (built in the semicanonical MO gauge from the
+spin-orbital Hamiltonian's ``Ca``/``Cb`` + ``spin``/``spat`` maps), mirroring the
+spin-orbital Hamiltonian's own integral construction, so the derivative integrals live
+in the same MO gauge the spin-orbital densities do.
 
 Memory discipline
 -----------------
@@ -49,6 +55,7 @@ class Derivatives(object):
     """
 
     def __init__(self, wfn: Any) -> None:
+        self.wfn = wfn
         self.mints = psi4.core.MintsHelper(wfn.H.basisset)
         self.mol = wfn.ref.molecule()
         self.natom = self.mol.natom()
@@ -123,6 +130,65 @@ class Derivatives(object):
         materializing way to sweep the 2-e derivatives."""
         for atom in range(self.natom):
             yield atom, self.eri(atom, C1, C2, C3, C4)
+
+    # ---- spin-orbital (spin-blocked from the spatial MO derivatives) ----
+    def _so_spin_blocks(self):
+        """``(nmo, a, b, sa, sb, Ca, Cb)`` from the spin-orbital Hamiltonian: the
+        spin-orbital count, the alpha/beta spin-orbital index arrays and their spatial
+        indices, and the semicanonical alpha/beta MOs (as Psi4 matrices)."""
+        H = self.wfn.H
+        spin = np.asarray(H.spin)
+        spat = np.asarray(H.spat)
+        a = np.where(spin == 0)[0]
+        b = np.where(spin == 1)[0]
+        Ca = psi4.core.Matrix.from_array(H.Ca)
+        Cb = psi4.core.Matrix.from_array(H.Cb)
+        return spin.shape[0], a, b, spat[a], spat[b], Ca, Cb
+
+    def so_oei(self, atom: int, kind: str) -> List[np.ndarray]:
+        """Spin-orbital one-electron derivative integral (block-diagonal in spin) for
+        ``atom``: 3 (x, y, z) ``nmo x nmo`` arrays. ``kind`` is 'OVERLAP'/'KINETIC'/
+        'POTENTIAL'."""
+        nmo, a, b, sa, sb, Ca, Cb = self._so_spin_blocks()
+        Da = self.mints.mo_oei_deriv1(kind, atom, Ca, Ca)
+        Db = self.mints.mo_oei_deriv1(kind, atom, Cb, Cb)
+        out = []
+        for c in range(3):
+            M = np.zeros((nmo, nmo))
+            M[np.ix_(a, a)] = np.asarray(Da[c])[np.ix_(sa, sa)]
+            M[np.ix_(b, b)] = np.asarray(Db[c])[np.ix_(sb, sb)]
+            out.append(M)
+        return out
+
+    def so_core(self, atom: int) -> List[np.ndarray]:
+        """Spin-orbital core (kinetic + potential) ``h^x`` derivatives for ``atom``."""
+        T = self.so_oei(atom, "KINETIC")
+        V = self.so_oei(atom, "POTENTIAL")
+        return [t + v for t, v in zip(T, V)]
+
+    def so_overlap(self, atom: int) -> List[np.ndarray]:
+        """Spin-orbital overlap ``S^x`` derivatives for ``atom``."""
+        return self.so_oei(atom, "OVERLAP")
+
+    def so_eri(self, atom: int) -> List[np.ndarray]:
+        """Spin-orbital antisymmetrized two-electron derivatives ``<pq||rs>^x`` for
+        ``atom``: 3 (x, y, z) ``nmo^4`` arrays. Spin-blocks the spatial chemist
+        derivative integrals, converts to physicist notation, and antisymmetrizes --
+        the derivative analogue of the spin-orbital Hamiltonian's ERI build."""
+        nmo, a, b, sa, sb, Ca, Cb = self._so_spin_blocks()
+        AA = self.mints.mo_tei_deriv1(atom, Ca, Ca, Ca, Ca)
+        BB = self.mints.mo_tei_deriv1(atom, Cb, Cb, Cb, Cb)
+        AB = self.mints.mo_tei_deriv1(atom, Ca, Ca, Cb, Cb)
+        out = []
+        for c in range(3):
+            chem = np.zeros((nmo, nmo, nmo, nmo))
+            chem[np.ix_(a, a, a, a)] = np.asarray(AA[c])[np.ix_(sa, sa, sa, sa)]
+            chem[np.ix_(b, b, b, b)] = np.asarray(BB[c])[np.ix_(sb, sb, sb, sb)]
+            chem[np.ix_(a, a, b, b)] = np.asarray(AB[c])[np.ix_(sa, sa, sb, sb)]
+            chem[np.ix_(b, b, a, a)] = np.asarray(AB[c]).transpose(2, 3, 0, 1)[np.ix_(sb, sb, sa, sa)]
+            phys = chem.swapaxes(1, 2)
+            out.append(phys - phys.swapaxes(2, 3))
+        return out
 
     # ---- nuclear repulsion ----
     def nuclear_repulsion(self) -> np.ndarray:

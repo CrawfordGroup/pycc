@@ -97,7 +97,13 @@ class CPHF(object):
 
     def _build_hessian(self, kind: str) -> np.ndarray:
         o, v, no, nv = self.o, self.v, self.no, self.nv
-        L = np.asarray(self.wfn.H.L)
+        # Two-electron weight: the spin-adapted L for the spatial (closed-shell singlet)
+        # path, the antisymmetrized <pq||rs> for the spin-orbital path. The index
+        # structure is identical; only the integral differs.
+        if self.wfn.orbital_basis == 'spinorbital':
+            W = np.asarray(self.wfn.H.ERI)
+        else:
+            W = np.asarray(self.wfn.H.L)
 
         if kind == "electric":
             sign = 1.0
@@ -106,9 +112,9 @@ class CPHF(object):
         else:
             raise ValueError("kind must be 'electric' or 'magnetic', got %r" % kind)
 
-        # Two-electron part: G_iajb = L[a,j,i,b] + sign * L[a,b,i,j].
-        G = (np.einsum('ajib->iajb', L[v, o, o, v])
-             + sign * np.einsum('abij->iajb', L[v, v, o, o]))
+        # Two-electron part: G_iajb = W[a,j,i,b] + sign * W[a,b,i,j].
+        G = (np.einsum('ajib->iajb', W[v, o, o, v])
+             + sign * np.einsum('abij->iajb', W[v, v, o, o]))
         G = G.reshape(no * nv, no * nv)
 
         # Orbital-energy part: + (e_a - e_i) on the (ia)=(jb) diagonal.
