@@ -1,13 +1,15 @@
 """
-Spin-orbital MP2 relaxed (orbital-response) one-particle density;
-docs/DERIVATIVES_PLAN_2026-06.md.
+Spin-orbital MP2 relaxed (orbital-response) one-particle density and analytic nuclear
+gradient; docs/DERIVATIVES_PLAN_2026-06.md.
 
 The relaxed density adds the orbital-relaxation (Z-vector) contribution to the
-unrelaxed MP2 correlation density. The orbital-gradient Lagrangian and Z-vector
-follow the spin-orbital CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95,
-2623 (1991)). It is validated by the relaxed MP2 dipole: the electronic correlation
-dipole -Tr(D_relaxed mu) must equal a 5-point finite-field reference of
-(E_MP2 - E_SCF) w.r.t. a z-dipole field (full orbital relaxation in the field).
+unrelaxed MP2 correlation density; the gradient assembles it with the cumulant 2-PDM
+and energy-weighted density against the skeleton derivative integrals. Both follow the
+spin-orbital CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95, 2623 (1991)).
+
+Validation:
+  * relaxed MP2 dipole -Tr(D_relaxed mu) vs a 5-point finite field of (E_MP2 - E_SCF);
+  * analytic MP2 gradient vs psi4.gradient('mp2').
 """
 
 import psi4
@@ -69,3 +71,40 @@ def test_mp2_relaxed_dipole_ccpvdz():
     and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
     assert abs(_pycc_corr_dipole(WATER, 'cc-pVDZ')
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+
+
+def _pycc_gradient(geom, basis):
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp.compute_energy()
+    return mp.gradient()
+
+
+def _psi4_mp2_gradient(geom, basis):
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv',
+                      'freeze_core': 'false', 'e_convergence': 1e-12,
+                      'd_convergence': 1e-12})
+    return np.asarray(psi4.gradient('mp2'))
+
+
+def test_mp2_gradient_631g():
+    """MP2 analytic nuclear gradient vs Psi4, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    assert np.max(np.abs(_pycc_gradient(geom, '6-31G')
+                         - _psi4_mp2_gradient(geom, '6-31G'))) < 1e-8
+
+
+@pytest.mark.slow
+def test_mp2_gradient_ccpvdz():
+    """MP2 analytic nuclear gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization functions
+    and A2-irrep MOs)."""
+    assert np.max(np.abs(_pycc_gradient(WATER, 'cc-pVDZ')
+                         - _psi4_mp2_gradient(WATER, 'cc-pVDZ'))) < 1e-8

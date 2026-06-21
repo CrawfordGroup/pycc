@@ -147,7 +147,15 @@ class SpinOrbitalHamiltonian(object):
         F[np.ix_(b, b)] = Fb[np.ix_(sb, sb)]
         self.F = F
 
-        # All subsequent AO->MO transforms use the semicanonical MOs.
+        # All subsequent AO->MO transforms use the semicanonical MOs. Keep them (and the
+        # spin/spatial maps) so consumers -- e.g. the spin-orbital MP2 gradient's
+        # derivative integrals -- can transform in the SAME MO gauge the densities were
+        # built in (semicanonicalization can sign-flip MO columns; a gradient that mixed
+        # gauges would be wrong).
+        self.Ca = npCa
+        self.Cb = npCb
+        self.spin = spin
+        self.spat = spat
         Ca = psi4.core.Matrix.from_array(npCa)
         Cb = psi4.core.Matrix.from_array(npCb)
 

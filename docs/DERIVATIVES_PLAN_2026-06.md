@@ -119,7 +119,28 @@ _Last updated 2026-06-21._
 | Design / this document | 🚧 in review | this branch |
 | A/B — spatial CPHF access + MP2 densities | exploratory; **code removed** | this branch |
 | C — **spin-orbital** relaxed density (GSB Lagrangian + Z-vector) | ✅ done | this branch |
-| D — SO gradient assembly (2-PDM + SO derivative integrals + W) | ⬜ todo | — |
+| D — **spin-orbital** gradient assembly (keystone) | ✅ done | this branch |
+
+Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
+
+    dE/dX = E_SCF gradient (HFwfn) + sum_pq D_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X
+            + sum_pq I_pq S^X_pq
+
+with the relaxed 1-PDM `D`, cumulant 2-PDM `Gamma = 1/4 t2` (oovv/vvoo), and the
+energy-weighted density `I` (`I_ij = I'_ij + sum_ak z_ak(<ai||kj>+<aj||ki>)`,
+`I_ab = I'_ab`, `I_ia = I_ai = I'_ia + z_ai eps_i`). New on `MPwfn`: `_so_mp2_cumulant`,
+`_so_mp2_lagrangian` (full `I'` matrix), `_so_mp2_zvector`, `_so_energy_weighted_opdm`,
+`_so_oei_deriv` / `_so_eri_deriv` (SO skeleton derivative integrals, spin-blocked from the
+spatial `mints` MO derivatives in the semicanonical gauge), and `gradient()`.
+`SpinOrbitalHamiltonian` now stores its semicanonical `Ca`/`Cb` + `spin`/`spat` so the
+derivative integrals use the same MO gauge the densities were built in. `f^X = h^X +
+sum_m <pm||qm>^X` is the skeleton Fock derivative. Validated (`test_061`):
+`MPwfn.gradient()` == `psi4.gradient('mp2')` to ~1e-14 (H2O/6-31G C1, and H2O/cc-pVDZ C2v
+-- polarization functions and A2-irrep MOs).
+
+**Spin-orbital MP2 analytic gradient complete.** Next: spin-adapt (the deferred decision 4,
+reusing the spatial `cphf`/density seeds), frozen core, then the MP2 property path (APT /
+Hessian) or CC gradients (swap the densities; the Z-vector + assembly carry over).
 
 The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
 spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while
