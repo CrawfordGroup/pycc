@@ -146,3 +146,87 @@ class MPwfn(Wavefunction):
         (gradient phase)."""
         t2 = self.t2
         return 2.0 * (2.0 * t2 - t2.swapaxes(2, 3)) + self._mp2_lambda()
+
+    # ---- spin-orbital MP2 relaxed-gradient densities ----
+    # The orbital-response (Z-vector) machinery follows the spin-orbital CC gradient
+    # formulation (Gauss, Stanton & Bartlett, JCP 95, 2623 (1991)): the correlation
+    # one- and two-particle densities feed an orbital-gradient Lagrangian I'_pq whose
+    # occupied-virtual antisymmetric part drives the Z-vector, giving the relaxed
+    # off-diagonal density. Spin-orbital only (the formulae apply verbatim there).
+
+    def _so_mp2_corr_opdm(self):
+        """Spin-orbital unrelaxed MP2 one-particle correlation density blocks
+        ``(Doo, Dvv)``: ``Doo = -1/2 t_imef t_jmef``, ``Dvv = 1/2 t_mnbe t_mnae``. The
+        1/2 is the normalization that makes the densities close the energy
+        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)."""
+        c = self.contract
+        t2 = self.t2
+        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
+        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
+        return Doo, Dvv
+
+    def _so_orbital_hessian(self):
+        """Spin-orbital orbital Hessian ``A_{ai,bj} = (eps_a - eps_i) delta_ab delta_ij
+        + <ab||ij> + <aj||ib>`` as an ``(nv*no, nv*no)`` matrix (row/col flattened
+        a-major: ``a*no + i``). The MP2 Z-vector solver; the SO analogue of the CPHF
+        orbital Hessian (its two-electron part is the orbital-Hessian structure)."""
+        o, v = self.o, self.v
+        no, nv = self.no, self.nv
+        ERI = np.asarray(self.H.ERI)
+        eps = np.diag(np.asarray(self.H.F))
+        diag = (np.einsum('ab,ij->aibj', np.eye(nv), np.eye(no))
+                * (eps[v][:, None, None, None] - eps[o][None, :, None, None]))
+        A = diag + np.einsum('abij->aibj', ERI[v, v, o, o]) + np.einsum('ajib->aibj', ERI[v, o, o, v])
+        return A.reshape(nv * no, nv * no)
+
+    def _so_mp2_orbital_lagrangian(self, Doo, Dvv):
+        """Occupied-virtual orbital-gradient ``X_ai = I'_ia - I'_ai`` (shape (nv, no)),
+        the Z-vector right-hand side, from the spin-orbital GSB Lagrangian
+
+            I'_pq = -1/2 [ f_pp (D_pq + D_qp)
+                           + delta_{q,occ} sum_rs D_rs (<rp||sq> + <rq||sp>)
+                           + 4 sum_rst <pr||st> Gamma_qrst ]
+
+        with the correlation 1-PDM ``D`` (Doo/Dvv) and the cumulant 2-PDM
+        ``Gamma_ijab = 1/4 t2`` (``oovv``/``vvoo`` only)."""
+        o, v = self.o, self.v
+        no, nv = self.no, self.nv
+        nmo = no + nv
+        ERI = np.asarray(self.H.ERI)
+        eps = np.diag(np.asarray(self.H.F))
+        t2 = np.asarray(self.t2)
+        D = np.zeros((nmo, nmo))
+        D[o, o] = np.asarray(Doo)
+        D[v, v] = np.asarray(Dvv)
+        Gam = np.zeros((nmo, nmo, nmo, nmo))
+        Gam[o, o, v, v] = 0.25 * t2
+        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
+
+        termA = eps[:, None] * (D + D.T)                       # f_pp (D_pq + D_qp)
+        termB = np.zeros((nmo, nmo))                           # only q in occ
+        termB[:, o] = (np.einsum('rs,rpsq->pq', D, ERI[:, :, :, o])
+                       + np.einsum('rs,rqsp->pq', D, ERI[:, o, :, :]))
+        termC = 4.0 * np.einsum('prst,qrst->pq', ERI, Gam)
+        Ip = -0.5 * (termA + termB + termC)
+        return Ip[o, v].T - Ip[v, o]                           # X_ai
+
+    def mp2_relaxed_opdm(self) -> np.ndarray:
+        """Spin-orbital relaxed MP2 one-particle correlation density (``nmo x nmo``):
+        the unrelaxed ``Doo``/``Dvv`` plus the orbital-relaxation off-diagonal blocks
+        ``D_ai = D_ia = -z_ai`` from the Z-vector solve ``A z = X``. Spin-orbital only."""
+        if self.orbital_basis != 'spinorbital':
+            raise NotImplementedError(
+                "The MP2 relaxed-gradient density is implemented for the spin-orbital path.")
+        o, v = self.o, self.v
+        no, nv = self.no, self.nv
+        nmo = no + nv
+        Doo, Dvv = self._so_mp2_corr_opdm()
+        X = self._so_mp2_orbital_lagrangian(Doo, Dvv)         # (nv, no)
+        A = self._so_orbital_hessian()
+        z = np.linalg.solve(A, X.reshape(-1)).reshape(nv, no)  # z_ai
+        D = np.zeros((nmo, nmo))
+        D[o, o] = np.asarray(Doo)
+        D[v, v] = np.asarray(Dvv)
+        D[v, o] = -z
+        D[o, v] = -z.T
+        return D

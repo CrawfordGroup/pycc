@@ -4,6 +4,13 @@ _Design of record for the post-HF derivative-property effort. Authored 2026-06-2
 after the spin-orbital enhancement (`docs/ENHANCEMENT_PLAN_2026-06.md`) completed.
 New territory; not under that plan._
 
+> **Update (2026-06-21): spin-orbital first.** The MP2 gradient is being built in the
+> **spin-orbital** basis, where the orbital-response (Z-vector) Lagrangian applies verbatim
+> from the spin-orbital CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95, 2623
+> (1991); local notes "CC Gradients with Orbital Response"). The spatial spin-adapted
+> version (the original decision 4) is deferred to after the SO path works; the spatial
+> `cphf`/density helpers (Phases A-B below) seed it. Phase C (relaxed density) is done in SO.
+
 ## Motivation
 
 PyCC has a complete set of **RHF** analytic derivative properties — nuclear gradient
@@ -110,10 +117,18 @@ _Last updated 2026-06-21._
 | Phase | Status | Landed |
 |---|---|---|
 | Design / this document | 🚧 in review | this branch |
-| A — CPHF / Z-vector access on MPwfn | ✅ done | this branch |
-| B — MP2 unrelaxed densities (1-PDM + 2-PDM) | ✅ done | this branch |
-| C — Lagrangian + Z-vector -> relaxed D, W | ⬜ todo | — |
-| D — gradient assembly (keystone) | ⬜ todo | — |
+| A — CPHF / Z-vector access on MPwfn (spatial; seeds spin-adapted) | ✅ done | this branch |
+| B — MP2 unrelaxed densities, spatial (seeds spin-adapted) | ✅ done | this branch |
+| C — **spin-orbital** relaxed density (GSB Lagrangian + Z-vector) | ✅ done | this branch |
+| D — SO gradient assembly (2-PDM + SO derivative integrals + W) | ⬜ todo | — |
+
+Phase C (SO): `MPwfn` gains `_so_mp2_corr_opdm` (`Doo = -1/2 t_imef t_jmef`,
+`Dvv = 1/2 t_mnbe t_mnae`), `_so_orbital_hessian` (`A_{ai,bj} = (eps_a-eps_i)delta +
+<ab||ij> + <aj||ib>`), `_so_mp2_orbital_lagrangian` (the GSB `I'_pq` with correlation-only
+`D` and cumulant `Gamma_ijab = 1/4 t2` in `oovv`/`vvoo`; `X_ai = I'_ia - I'_ai`), and
+`mp2_relaxed_opdm` (`A z = X`, `D_ai = D_ia = -z_ai`). Validated: relaxed correlation
+`mu_z` vs finite-field Psi4 to ~1e-11 (H2O/6-31G C1, and H2O/cc-pVDZ C2v -- polarization
+functions and A2-irrep MOs).
 
 ## After MP2 gradients — the fork
 
