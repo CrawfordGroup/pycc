@@ -7,7 +7,6 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 import numpy as np
-import psi4
 
 from .wavefunction import Wavefunction
 from .utils import diag, clone
@@ -214,55 +213,6 @@ class MPwfn(Wavefunction):
 
     # ---- spin-orbital MP2 nuclear gradient ----
 
-    def _so_oei_deriv(self, mints, kind, atom):
-        """Spin-orbital one-electron derivative integral (block-diagonal in spin) for
-        ``atom``; returns the three (x, y, z) ``nmo x nmo`` arrays. Built from the
-        spatial MO derivative integrals in the semicanonical MO gauge."""
-        nmo = self.no + self.nv
-        spin = np.asarray(self.spin)
-        spat = np.asarray(self.spat)
-        a = np.where(spin == 0)[0]
-        b = np.where(spin == 1)[0]
-        sa, sb = spat[a], spat[b]
-        Ca = psi4.core.Matrix.from_array(self.H.Ca)
-        Cb = psi4.core.Matrix.from_array(self.H.Cb)
-        Da = mints.mo_oei_deriv1(kind, atom, Ca, Ca)
-        Db = mints.mo_oei_deriv1(kind, atom, Cb, Cb)
-        out = []
-        for c in range(3):
-            M = np.zeros((nmo, nmo))
-            M[np.ix_(a, a)] = np.asarray(Da[c])[np.ix_(sa, sa)]
-            M[np.ix_(b, b)] = np.asarray(Db[c])[np.ix_(sb, sb)]
-            out.append(M)
-        return out
-
-    def _so_eri_deriv(self, mints, atom):
-        """Spin-orbital antisymmetrized two-electron derivative integral ``<pq||rs>^x``
-        for ``atom``; returns the three (x, y, z) ``nmo^4`` arrays. Built by spin-blocking
-        the spatial chemist derivative integrals (semicanonical gauge) then
-        antisymmetrizing, mirroring the spin-orbital Hamiltonian's ERI construction."""
-        nmo = self.no + self.nv
-        spin = np.asarray(self.spin)
-        spat = np.asarray(self.spat)
-        a = np.where(spin == 0)[0]
-        b = np.where(spin == 1)[0]
-        sa, sb = spat[a], spat[b]
-        Ca = psi4.core.Matrix.from_array(self.H.Ca)
-        Cb = psi4.core.Matrix.from_array(self.H.Cb)
-        AA = mints.mo_tei_deriv1(atom, Ca, Ca, Ca, Ca)
-        BB = mints.mo_tei_deriv1(atom, Cb, Cb, Cb, Cb)
-        AB = mints.mo_tei_deriv1(atom, Ca, Ca, Cb, Cb)
-        out = []
-        for c in range(3):
-            chem = np.zeros((nmo, nmo, nmo, nmo))
-            chem[np.ix_(a, a, a, a)] = np.asarray(AA[c])[np.ix_(sa, sa, sa, sa)]
-            chem[np.ix_(b, b, b, b)] = np.asarray(BB[c])[np.ix_(sb, sb, sb, sb)]
-            chem[np.ix_(a, a, b, b)] = np.asarray(AB[c])[np.ix_(sa, sa, sb, sb)]
-            chem[np.ix_(b, b, a, a)] = np.asarray(AB[c]).transpose(2, 3, 0, 1)[np.ix_(sb, sb, sa, sa)]
-            phys = chem.swapaxes(1, 2)
-            out.append(phys - phys.swapaxes(2, 3))
-        return out
-
     def gradient(self) -> np.ndarray:
         """Spin-orbital MP2 analytic nuclear energy gradient (a.u.), shape (natom, 3).
 
@@ -273,25 +223,23 @@ class MPwfn(Wavefunction):
 
         with the relaxed 1-PDM ``D``, cumulant 2-PDM ``Gamma``, and energy-weighted
         density ``I`` (spin-orbital CC gradient formulation, Gauss/Stanton/Bartlett). The
-        derivative integrals are built in the semicanonical MO gauge the densities live in;
-        ``f^X = h^X + sum_m <pm||qm>^X`` is the skeleton Fock derivative. Spin-orbital only."""
+        skeleton spin-orbital derivative integrals come from ``self.derivatives`` (built
+        in the same semicanonical MO gauge the densities live in); ``f^X = h^X +
+        sum_m <pm||qm>^X`` is the skeleton Fock derivative. Spin-orbital only."""
         from .hfwfn import HFwfn
         o = self.o
         Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
         D = self.mp2_relaxed_opdm()
         I = self._so_energy_weighted_opdm(Ip, z)
 
-        mints = psi4.core.MintsHelper(self.H.basisset)
-        natom = self.H.mol.natom()
-        grad = np.zeros((natom, 3))
-        for atom in range(natom):
-            Tx = self._so_oei_deriv(mints, "KINETIC", atom)
-            Vx = self._so_oei_deriv(mints, "POTENTIAL", atom)
-            Sx = self._so_oei_deriv(mints, "OVERLAP", atom)
-            ERIx = self._so_eri_deriv(mints, atom)
+        d = self.derivatives
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.so_core(atom)
+            Sx = d.so_overlap(atom)
+            ERIx = d.so_eri(atom)
             for c in range(3):
-                hx = Tx[c] + Vx[c]
-                fx = hx + np.einsum('pmqm->pq', ERIx[c][:, o, :, o])   # skeleton Fock deriv
+                fx = hx[c] + np.einsum('pmqm->pq', ERIx[c][:, o, :, o])  # skeleton Fock deriv
                 grad[atom, c] = (np.einsum('pq,pq->', D, fx)
                                  + np.einsum('pqrs,pqrs->', Gam, ERIx[c])
                                  + np.einsum('pq,pq->', I, Sx[c]))
