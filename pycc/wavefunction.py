@@ -163,6 +163,8 @@ class Wavefunction(object):
         # ``derivatives`` property), so methods that never take derivatives pay
         # nothing. Recorded here as part of the base so _from_shared_base carries it.
         self._derivatives = None
+        # Coupled-perturbed-HF orbital-response solver, likewise lazy (see ``cphf``).
+        self._cphf = None
 
         # The base is the final consumer of forwarded kwargs (each subclass pops
         # its own and passes the remainder through), so anything left over is an
@@ -350,6 +352,18 @@ class Wavefunction(object):
         if self._derivatives is None:
             self._derivatives = Derivatives(self)
         return self._derivatives
+
+    @property
+    def cphf(self):
+        """Lazy coupled-perturbed-Hartree-Fock orbital-response solver, built on first
+        access and cached. Lives on the base (it depends only on base state -- the
+        orbital energies and the orbital Hessian's two-electron integrals) so HF, MP2,
+        and CC orbital-response code all reach it through ``self.cphf``. Basis-aware: the
+        spatial path uses the spin-adapted ``H.L``, the spin-orbital path ``H.ERI``."""
+        if self._cphf is None:
+            from .cphf import CPHF
+            self._cphf = CPHF(self)
+        return self._cphf
 
     @classmethod
     def _from_shared_base(cls, source: "Wavefunction") -> "Wavefunction":

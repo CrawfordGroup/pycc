@@ -113,20 +113,6 @@ class MPwfn(Wavefunction):
         Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
         return Doo, Dvv
 
-    def _so_orbital_hessian(self):
-        """Spin-orbital orbital Hessian ``A_{ai,bj} = (eps_a - eps_i) delta_ab delta_ij
-        + <ab||ij> + <aj||ib>`` as an ``(nv*no, nv*no)`` matrix (row/col flattened
-        a-major: ``a*no + i``). The MP2 Z-vector solver; the SO analogue of the CPHF
-        orbital Hessian (its two-electron part is the orbital-Hessian structure)."""
-        o, v = self.o, self.v
-        no, nv = self.no, self.nv
-        ERI = np.asarray(self.H.ERI)
-        eps = np.diag(np.asarray(self.H.F))
-        diag = (np.einsum('ab,ij->aibj', np.eye(nv), np.eye(no))
-                * (eps[v][:, None, None, None] - eps[o][None, :, None, None]))
-        A = diag + np.einsum('abij->aibj', ERI[v, v, o, o]) + np.einsum('ajib->aibj', ERI[v, o, o, v])
-        return A.reshape(nv * no, nv * no)
-
     def _so_mp2_cumulant(self) -> np.ndarray:
         """Spin-orbital MP2 cumulant 2-PDM ``Gamma_ijab = 1/4 t2`` in the ``oovv``/``vvoo``
         blocks -- the only blocks that contribute (determined from the MP2 energy
@@ -165,18 +151,17 @@ class MPwfn(Wavefunction):
     def _so_mp2_zvector(self):
         """Solve the spin-orbital MP2 Z-vector. Returns ``(Doo, Dvv, Gam, Ip, z)``: the
         correlation densities, the cumulant 2-PDM, the Lagrangian ``I'_pq``, and the
-        orbital relaxation ``z_ai`` (``A z = X``, ``X_ai = I'_ia - I'_ai``)."""
+        orbital relaxation ``z_ai`` (``A z = X``, ``X_ai = I'_ia - I'_ai``, via the
+        basis-aware CPHF orbital Hessian on ``self.cphf``)."""
         if self.orbital_basis != 'spinorbital':
             raise NotImplementedError(
                 "The MP2 relaxed gradient is implemented for the spin-orbital path.")
         o, v = self.o, self.v
-        no, nv = self.no, self.nv
         Doo, Dvv = self._so_mp2_corr_opdm()
         Gam = self._so_mp2_cumulant()
         Ip = self._so_mp2_lagrangian(Doo, Dvv, Gam)
-        X = Ip[o, v].T - Ip[v, o]                              # X_ai
-        A = self._so_orbital_hessian()
-        z = np.linalg.solve(A, X.reshape(-1)).reshape(nv, no)  # z_ai
+        X = Ip[o, v] - Ip[v, o].T              # (no, nv), X[i,a] = I'_ia - I'_ai
+        z = self.cphf.solve(X).T               # (nv, no), z_ai
         return Doo, Dvv, Gam, Ip, z
 
     def mp2_relaxed_opdm(self) -> np.ndarray:

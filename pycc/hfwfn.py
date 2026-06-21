@@ -10,7 +10,6 @@ import psi4
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .cphf import CPHF
 from .utils import diag
 
 
@@ -39,8 +38,8 @@ class HFwfn(Wavefunction):
         # of any frozen core the reference was run with.
         kwargs.pop('frozen_core', None)
         super().__init__(scf_wfn, frozen_core=False, **kwargs)
-        # The derivative-integral provider now lives on the base (lazy ``self.derivatives``).
-        self.cphf = CPHF(self)
+        # The derivative-integral provider and the CPHF orbital-response solver now live
+        # on the base, built lazily (``self.derivatives`` / ``self.cphf``).
 
     def gradient(self) -> np.ndarray:
         """RHF analytic energy gradient (a.u.), shape (natom, 3).
