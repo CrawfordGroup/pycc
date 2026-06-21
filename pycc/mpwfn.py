@@ -13,6 +13,7 @@ from .utils import diag, clone
 
 if TYPE_CHECKING:
     from ._typing import Tensor
+    from .cphf import CPHF
 
 
 class MPwfn(Wavefunction):
@@ -94,3 +95,23 @@ class MPwfn(Wavefunction):
             self.emp2 = (0.25 * self.contract('ijab,ijab->', self.t2, self.H.ERI[o, o, v, v])
                          + self.contract('ia,ia->', self.H.F[o, v], self.t1))
         return self.emp2
+
+    @property
+    def cphf(self) -> "CPHF":
+        """RHF coupled-perturbed-Hartree-Fock orbital-response solver for this
+        reference, built lazily and cached.
+
+        Exposes the orbital Hessian and the linear solve ``G z = B`` that the relaxed
+        MP2 gradient uses as its Z-vector solver. The orbital Hessian is reference-level
+        (built from ``H.L`` and the orbital energies), so it is identical to the one
+        ``HFwfn`` builds; this is an MP2-local accessor for now -- a promotion to the
+        :class:`Wavefunction` base can follow when the CC gradients arrive and a shared
+        derivative layer is lifted out. Spatial-RHF only (the orbital Hessian needs the
+        spin-adapted ``H.L``)."""
+        if getattr(self, '_cphf', None) is None:
+            if self.orbital_basis != 'spatial':
+                raise NotImplementedError(
+                    "CPHF orbital response is implemented for the spatial RHF path only.")
+            from .cphf import CPHF
+            self._cphf = CPHF(self)
+        return self._cphf

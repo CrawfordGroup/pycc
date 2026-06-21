@@ -110,7 +110,7 @@ _Last updated 2026-06-21._
 | Phase | Status | Landed |
 |---|---|---|
 | Design / this document | 🚧 in review | this branch |
-| A — CPHF promote / Z-vector access | ⬜ todo | — |
+| A — CPHF / Z-vector access on MPwfn | ✅ done | this branch |
 | B — MP2 densities (1-PDM + 2-PDM) | ⬜ todo | — |
 | C — Lagrangian + Z-vector -> relaxed D, W | ⬜ todo | — |
 | D — gradient assembly (keystone) | ⬜ todo | — |
