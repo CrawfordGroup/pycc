@@ -112,7 +112,8 @@ class SpinOrbitalHamiltonian(object):
         the energy.
     """
     def __init__(self, ref: Any, Ca: Any, Cb: Any, spin: Any, spat: Any,
-                 nocc_a: int, nocc_b: int) -> None:
+                 nocc_a: int, nocc_b: int,
+                 field_strength: float = 0.0, field_axis: int = 2) -> None:
         npCa = np.asarray(Ca)
         npCb = np.asarray(Cb)
         nact = spin.shape[0]
@@ -197,6 +198,16 @@ class SpinOrbitalHamiltonian(object):
         # Traceless quadrupole (6 unique Cartesian components)
         Q_ints = mints.ao_traceless_quadrupole()
         self.Q = [_spin_block(np.asarray(Q_ints[ij])) for ij in range(6)]
+
+        # Optional static external electric-dipole field (length gauge): add the
+        # perturbation V = -field_strength * mu[axis] to the Fock matrix. The
+        # canonical Fock is retained as F0; the field-perturbed (non-canonical) F
+        # drives the CCSD residual, while CC3 uses F0 for the T3 denominator and V
+        # for the [V,T3] coupling (so finite-field CC3 requires stored triples).
+        if field_strength != 0.0:
+            self.V = -field_strength * self.mu[field_axis]
+            self.F0 = self.F.copy()
+            self.F = self.F + self.V
 
     @staticmethod
     def _semicanonicalize(npC, F_ao, nocc):
