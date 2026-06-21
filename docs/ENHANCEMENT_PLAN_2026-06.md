@@ -145,7 +145,7 @@ _Last updated 2026-06-21._
 | 9a-ii — spatial spin-adapted response | ✅ done | PR #145 |
 | 7b — SO CC3 Lambda | ✅ done | PR #149 |
 | 9c — SO CC3 linear response | ✅ done | PR #150 |
-| 9d — finite-field SO CC energies | 🚧 in review | this branch |
+| 9d — finite-field SO CC energies | ✅ done | PR #151 |
 
 ### Phase 1 — what landed
 
