@@ -171,3 +171,24 @@ Phases A-C are shared sunk cost. After the Phase-D keystone, decide between:
 
 Beyond spatial RHF: UHF/ROHF and spin-orbital MP2/CC gradients, and frozen-core handling,
 are later increments on the same machinery.
+
+## Spin-orbital HFwfn properties (branch `feature/spinorbital-hf-gradient`)
+
+To reach open-shell (UHF/ROHF) derivative properties -- and to supply the SCF gradient
+the open-shell correlated gradients need -- the `HFwfn` derivative methods get a
+spin-orbital route (dispatch on `orbital_basis`, reusing the now basis-aware
+`Derivatives`/`CPHF`).
+
+- **HF gradient -- DONE.** `HFwfn._gradient_spinorbital`: the CPHF-free spin-orbital HF
+  gradient `dE/dX = sum_i h^x_ii + 1/2 sum_ij <ij||ij>^x - sum_i eps_i S^x_ii + dV_NN/dX`
+  (i, j occupied spin orbitals), using `self.derivatives.so_*`. `gradient()` dispatches.
+  Validated (`test_062`): keystone closed-shell RHF-forced-to-SO == spatial RHF gradient
+  (6-31G C1 and cc-pVDZ C2v) ~1e-15, and **UHF / ROHF gradients vs Psi4 ~1e-15** -- the
+  open-shell HF gradient works for all three references.
+- **CPHF-dependent HF properties (Hessian, polarizability, APT, AAT) -- TODO.** These need
+  the spin-orbital `CPHF` RHS builders (field / magnetic / nuclear), the layer deferred when
+  `CPHF` was made basis-aware. Build that, then add the SO branches to `HFwfn.hessian`/
+  `polarizability`/`dipole_derivatives`/`atomic_axial_tensors`.
+
+Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
+lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.

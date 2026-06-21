@@ -57,7 +57,12 @@ class HFwfn(Wavefunction):
         ``self.C`` (single irrep block, global energy order), so this works with
         molecular symmetry left on. HFwfn always uses the full (all-electron) MO
         space, so a frozen core on the reference does not affect the gradient.
+
+        The spin-orbital path (open-shell UHF/ROHF, or a closed shell forced to spin
+        orbitals) dispatches to :meth:`_gradient_spinorbital`.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._gradient_spinorbital()
         o = self.o
         no = self.no
         # Occupied block of the symmetry-handled MO coefficients, and the matching
@@ -77,6 +82,35 @@ class HFwfn(Wavefunction):
                                  + 2.0 * np.einsum('iijj->', erix[c])
                                  - np.einsum('ijij->', erix[c])
                                  - 2.0 * np.einsum('i,ii->', eps, Sx[c])
+                                 + Vnn[atom, c])
+        self.grad = grad
+        return grad
+
+    def _gradient_spinorbital(self) -> np.ndarray:
+        """Spin-orbital Hartree-Fock analytic energy gradient (a.u.), shape (natom, 3).
+
+        The spin-orbital form of the CPHF-free HF gradient (i, j over occupied spin
+        orbitals; ``<ij||ij>`` antisymmetrized), valid for UHF/ROHF as well as a
+        closed-shell RHF reference forced to spin orbitals::
+
+            dE/dX = sum_i h^x_ii + 1/2 sum_ij <ij||ij>^x - sum_i eps_i S^x_ii + dV_NN/dX
+
+        The skeleton spin-orbital derivative integrals come from ``self.derivatives``
+        (built in the semicanonical MO gauge). For a closed shell this equals the
+        spatial RHF gradient term-for-term."""
+        o = self.o
+        eps = np.asarray(diag(self.H.F))[o]
+        d = self.derivatives
+        grad = np.zeros((d.natom, 3))
+        Vnn = d.nuclear_repulsion()
+        for atom in range(d.natom):
+            hx = d.so_core(atom)
+            Sx = d.so_overlap(atom)
+            erix = d.so_eri(atom)
+            for c in range(3):
+                grad[atom, c] = (self.contract('ii->', hx[c][o, o])
+                                 + 0.5 * self.contract('ijij->', erix[c][o, o, o, o])
+                                 - self.contract('i,ii->', eps, Sx[c][o, o])
                                  + Vnn[atom, c])
         self.grad = grad
         return grad
