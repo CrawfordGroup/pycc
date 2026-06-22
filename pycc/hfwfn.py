@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import psi4
 import numpy as np
 
 from .wavefunction import Wavefunction
@@ -59,24 +58,20 @@ class HFwfn(Wavefunction):
         space, so a frozen core on the reference does not affect the gradient.
 
         The spin-orbital path (open-shell UHF/ROHF, or a closed shell forced to spin
-        orbitals) dispatches to :meth:`_gradient_spinorbital`.
+        orbitals) dispatches to :meth:`_so_gradient`.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._gradient_spinorbital()
+            return self._so_gradient()
         o = self.o
-        no = self.no
-        # Occupied block of the symmetry-handled MO coefficients, and the matching
-        # (energy-ordered) occupied orbital energies from the Fock diagonal.
-        Cocc = psi4.core.Matrix.from_array(np.asarray(self.C)[:, :no])
         eps = np.asarray(diag(self.H.F))[o]
 
         d = self.derivatives
         grad = np.zeros((d.natom, 3))
         Vnn = d.nuclear_repulsion()
         for atom in range(d.natom):
-            Sx = d.overlap(atom, Cocc, Cocc)
-            hx = d.core(atom, Cocc, Cocc)
-            erix = d.eri(atom, Cocc, Cocc, Cocc, Cocc)
+            Sx = d.overlap(atom, 'o', 'o')
+            hx = d.core(atom, 'o', 'o')
+            erix = d.eri(atom, 'o', 'o', 'o', 'o')
             for c in range(3):
                 grad[atom, c] = (2.0 * np.trace(hx[c])
                                  + 2.0 * np.einsum('iijj->', erix[c])
@@ -86,7 +81,7 @@ class HFwfn(Wavefunction):
         self.grad = grad
         return grad
 
-    def _gradient_spinorbital(self) -> np.ndarray:
+    def _so_gradient(self) -> np.ndarray:
         """Spin-orbital Hartree-Fock analytic energy gradient (a.u.), shape (natom, 3).
 
         The spin-orbital form of the CPHF-free HF gradient (i, j over occupied spin
@@ -98,19 +93,18 @@ class HFwfn(Wavefunction):
         The skeleton spin-orbital derivative integrals come from ``self.derivatives``
         (built in the semicanonical MO gauge). For a closed shell this equals the
         spatial RHF gradient term-for-term."""
-        o = self.o
-        eps = np.asarray(diag(self.H.F))[o]
+        eps = np.asarray(diag(self.H.F))[self.o]
         d = self.derivatives
         grad = np.zeros((d.natom, 3))
         Vnn = d.nuclear_repulsion()
         for atom in range(d.natom):
-            hx = d.so_core(atom)
-            Sx = d.so_overlap(atom)
-            erix = d.so_eri(atom)
+            hx = d.so_core(atom, 'o', 'o')
+            Sx = d.so_overlap(atom, 'o', 'o')
+            erix = d.so_eri(atom, 'o', 'o', 'o', 'o')
             for c in range(3):
-                grad[atom, c] = (self.contract('ii->', hx[c][o, o])
-                                 + 0.5 * self.contract('ijij->', erix[c][o, o, o, o])
-                                 - self.contract('i,ii->', eps, Sx[c][o, o])
+                grad[atom, c] = (self.contract('ii->', hx[c])
+                                 + 0.5 * self.contract('ijij->', erix[c])
+                                 - self.contract('i,ii->', eps, Sx[c])
                                  + Vnn[atom, c])
         self.grad = grad
         return grad
@@ -155,23 +149,21 @@ class HFwfn(Wavefunction):
                             - 2 sum_ik S^X_ki (mu_a)_ik            (oo / Pulay response)
                             + 4 sum_ia U^X_ia (mu_a)_ia            (ov / CPHF response)
 
-        The spin-orbital path dispatches to :meth:`_dipole_derivatives_spinorbital`.
+        The spin-orbital path dispatches to :meth:`_so_dipole_derivatives`.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._dipole_derivatives_spinorbital()
+            return self._so_dipole_derivatives()
         o, v = self.o, self.v
         mu = [np.asarray(self.H.mu[a]) for a in range(3)]
         d = self.derivatives
-        C = np.asarray(self.C)
-        Cocc = psi4.core.Matrix.from_array(C[:, o])
         mol = self.ref.molecule()
         natom = mol.natom()
 
         dmu = np.zeros((natom, 3, 3))
         for A in range(natom):
             Ux = self.cphf.solve_nuclear(A)      # cached; shared with the Hessian
-            Sx = d.overlap(A, Cocc, Cocc)        # 3 x (no,no)
-            dip = d.dipole(A, Cocc, Cocc)        # 9 x (no,no): index alpha*3 + beta
+            Sx = d.overlap(A, 'o', 'o')          # 3 x (no,no)
+            dip = d.dipole(A, 'o', 'o')          # 9 x (no,no): index alpha*3 + beta
             for beta in range(3):
                 for alpha in range(3):
                     val = mol.Z(A) if alpha == beta else 0.0
@@ -182,7 +174,7 @@ class HFwfn(Wavefunction):
         self.dipder = dmu
         return self.dipder
 
-    def _dipole_derivatives_spinorbital(self) -> np.ndarray:
+    def _so_dipole_derivatives(self) -> np.ndarray:
         """Spin-orbital nuclear dipole derivatives (APTs), shape ``(natom, 3, 3)`` indexed
         ``[A, beta, alpha]``. The spin-orbital form of :meth:`dipole_derivatives`: singly
         occupied spin orbitals (the one-electron traces carry factor 1, the ov response
@@ -204,13 +196,13 @@ class HFwfn(Wavefunction):
         dmu = np.zeros((natom, 3, 3))
         for A in range(natom):
             Ux = self.cphf.solve_nuclear(A)      # 3 x (no,nv), spin-orbital response
-            Sx = d.so_overlap(A)                 # 3 x (nmo,nmo)
-            dip = d.so_dipole(A)                 # 9 x (nmo,nmo): index alpha*3 + beta
+            Sx = d.so_overlap(A, 'o', 'o')       # 3 x (no,no)
+            dip = d.so_dipole(A, 'o', 'o')       # 9 x (no,no): index alpha*3 + beta
             for beta in range(3):
                 for alpha in range(3):
                     val = mol.Z(A) if alpha == beta else 0.0
-                    val += self.contract('ii->', dip[alpha * 3 + beta][o, o])
-                    val -= self.contract('ki,ki->', Sx[beta][o, o], mu[alpha][o, o])
+                    val += self.contract('ii->', dip[alpha * 3 + beta])
+                    val -= self.contract('ki,ki->', Sx[beta], mu[alpha][o, o])
                     val += 2.0 * self.contract('ia,ia->', Ux[beta], mu[alpha][o, v])
                     dmu[A, beta, alpha] = val
         self.dipder = dmu
@@ -239,15 +231,13 @@ class HFwfn(Wavefunction):
         where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij``
         the skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
 
-        The spin-orbital path dispatches to :meth:`_hessian_spinorbital`.
+        The spin-orbital path dispatches to :meth:`_so_hessian`.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._hessian_spinorbital()
+            return self._so_hessian()
         o, v = self.o, self.v
         eps_o = np.asarray(diag(self.H.F))[o]
         d = self.derivatives
-        C = np.asarray(self.C)
-        Cocc = psi4.core.Matrix.from_array(C[:, o])
         mol = self.ref.molecule()
         natom = mol.natom()
 
@@ -263,9 +253,9 @@ class HFwfn(Wavefunction):
         H = np.zeros((3 * natom, 3 * natom))
         for A in range(natom):
             for Bat in range(natom):
-                S2 = d.overlap2(A, Bat, Cocc, Cocc)               # 9 x (no,no)
-                h2 = d.core2(A, Bat, Cocc, Cocc)                  # 9 x (no,no)
-                g2 = d.eri2(A, Bat, Cocc, Cocc, Cocc, Cocc)       # 9 x (no,no,no,no) chemist
+                S2 = d.overlap2(A, Bat, 'o', 'o')                 # 9 x (no,no)
+                h2 = d.core2(A, Bat, 'o', 'o')                    # 9 x (no,no)
+                g2 = d.eri2(A, Bat, 'o', 'o', 'o', 'o')           # 9 x (no,no,no,no) chemist
                 for a in range(3):
                     for b in range(3):
                         c = a * 3 + b
@@ -289,7 +279,7 @@ class HFwfn(Wavefunction):
         self.hess = H
         return self.hess
 
-    def _hessian_spinorbital(self) -> np.ndarray:
+    def _so_hessian(self) -> np.ndarray:
         """Spin-orbital RHF/UHF molecular Hessian, shape ``(3*natom, 3*natom)``. The
         spin-orbital form of :meth:`hessian`: singly occupied spin orbitals (the
         closed-shell prefactors halve) with the antisymmetrized ``<ij||kl>``, the
@@ -319,9 +309,9 @@ class HFwfn(Wavefunction):
         H = np.zeros((3 * natom, 3 * natom))
         for A in range(natom):
             for Bat in range(natom):
-                S2 = d.so_overlap2(A, Bat)                # 9 x (no,no)
-                h2 = d.so_core2(A, Bat)                   # 9 x (no,no)
-                g2 = d.so_eri2(A, Bat)                    # 9 x (no^4) <ij||kl>^{ab}
+                S2 = d.so_overlap2(A, Bat, 'o', 'o')      # 9 x (no,no)
+                h2 = d.so_core2(A, Bat, 'o', 'o')         # 9 x (no,no)
+                g2 = d.so_eri2(A, Bat, 'o', 'o', 'o', 'o')  # 9 x (no^4) <ij||kl>^{ab}
                 for a in range(3):
                     for b in range(3):
                         c = a * 3 + b
@@ -361,22 +351,18 @@ class HFwfn(Wavefunction):
         their ``i`` (so the response and AAT are real); the full VCD AAT adds the nuclear
         term ``(Z_lambda/4) eps_{alpha,beta,gamma} R_{lambda,gamma}``.
 
-        The spin-orbital path dispatches to :meth:`_atomic_axial_tensors_spinorbital`.
+        The spin-orbital path dispatches to :meth:`_so_atomic_axial_tensors`.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._atomic_axial_tensors_spinorbital()
-        o, v = self.o, self.v
+            return self._so_atomic_axial_tensors()
         d = self.derivatives
-        C = np.asarray(self.C)
-        Cocc = psi4.core.Matrix.from_array(C[:, o])
-        Cvir = psi4.core.Matrix.from_array(C[:, v])
         natom = self.ref.molecule().natom()
 
         Ub = [self.cphf.solve_magnetic(beta) for beta in range(3)]   # 3 x (no,nv), real
         aat = np.zeros((natom, 3, 3))
         for lam in range(natom):
             Ur = self.cphf.solve_nuclear(lam)                        # 3 x (no,nv), cached
-            Shalf = d.overlap_half(lam, Cocc, Cvir, side="LEFT")     # 3 x (no,nv)
+            Shalf = d.overlap_half(lam, 'o', 'v', side="LEFT")       # 3 x (no,nv)
             for alpha in range(3):
                 for beta in range(3):
                     aat[lam, alpha, beta] = 2.0 * (
@@ -385,7 +371,7 @@ class HFwfn(Wavefunction):
         self.aat = aat
         return self.aat
 
-    def _atomic_axial_tensors_spinorbital(self) -> np.ndarray:
+    def _so_atomic_axial_tensors(self) -> np.ndarray:
         """Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
         spin-orbital form of :meth:`atomic_axial_tensors`: singly occupied spin orbitals
         (the closed-shell prefactor 2 -> 1), with the spin-orbital nuclear response
@@ -399,7 +385,6 @@ class HFwfn(Wavefunction):
         implementation to validate against; the closed-shell keystone (SO-RHF == the
         DALTON-validated spatial AAT) validates the spin-orbital machinery, and the UHF
         result runs through the same code path."""
-        o, v = self.o, self.v
         d = self.derivatives
         natom = self.ref.molecule().natom()
 
@@ -407,11 +392,11 @@ class HFwfn(Wavefunction):
         aat = np.zeros((natom, 3, 3))
         for lam in range(natom):
             Ur = self.cphf.solve_nuclear(lam)                        # 3 x (no,nv), cached
-            Shalf = d.so_overlap_half(lam, side="LEFT")             # 3 x (nmo,nmo)
+            Shalf = d.so_overlap_half(lam, 'o', 'v', side="LEFT")    # 3 x (no,nv)
             for alpha in range(3):
                 for beta in range(3):
                     aat[lam, alpha, beta] = (
                         self.contract('ia,ia->', Ur[alpha], Ub[beta])
-                        + self.contract('ia,ia->', Ub[beta], Shalf[alpha][o, v]))
+                        + self.contract('ia,ia->', Ub[beta], Shalf[alpha]))
         self.aat = aat
         return self.aat

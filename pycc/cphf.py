@@ -47,7 +47,6 @@ from __future__ import annotations
 
 from typing import Any, List
 
-import psi4
 import numpy as np
 
 from .utils import diag
@@ -231,21 +230,19 @@ class CPHF(object):
         provider; the unperturbed L is H.L. Validated to ~1e-8 via the dipole-
         derivative / APT-transpose check against finite difference of the SCF dipole.
 
-        The spin-orbital path dispatches to :meth:`_build_nuclear_spinorbital`.
+        The spin-orbital path dispatches to :meth:`_so_build_nuclear`.
         """
         if self.wfn.orbital_basis == 'spinorbital':
-            return self._build_nuclear_spinorbital(atom)
+            return self._so_build_nuclear(atom)
         o, v, no, nv = self.o, self.v, self.no, self.nv
         eps_o = self.eps[o]
         L = np.asarray(self.wfn.H.L)  # spin-adapted, physicist, unperturbed
 
-        C = np.asarray(self.wfn.C)
-        Call = psi4.core.Matrix.from_array(C)
         d = self.wfn.derivatives
-        Sx = d.overlap(atom, Call, Call)                       # 3 x (nmo,nmo)
-        hx = d.core(atom, Call, Call)                          # 3 x (nmo,nmo)
+        Sx = d.overlap(atom)                                   # 3 x (nmo,nmo)
+        hx = d.core(atom)                                      # 3 x (nmo,nmo)
         gx = [g.swapaxes(1, 2) for g in                        # chemist -> physicist
-              d.eri(atom, Call, Call, Call, Call)]             # 3 x (nmo^4) <pq|rs>^X
+              d.eri(atom)]                                     # 3 x (nmo^4) <pq|rs>^X
 
         Lvooo = L[v, o, o, o]
         B, Foo, Soo = [], [], []
@@ -266,7 +263,7 @@ class CPHF(object):
             Soo.append(Sx[c][o, o])
         return B, Foo, Soo
 
-    def _build_nuclear_spinorbital(self, atom: int):
+    def _so_build_nuclear(self, atom: int):
         """Spin-orbital nuclear CPHF RHS for ``atom`` -- the spin-orbital analogue of
         :meth:`_build_nuclear`. Same structure with the antisymmetrized ``<pq||rs>`` in
         place of the spin-adapted ``L``, the spin-orbital skeleton derivative integrals

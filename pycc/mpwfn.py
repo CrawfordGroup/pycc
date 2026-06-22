@@ -299,12 +299,11 @@ class MPwfn(Wavefunction):
         I = self._energy_weighted_opdm(Ip, z)
 
         d = self.derivatives
-        C = self.C
         grad = np.zeros((d.natom, 3))
         for atom in range(d.natom):
-            hx = d.core(atom, C, C)
-            Sx = d.overlap(atom, C, C)
-            ERIx = d.eri(atom, C, C, C, C)            # chemist (pq|rs)^X
+            hx = d.core(atom)
+            Sx = d.overlap(atom)
+            ERIx = d.eri(atom)                        # chemist (pq|rs)^X
             for c in range(3):
                 phys = ERIx[c].transpose(0, 2, 1, 3)  # -> physicist <pq|rs>^X
                 Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
