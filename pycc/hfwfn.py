@@ -238,7 +238,11 @@ class HFwfn(Wavefunction):
 
         where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij``
         the skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
+
+        The spin-orbital path dispatches to :meth:`_hessian_spinorbital`.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._hessian_spinorbital()
         o, v = self.o, self.v
         eps_o = np.asarray(diag(self.H.F))[o]
         d = self.derivatives
@@ -281,6 +285,61 @@ class HFwfn(Wavefunction):
                                 - 2.0 * np.einsum('ij,ij->', Sy, Fx)
                                 + 4.0 * np.einsum('i,ij,ij->', eps_o, Sx, Sy)
                                 + 2.0 * np.einsum('ij,nm,imjn->', Sx, Sy, Loooo))
+                        H[A * 3 + a, Bat * 3 + b] = skel + resp
+        self.hess = H
+        return self.hess
+
+    def _hessian_spinorbital(self) -> np.ndarray:
+        """Spin-orbital RHF/UHF molecular Hessian, shape ``(3*natom, 3*natom)``. The
+        spin-orbital form of :meth:`hessian`: singly occupied spin orbitals (the
+        closed-shell prefactors halve) with the antisymmetrized ``<ij||kl>``, the
+        spin-orbital second-derivative integrals (:meth:`Derivatives.so_core2` /
+        ``so_eri2`` / ``so_overlap2``, occupied block), and the spin-orbital nuclear CPHF
+        response/cache (:meth:`CPHF.solve_nuclear`)::
+
+            skeleton:  h^{ab}_ii + 1/2 <ij||ij>^{ab} - eps_i S^{ab}_ii + V_NN^{ab}
+            response:  -2 U^x_ai B^y_ai - S^x_ij F^y_ij - S^y_ij F^x_ij
+                       + 2 eps_i S^x_ij S^y_ij + S^x_ij S^y_nm <im||jn>
+
+        Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals;
+        ROHF raises (the nuclear response goes through :meth:`CPHF.solve`)."""
+        o = self.o
+        eps_o = np.asarray(diag(self.H.F))[o]
+        ERIoooo = np.asarray(self.H.ERI)[o, o, o, o]   # i,m,j,n (antisymmetrized)
+        d = self.derivatives
+        mol = self.ref.molecule()
+        natom = mol.natom()
+
+        Vnn2 = d.nuclear_repulsion2()
+        U = [self.cphf.solve_nuclear(A) for A in range(natom)]            # U[A][a]->(no,nv)
+        B = [self.cphf.rhs_nuclear_cached(A) for A in range(natom)]       # B[A][a]->(no,nv)
+        Foo = [self.cphf.fock_nuclear_cached(A) for A in range(natom)]    # F^X_ij->(no,no)
+        Soo = [self.cphf.overlap_nuclear_cached(A) for A in range(natom)]  # S^X_ij->(no,no)
+
+        H = np.zeros((3 * natom, 3 * natom))
+        for A in range(natom):
+            for Bat in range(natom):
+                S2 = d.so_overlap2(A, Bat)                # 9 x (no,no)
+                h2 = d.so_core2(A, Bat)                   # 9 x (no,no)
+                g2 = d.so_eri2(A, Bat)                    # 9 x (no^4) <ij||kl>^{ab}
+                for a in range(3):
+                    for b in range(3):
+                        c = a * 3 + b
+                        Ux, Uy = U[A][a], U[Bat][b]
+                        By = B[Bat][b]
+                        Sx, Sy = Soo[A][a], Soo[Bat][b]
+                        Fx, Fy = Foo[A][a], Foo[Bat][b]
+                        # --- skeleton (second-derivative integrals), as in the gradient ---
+                        skel = (self.contract('ii->', h2[c])
+                                + 0.5 * self.contract('ijij->', g2[c])
+                                - self.contract('i,ii->', eps_o, S2[c])
+                                + Vnn2[A * 3 + a, Bat * 3 + b])
+                        # --- first-order CPHF response + first-derivative cross terms ---
+                        resp = (-2.0 * self.contract('ia,ia->', Ux, By)
+                                - self.contract('ij,ij->', Sx, Fy)
+                                - self.contract('ij,ij->', Sy, Fx)
+                                + 2.0 * self.contract('i,ij,ij->', eps_o, Sx, Sy)
+                                + self.contract('ij,nm,imjn->', Sx, Sy, ERIoooo))
                         H[A * 3 + a, Bat * 3 + b] = skel + resp
         self.hess = H
         return self.hess

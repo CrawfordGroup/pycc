@@ -207,11 +207,21 @@ spin-orbital route (dispatch on `orbital_basis`, reusing the now basis-aware
   (singly occupied spin orbitals). Validated (`test_064`): keystone RHF-forced-to-SO ==
   spatial APT (6-31G C1 and cc-pVDZ C2v) ~1e-15, and UHF vs finite-difference of the SCF
   dipole ~6e-10. ROHF raises (the nuclear response goes through `CPHF.solve`).
-- **Molecular Hessian -- TODO (assembly only).** The spin-orbital nuclear response/RHS and
-  the cached `F^X_ij`/`S^X_ij` oo by-products are now available from
-  `_build_nuclear_spinorbital`; what remains is the SO branch of `HFwfn.hessian` -- the
-  second-derivative skeleton terms (`so` analogues of `core2`/`eri2`/`overlap2`) plus the
-  response/cross terms with spin-orbital prefactors.
+- **Molecular Hessian -- DONE (RHF/UHF).** `HFwfn._hessian_spinorbital`: second-derivative
+  skeleton terms (`Derivatives.so_core2`/`so_eri2`/`so_overlap2`, occupied block) plus the
+  spin-orbital nuclear CPHF response/cache, with the closed-shell prefactors halved. Subtle
+  point: Psi4's `mo_tei_deriv2(A,B)` two-electron second derivative does not satisfy the
+  integral's electron-exchange symmetry `(pq|rs) = (rs|pq)` term by term. For the energy
+  trace the same-spin terms absorb the resulting bra<->ket relabel (so RHF and the aa/bb
+  blocks are already symmetric), but the UHF **cross-spin Coulomb** term
+  `sum_{i in a, j in b}(ii|jj)^{ab}` does not -- it carried the entire spurious antisymmetric
+  part. Fixed at the integral level: `Derivatives.so_eri2` symmetrizes the chemist deriv2
+  over the bra<->ket swap (building the cross-spin `ab`/`ba` blocks from independent
+  `(aa|bb)`/`(bb|aa)` calls), which -- since the geometric derivative of a symmetric integral
+  is symmetric -- also restores the atom-pair-swap symmetry the Hessian needs, so the
+  assembled Hessian is symmetric with no global `0.5*(H+H.T)`. Validated (`test_065`): keystone
+  RHF-forced-to-SO == spatial (6-31G C1, cc-pVDZ C2v) ~1e-15; UHF naturally symmetric (~1e-14)
+  and vs `psi4.hessian('scf')` ~3e-12. ROHF raises.
 - **AAT -- TODO.** Needs the spin-orbital *magnetic* CPHF RHS builder (`rhs_magnetic`/
   `_m_ov` for the SO magnetic-dipole integral) plus the SO branch of
   `HFwfn.atomic_axial_tensors` (and `Derivatives.overlap_half` for spin orbitals).
