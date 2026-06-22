@@ -222,9 +222,20 @@ spin-orbital route (dispatch on `orbital_basis`, reusing the now basis-aware
   assembled Hessian is symmetric with no global `0.5*(H+H.T)`. Validated (`test_065`): keystone
   RHF-forced-to-SO == spatial (6-31G C1, cc-pVDZ C2v) ~1e-15; UHF naturally symmetric (~1e-14)
   and vs `psi4.hessian('scf')` ~3e-12. ROHF raises.
-- **AAT -- TODO.** Needs the spin-orbital *magnetic* CPHF RHS builder (`rhs_magnetic`/
-  `_m_ov` for the SO magnetic-dipole integral) plus the SO branch of
-  `HFwfn.atomic_axial_tensors` (and `Derivatives.overlap_half` for spin orbitals).
+- **AAT -- DONE (RHF; UHF unvalidated).** The spin-orbital magnetic-dipole integral `H.m`
+  was already built on `SpinOrbitalHamiltonian`, so `CPHF._m_ov`/`rhs_magnetic`/
+  `solve_magnetic` already work for spin orbitals; the only new pieces are
+  `Derivatives.so_overlap_half` (spin-blocked nuclear half-derivative overlaps) and the SO
+  branch `HFwfn._atomic_axial_tensors_spinorbital` (`I^lam_{a,b} = sum_ia [U^R_ai U^B_ai +
+  U^B_ai <phi^R_i|phi_a>]`, prefactor 1 vs the closed-shell 2). Validated (`test_066`):
+  keystone SO-RHF == spatial AAT (the DALTON-validated `test_050` path) ~1e-15.
+  **Caveat:** there is no prior open-shell UHF AAT implementation anywhere to compare
+  against, so the UHF result is only checked to run and return a sane (finite, real,
+  nonzero) tensor through the same code path the keystone validates. ROHF raises.
+
+**All five spin-orbital HF analytic properties (gradient, polarizability, APT, Hessian,
+AAT) are implemented for RHF/UHF** (ROHF response deferred, guarded). Next: spin-adapt the
+correlated (MP2) gradient, frozen core, then CC gradients / the MP2 property path.
 
 Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
 lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.

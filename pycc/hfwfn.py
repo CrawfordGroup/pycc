@@ -360,7 +360,11 @@ class HFwfn(Wavefunction):
         (``Derivatives.overlap_half`` 'LEFT'). The magnetic integrals are stripped of
         their ``i`` (so the response and AAT are real); the full VCD AAT adds the nuclear
         term ``(Z_lambda/4) eps_{alpha,beta,gamma} R_{lambda,gamma}``.
+
+        The spin-orbital path dispatches to :meth:`_atomic_axial_tensors_spinorbital`.
         """
+        if self.orbital_basis == 'spinorbital':
+            return self._atomic_axial_tensors_spinorbital()
         o, v = self.o, self.v
         d = self.derivatives
         C = np.asarray(self.C)
@@ -378,5 +382,36 @@ class HFwfn(Wavefunction):
                     aat[lam, alpha, beta] = 2.0 * (
                         np.einsum('ia,ia->', Ur[alpha], Ub[beta])
                         + np.einsum('ia,ia->', Ub[beta], Shalf[alpha]))
+        self.aat = aat
+        return self.aat
+
+    def _atomic_axial_tensors_spinorbital(self) -> np.ndarray:
+        """Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
+        spin-orbital form of :meth:`atomic_axial_tensors`: singly occupied spin orbitals
+        (the closed-shell prefactor 2 -> 1), with the spin-orbital nuclear response
+        (:meth:`CPHF.solve_nuclear`), magnetic response (:meth:`CPHF.solve_magnetic`), and
+        nuclear half-derivative overlaps (:meth:`Derivatives.so_overlap_half`)::
+
+            I^lam_{a,b} = sum_ia [ U^R_ai U^B_ai + U^B_ai <phi^R_i | phi_a> ]
+
+        Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals
+        (ROHF raises, via :meth:`CPHF.solve`). Note: there is no prior open-shell UHF AAT
+        implementation to validate against; the closed-shell keystone (SO-RHF == the
+        DALTON-validated spatial AAT) validates the spin-orbital machinery, and the UHF
+        result runs through the same code path."""
+        o, v = self.o, self.v
+        d = self.derivatives
+        natom = self.ref.molecule().natom()
+
+        Ub = [self.cphf.solve_magnetic(beta) for beta in range(3)]   # 3 x (no,nv), real
+        aat = np.zeros((natom, 3, 3))
+        for lam in range(natom):
+            Ur = self.cphf.solve_nuclear(lam)                        # 3 x (no,nv), cached
+            Shalf = d.so_overlap_half(lam, side="LEFT")             # 3 x (nmo,nmo)
+            for alpha in range(3):
+                for beta in range(3):
+                    aat[lam, alpha, beta] = (
+                        self.contract('ia,ia->', Ur[alpha], Ub[beta])
+                        + self.contract('ia,ia->', Ub[beta], Shalf[alpha][o, v]))
         self.aat = aat
         return self.aat

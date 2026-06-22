@@ -209,6 +209,22 @@ class Derivatives(object):
             out.append(M)
         return out
 
+    def so_overlap_half(self, atom: int, side: str = "LEFT") -> List[np.ndarray]:
+        """Spin-orbital overlap half-derivatives ``<phi^X_p | phi_q>`` (block-diagonal in
+        spin) for ``atom``: 3 (x, y, z) ``nmo x nmo`` arrays. The bra is the perturbed
+        orbital, the ket the unperturbed (``side='LEFT'``); the matrix is not symmetric.
+        Used by the spin-orbital AAT machinery (which takes the ov block)."""
+        nmo, a, b, sa, sb, Ca, Cb = self._so_spin_blocks()
+        La = self.mints.mo_overlap_half_deriv1(side, atom, Ca, Ca)
+        Lb = self.mints.mo_overlap_half_deriv1(side, atom, Cb, Cb)
+        out = []
+        for c in range(3):
+            M = np.zeros((nmo, nmo))
+            M[np.ix_(a, a)] = np.asarray(La[c])[np.ix_(sa, sa)]
+            M[np.ix_(b, b)] = np.asarray(Lb[c])[np.ix_(sb, sb)]
+            out.append(M)
+        return out
+
     # ---- spin-orbital second derivatives (Hessian skeleton; occupied block) ----
     def _so_occ_blocks(self):
         """Occupied spin-orbital spin split for the Hessian skeleton: ``(no, a, b,
