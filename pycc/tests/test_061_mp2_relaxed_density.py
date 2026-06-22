@@ -1,15 +1,16 @@
 """
-Spin-orbital MP2 relaxed (orbital-response) one-particle density and analytic nuclear
-gradient; docs/DERIVATIVES_PLAN_2026-06.md.
+MP2 relaxed (orbital-response) one-particle density and analytic nuclear gradient, both
+the spin-orbital and the spin-adapted (closed-shell RHF) paths; docs/DERIVATIVES_PLAN_2026-06.md.
 
 The relaxed density adds the orbital-relaxation (Z-vector) contribution to the
 unrelaxed MP2 correlation density; the gradient assembles it with the cumulant 2-PDM
 and energy-weighted density against the skeleton derivative integrals. Both follow the
-spin-orbital CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95, 2623 (1991)).
+CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95, 2623 (1991)).
 
 Validation:
   * relaxed MP2 dipole -Tr(D_relaxed mu) vs a 5-point finite field of (E_MP2 - E_SCF);
-  * analytic MP2 gradient vs psi4.gradient('mp2').
+  * analytic MP2 gradient vs psi4.gradient('mp2');
+  * keystone: the spin-adapted and spin-orbital gradients agree on a closed shell.
 """
 
 import psi4
@@ -44,24 +45,31 @@ def _ff_corr_dipole(geom, basis, F=0.0005):
     return mu('mp2') - mu('scf')
 
 
-def _pycc_corr_dipole(geom, basis):
-    """PyCC spin-orbital relaxed-MP2 electronic correlation mu_z."""
+def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital'):
+    """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted)."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
     psi4.set_options({'basis': basis, 'scf_type': 'pk',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
     D = mp.mp2_relaxed_opdm()
     return -np.einsum('pq,pq->', D, np.asarray(mp.H.mu[2]))
 
 
 def test_mp2_relaxed_dipole_631g():
-    """Relaxed MP2 dipole (mu_z) vs finite field, H2O/6-31G (C1)."""
+    """Relaxed spin-orbital MP2 dipole (mu_z) vs finite field, H2O/6-31G (C1)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole(geom, '6-31G')
+               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+
+
+def test_sa_mp2_relaxed_dipole_631g():
+    """Relaxed spin-adapted (closed-shell RHF) MP2 dipole vs finite field, H2O/6-31G."""
+    geom = WATER + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole(geom, '6-31G', orbital_basis='spatial')
                - _ff_corr_dipole(geom, '6-31G')) < 1e-8
 
 
@@ -73,14 +81,14 @@ def test_mp2_relaxed_dipole_ccpvdz():
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
-def _pycc_gradient(geom, basis):
+def _pycc_gradient(geom, basis, orbital_basis='spinorbital'):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
     psi4.set_options({'basis': basis, 'scf_type': 'pk',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
     return mp.gradient()
 
@@ -96,15 +104,35 @@ def _psi4_mp2_gradient(geom, basis):
 
 
 def test_mp2_gradient_631g():
-    """MP2 analytic nuclear gradient vs Psi4, H2O/6-31G (C1)."""
+    """Spin-orbital MP2 analytic nuclear gradient vs Psi4, H2O/6-31G (C1)."""
     geom = WATER + "symmetry c1\n"
     assert np.max(np.abs(_pycc_gradient(geom, '6-31G')
                          - _psi4_mp2_gradient(geom, '6-31G'))) < 1e-8
 
 
+def test_sa_mp2_gradient_631g():
+    """Spin-adapted (closed-shell RHF) MP2 gradient vs Psi4, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    assert np.max(np.abs(_pycc_gradient(geom, '6-31G', orbital_basis='spatial')
+                         - _psi4_mp2_gradient(geom, '6-31G'))) < 1e-8
+
+
+def test_mp2_gradient_spatial_vs_so_631g():
+    """Keystone: the spin-adapted and spin-orbital MP2 gradients agree on a closed shell."""
+    geom = WATER + "symmetry c1\n"
+    assert np.max(np.abs(_pycc_gradient(geom, '6-31G', orbital_basis='spatial')
+                         - _pycc_gradient(geom, '6-31G', orbital_basis='spinorbital'))) < 1e-10
+
+
 @pytest.mark.slow
 def test_mp2_gradient_ccpvdz():
-    """MP2 analytic nuclear gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization functions
-    and A2-irrep MOs)."""
+    """Spin-orbital MP2 gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization + A2-irrep MOs)."""
     assert np.max(np.abs(_pycc_gradient(WATER, 'cc-pVDZ')
+                         - _psi4_mp2_gradient(WATER, 'cc-pVDZ'))) < 1e-8
+
+
+@pytest.mark.slow
+def test_sa_mp2_gradient_ccpvdz():
+    """Spin-adapted MP2 gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization + A2-irrep MOs)."""
+    assert np.max(np.abs(_pycc_gradient(WATER, 'cc-pVDZ', orbital_basis='spatial')
                          - _psi4_mp2_gradient(WATER, 'cc-pVDZ'))) < 1e-8

@@ -165,12 +165,16 @@ class MPwfn(Wavefunction):
         return Doo, Dvv, Gam, Ip, z
 
     def mp2_relaxed_opdm(self) -> np.ndarray:
-        """Spin-orbital relaxed MP2 one-particle correlation density (``nmo x nmo``):
-        the unrelaxed ``Doo``/``Dvv`` plus the orbital-relaxation off-diagonal blocks
-        ``D_ai = D_ia = -z_ai`` from the Z-vector solve. Spin-orbital only."""
+        """Relaxed MP2 one-particle correlation density (``nmo x nmo``): the unrelaxed
+        ``Doo``/``Dvv`` plus the orbital-relaxation off-diagonal blocks
+        ``D_ai = D_ia = -z_ai`` from the Z-vector solve. Dispatches on ``orbital_basis``
+        (spin-orbital or spin-adapted closed-shell RHF)."""
         o, v = self.o, self.v
         nmo = self.no + self.nv
-        Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
+        if self.orbital_basis == 'spinorbital':
+            Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
+        else:
+            Doo, Dvv, Gam, Ip, z = self._mp2_zvector()
         D = np.zeros((nmo, nmo))
         D[o, o] = np.asarray(Doo)
         D[v, v] = np.asarray(Dvv)
@@ -196,21 +200,124 @@ class MPwfn(Wavefunction):
         I[v, o] = Ip[o, v].T + z * eps[o][None, :]
         return I
 
-    # ---- spin-orbital MP2 nuclear gradient ----
+    # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
+    # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
+    # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,
+    # 2<pq|rs>-<pq|sr>) in the two-electron 1-PDM term, with the cumulant ``Gamma = 2 t2 -
+    # t2.swap``. Validated against the spin-orbital path (same physics) and Psi4.
+
+    def _mp2_corr_opdm(self):
+        """Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo,
+        Dvv)``: ``Doo = -t_imef l2_jmef``, ``Dvv = t_mnbe l2_mnae``, with the spin-adapted
+        lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell spin sum)."""
+        c = self.contract
+        t2 = self.t2
+        l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
+        Doo = -c('imef,jmef->ij', t2, l2)
+        Dvv = c('mnbe,mnae->ab', t2, l2)
+        return Doo, Dvv
+
+    def _mp2_cumulant(self) -> np.ndarray:
+        """Spin-adapted MP2 cumulant 2-PDM ``Gamma_ijab = 2 t2 - t2.swap`` (``oovv``/``vvoo``)."""
+        o, v = self.o, self.v
+        nmo = self.no + self.nv
+        t2 = np.asarray(self.t2)
+        u = 2.0 * t2 - t2.transpose(0, 1, 3, 2)
+        Gam = np.zeros((nmo, nmo, nmo, nmo))
+        Gam[o, o, v, v] = u
+        Gam[v, v, o, o] = u.transpose(2, 3, 0, 1)
+        return Gam
+
+    def _mp2_lagrangian(self, Doo, Dvv, Gam) -> np.ndarray:
+        """Spin-adapted orbital-gradient Lagrangian ``I'_pq`` -- the closed-shell analogue
+        of :meth:`_so_mp2_lagrangian`. Same structure, with the two-electron 1-PDM term
+        written with the spin-adapted ``L`` (= H.L) in place of the antisymmetrized
+        ``<rp||sq>``, and the 2-PDM term with ``<pr|st>`` (= H.ERI) and cumulant ``Gamma``."""
+        o, v = self.o, self.v
+        nmo = self.no + self.nv
+        ERI = np.asarray(self.H.ERI)
+        L = np.asarray(self.H.L)
+        eps = np.diag(np.asarray(self.H.F))
+        D = np.zeros((nmo, nmo))
+        D[o, o] = np.asarray(Doo)
+        D[v, v] = np.asarray(Dvv)
+        termA = eps[:, None] * (D + D.T)
+        termB = np.zeros((nmo, nmo))
+        termB[:, o] = (np.einsum('rs,rpsq->pq', D, L[:, :, :, o])
+                       + np.einsum('rs,rqsp->pq', D, L[:, o, :, :]))
+        termC = 4.0 * np.einsum('prst,qrst->pq', ERI, Gam)
+        return -0.5 * (termA + termB + termC)
+
+    def _mp2_zvector(self):
+        """Solve the spin-adapted MP2 Z-vector. Returns ``(Doo, Dvv, Gam, Ip, z)`` as for
+        :meth:`_so_mp2_zvector`; the orbital Hessian is the closed-shell singlet CPHF
+        (``H.L``), reached through the basis-aware ``self.cphf``."""
+        o, v = self.o, self.v
+        Doo, Dvv = self._mp2_corr_opdm()
+        Gam = self._mp2_cumulant()
+        Ip = self._mp2_lagrangian(Doo, Dvv, Gam)
+        X = Ip[o, v] - Ip[v, o].T
+        z = self.cphf.solve(X).T
+        return Doo, Dvv, Gam, Ip, z
+
+    def _energy_weighted_opdm(self, Ip, z) -> np.ndarray:
+        """Spin-adapted MP2 energy-weighted density ``I_pq`` -- the closed-shell analogue
+        of :meth:`_so_energy_weighted_opdm`, with the spin-adapted ``L`` in the oo block."""
+        o, v = self.o, self.v
+        nmo = self.no + self.nv
+        L = np.asarray(self.H.L)
+        eps = np.diag(np.asarray(self.H.F))
+        I = np.zeros((nmo, nmo))
+        I[o, o] = (Ip[o, o] + np.einsum('ak,aikj->ij', z, L[v, o, o, o])
+                   + np.einsum('ak,ajki->ij', z, L[v, o, o, o]))
+        I[v, v] = Ip[v, v]
+        I[o, v] = Ip[o, v] + (z * eps[o][None, :]).T
+        I[v, o] = Ip[o, v].T + z * eps[o][None, :]
+        return I
+
+    # ---- MP2 nuclear gradient ----
 
     def gradient(self) -> np.ndarray:
-        """Spin-orbital MP2 analytic nuclear energy gradient (a.u.), shape (natom, 3).
+        """MP2 analytic nuclear energy gradient (a.u.), shape (natom, 3): the SCF
+        (``HFwfn``) gradient plus the correlation contribution
 
-        The SCF (``HFwfn``) gradient plus the correlation contribution
-
-            dE_corr/dX = sum_pq D_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X
+            dE_corr/dX = sum_pq D_pq f^X_pq + sum_pqrs Gamma_pqrs <pq|rs>^X
                          + sum_pq I_pq S^X_pq
 
-        with the relaxed 1-PDM ``D``, cumulant 2-PDM ``Gamma``, and energy-weighted
-        density ``I`` (spin-orbital CC gradient formulation, Gauss/Stanton/Bartlett). The
-        skeleton spin-orbital derivative integrals come from ``self.derivatives`` (built
-        in the same semicanonical MO gauge the densities live in); ``f^X = h^X +
-        sum_m <pm||qm>^X`` is the skeleton Fock derivative. Spin-orbital only."""
+        with the relaxed 1-PDM ``D``, cumulant 2-PDM ``Gamma``, and energy-weighted density
+        ``I`` (Gauss/Stanton/Bartlett). This is the spin-adapted (closed-shell RHF) path:
+        the skeleton derivative integrals come from ``self.derivatives`` in the full spatial
+        MO basis (chemist ``(pq|rs)^X``, converted to physicist here) and ``f^X = h^X +
+        sum_m L[p,m,q,m]^X`` is the closed-shell skeleton Fock derivative (the spin-summed
+        densities carry no extra prefactor). The spin-orbital path is :meth:`_so_gradient`."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_gradient()
+        from .hfwfn import HFwfn
+        o = self.o
+        Doo, Dvv, Gam, Ip, z = self._mp2_zvector()
+        D = self.mp2_relaxed_opdm()
+        I = self._energy_weighted_opdm(Ip, z)
+
+        d = self.derivatives
+        C = self.C
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.core(atom, C, C)
+            Sx = d.overlap(atom, C, C)
+            ERIx = d.eri(atom, C, C, C, C)            # chemist (pq|rs)^X
+            for c in range(3):
+                phys = ERIx[c].transpose(0, 2, 1, 3)  # -> physicist <pq|rs>^X
+                Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
+                fx = hx[c] + np.einsum('pmqm->pq', Lx[:, o, :, o])  # closed-shell Fock deriv
+                grad[atom, c] = (np.einsum('pq,pq->', D, fx)
+                                 + np.einsum('pqrs,pqrs->', Gam, phys)
+                                 + np.einsum('pq,pq->', I, Sx[c]))
+        return HFwfn(self.ref).gradient() + grad
+
+    def _so_gradient(self) -> np.ndarray:
+        """Spin-orbital MP2 gradient: the antisymmetrized ``<pq||rs>^X`` from the
+        spin-orbital ``self.derivatives.so_*`` (semicanonical gauge), ``f^X = h^X +
+        sum_m <pm||qm>^X``."""
         from .hfwfn import HFwfn
         o = self.o
         Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
