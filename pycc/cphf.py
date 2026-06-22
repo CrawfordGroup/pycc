@@ -79,6 +79,11 @@ class CPHF(object):
         # HFwfn builds the full MO space).
         self.eps = np.asarray(diag(wfn.H.F))
         self._G: dict = {}  # kind -> reshaped (no*nv, no*nv) orbital Hessian
+        # ROHF: restricted orbitals (same_a_b_orbs) but spin-polarized occupation
+        # (not same_a_b_dens). UHF has same_a_b_orbs False; RHF has both True. The
+        # CPHF orbital response is not supported for ROHF yet -- see solve().
+        ref = wfn.ref
+        self.is_rohf = bool(ref.same_a_b_orbs() and not ref.same_a_b_dens())
         # Persistent nuclear response, keyed by atom (geometry-bound -- valid for the
         # life of this CPHF object, which is tied to one wfn / structure). Built once
         # by solve_nuclear() and SHARED by every consumer of the nuclear response (the
@@ -132,7 +137,21 @@ class CPHF(object):
 
     # ---- linear solve ----
     def solve(self, B: np.ndarray, kind: str = "electric") -> np.ndarray:
-        """Solve ``G U = B`` for the ov response. ``B`` is ``(no, nv)``; returns ``(no, nv)``."""
+        """Solve ``G U = B`` for the ov response. ``B`` is ``(no, nv)``; returns ``(no, nv)``.
+
+        Not implemented for ROHF: the semicanonical spin-orbital response lets alpha and
+        beta relax independently (UHF-like) and so does not reproduce the *restricted*
+        ROHF response. Matching it requires adopting the reference's ROHF Brillouin /
+        orbital-rotation conventions (docc-socc, socc-virt couplings), which are not
+        uniquely defined. RHF and UHF are supported. The CPHF-free HF gradient is
+        unaffected (it does not call this)."""
+        if self.is_rohf:
+            raise NotImplementedError(
+                "CPHF orbital response is not implemented for ROHF references: the "
+                "semicanonical spin-orbital response does not reproduce the restricted "
+                "ROHF response, and the ROHF Brillouin/orbital-rotation conventions "
+                "(not uniquely defined) must match the reference. RHF and UHF are "
+                "supported; the CPHF-free HF gradient works for ROHF.")
         G = self.hessian(kind)
         U = np.linalg.solve(G, np.asarray(B).reshape(-1))
         return U.reshape(self.no, self.nv)
@@ -211,7 +230,11 @@ class CPHF(object):
         differ). The first-derivative integrals come from the (full-MO) Derivatives
         provider; the unperturbed L is H.L. Validated to ~1e-8 via the dipole-
         derivative / APT-transpose check against finite difference of the SCF dipole.
+
+        The spin-orbital path dispatches to :meth:`_build_nuclear_spinorbital`.
         """
+        if self.wfn.orbital_basis == 'spinorbital':
+            return self._build_nuclear_spinorbital(atom)
         o, v, no, nv = self.o, self.v, self.no, self.nv
         eps_o = self.eps[o]
         L = np.asarray(self.wfn.H.L)  # spin-adapted, physicist, unperturbed
@@ -241,6 +264,41 @@ class CPHF(object):
             B.append(-Q)
             Foo.append(Fx[o, o])
             Soo.append(Sx[c][o, o])
+        return B, Foo, Soo
+
+    def _build_nuclear_spinorbital(self, atom: int):
+        """Spin-orbital nuclear CPHF RHS for ``atom`` -- the spin-orbital analogue of
+        :meth:`_build_nuclear`. Same structure with the antisymmetrized ``<pq||rs>`` in
+        place of the spin-adapted ``L``, the spin-orbital skeleton derivative integrals
+        from ``Derivatives.so_*``, and singly occupied spin orbitals::
+
+            F^X_pq = h^X_pq + sum_k(occ) <pk||qk>^X        (skeleton Fock derivative)
+            B^X_ia = -[ F^X_ia - eps_i S^X_ia
+                        - 1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ) ]
+
+        Returns ``(B, Foo, Soo)`` as for the spatial path."""
+        o, v = self.o, self.v
+        eps_o = self.eps[o]
+        ERI = np.asarray(self.wfn.H.ERI)         # antisymmetrized, unperturbed
+        d = self.wfn.derivatives
+        hx = d.so_core(atom)                     # 3 x (nmo,nmo)
+        Sxa = d.so_overlap(atom)                 # 3 x (nmo,nmo)
+        gx = d.so_eri(atom)                      # 3 x (nmo^4), antisymmetrized <pq||rs>^X
+
+        Evooo = ERI[v, o, o, o]
+        B, Foo, Soo = [], [], []
+        for c in range(3):
+            # skeleton derivative Fock F^X_pq = h^X + sum_k(occ) <pk||qk>^X
+            Fx = hx[c] + np.einsum('pkqk->pq', gx[c][:, o, :, o])
+            Sx = Sxa[c]
+            # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the ov
+            # block: -1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ).
+            coupling = (np.einsum('akil,kl->ia', Evooo, Sx[o, o])
+                        + np.einsum('alik,kl->ia', Evooo, Sx[o, o]))
+            Q = Fx[o, v] - eps_o[:, None] * Sx[o, v] - 0.5 * coupling
+            B.append(-Q)
+            Foo.append(Fx[o, o])
+            Soo.append(Sx[o, o])
         return B, Foo, Soo
 
     def rhs_nuclear(self, atom: int) -> List[np.ndarray]:

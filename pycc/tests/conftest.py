@@ -36,6 +36,21 @@ DEFAULT_SCF_OPTIONS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _psi4_clean_state():
+    """Autouse: reset Psi4's global options before every test (and clean scratch after).
+
+    A leftover option -- most importantly a non-default ``reference`` left by an earlier
+    test -- otherwise leaks into any later test that drives Psi4 itself rather than going
+    through the ``rhf_wfn``/``uhf_wfn``/``rohf_wfn`` factories (which already clear options
+    via :func:`psi4_environment`). This runs for *every* test regardless, so order can
+    never matter. (The factory path's own ``clean_options`` is now redundant but harmless.)
+    """
+    psi4.core.clean_options()
+    yield
+    psi4.core.clean()
+
+
 @pytest.fixture
 def psi4_environment():
     """Put Psi4 in a clean, quiet state around a test.

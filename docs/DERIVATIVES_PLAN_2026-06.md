@@ -171,3 +171,71 @@ Phases A-C are shared sunk cost. After the Phase-D keystone, decide between:
 
 Beyond spatial RHF: UHF/ROHF and spin-orbital MP2/CC gradients, and frozen-core handling,
 are later increments on the same machinery.
+
+## Spin-orbital HFwfn properties (branch `feature/spinorbital-hf-gradient`)
+
+To reach open-shell (UHF/ROHF) derivative properties -- and to supply the SCF gradient
+the open-shell correlated gradients need -- the `HFwfn` derivative methods get a
+spin-orbital route (dispatch on `orbital_basis`, reusing the now basis-aware
+`Derivatives`/`CPHF`).
+
+- **HF gradient -- DONE.** `HFwfn._gradient_spinorbital`: the CPHF-free spin-orbital HF
+  gradient `dE/dX = sum_i h^x_ii + 1/2 sum_ij <ij||ij>^x - sum_i eps_i S^x_ii + dV_NN/dX`
+  (i, j occupied spin orbitals), using `self.derivatives.so_*`. `gradient()` dispatches.
+  Validated (`test_062`): keystone closed-shell RHF-forced-to-SO == spatial RHF gradient
+  (6-31G C1 and cc-pVDZ C2v) ~1e-15, and **UHF / ROHF gradients vs Psi4 ~1e-15** -- the
+  open-shell HF gradient works for all three references.
+- **Polarizability -- DONE (RHF/UHF).** The simplest second-derivative property: a pure
+  electric-field CPHF response, no derivative integrals. `CPHF.polarizability` is now
+  basis-aware -- the only change from the spatial path is the prefactor (closed-shell
+  double occupancy `k=4` vs spin orbitals `k=2`); the dipole RHS (`H.mu[o,v]`) and the
+  orbital Hessian were already basis-aware. Validated (`test_063`): keystone RHF-forced-
+  to-SO == spatial == Psi4 (~1e-13), and UHF vs Psi4 (~1e-6, set by Psi4's iterative
+  UHF-CPHF; the direct SO solve matches finite field to ~2e-9).
+- **ROHF CPHF response -- DEFERRED (guarded).** The semicanonical spin-orbital response is
+  UHF-like and does *not* reproduce the restricted ROHF response (off ~5e-3 vs finite
+  field); matching it needs the reference's ROHF Brillouin / orbital-rotation conventions
+  (docc-socc, socc-virt couplings), which are not uniquely defined. `CPHF.solve` raises
+  `NotImplementedError` for ROHF (detected via `same_a_b_orbs and not same_a_b_dens`). The
+  CPHF-free ROHF HF gradient is unaffected -- it does not solve the response.
+- **APT (nuclear dipole derivatives) -- DONE (RHF/UHF).** A mixed field-nuclear second
+  derivative: it needed the spin-orbital *nuclear* CPHF RHS builder -- the deferred layer,
+  now built as `CPHF._build_nuclear_spinorbital` (the antisymmetrized `<pq||rs>` in place
+  of `L`, the spin-orbital skeleton derivative integrals from `Derivatives.so_*`, same
+  `B = -Q` structure) -- plus the spin-orbital dipole derivatives (`Derivatives.so_dipole`).
+  The assembly (`HFwfn._dipole_derivatives_spinorbital`) halves the closed-shell prefactors
+  (singly occupied spin orbitals). Validated (`test_064`): keystone RHF-forced-to-SO ==
+  spatial APT (6-31G C1 and cc-pVDZ C2v) ~1e-15, and UHF vs finite-difference of the SCF
+  dipole ~6e-10. ROHF raises (the nuclear response goes through `CPHF.solve`).
+- **Molecular Hessian -- DONE (RHF/UHF).** `HFwfn._hessian_spinorbital`: second-derivative
+  skeleton terms (`Derivatives.so_core2`/`so_eri2`/`so_overlap2`, occupied block) plus the
+  spin-orbital nuclear CPHF response/cache, with the closed-shell prefactors halved. Subtle
+  point: Psi4's `mo_tei_deriv2(A,B)` two-electron second derivative does not satisfy the
+  integral's electron-exchange symmetry `(pq|rs) = (rs|pq)` term by term. For the energy
+  trace the same-spin terms absorb the resulting bra<->ket relabel (so RHF and the aa/bb
+  blocks are already symmetric), but the UHF **cross-spin Coulomb** term
+  `sum_{i in a, j in b}(ii|jj)^{ab}` does not -- it carried the entire spurious antisymmetric
+  part. Fixed at the integral level: `Derivatives.so_eri2` symmetrizes the chemist deriv2
+  over the bra<->ket swap (building the cross-spin `ab`/`ba` blocks from independent
+  `(aa|bb)`/`(bb|aa)` calls), which -- since the geometric derivative of a symmetric integral
+  is symmetric -- also restores the atom-pair-swap symmetry the Hessian needs, so the
+  assembled Hessian is symmetric with no global `0.5*(H+H.T)`. Validated (`test_065`): keystone
+  RHF-forced-to-SO == spatial (6-31G C1, cc-pVDZ C2v) ~1e-15; UHF naturally symmetric (~1e-14)
+  and vs `psi4.hessian('scf')` ~3e-12. ROHF raises.
+- **AAT -- DONE (RHF; UHF unvalidated).** The spin-orbital magnetic-dipole integral `H.m`
+  was already built on `SpinOrbitalHamiltonian`, so `CPHF._m_ov`/`rhs_magnetic`/
+  `solve_magnetic` already work for spin orbitals; the only new pieces are
+  `Derivatives.so_overlap_half` (spin-blocked nuclear half-derivative overlaps) and the SO
+  branch `HFwfn._atomic_axial_tensors_spinorbital` (`I^lam_{a,b} = sum_ia [U^R_ai U^B_ai +
+  U^B_ai <phi^R_i|phi_a>]`, prefactor 1 vs the closed-shell 2). Validated (`test_066`):
+  keystone SO-RHF == spatial AAT (the DALTON-validated `test_050` path) ~1e-15.
+  **Caveat:** there is no prior open-shell UHF AAT implementation anywhere to compare
+  against, so the UHF result is only checked to run and return a sane (finite, real,
+  nonzero) tensor through the same code path the keystone validates. ROHF raises.
+
+**All five spin-orbital HF analytic properties (gradient, polarizability, APT, Hessian,
+AAT) are implemented for RHF/UHF** (ROHF response deferred, guarded). Next: spin-adapt the
+correlated (MP2) gradient, frozen core, then CC gradients / the MP2 property path.
+
+Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
+lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.
