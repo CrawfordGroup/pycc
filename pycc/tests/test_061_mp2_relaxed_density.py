@@ -16,7 +16,6 @@ Validation:
 import psi4
 import pycc
 import numpy as np
-import pytest
 
 WATER = """
 O
@@ -73,7 +72,6 @@ def test_sa_mp2_relaxed_dipole_631g():
                - _ff_corr_dipole(geom, '6-31G')) < 1e-8
 
 
-@pytest.mark.slow
 def test_mp2_relaxed_dipole_ccpvdz():
     """Relaxed MP2 dipole vs finite field, H2O/cc-pVDZ (C2v: polarization functions
     and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
@@ -124,14 +122,12 @@ def test_mp2_gradient_spatial_vs_so_631g():
                          - _pycc_gradient(geom, '6-31G', orbital_basis='spinorbital'))) < 1e-10
 
 
-@pytest.mark.slow
 def test_mp2_gradient_ccpvdz():
     """Spin-orbital MP2 gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization + A2-irrep MOs)."""
     assert np.max(np.abs(_pycc_gradient(WATER, 'cc-pVDZ')
                          - _psi4_mp2_gradient(WATER, 'cc-pVDZ'))) < 1e-8
 
 
-@pytest.mark.slow
 def test_sa_mp2_gradient_ccpvdz():
     """Spin-adapted MP2 gradient vs Psi4, H2O/cc-pVDZ (C2v: polarization + A2-irrep MOs)."""
     assert np.max(np.abs(_pycc_gradient(WATER, 'cc-pVDZ', orbital_basis='spatial')
