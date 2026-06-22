@@ -66,7 +66,6 @@ def test_so_rhf_aat_vs_spatial_631g():
     assert np.max(np.abs(a_so - a_spatial)) < 1e-10
 
 
-@pytest.mark.slow
 def test_so_rhf_aat_vs_spatial_h2o2():
     """Keystone on the canonical VCD molecule (H2O2, C1): SO-RHF == spatial RHF AAT (the
     spatial AAT is validated against DALTON in test_050)."""

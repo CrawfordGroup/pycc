@@ -55,7 +55,6 @@ def test_so_rhf_apt_vs_spatial_631g():
     assert np.max(np.abs(apt_so - apt_spatial)) < 1e-10
 
 
-@pytest.mark.slow
 def test_so_rhf_apt_vs_spatial_ccpvdz():
     """Keystone (C2v: polarization functions + A2-irrep MOs): SO-RHF == spatial RHF APT."""
     wfn = _scf_wfn(WATER, 'cc-pVDZ', 'rhf')
@@ -64,7 +63,6 @@ def test_so_rhf_apt_vs_spatial_ccpvdz():
     assert np.max(np.abs(apt_so - apt_spatial)) < 1e-10
 
 
-@pytest.mark.slow
 def test_uhf_apt_vs_finite_difference():
     """Open-shell UHF APT (OH doublet) vs finite difference of the SCF dipole."""
     wfn = _scf_wfn(_oh_geom(OH_COORDS), '6-31G', 'uhf')
