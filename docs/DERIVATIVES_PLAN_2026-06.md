@@ -138,9 +138,23 @@ sum_m <pm||qm>^X` is the skeleton Fock derivative. Validated (`test_061`):
 `MPwfn.gradient()` == `psi4.gradient('mp2')` to ~1e-14 (H2O/6-31G C1, and H2O/cc-pVDZ C2v
 -- polarization functions and A2-irrep MOs).
 
-**Spin-orbital MP2 analytic gradient complete.** Next: spin-adapt (the deferred decision 4,
-reusing the spatial `cphf`/density seeds), frozen core, then the MP2 property path (APT /
-Hessian) or CC gradients (swap the densities; the Z-vector + assembly carry over).
+**Spin-orbital MP2 analytic gradient complete.**
+
+**Spin-adapted (closed-shell RHF) MP2 gradient -- DONE (the original decision 4).**
+`MPwfn.gradient()` now has the spatial path inline (dispatching to `_so_gradient` for the
+spin-orbital case), with unlabeled spatial density helpers `_mp2_corr_opdm` / `_mp2_cumulant`
+/ `_mp2_lagrangian` / `_mp2_zvector` / `_energy_weighted_opdm` alongside their `_so_*`
+siblings (PyCC convention: spatial unlabeled, spin-orbital `_so_*`). The spin-adaptation
+carries the spin sum in `l2 = 2(2 t2 - t2.swap)` and the cumulant `Gamma = 2 t2 - t2.swap`,
+writes the two-electron 1-PDM/`W` terms with the spin-adapted `L` (= `H.L`), and assembles
+with the full-spatial-MO derivative integrals (`f^X = h^X + sum_m L[p,m,q,m]^X`, no extra
+prefactor on the spin-summed densities). The Z-vector reuses the basis-aware
+`self.cphf.solve` (closed-shell singlet Hessian via `H.L`). Validated (`test_061`):
+`MPwfn.gradient()` == `psi4.gradient('mp2')` ~1e-14 (6-31G C1, cc-pVDZ C2v), and the
+keystone -- spin-adapted == spin-orbital on a closed shell -- to machine precision (~1e-16).
+
+Next: frozen core, then the MP2 property path (APT / Hessian) or CC gradients (swap the
+densities; the Z-vector + assembly carry over).
 
 The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
 spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while
