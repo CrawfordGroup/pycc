@@ -135,7 +135,7 @@ class cclambda(object):
             # T-dependent CC3 intermediates: t1/t2 are fixed during the Lambda
             # solve, so build them once here and reuse every iteration.
             if self.ccwfn.orbital_basis == 'spinorbital':
-                cc3_ints = self._build_cc3_lambda_intermediates_spinorbital(o, v, t1, t2, F, ERI)
+                cc3_ints = self._so_build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI)
             else:
                 cc3_ints = self._build_cc3_lambda_intermediates(o, v, t1, t2, F, ERI, L)
 
@@ -155,9 +155,9 @@ class cclambda(object):
                     # The spin-orbital Y1/Y2 come out fully antisymmetric already,
                     # so they are added directly (no i<->j / a<->b symmetrization).
                     if self.ccwfn.store_triples:
-                        Y1, Y2 = self._cc3_lambda_triples_full_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
+                        Y1, Y2 = self._so_cc3_lambda_triples_full(o, v, l1, l2, t2, F, ERI, cc3_ints)
                     else:
-                        Y1, Y2 = self._cc3_lambda_triples_spinorbital(o, v, l1, l2, t2, F, ERI, cc3_ints)
+                        Y1, Y2 = self._so_cc3_lambda_triples(o, v, l1, l2, t2, F, ERI, cc3_ints)
                     r1 += Y1
                     r2 += Y2
                 else:
@@ -258,7 +258,7 @@ class cclambda(object):
                                              
         return r1, r2
 
-    def _build_cc3_lambda_intermediates_spinorbital(self, o, v, t1, t2, F, ERI):
+    def _so_build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI):
         """Build the T-dependent spin-orbital CC3 intermediates for the Lambda
         equations: the T1-dressed CC3 W-intermediates plus the once-only T3
         intermediates ``Zijal``/``Ziabd`` (the <0|L2 [[H~,T3],nu1]|0> -> L1 piece,
@@ -301,7 +301,7 @@ class cclambda(object):
                 'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
                 'Zijal': Zijal, 'Ziabd': Ziabd}
 
-    def _cc3_lambda_triples_spinorbital(self, o, v, l1, l2, t2, F, ERI, ints):
+    def _so_cc3_lambda_triples(self, o, v, l1, l2, t2, F, ERI, ints):
         """Spin-orbital CC3 triples contributions (Y1, Y2) to the Lambda residuals.
 
         Loop-over-(i,j,k): per ijk rebuild the ground-state T3 (:func:`t3c_ijk_so`)
@@ -367,7 +367,7 @@ class cclambda(object):
 
         return Y1, Y2
 
-    def _cc3_lambda_triples_full_spinorbital(self, o, v, l1, l2, t2, F, ERI, ints):
+    def _so_cc3_lambda_triples_full(self, o, v, l1, l2, t2, F, ERI, ints):
         """Full-array (store_triples=True) spin-orbital CC3 triples contributions
         (Y1, Y2) to the Lambda residuals.
 
@@ -375,7 +375,7 @@ class cclambda(object):
         antisymmetrization, no per-(i,j,k) batching), stores it on ``self.l3``, and
         folds the connected-triples pieces into Y1/Y2. Uses the stored ground-state
         T3 (``self.ccwfn.t3``). Full-array counterpart of the batched
-        :meth:`_cc3_lambda_triples_spinorbital`; port of socc ``CC3_iter_full``.
+        :meth:`_so_cc3_lambda_triples`; port of socc ``CC3_iter_full``.
         Both paths must give identical Y1/Y2 (hence the same Lambda pseudoenergy)."""
         contract = self.contract
         Fov = ints['Fov']
@@ -663,7 +663,7 @@ class cclambda(object):
         """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._r_L1_spinorbital(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
+            return self._so_r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
                                           Hovoo, Hvovv, Hooov, Gvv, Goo)
         if self.ccwfn.model == 'CCD':
             r_l1 = zeros_like(l1)
@@ -722,7 +722,7 @@ class cclambda(object):
         """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._r_L2_spinorbital(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
+            return self._so_r_L2(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
                                           Hoooo, Hvvvv, Hovvo, Hvvvo, Hovoo, Hvovv, Hooov,
                                           Gvv, Goo)
         if self.ccwfn.model == 'CCD':
@@ -834,7 +834,7 @@ class cclambda(object):
         W = W + contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)
         return W
                                          
-    def _r_L1_spinorbital(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
+    def _so_r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
                           Hvovv, Hooov, Gvv, Goo):
         """Spin-orbital L1 (lambda singles) residual, built from the antisymmetrized
         spin-orbital HBAR blocks (no Hovov)."""
@@ -849,7 +849,7 @@ class cclambda(object):
         r_l1 = r_l1 - contract('mn,mina->ia', Goo, Hooov)
         return r_l1
 
-    def _r_L2_spinorbital(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
+    def _so_r_L2(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
                           Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
         """Spin-orbital L2 (lambda doubles) residual. Built as the full residual,
         already antisymmetric in i<->j and a<->b (no separate symmetrization)."""

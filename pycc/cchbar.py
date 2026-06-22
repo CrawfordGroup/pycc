@@ -79,7 +79,7 @@ class cchbar(object):
         self.nv = ccwfn.nv
 
         if ccwfn.orbital_basis == 'spinorbital':
-            self._build_spinorbital(o, v, F, ERI, t1, t2)
+            self._so_build(o, v, F, ERI, t1, t2)
             print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
             return
 
@@ -113,7 +113,7 @@ class cchbar(object):
     # Hovvo, using an inline Zovov intermediate in Hvvvo/Hovoo.
     # ------------------------------------------------------------------
 
-    def _build_spinorbital(self, o, v, F, ERI, t1, t2):
+    def _so_build(self, o, v, F, ERI, t1, t2):
         self.Hov = self._so_build_Hov(o, v, F, ERI, t1)
         self.Hvv = self._so_build_Hvv(o, v, F, ERI, self.Hov, t1, t2)
         self.Hoo = self._so_build_Hoo(o, v, F, ERI, self.Hov, t1, t2)
