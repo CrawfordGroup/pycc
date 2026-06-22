@@ -240,9 +240,9 @@ class ccresponse(object):
                     "Spatial CC3 response is not implemented; use the spin-orbital "
                     "path (orbital_basis='spinorbital').")
             if self.ccwfn.store_triples:
-                cc3_ints = self._cc3_response_setup_full_spinorbital(pertbar)
+                cc3_ints = self._so_cc3_response_setup_full(pertbar)
             else:
-                cc3_ints = self._cc3_response_setup_spinorbital(pertbar)
+                cc3_ints = self._so_cc3_response_setup(pertbar)
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
@@ -255,9 +255,9 @@ class ccresponse(object):
 
             if self.ccwfn.model == 'CC3':
                 if self.ccwfn.store_triples:
-                    z1, z2 = self._cc3_iter_full_spinorbital(pertbar, omega, cc3_ints)
+                    z1, z2 = self._so_cc3_iter_full(pertbar, omega, cc3_ints)
                 else:
-                    z1, z2 = self._cc3_iter_spinorbital(pertbar, omega, cc3_ints)
+                    z1, z2 = self._so_cc3_iter(pertbar, omega, cc3_ints)
                 r1 += z1
                 r2 += z2
 
@@ -279,7 +279,7 @@ class ccresponse(object):
                         # full X3 was formed and stored each iteration
                         X3 = self.X3
                     else:
-                        X3 = self._cc3_build_X3_spinorbital(pertbar, omega, cc3_ints)
+                        X3 = self._so_cc3_build_X3(pertbar, omega, cc3_ints)
                     return [self.X1, self.X2, X3], pseudo
                 return [self.X1, self.X2], pseudo
 
@@ -382,7 +382,7 @@ class ccresponse(object):
 
         return -2.0*(polar1 + polar2)
 
-    def _cc3_response_setup_spinorbital(self, pertbar):
+    def _so_cc3_response_setup(self, pertbar):
         """Build the T-dependent spin-orbital CC3 response intermediates that are
         reused across solve_right iterations: the CC3 W-intermediates and the
         once-only Yoovo/Yovvv (ground-state T3 . ERI) and Zovoo/Zvvvo
@@ -415,7 +415,7 @@ class ccresponse(object):
                 'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
                 'Yoovo': Yoovo, 'Yovvv': Yovvv, 'Zovoo': Zovoo, 'Zvvvo': Zvvvo}
 
-    def _cc3_iter_spinorbital(self, pertbar, omega, ints):
+    def _so_cc3_iter(self, pertbar, omega, ints):
         """Per-iteration spin-orbital CC3 contributions (z1, z2) to the perturbed
         r_X1/r_X2. Rebuilds the perturbed triples X3 (loop-over-ijk and -abc, no
         stored X3) from the current X1/X2 and folds them back. Ports socc
@@ -505,11 +505,11 @@ class ccresponse(object):
         z2 += y2.T
         return z1, z2
 
-    def _cc3_build_X3_spinorbital(self, pertbar, omega, ints):
+    def _so_cc3_build_X3(self, pertbar, omega, ints):
         """Build and return the full converged spin-orbital perturbed triples X3
         from the converged X1/X2 (self.X1/self.X2).
 
-        This replicates the X3-block construction inside _cc3_iter_spinorbital
+        This replicates the X3-block construction inside _so_cc3_iter
         (occupied-batched IJK + virtual-batched ABC, omega-shifted denominators)
         but accumulates into the full X3[ijkabc] array instead of folding into
         z1/z2. Called once after solve_right converges so the response-function
@@ -526,7 +526,7 @@ class ccresponse(object):
         Wvvvo, Wvvvv, Wovvo = ints['Wvvvo'], ints['Wvvvv'], ints['Wovvo']
         Zovoo, Zvvvo = ints['Zovoo'], ints['Zvvvo']
 
-        # X1-dressed W intermediates (same as _cc3_iter_spinorbital)
+        # X1-dressed W intermediates (same as _so_cc3_iter)
         Zbcdk = contract('ke,bcde->bcdk', X1, Wvvvv)
         tmp = -contract('lb,lcdk->bcdk', X1, Wovvo)
         Zbcdk += tmp - tmp.swapaxes(0,1)
@@ -567,7 +567,7 @@ class ccresponse(object):
 
         return X3
 
-    def _cc3_response_setup_full_spinorbital(self, pertbar):
+    def _so_cc3_response_setup_full(self, pertbar):
         """Build the T1-dressed CC3 W-intermediates reused across solve_right
         iterations in the full-array (store_triples=True) perturbed-X path.
 
@@ -585,7 +585,7 @@ class ccresponse(object):
         return {'Woooo': Woooo, 'Wovoo': Wovoo, 'Wvvvo': Wvvvo,
                 'Wvvvv': Wvvvv, 'Wovvo': Wovvo}
 
-    def _cc3_iter_full_spinorbital(self, pertbar, omega, ints):
+    def _so_cc3_iter_full(self, pertbar, omega, ints):
         """Full-array (store_triples=True) per-iteration spin-orbital CC3 perturbed
         triples contribution (z1, z2).
 
@@ -593,7 +593,7 @@ class ccresponse(object):
         current X1/X2 with whole-array contractions (permute_triples
         antisymmetrization, omega-shifted denominator), stores it on self.X3, and
         folds it into z1/z2. Port of socc CC3_iter_full (ccresponse). Full-array
-        counterpart of the batched _cc3_iter_spinorbital."""
+        counterpart of the batched _so_cc3_iter."""
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         F = self.ccwfn.H.F
@@ -663,16 +663,16 @@ class ccresponse(object):
 
         return z1, z2
 
-    def _cc3_triples_spinorbital(self):
+    def _so_cc3_triples(self):
         """Return the full ground-state spin-orbital T3 and Lambda-L3 for the CC3
         response-function terms: the arrays stored on ccwfn/cclambda when
         store_triples=True, else materialized (and cached) on the fly from the
-        batched builders via _cc3_full_triples_spinorbital."""
+        batched builders via _so_cc3_full_triples."""
         if self.ccwfn.store_triples:
             return self.ccwfn.t3, self.cclambda.l3
-        return self._cc3_full_triples_spinorbital()
+        return self._so_cc3_full_triples()
 
-    def _cc3_full_triples_spinorbital(self):
+    def _so_cc3_full_triples(self):
         """Build (and cache) the full ground-state spin-orbital connected T3 and
         Lambda-L3 arrays, shape (no, no, no, nv, nv, nv), by looping over (i,j,k)
         and filling with t3c_ijk_so / l3_ijk_so.
@@ -821,7 +821,7 @@ class ccresponse(object):
 
     # ------------------------------------------------------------------
     # Symmetric linear-response assembly. Each component dispatches on
-    # orbital_basis: the spin-orbital form (_*_spinorbital) is implemented;
+    # orbital_basis: the spin-orbital form (_so_*) is implemented;
     # the spin-adapted (spatial) form is phase 9a-ii (stubbed). The call
     # structure (linresp_sym -> LCX / LHX1Y1 / LHX2Y2 / LHX1Y2) is identical
     # for both bases; only the tensor contractions differ.
@@ -870,7 +870,7 @@ class ccresponse(object):
                       + LHX1Y2(X_A, X_B) + LHX1Y2(X_B, X_A)    (LHX1Y2)
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._linresp_sym_spinorbital(A, X_A, B, X_B)
+            return self._so_linresp_sym(A, X_A, B, X_B)
         # spin-adapted (spatial) assembly. Identical in structure to the spin-orbital
         # path: LCX/LHX1Y1/LHX2Y2/LHX1Y2 each dispatch to their own spatial code. The
         # only basis-specific piece is the HXY direct term. Spin-summing the
@@ -889,7 +889,7 @@ class ccresponse(object):
         polar += self.LHX1Y2(X_B, X_A)
         return polar
 
-    def _linresp_sym_spinorbital(self, A, X_A, B, X_B):
+    def _so_linresp_sym(self, A, X_A, B, X_B):
         o, v = self.ccwfn.o, self.ccwfn.v
         contract = self.contract
         ERI = self.H.ERI
@@ -909,14 +909,14 @@ class ccresponse(object):
         if self.ccwfn.model == 'CC3':
             # CC3 connected-triples contributions to the symmetric response
             # function (X3 = X[2] is the perturbed triples). socc linresp CC3 block.
-            polar += self._LCX_CC3_spinorbital(A, X_B) + self._LCX_CC3_spinorbital(B, X_A)
-            polar += self._L2HX1Y3_CC3_spinorbital(X_A, X_B) + self._L2HX1Y3_CC3_spinorbital(X_B, X_A)
-            polar += self._L3HX1Y2_CC3_spinorbital(X_A, X_B) + self._L3HX1Y2_CC3_spinorbital(X_B, X_A)
-            polar += self._L3HX1Y1T2_CC3_spinorbital(X_A, X_B)
+            polar += self._so_LCX_CC3(A, X_B) + self._so_LCX_CC3(B, X_A)
+            polar += self._so_L2HX1Y3_CC3(X_A, X_B) + self._so_L2HX1Y3_CC3(X_B, X_A)
+            polar += self._so_L3HX1Y2_CC3(X_A, X_B) + self._so_L3HX1Y2_CC3(X_B, X_A)
+            polar += self._so_L3HX1Y1T2_CC3(X_A, X_B)
 
         return polar
 
-    def _LCX_CC3_spinorbital(self, pert, X):
+    def _so_LCX_CC3(self, pert, X):
         """CC3 triples contribution to the LCX term of the symmetric response
         function, <0|(1+L)[Abar,X]|0>. Port of socc LCX_CC3 (store_triples path).
 
@@ -931,7 +931,7 @@ class ccresponse(object):
         t2 = self.ccwfn.t2
         l2 = self.cclambda.l2
         X1, X2, X3 = X[0], X[1], X[2]
-        t3, l3 = self._cc3_triples_spinorbital()
+        t3, l3 = self._so_cc3_triples()
 
         # <0|L2[C,X3]|0>
         tmp = 0.25 * contract('ijab,ijkabc->kc', l2, X3)
@@ -961,7 +961,7 @@ class ccresponse(object):
 
         return polar_L2CX3 + polar_L3CX3 + polar_L3CX1T3 + polar_L3CX2T2
 
-    def _L2HX1Y3_CC3_spinorbital(self, X, Y):
+    def _so_L2HX1Y3_CC3(self, X, Y):
         """CC3 <0|L2[[H,X1],Y3]|0> term (L2HX1Y3) of the symmetric response
         function. Port of socc L2HX1Y3_CC3. Uses X1 = X[0] and the perturbed
         triples Y3 = Y[2]; needs only l2 and ERI (no ground-state t3/l3)."""
@@ -986,7 +986,7 @@ class ccresponse(object):
 
         return polar
 
-    def _L3HX1Y2_CC3_spinorbital(self, X, Y):
+    def _so_L3HX1Y2_CC3(self, X, Y):
         """CC3 <0|L3[[H,X1],Y2]|0> term (L3HX1Y2). Port of socc L3HX1Y2_CC3. Uses
         the ground-state L3, X1 = X[0], Y2 = Y[1], and the CC3 Woooo/Wvvvv/Wovvo
         intermediates."""
@@ -994,7 +994,7 @@ class ccresponse(object):
         o, v = self.ccwfn.o, self.ccwfn.v
         ERI = self.H.ERI
         t1 = self.ccwfn.t1
-        _, l3 = self._cc3_triples_spinorbital()
+        _, l3 = self._so_cc3_triples()
         Woooo = self.ccwfn._so_build_Woooo_CC3(o, v, ERI, t1)
         Wvvvv = self.ccwfn._so_build_Wvvvv_CC3(o, v, ERI, t1)
         Wovvo = self.ccwfn._so_build_Wovvo_CC3(o, v, ERI, t1)
@@ -1019,7 +1019,7 @@ class ccresponse(object):
 
         return polar
 
-    def _L3HX1Y1T2_CC3_spinorbital(self, X, Y):
+    def _so_L3HX1Y1T2_CC3(self, X, Y):
         """CC3 <0|L3[[[H,X1],Y1],T2]|0> term (L3HX1Y1T2). Port of socc
         L3HX1Y1T2_CC3. Uses the ground-state L3 and T2, X1 = X[0], Y1 = Y[0], and
         the CC3 Wooov/Wvovv. The tau = X1(x)Y1 + Y1(x)X1 construction makes this
@@ -1029,7 +1029,7 @@ class ccresponse(object):
         ERI = self.H.ERI
         t1 = self.ccwfn.t1
         t2 = self.ccwfn.t2
-        _, l3 = self._cc3_triples_spinorbital()
+        _, l3 = self._so_cc3_triples()
         Wooov = self.ccwfn._so_build_Wooov_CC3(o, v, ERI, t1)
         Wvovv = self.ccwfn._so_build_Wvovv_CC3(o, v, ERI, t1)
         X1 = X[0]
@@ -1056,7 +1056,7 @@ class ccresponse(object):
 
     def LCX(self, pert, X):
         """One-particle-density (LCX) term of the symmetric response function:
-        <0|(1+L)[Abar, X]|0>. (Diagram labels match _LCX_spinorbital; this is the same
+        <0|(1+L)[Abar, X]|0>. (Diagram labels match _so_LCX; this is the same
         quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)
 
         Notes
@@ -1074,7 +1074,7 @@ class ccresponse(object):
                 - 1/2 l2_ijab X2_kjab A_ki - 1/2 l2_ijab X2_kiba A_kj  (diagram 7)
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._LCX_spinorbital(pert, X)
+            return self._so_LCX(pert, X)
         # spin-adapted (spatial) LCX
         contract = self.contract
         l1 = self.cclambda.l1
@@ -1109,7 +1109,7 @@ class ccresponse(object):
         polar += 0.5 * contract('ac,ac->', tmp, pert.Avv)
         return polar
 
-    def _LCX_spinorbital(self, pert, X):
+    def _so_LCX(self, pert, X):
         contract = self.contract
         l1 = self.cclambda.l1
         l2 = self.cclambda.l2
@@ -1128,7 +1128,7 @@ class ccresponse(object):
 
     def LHX1Y1(self, X, Y):
         """X1*Y1 (LHX1Y1) term of the symmetric response function:
-        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _LHX1Y1_spinorbital.)
+        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _so_LHX1Y1.)
 
         Notes
         -----
@@ -1150,7 +1150,7 @@ class ccresponse(object):
             LHX1Y1 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._LHX1Y1_spinorbital(X, Y)
+            return self._so_LHX1Y1(X, Y)
         # spin-adapted (spatial) LHX1Y1
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
@@ -1183,7 +1183,7 @@ class ccresponse(object):
         polar += 2.0 * contract('ijab,ijab->', l2, tmp)
         return polar
 
-    def _LHX1Y1_spinorbital(self, X, Y):
+    def _so_LHX1Y1(self, X, Y):
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         t2 = self.ccwfn.t2
@@ -1209,7 +1209,7 @@ class ccresponse(object):
 
     def LHX2Y2(self, X, Y):
         """X2*Y2 (LHX2Y2) term of the symmetric response function:
-        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _LHX2Y2_spinorbital.)
+        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _so_LHX2Y2.)
 
         Notes
         -----
@@ -1233,7 +1233,7 @@ class ccresponse(object):
             LHX2Y2 = 2 l2_ijab tmp_ijab
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._LHX2Y2_spinorbital(X, Y)
+            return self._so_LHX2Y2(X, Y)
         # spin-adapted (spatial) LHX2Y2
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
@@ -1260,7 +1260,7 @@ class ccresponse(object):
         tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, X2), Y2)
         return 2.0 * contract('ijab,ijab->', l2, tmp)
 
-    def _LHX2Y2_spinorbital(self, X, Y):
+    def _so_LHX2Y2(self, X, Y):
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         l2 = self.cclambda.l2
@@ -1284,7 +1284,7 @@ class ccresponse(object):
 
     def LHX1Y2(self, X, Y):
         """X1*Y2 (LHX1Y2) term of the symmetric response function:
-        <0|L[[HBAR,X1],Y2]|0>. (Diagram labels match _LHX1Y2_spinorbital.)
+        <0|L[[HBAR,X1],Y2]|0>. (Diagram labels match _so_LHX1Y2.)
 
         Notes
         -----
@@ -1317,7 +1317,7 @@ class ccresponse(object):
             LHX1Y2 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._LHX1Y2_spinorbital(X, Y)
+            return self._so_LHX1Y2(X, Y)
         # spin-adapted (spatial) LHX1Y2
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
@@ -1358,7 +1358,7 @@ class ccresponse(object):
         polar += 2.0 * contract('ijab,ijab->', l2, tmp2)
         return polar
 
-    def _LHX1Y2_spinorbital(self, X, Y):
+    def _so_LHX1Y2(self, X, Y):
         contract = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         l1 = self.cclambda.l1

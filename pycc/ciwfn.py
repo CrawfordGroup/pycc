@@ -144,13 +144,13 @@ class CIwfn(Wavefunction):
         Spin-orbital path: E_c = f_ia c_ia + 1/4 <ij||ab> c_ijab.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._ci_energy_spinorbital(o, v, F, self.H.ERI, c1, c2)
+            return self._so_ci_energy(o, v, F, self.H.ERI, c1, c2)
         contract = self.contract
         e = 2.0 * contract('ia,ia->', F[o, v], c1)
         e = e + contract('ijab,ijab->', c2, L[o, o, v, v])
         return e
 
-    def _ci_energy_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+    def _so_ci_energy(self, o, v, F, ERI, c1, c2) -> "Tensor":
         """Spin-orbital CISD correlation energy, E_c = f_ia c_ia + 1/4 <ij||ab> c_ijab."""
         contract = self.contract
         e = contract('ia,ia->', F[o, v], c1)
@@ -170,7 +170,7 @@ class CIwfn(Wavefunction):
             return zeros_like(c1)
 
         if self.orbital_basis == 'spinorbital':
-            return self._sigma1_spinorbital(o, v, F, self.H.ERI, c1, c2)
+            return self._so_sigma1(o, v, F, self.H.ERI, c1, c2)
 
         contract = self.contract
         s1 = clone(F[o, v], device=self.device1)
@@ -182,7 +182,7 @@ class CIwfn(Wavefunction):
         s1 = s1 - contract('mnae,mnie->ia', c2, L[o, o, o, v])
         return s1
 
-    def _sigma1_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+    def _so_sigma1(self, o, v, F, ERI, c1, c2) -> "Tensor":
         """Spin-orbital singles sigma vector: the linear part of the spin-orbital CCSD
         T1 residual (t -> c) with the dressed one-body intermediates replaced by the
         bare Fock blocks (Fae -> f_vv, Fmi -> f_oo, Fme -> f_ov)."""
@@ -210,7 +210,7 @@ class CIwfn(Wavefunction):
             sigma2 = sigma2(half) + sigma2(half)[i<->j, a<->b]
         """
         if self.orbital_basis == 'spinorbital':
-            return self._sigma2_spinorbital(o, v, F, self.H.ERI, c1, c2)
+            return self._so_sigma2(o, v, F, self.H.ERI, c1, c2)
 
         contract = self.contract
 
@@ -229,7 +229,7 @@ class CIwfn(Wavefunction):
         s2 = s2 + s2.swapaxes(0, 1).swapaxes(2, 3)
         return s2
 
-    def _sigma2_spinorbital(self, o, v, F, ERI, c1, c2) -> "Tensor":
+    def _so_sigma2(self, o, v, F, ERI, c1, c2) -> "Tensor":
         """Spin-orbital doubles sigma vector: the linear part of the spin-orbital CCSD
         T2 residual (t -> c) with the dressed two-body intermediates replaced by their
         bare antisymmetrized integrals. Built as the full (already i<->j, a<->b

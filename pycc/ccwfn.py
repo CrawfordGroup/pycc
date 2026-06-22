@@ -316,7 +316,7 @@ class CCwfn(Wavefunction):
         """
 
         if self.orbital_basis == 'spinorbital':
-            return self._residuals_spinorbital(F, t1, t2)
+            return self._so_residuals(F, t1, t2)
 
         contract = self.contract
 
@@ -963,7 +963,7 @@ class CCwfn(Wavefunction):
         Spin-orbital path: E = f_ia t_ia + 1/4 t2_ijab <ij||ab> + 1/2 t_ia t_jb <ij||ab>.
         """
         if self.orbital_basis == 'spinorbital':
-            return self._cc_energy_spinorbital(o, v, F, self.H.ERI, t1, t2)
+            return self._so_cc_energy(o, v, F, self.H.ERI, t1, t2)
         contract = self.contract
         if self.model == 'CCD':
             ecc = contract('ijab,ijab->', t2, L[o,o,v,v])
@@ -1074,7 +1074,7 @@ class CCwfn(Wavefunction):
                    - contract('mb,maij->ijab', t1, ERI[o,v,o,o]))
         return r2
 
-    def _residuals_spinorbital(self, F, t1, t2):
+    def _so_residuals(self, F, t1, t2):
         """Spin-orbital CCSD T1/T2 residuals (the spin-orbital sibling of
         :meth:`residuals`)."""
         o = self.o
@@ -1105,7 +1105,7 @@ class CCwfn(Wavefunction):
 
         return r1, r2
 
-    def _cc_energy_spinorbital(self, o, v, F, ERI, t1, t2):
+    def _so_cc_energy(self, o, v, F, ERI, t1, t2):
         """Spin-orbital CCSD correlation energy. CC3 shares this -- the triples enter
         through the residuals, not the energy expression."""
         contract = self.contract
