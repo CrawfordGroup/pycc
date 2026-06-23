@@ -122,7 +122,39 @@ _Last updated 2026-06-23._
 | D — **spin-orbital** gradient assembly (keystone) | ✅ done | this branch |
 | **spin-adapted** (closed-shell RHF) MP2 gradient | ✅ done | merged |
 | **frozen-core** spin-adapted MP2 gradient | ✅ done | merged (#158) |
-| **full-MO spin-orbital Hamiltonian** + **frozen-core SO MP2 gradient** + triples audit | ✅ done | `feature/spinorbital-fc-gradient` |
+| **full-MO spin-orbital Hamiltonian** + **frozen-core SO MP2 gradient** + triples audit | ✅ done | merged (#159) |
+| `np.einsum` → `self.contract` in HFwfn/MPwfn/CPHF (device backend) | ✅ done | merged (#160) |
+| **MP2 dipole polarizability** | 📋 design locked, **code not started** | — (see next section) |
+
+## Next up: MP2 dipole polarizability — design locked, code NOT started
+
+The agreed next deliverable. Static electric-dipole polarizability `alpha_ab =
+-d^2 E_MP2 / dF_a dF_b` (3x3, omega=0), the field analog of the (done) HFwfn polarizability.
+**Design decisions locked with the PI (2026-06-23); no code written yet (hold):**
+
+- **Formulation (B) — 2n+1 second-order energy.** Assemble `alpha` directly from the
+  first-order field-perturbed orbitals `U^a` (= `cphf.solve(cphf.rhs_field(a))`, already
+  used by the HF polarizability) and the first-order field-perturbed MP2 amplitudes `t^a`.
+  **No perturbed Z-vector** (formulation A, the relaxed-dipole-derivative route, was
+  rejected).
+- **Fully orbital-relaxed from the start** — no orbital-unrelaxed build-up step.
+- **Oracle = high-order finite-field second derivative of `E_MP2(F)`.** As throughout this
+  effort, PyCC's own energy finite-difference is the ground truth (Psi4's analytic response
+  may be DF/finite-field). Add the `alpha = alpha_HF + alpha_corr` HF-limit check and the
+  **SO == spatial** keystone.
+
+What's reused (almost everything): the CPHF field response (`rhs_field` + `solve`), the
+dipole integrals (`H.mu`), the SO/spatial dispatch, the semicanonical gauge and frozen-core
+slicing. Two simplifications vs. the nuclear gradient: only **3 perturbations** (x,y,z), so
+solve `U^a` directly per component (the Z-vector "avoid-3N-solves" trick is unneeded on the
+perturbation side); and the electric field **does not move the basis functions**, so there
+is **no overlap/Pulay/derivative-integral machinery** -- integrals respond only through
+`U^a`. The one genuinely new building block is `t^a = [<ij||ab>^a - t_ijab D^a_ijab] /
+D_ijab` (`<ij||ab>^a` = the `U^a`-rotation of the integrals; `D^a` = the perturbed
+orbital-energy denominator). Mirror the gradient phasing: **spin-orbital path first**, then
+spatial closed-shell; **all-electron first**, frozen core as a follow-on (reuses the
+full-occ machinery already built). When starting, write this phase up in detail here first,
+then code.
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
@@ -199,9 +231,10 @@ index 0). Audited and fixed across the (T), CC3 T-residual/Λ/response, and the 
 keystones vs Psi4 (`test_031`), and frozen-core CC3 polarizability vs a finite field of the
 CC3 energy (`test_059`).
 
-Next: the MP2 property path (APT / Hessian) or CC gradients (swap the densities; the
-Z-vector + assembly carry over). Frozen-core CC gradients reuse the same full-occ response
-machinery, now available on both the spatial and spin-orbital paths.
+Next (decided): the **MP2 dipole polarizability** -- see "Next up" above for the locked
+design. After that, the rest of the MP2 property path (APT / Hessian) or CC gradients (swap
+the densities; the Z-vector + assembly carry over). Frozen-core CC gradients reuse the same
+full-occ response machinery, now available on both the spatial and spin-orbital paths.
 
 The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
 spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while
