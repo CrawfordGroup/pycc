@@ -406,8 +406,8 @@ class ccresponse(object):
             for j in range(no):
                 for k in range(no):
                     t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                    Yoovo[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
-                    Yovvv[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+                    Yoovo[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,o,v,v][:,k])
+                    Yovvv[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[o,o,v,v][j,k])
         Zovoo = 0.5 * contract('ld,jkdc->lcjk', pertbar.Aov, t2)
         Zvvvo = -0.5 * contract('ld,lkbc->bcdk', pertbar.Aov, t2)
 
@@ -470,7 +470,7 @@ class ccresponse(object):
                     x3 += t3c_ijk_so(o, v, i, j, k, t2, Zvvvo+Zbcdk, Zovoo+Zlcjk, F, contract, omega)
                     x3 += t3c_ijk_so(o, v, i, j, k, X2, Wvvvo, Wovoo, F, contract, omega)
 
-                    z1[i] += 0.25 * contract('abc,bc->a', x3, ERI[j,k,v,v])
+                    z1[i] += 0.25 * contract('abc,bc->a', x3, ERI[o,o,v,v][j,k])
                     z2[i,j] += contract('abc,c->ab', x3, hbar.Hov[k])
                     tmp = 0.5 * contract('abc,dbc->ad', x3, hbar.Hvovv[:,k,:,:])
                     z2[i,j] += tmp - tmp.swapaxes(0,1)
@@ -492,7 +492,7 @@ class ccresponse(object):
                              - (vir[a] + vir[b] + vir[c]))
                     x3 = x3/denom
 
-                    y1[a] += 0.25 * contract('ijk,jk->i', x3, ERI[o,o,b+no,c+no])
+                    y1[a] += 0.25 * contract('ijk,jk->i', x3, ERI[o,o,v,v][:,:,b,c])
                     y2[a,b] += contract('ijk,k->ij', x3, hbar.Hov[:,c])
                     tmp = -0.5 * contract('ijk,jkl->il', x3, hbar.Hooov[:,:,:,c])
                     y2[a,b] += tmp - tmp.swapaxes(0,1)
@@ -1863,7 +1863,7 @@ class pertbar(object):
                     for j in range(no):
                         for k in range(no):
                             t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                            self.Avvoo[i,j] += contract('c,abc->ab', pert[k,v], t3)
+                            self.Avvoo[i,j] += contract('c,abc->ab', pert[o,v][k], t3)
             return
 
         self.Aov = pert[o,v].copy()

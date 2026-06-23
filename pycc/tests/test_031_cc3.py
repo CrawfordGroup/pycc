@@ -89,6 +89,42 @@ def test_so_cc3_lambda_equals_spatial_rhf(rhf_wfn):
     assert abs(l_so - l_spatial) < 1e-10
 
 
+def test_so_cc3_equals_spatial_rhf_frzc(rhf_wfn):
+    """Frozen-core CC3 (closed shell): spin-orbital reproduces spin-adapted spatial, and
+    both match Psi4's CC3. Validates the frozen-core triples indexing -- the spin-orbital
+    Hamiltonian is now full-MO (the active occupied no longer starts at index 0), so the
+    triples kernels must slice the Hamiltonian (``ERI[o,o,v,v][j,k]``) rather than index it
+    with loop variables (``ERI[j,k,v,v]``)."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="true",
+                  e_convergence=1e-12, d_convergence=1e-12)
+
+    e_spatial = pycc.CCwfn(wfn, model="CC3").solve_cc(e_conv=1e-11, r_conv=1e-11)
+
+    so = pycc.CCwfn(wfn, model="CC3", orbital_basis="spinorbital")
+    assert so.orbital_basis == "spinorbital" and so.nfzc > 0
+    e_so = so.solve_cc(e_conv=1e-11, r_conv=1e-11)
+
+    assert abs(e_so - e_spatial) < 1e-10
+    psi4.energy('cc3')
+    assert abs(e_spatial - psi4.variable('CC3 CORRELATION ENERGY')) < 1e-10
+
+
+def test_so_cc3_lambda_equals_spatial_rhf_frzc(rhf_wfn):
+    """Frozen-core CC3 Lambda (closed shell): spin-orbital reproduces spin-adapted spatial
+    -- keystone for the frozen-core CC3 Lambda triples indexing."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="true",
+                  e_convergence=1e-12, d_convergence=1e-12)
+
+    def _lcc(basis):
+        cc = pycc.CCwfn(wfn, model="CC3", orbital_basis=basis)
+        cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
+        hbar = pycc.cchbar(cc)
+        lam = pycc.cclambda(cc, hbar)
+        return lam.solve_lambda(e_conv=1e-11, r_conv=1e-11)
+
+    assert abs(_lcc("spinorbital") - _lcc("spatial")) < 1e-10
+
+
 def test_ucc3_oh(uhf_wfn):
     """Open-shell .OH 6-31G, all-electron UCC3 vs Psi4's UCC3."""
     wfn = uhf_wfn(OH, "6-31G", freeze_core="false",
@@ -102,8 +138,11 @@ def test_ucc3_oh(uhf_wfn):
     ref = psi4.variable('CC3 CORRELATION ENERGY')
 
     assert abs(ecc3 - ref) < 1e-10
-    # Frozen-core UCC3 is intentionally not retested here: the spin-orbital
-    # frozen-core active space is already validated by the MP2/CCSD/CCSD(T)
-    # frozen-core tests (CC3 reuses the same o/v slicing), and the iterative CC3
-    # solve is the costliest in the suite.
+    # Frozen-core CC3 is validated on a closed shell by
+    # test_so_cc3_equals_spatial_rhf_frzc / _lambda_frzc (energy and Lambda, vs Psi4 and
+    # the spin-orbital==spatial keystone). The full-MO spin-orbital Hamiltonian means the
+    # active occupied no longer starts at index 0, so the triples kernels slice the
+    # Hamiltonian rather than indexing it with loop variables. Open-shell frozen-core UCC3
+    # is not separately retested (same triples indexing; the iterative CC3 solve is the
+    # costliest in the suite), and frozen-core UCCSD(T) is covered by test_005.
 
