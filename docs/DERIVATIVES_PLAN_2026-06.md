@@ -112,7 +112,7 @@ on `MPwfn` (MP2-specific, per the decision above).
 
 ## Status / progress
 
-_Last updated 2026-06-21._
+_Last updated 2026-06-22._
 
 | Phase | Status | Landed |
 |---|---|---|
@@ -120,6 +120,8 @@ _Last updated 2026-06-21._
 | A/B — spatial CPHF access + MP2 densities | exploratory; **code removed** | this branch |
 | C — **spin-orbital** relaxed density (GSB Lagrangian + Z-vector) | ✅ done | this branch |
 | D — **spin-orbital** gradient assembly (keystone) | ✅ done | this branch |
+| **spin-adapted** (closed-shell RHF) MP2 gradient | ✅ done | merged |
+| **frozen-core** spin-adapted MP2 gradient | ✅ done | `feature/mp2-frozen-core-gradient` |
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
@@ -143,18 +145,43 @@ sum_m <pm||qm>^X` is the skeleton Fock derivative. Validated (`test_061`):
 **Spin-adapted (closed-shell RHF) MP2 gradient -- DONE (the original decision 4).**
 `MPwfn.gradient()` now has the spatial path inline (dispatching to `_so_gradient` for the
 spin-orbital case), with unlabeled spatial density helpers `_mp2_corr_opdm` / `_mp2_cumulant`
-/ `_mp2_lagrangian` / `_mp2_zvector` / `_energy_weighted_opdm` alongside their `_so_*`
-siblings (PyCC convention: spatial unlabeled, spin-orbital `_so_*`). The spin-adaptation
-carries the spin sum in `l2 = 2(2 t2 - t2.swap)` and the cumulant `Gamma = 2 t2 - t2.swap`,
-writes the two-electron 1-PDM/`W` terms with the spin-adapted `L` (= `H.L`), and assembles
-with the full-spatial-MO derivative integrals (`f^X = h^X + sum_m L[p,m,q,m]^X`, no extra
-prefactor on the spin-summed densities). The Z-vector reuses the basis-aware
-`self.cphf.solve` (closed-shell singlet Hessian via `H.L`). Validated (`test_061`):
-`MPwfn.gradient()` == `psi4.gradient('mp2')` ~1e-14 (6-31G C1, cc-pVDZ C2v), and the
-keystone -- spin-adapted == spin-orbital on a closed shell -- to machine precision (~1e-16).
+/ `_mp2_lagrangian` / `_mp2_relaxed_densities` alongside their `_so_*` siblings (PyCC
+convention: spatial unlabeled, spin-orbital `_so_*`). The spin-adaptation carries the spin
+sum in `l2 = 2(2 t2 - t2.swap)` and the cumulant `Gamma = 2 t2 - t2.swap`, writes the
+two-electron 1-PDM/`W` terms with the spin-adapted `L` (= `H.L`), and assembles with the
+full-spatial-MO derivative integrals (`f^X = h^X + sum_m L[p,m,q,m]^X`, no extra prefactor
+on the spin-summed densities). The Z-vector reuses the basis-aware `self.cphf.solve`
+(closed-shell singlet Hessian via `H.L`). Validated (`test_061`): `MPwfn.gradient()` ==
+`psi4.gradient('mp2')` ~1e-14 (6-31G C1, cc-pVDZ C2v), and the keystone -- spin-adapted ==
+spin-orbital on a closed shell -- to machine precision (~1e-16).
 
-Next: frozen core, then the MP2 property path (APT / Hessian) or CC gradients (swap the
-densities; the Z-vector + assembly carry over).
+**Frozen-core spin-adapted MP2 gradient -- DONE.** The spatial path is now frozen-core
+aware (the all-electron case is `nfzc=0`, no separate branch). The unrelaxed correlation
+density stays on the active blocks, but the **orbital response spans the full occupied
+space**, leveraging the full-MO Hamiltonian integrals (`H.ERI`/`H.F` are full `nmo`, not
+active-only):
+
+  * **core <-> active-occupied** rotations are non-redundant for frozen-core MP2 (they move
+    the frozen/active partition, so the MP2 energy responds) but leave the HF energy
+    invariant, so their orbital Hessian is just the orbital-energy difference -- a **direct
+    divide** `P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`, not a CPHF solve;
+  * the **occupied-virtual Z-vector** runs over the full `ndocc x nv` space (incl.
+    core-virtual), with `P_co` coupled into the RHS (`X_ai -= sum_jc[<aj||ic>+<ac||ij>]z_jc`),
+    solved with the all-electron `HFwfn(ref).cphf` (whose occupied space is the full `ndocc`);
+  * `W = I'(D_r)` -- the Lagrangian at the relaxed density -- supplies the core-active
+    energy-weighted-density (`z_kc`) term automatically; `f^X` sums `m` over the full occ.
+
+`_mp2_lagrangian` now takes a full-MO `D` (1-PDM term's column over the full occupied space),
+and `_mp2_zvector`/`_energy_weighted_opdm` are consolidated into `_mp2_relaxed_densities`.
+Validated (`test_061`, H2O/6-31G C1): relaxed frozen-core dipole vs finite field, and the
+gradient vs a **5-point finite difference of PyCC's own frozen-core MP2 energy** to <1e-8
+(the ground-truth oracle -- Psi4's *analytic* frozen-core MP2 gradient is itself inconsistent
+with its *own energy's* finite difference at ~7e-6, so it is not used as the oracle).
+
+Next: the MP2 property path (APT / Hessian) or CC gradients (swap the densities; the
+Z-vector + assembly carry over). Frozen-core CC gradients reuse the same full-occ response
+machinery. The spin-orbital frozen-core gradient remains deferred (its Hamiltonian is
+active-only, so it lacks the core integrals the response needs).
 
 The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
 spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while
