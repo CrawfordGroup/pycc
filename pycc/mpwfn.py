@@ -144,9 +144,9 @@ class MPwfn(Wavefunction):
         eps = np.diag(np.asarray(self.H.F))
         termA = eps[:, None] * (D + D.T)                       # f_pp (D_pq + D_qp)
         termB = np.zeros((nmo, nmo))
-        termB[:, ofull] = (np.einsum('rs,rpsq->pq', D, ERI[:, :, :, ofull])
-                           + np.einsum('rs,rqsp->pq', D, ERI[:, ofull, :, :]))
-        termC = 4.0 * np.einsum('prst,qrst->pq', ERI, Gam)
+        termB[:, ofull] = (self.contract('rs,rpsq->pq', D, ERI[:, :, :, ofull])
+                           + self.contract('rs,rqsp->pq', D, ERI[:, ofull, :, :]))
+        termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
         return -0.5 * (termA + termB + termC)
 
     def _so_mp2_relaxed_densities(self):
@@ -197,13 +197,13 @@ class MPwfn(Wavefunction):
         X = Ip[ofull, v] - Ip[v, ofull].T
         if nfzc:
             zjc = -Pco.T                                   # z_jc, active-occupied x core
-            X = X - (np.einsum('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
-                     + np.einsum('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+            X = X - (self.contract('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
+                     + self.contract('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
 
         # Full-occupied spin-orbital orbital Hessian A_{ia,jb} = <aj||ib> + <ab||ij>
         # + (eps_a - eps_i) delta; solve A z = X over the full ndocc x nv space.
-        G = (np.einsum('ajib->iajb', ERI[v, ofull, ofull, v])
-             + np.einsum('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
+        G = (self.contract('ajib->iajb', ERI[v, ofull, ofull, v])
+             + self.contract('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
         G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
         z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv).T
         D[v, ofull] = -z
@@ -269,9 +269,9 @@ class MPwfn(Wavefunction):
         eps = np.diag(np.asarray(self.H.F))
         termA = eps[:, None] * (D + D.T)
         termB = np.zeros((nmo, nmo))
-        termB[:, ofull] = (np.einsum('rs,rpsq->pq', D, L[:, :, :, ofull])
-                           + np.einsum('rs,rqsp->pq', D, L[:, ofull, :, :]))
-        termC = 4.0 * np.einsum('prst,qrst->pq', ERI, Gam)
+        termB[:, ofull] = (self.contract('rs,rpsq->pq', D, L[:, :, :, ofull])
+                           + self.contract('rs,rqsp->pq', D, L[:, ofull, :, :]))
+        termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
         return -0.5 * (termA + termB + termC)
 
     def _mp2_relaxed_densities(self):
@@ -319,8 +319,8 @@ class MPwfn(Wavefunction):
         X = Ip[ofull, v] - Ip[v, ofull].T
         if nfzc:
             zjc = -Pco.T                                   # z_jc, active-occupied x core
-            X = X - (np.einsum('jc,ajic->ia', zjc, L[v, o, ofull, co])
-                     + np.einsum('jc,acij->ia', zjc, L[v, co, ofull, o]))
+            X = X - (self.contract('jc,ajic->ia', zjc, L[v, o, ofull, co])
+                     + self.contract('jc,acij->ia', zjc, L[v, co, ofull, o]))
         z = hf.cphf.solve(X).T
         D[v, ofull] = -z
         D[ofull, v] = -z.T
@@ -359,10 +359,10 @@ class MPwfn(Wavefunction):
             for c in range(3):
                 phys = ERIx[c].transpose(0, 2, 1, 3)  # -> physicist <pq|rs>^X
                 Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
-                fx = hx[c] + np.einsum('pmqm->pq', Lx[:, ofull, :, ofull])  # Fock deriv (full occ)
-                grad[atom, c] = (np.einsum('pq,pq->', D, fx)
-                                 + np.einsum('pqrs,pqrs->', Gam, phys)
-                                 + np.einsum('pq,pq->', W, Sx[c]))
+                fx = hx[c] + self.contract('pmqm->pq', Lx[:, ofull, :, ofull])  # Fock deriv (full occ)
+                grad[atom, c] = (self.contract('pq,pq->', D, fx)
+                                 + self.contract('pqrs,pqrs->', Gam, phys)
+                                 + self.contract('pq,pq->', W, Sx[c]))
         return hf.gradient() + grad
 
     def _so_gradient(self) -> np.ndarray:
@@ -381,8 +381,8 @@ class MPwfn(Wavefunction):
             Sx = d.so_overlap(atom)
             ERIx = d.so_eri(atom)
             for c in range(3):
-                fx = hx[c] + np.einsum('pmqm->pq', ERIx[c][:, ofull, :, ofull])  # Fock deriv (full occ)
-                grad[atom, c] = (np.einsum('pq,pq->', D, fx)
-                                 + np.einsum('pqrs,pqrs->', Gam, ERIx[c])
-                                 + np.einsum('pq,pq->', W, Sx[c]))
+                fx = hx[c] + self.contract('pmqm->pq', ERIx[c][:, ofull, :, ofull])  # Fock deriv (full occ)
+                grad[atom, c] = (self.contract('pq,pq->', D, fx)
+                                 + self.contract('pqrs,pqrs->', Gam, ERIx[c])
+                                 + self.contract('pq,pq->', W, Sx[c]))
         return HFwfn(self.ref).gradient() + grad

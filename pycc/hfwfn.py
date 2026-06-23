@@ -74,9 +74,9 @@ class HFwfn(Wavefunction):
             erix = d.eri(atom, 'o', 'o', 'o', 'o')
             for c in range(3):
                 grad[atom, c] = (2.0 * np.trace(hx[c])
-                                 + 2.0 * np.einsum('iijj->', erix[c])
-                                 - np.einsum('ijij->', erix[c])
-                                 - 2.0 * np.einsum('i,ii->', eps, Sx[c])
+                                 + 2.0 * self.contract('iijj->', erix[c])
+                                 - self.contract('ijij->', erix[c])
+                                 - 2.0 * self.contract('i,ii->', eps, Sx[c])
                                  + Vnn[atom, c])
         self.grad = grad
         return grad
@@ -130,7 +130,7 @@ class HFwfn(Wavefunction):
         alpha = np.zeros((3, 3))
         for a in range(3):
             for b in range(3):
-                alpha[a, b] = -k * np.einsum('ia,ia->', mu[a], U[b])
+                alpha[a, b] = -k * self.contract('ia,ia->', mu[a], U[b])
         self.alpha = alpha
         return self.alpha
 
@@ -168,8 +168,8 @@ class HFwfn(Wavefunction):
                 for alpha in range(3):
                     val = mol.Z(A) if alpha == beta else 0.0
                     val += 2.0 * np.trace(dip[alpha * 3 + beta])
-                    val -= 2.0 * np.einsum('ki,ki->', Sx[beta], mu[alpha][o, o])
-                    val += 4.0 * np.einsum('ia,ia->', Ux[beta], mu[alpha][o, v])
+                    val -= 2.0 * self.contract('ki,ki->', Sx[beta], mu[alpha][o, o])
+                    val += 4.0 * self.contract('ia,ia->', Ux[beta], mu[alpha][o, v])
                     dmu[A, beta, alpha] = val
         self.dipder = dmu
         return self.dipder
@@ -265,16 +265,16 @@ class HFwfn(Wavefunction):
                         Fx, Fy = Foo[A][a], Foo[Bat][b]
                         # --- skeleton (second-derivative integrals), as in the gradient ---
                         skel = (2.0 * np.trace(h2[c])
-                                + 2.0 * np.einsum('iijj->', g2[c])
-                                - np.einsum('ijij->', g2[c])
-                                - 2.0 * np.einsum('i,ii->', eps_o, S2[c])
+                                + 2.0 * self.contract('iijj->', g2[c])
+                                - self.contract('ijij->', g2[c])
+                                - 2.0 * self.contract('i,ii->', eps_o, S2[c])
                                 + Vnn2[A * 3 + a, Bat * 3 + b])
                         # --- first-order CPHF response + first-derivative cross terms ---
-                        resp = (-4.0 * np.einsum('ia,ia->', Ux, By)
-                                - 2.0 * np.einsum('ij,ij->', Sx, Fy)
-                                - 2.0 * np.einsum('ij,ij->', Sy, Fx)
-                                + 4.0 * np.einsum('i,ij,ij->', eps_o, Sx, Sy)
-                                + 2.0 * np.einsum('ij,nm,imjn->', Sx, Sy, Loooo))
+                        resp = (-4.0 * self.contract('ia,ia->', Ux, By)
+                                - 2.0 * self.contract('ij,ij->', Sx, Fy)
+                                - 2.0 * self.contract('ij,ij->', Sy, Fx)
+                                + 4.0 * self.contract('i,ij,ij->', eps_o, Sx, Sy)
+                                + 2.0 * self.contract('ij,nm,imjn->', Sx, Sy, Loooo))
                         H[A * 3 + a, Bat * 3 + b] = skel + resp
         self.hess = H
         return self.hess
@@ -366,8 +366,8 @@ class HFwfn(Wavefunction):
             for alpha in range(3):
                 for beta in range(3):
                     aat[lam, alpha, beta] = 2.0 * (
-                        np.einsum('ia,ia->', Ur[alpha], Ub[beta])
-                        + np.einsum('ia,ia->', Ub[beta], Shalf[alpha]))
+                        self.contract('ia,ia->', Ur[alpha], Ub[beta])
+                        + self.contract('ia,ia->', Ub[beta], Shalf[alpha]))
         self.aat = aat
         return self.aat
 

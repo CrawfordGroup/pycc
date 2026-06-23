@@ -39,8 +39,9 @@ Lives on the Wavefunction base (lazy ``self.cphf``); it depends only on base sta
 (``o``/``v``, the Fock diagonal, the orbital-Hessian integrals) plus the dipole
 integrals, and is shared by HF, MP2, and CC orbital response.
 
-This is reference, CPU/NumPy code, consistent with the rest of the HF derivative
-engine (the explicit orbital Hessian is solved directly with ``numpy.linalg``).
+Reference code: tensor contractions route through the device-aware ``self.contract``
+(``ContractionBackend``, shared from the wavefunction), while the explicit orbital
+Hessian is solved directly with ``numpy.linalg`` (a small dense solve, left on NumPy).
 """
 
 from __future__ import annotations
@@ -70,6 +71,7 @@ class CPHF(object):
 
     def __init__(self, wfn: Any) -> None:
         self.wfn = wfn
+        self.contract = wfn.contract        # device-aware ContractionBackend (shared)
         self.o = wfn.o
         self.v = wfn.v
         self.no = wfn.no
@@ -125,8 +127,8 @@ class CPHF(object):
             raise ValueError("kind must be 'electric' or 'magnetic', got %r" % kind)
 
         # Two-electron part: G_iajb = W[a,j,i,b] + sign * W[a,b,i,j].
-        G = (np.einsum('ajib->iajb', W[v, o, o, v])
-             + sign * np.einsum('abij->iajb', W[v, v, o, o]))
+        G = (self.contract('ajib->iajb', W[v, o, o, v])
+             + sign * self.contract('abij->iajb', W[v, v, o, o]))
         G = G.reshape(no * nv, no * nv)
 
         # Orbital-energy part: + (e_a - e_i) on the (ia)=(jb) diagonal.
@@ -249,11 +251,11 @@ class CPHF(object):
         for c in range(3):
             Lx = 2.0 * gx[c] - gx[c].swapaxes(2, 3)            # derivative spin-adapted L
             # skeleton derivative Fock: F^X_pq = h^X + sum_k L[p,k,q,k]^X
-            Fx = hx[c] + np.einsum('pkqk->pq', Lx[:, o, :, o])
+            Fx = hx[c] + self.contract('pkqk->pq', Lx[:, o, :, o])
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the
             # ov block:  -1/2 S^X_kl ( L[a,k,i,l] + L[a,l,i,k] ).
-            coupling = (np.einsum('akil,kl->ia', Lvooo, Sx[c][o, o])
-                        + np.einsum('alik,kl->ia', Lvooo, Sx[c][o, o]))
+            coupling = (self.contract('akil,kl->ia', Lvooo, Sx[c][o, o])
+                        + self.contract('alik,kl->ia', Lvooo, Sx[c][o, o]))
             # The CPHF RHS is minus the first-order off-diagonal ("perturbation")
             # Fock that the response drives to zero -- B = -Q (nuclear analog of the
             # field's B = -mu).
@@ -286,12 +288,12 @@ class CPHF(object):
         B, Foo, Soo = [], [], []
         for c in range(3):
             # skeleton derivative Fock F^X_pq = h^X + sum_k(occ) <pk||qk>^X
-            Fx = hx[c] + np.einsum('pkqk->pq', gx[c][:, o, :, o])
+            Fx = hx[c] + self.contract('pkqk->pq', gx[c][:, o, :, o])
             Sx = Sxa[c]
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the ov
             # block: -1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ).
-            coupling = (np.einsum('akil,kl->ia', Evooo, Sx[o, o])
-                        + np.einsum('alik,kl->ia', Evooo, Sx[o, o]))
+            coupling = (self.contract('akil,kl->ia', Evooo, Sx[o, o])
+                        + self.contract('alik,kl->ia', Evooo, Sx[o, o]))
             Q = Fx[o, v] - eps_o[:, None] * Sx[o, v] - 0.5 * coupling
             B.append(-Q)
             Foo.append(Fx[o, o])
