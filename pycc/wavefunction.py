@@ -264,11 +264,16 @@ class Wavefunction(object):
         """Build the spin-orbital (UHF/ROHF) orbital spaces, coefficients, and
         Hamiltonian.
 
-        Works on the ACTIVE orbital subset (frozen core already excluded), so the
-        active occupied/virtual slices are contiguous and 0-based. Spin orbitals are
-        ordered ``[alpha-occ, beta-occ, alpha-vir, beta-vir]``; the per-spin-orbital
-        ``spin`` (0=alpha, 1=beta) and ``spat`` (index into that spin's spatial
-        active space) maps drive the integral build.
+        Built over the FULL spin-orbital MO space (frozen core included), mirroring the
+        spatial path (``_init_spatial``): the Hamiltonian integrals span all MOs and the
+        active occupied/virtual slices skip the frozen core. Spin orbitals are ordered
+        ``[alpha-core, beta-core, alpha-occ, beta-occ, alpha-vir, beta-vir]`` (the frozen
+        core first), so ``co``/``o``/``v`` are contiguous; for ``nfzc=0`` this reduces to
+        the ``[alpha-occ, beta-occ, alpha-vir, beta-vir]`` ordering. The per-spin-orbital
+        ``spin`` (0=alpha, 1=beta) and ``spat`` (index into that spin's full spatial space)
+        maps drive the integral build. Keeping the core in the Hamiltonian gives the
+        frozen-core gradient its core-virtual/core-active response integrals (the spatial
+        path already relies on this).
         """
         ref = self.ref
         self.nfzc = ref.nfrzc() if frozen_core else 0
@@ -311,37 +316,48 @@ class Wavefunction(object):
             print(f"  {i:>4}   {a_lab[i]:>5} {aocc:>1} {a_eps[i]:>16.10f}"
                   f"    {b_lab[i]:>5} {bocc:>1} {b_eps[i]:>16.10f}")
 
-        self.o = slice(0, self.no)
-        self.v = slice(self.no, self.nact)
+        # Full spin-orbital MO space, ordered [a-core, b-core, a-occ, b-occ, a-vir, b-vir]
+        # with the frozen core first (mirrors _init_spatial); the active slices skip it.
+        # For nfzc=0 the core blocks are empty and this is the previous active ordering.
+        nc = self.nfzc                       # frozen core per spin (alpha = beta = nfzc)
+        self.co = slice(0, 2 * nc)
+        self.o = slice(2 * nc, 2 * nc + self.no)
+        self.v = slice(2 * nc + self.no, self.nmo)
 
-        # Spin-orbital subspaces (ordered alpha-occ, beta-occ, alpha-vir, beta-vir)
-        # and the spin / spatial-index maps the Hamiltonian build needs.
-        ao = slice(0, nao)
-        bo = slice(nao, self.no)
-        av = slice(self.no, self.no + nav)
-        bv = slice(self.no + nav, self.nact)
-        spin = np.zeros(self.nact, dtype=int)
+        aco = slice(0, nc)
+        bco = slice(nc, 2 * nc)
+        ao = slice(2 * nc, 2 * nc + nao)
+        bo = slice(2 * nc + nao, 2 * nc + self.no)
+        av = slice(2 * nc + self.no, 2 * nc + self.no + nav)
+        bv = slice(2 * nc + self.no + nav, self.nmo)
+        spin = np.zeros(self.nmo, dtype=int)
+        spin[bco] = 1
         spin[bo] = 1
         spin[bv] = 1
-        spat = np.zeros(self.nact, dtype=int)
-        spat[ao] = np.arange(nao)
-        spat[bo] = np.arange(nbo)
-        spat[av] = np.arange(nao, nao + nav)
-        spat[bv] = np.arange(nbo, nbo + nbv)
+        spat = np.zeros(self.nmo, dtype=int)
+        spat[aco] = np.arange(nc)                       # alpha core: spatial 0..nc-1
+        spat[bco] = np.arange(nc)                       # beta core
+        spat[ao] = np.arange(nc, nc + nao)              # alpha active occ: spatial nc..na-1
+        spat[bo] = np.arange(nc, nc + nbo)
+        spat[av] = np.arange(nc + nao, nc + nao + nav)  # alpha virtual
+        spat[bv] = np.arange(nc + nbo, nc + nbo + nbv)
         self.spin = spin
         self.spat = spat
 
-        self.Ca = ref.Ca_subset("AO", "ACTIVE")
-        self.Cb = ref.Cb_subset("AO", "ACTIVE")
+        self.Ca = ref.Ca_subset("AO", "ALL")
+        self.Cb = ref.Cb_subset("AO", "ALL")
         # Optional static external field (finite-field CC properties); only CCwfn sets
         # these attributes, so default to no field for the other method classes.
         field_strength, field_axis = 0.0, 2
         if getattr(self, 'field', False):
             field_strength = getattr(self, 'field_strength', 0.0)
             field_axis = {'X': 0, 'Y': 1, 'Z': 2}[str(getattr(self, 'field_axis', 'Z')).upper()]
-        # nao/nbo are the per-spin active occupied counts: the Hamiltonian needs them to
-        # split each spin's MO set into occ/vir for the semicanonical rotation.
-        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat, nao, nbo,
+        # The Hamiltonian splits each spin's full MO set into occ/vir for the semicanonical
+        # rotation; pass the full per-spin occupied counts (core + active = nalpha/nbeta).
+        # The rotation is a no-op for canonical RHF/UHF, so the frozen core is not mixed
+        # into the active occupied (ROHF frozen-core response is deferred regardless).
+        self.H = SpinOrbitalHamiltonian(ref, self.Ca, self.Cb, spin, spat,
+                                        nc + nao, nc + nbo,
                                         field_strength=field_strength, field_axis=field_axis)
 
     @property

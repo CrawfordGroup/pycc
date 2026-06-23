@@ -294,8 +294,8 @@ class cclambda(object):
                 for j in range(no):
                     for k in range(no):
                         t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                        Zijal[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,k,v,v])
-                        Ziabd[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[j,k,v,v])
+                        Zijal[i,j] -= 0.5 * contract('abc,lbc->al', t3, ERI[o,o,v,v][:,k])
+                        Ziabd[i] -= 0.5 * contract('abc,dc->abd', t3, ERI[o,o,v,v][j,k])
 
         return {'Fov': Fov, 'Woooo': Woooo, 'Wovoo': Wovoo, 'Wooov': Wooov,
                 'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wvvvv': Wvvvv, 'Wovvo': Wovvo,
@@ -345,7 +345,7 @@ class cclambda(object):
 
                     # <0|L3 [[H~,T2],nu1]|0> -> L1
                     Ziabe[i] += 0.5 * contract('abc,ec->abe', l3, t2[j,k])
-                    Zijam[i,j] += 0.5 * contract('abc,mbc->am', l3, t2[o,k])
+                    Zijam[i,j] += 0.5 * contract('abc,mbc->am', l3, t2[:,k])
 
                     # <0|L3 [H~,nu2]|0> -> L2
                     Y2[i,j] += 0.5 * contract('abc,bcd->ad', l3, Wvvvo[:,:,:,k])
@@ -482,10 +482,10 @@ class cclambda(object):
                     if real_time is True:
                         V = F - clone(self.ccwfn.H.F)
                         t3_lmn -= t3_pert_ijk(o, v, l, m, n, t2, V, F, contract)
-                    Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,l,v,v])
-                    Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,l,v,v])
-                    Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[n,l,v,v])
-                    Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[n,l,v,v])
+                    Zmndi[m,n] += contract('def,ief->di', t3_lmn, ERI[o,o,v,v][:,l])
+                    Zmndi[m,n] -= contract('fed,ief->di', t3_lmn, L[o,o,v,v][:,l])
+                    Zmdfa[m] += contract('def,ea->dfa', t3_lmn, ERI[o,o,v,v][n,l])
+                    Zmdfa[m] -= contract('dfe,ea->dfa', t3_lmn, L[o,o,v,v][n,l])
 
         return {'Fov': Fov, 'Woooo': Woooo, 'Wovoo': Wovoo, 'Wooov': Wooov,
                 'Wvovv': Wvovv, 'Wvvvo': Wvvvo, 'Wovov': Wovov, 'Wovvo': Wovvo,
@@ -562,7 +562,7 @@ class cclambda(object):
                     Znf[n] += contract('de,def->f', l2[l,m], (t3_lmn - t3_lmn.swapaxes(0,2)))
         for m in range(no):
             Y1 += contract('idf,dfa->ia', l2[:,m], Zmdfa[m])
-            Y1 += contract('iaf,f->ia', L[o,m,v,v], Znf[m])
+            Y1 += contract('iaf,f->ia', L[o,o,v,v][:,m], Znf[m])
             for n in range(no):
                 Y1 += contract('ad,di->ia', l2[m,n], Zmndi[m,n,:,:])
         # end of t3l1

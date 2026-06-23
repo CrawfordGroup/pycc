@@ -398,7 +398,7 @@ class CCwfn(Wavefunction):
                         V = F - clone(self.H.F)
                         t3 -= t3_pert_ijk(o, v, i, j, k, t2, V, F, contract)
 
-                    X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[j,k,v,v])
+                    X1[i] += contract('abc,bc->a', t3 - t3.swapaxes(0,2), L[o,o,v,v][j,k])
 
                     X2[i,j] += contract('abc,dbc->ad', 2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2), Wamef_cc3.swapaxes(0,1)[k])
                     X2[i] -= contract('lc,abc->lab', Wmnie_cc3[j,k], (2 * t3 - t3.swapaxes(1,2) - t3.swapaxes(0,2)))
@@ -1195,7 +1195,7 @@ class CCwfn(Wavefunction):
             for j in range(no):
                 for k in range(no):
                     t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                    x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
+                    x1[i] += 0.25 * contract('bc,abc->a', ERI[o,o,v,v][j,k], t3)
                     x2[i,j] += contract('c,abc->ab', Fme[k], t3)
                     tmp = 0.5 * contract('dbc,abc->ad', Wvovv[:,k,:,:], t3)
                     x2[i,j] += tmp - tmp.swapaxes(0,1)
@@ -1302,9 +1302,9 @@ class CCwfn(Wavefunction):
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
 
                     # Doubles contribution (T) correction (Viking's formulation)
-                    X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[k,v])
-                    X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,k,v,v])
-                    X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[j,k,o,v])
+                    X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[o,v][k])
+                    X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,o,v,v][:,k])
+                    X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[o,o,o,v][j,k])
 
                     # (T) contribution to vir-vir block of one-electron density
                     Dvv += 0.5 * contract('acd,bcd->ab', M3, (X3 + Y3))
@@ -1319,10 +1319,10 @@ class CCwfn(Wavefunction):
                     Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
 
                     # (T) contribution to Lambda_1 residual
-                    S1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), L[j,k,v,v])
+                    S1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), L[o,o,v,v][j,k])
                     # (T) contribution to Lambda_2 residual
-                    S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[j,k,o,v])
-                    S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[k,v,v,v])
+                    S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[o,o,o,v][j,k])
+                    S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[o,v,v,v][k])
 
         S2 = S2 + S2.swapaxes(0,1).swapaxes(2,3)
 

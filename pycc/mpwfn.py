@@ -116,89 +116,112 @@ class MPwfn(Wavefunction):
     def _so_mp2_cumulant(self) -> np.ndarray:
         """Spin-orbital MP2 cumulant 2-PDM ``Gamma_ijab = 1/4 t2`` in the ``oovv``/``vvoo``
         blocks -- the only blocks that contribute (determined from the MP2 energy
-        Lagrangian, in which Lambda and T2 enter linearly)."""
+        Lagrangian, in which Lambda and T2 enter linearly). Built over the full MO space
+        (``self.nmo``); the active ``o``/``v`` slices place the amplitudes."""
         o, v = self.o, self.v
-        nmo = self.no + self.nv
+        nmo = self.nmo
         t2 = np.asarray(self.t2)
         Gam = np.zeros((nmo, nmo, nmo, nmo))
         Gam[o, o, v, v] = 0.25 * t2
         Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
         return Gam
 
-    def _so_mp2_lagrangian(self, Doo, Dvv, Gam) -> np.ndarray:
-        """Spin-orbital orbital-gradient Lagrangian matrix ``I'_pq`` (``nmo x nmo``)
+    def _so_mp2_lagrangian(self, D, Gam) -> np.ndarray:
+        """Spin-orbital generalized-Fock Lagrangian ``I'_pq`` (``nmo x nmo``) from a full-MO
+        1-PDM ``D`` and cumulant 2-PDM ``Gamma``
 
             I'_pq = -1/2 [ f_pp (D_pq + D_qp)
-                           + delta_{q,occ} sum_rs D_rs (<rp||sq> + <rq||sp>)
+                           + delta_{q in ofull} sum_rs D_rs (<rp||sq> + <rq||sp>)
                            + 4 sum_rst <pr||st> Gamma_qrst ]
 
-        from the correlation 1-PDM ``D`` (Doo/Dvv) and cumulant 2-PDM ``Gamma``. Its
-        occupied-virtual antisymmetric part ``X_ai = I'_ia - I'_ai`` is the Z-vector RHS."""
-        o, v = self.o, self.v
-        nmo = self.no + self.nv
+        The 1-PDM term's column index runs over the full occupied space ``ofull`` (= core +
+        active), so the frozen-core rows/columns are built (for ``nfzc=0`` this is the whole
+        occupied space). Its occupied-virtual antisymmetric part ``X_ai = I'_ia - I'_ai`` is
+        the Z-vector RHS; evaluated at the relaxed ``D`` it is the energy-weighted density."""
+        nmo = self.nmo
+        ofull = slice(0, self.o.stop)
         ERI = np.asarray(self.H.ERI)
         eps = np.diag(np.asarray(self.H.F))
-        D = np.zeros((nmo, nmo))
-        D[o, o] = np.asarray(Doo)
-        D[v, v] = np.asarray(Dvv)
         termA = eps[:, None] * (D + D.T)                       # f_pp (D_pq + D_qp)
-        termB = np.zeros((nmo, nmo))                           # only q in occ
-        termB[:, o] = (np.einsum('rs,rpsq->pq', D, ERI[:, :, :, o])
-                       + np.einsum('rs,rqsp->pq', D, ERI[:, o, :, :]))
+        termB = np.zeros((nmo, nmo))
+        termB[:, ofull] = (np.einsum('rs,rpsq->pq', D, ERI[:, :, :, ofull])
+                           + np.einsum('rs,rqsp->pq', D, ERI[:, ofull, :, :]))
         termC = 4.0 * np.einsum('prst,qrst->pq', ERI, Gam)
         return -0.5 * (termA + termB + termC)
 
-    def _so_mp2_zvector(self):
-        """Solve the spin-orbital MP2 Z-vector. Returns ``(Doo, Dvv, Gam, Ip, z)``: the
-        correlation densities, the cumulant 2-PDM, the Lagrangian ``I'_pq``, and the
-        orbital relaxation ``z_ai`` (``A z = X``, ``X_ai = I'_ia - I'_ai``, via the
-        basis-aware CPHF orbital Hessian on ``self.cphf``)."""
+    def _so_mp2_relaxed_densities(self):
+        """Spin-orbital MP2 relaxed 1-PDM ``D_r`` (``nmo x nmo``), cumulant ``Gamma``, and
+        energy-weighted density ``W``, with the orbital response over the full occupied space
+        (frozen-core aware) -- the spin-orbital analog of :meth:`_mp2_relaxed_densities`.
+        With the antisymmetrized ``<pq||rs>`` the frozen-core recipe applies directly (no
+        spin-adaptation):
+
+          * core <-> active-occupied: a direct divide ``P_co = (I'_ci - I'_ic)/(eps_c -
+            eps_i)`` (the HF energy is invariant to occupied-occupied rotations, so the
+            orbital Hessian is the orbital-energy difference);
+          * occupied <-> virtual (incl. core-virtual): the Z-vector ``A z = X`` over the full
+            ``ndocc x nv`` space, with ``P_co`` coupled into the RHS
+            (``X_ai -= sum_jc[<aj||ic> + <ac||ij>] z_jc``).
+
+        The Z-vector uses the full-occupied spin-orbital orbital Hessian, built here (the
+        active-space CPHF is ``self.cphf``; there is no all-electron spin-orbital HFwfn to
+        borrow it from, as the spatial path does). ``W = I'(D_r)``. For ``nfzc=0`` the core
+        blocks are empty and this reduces to the all-electron relaxed density."""
         if self.orbital_basis != 'spinorbital':
             raise NotImplementedError(
-                "The MP2 relaxed gradient is implemented for the spin-orbital path.")
-        o, v = self.o, self.v
+                "The spin-orbital MP2 relaxed gradient requires the spin-orbital path.")
+        if self.cphf.is_rohf:
+            raise NotImplementedError(
+                "The spin-orbital MP2 gradient is not implemented for ROHF references "
+                "(the semicanonical response does not reproduce the restricted ROHF "
+                "response). RHF and UHF are supported.")
+        nmo, nfzc, nv = self.nmo, self.nfzc, self.nv
+        o, v, co = self.o, self.v, self.co
+        ofull = slice(0, o.stop)
+        nof = o.stop
+        eps = np.diag(np.asarray(self.H.F))
+        ERI = np.asarray(self.H.ERI)
+
         Doo, Dvv = self._so_mp2_corr_opdm()
         Gam = self._so_mp2_cumulant()
-        Ip = self._so_mp2_lagrangian(Doo, Dvv, Gam)
-        X = Ip[o, v] - Ip[v, o].T              # (no, nv), X[i,a] = I'_ia - I'_ai
-        z = self.cphf.solve(X).T               # (nv, no), z_ai
-        return Doo, Dvv, Gam, Ip, z
-
-    def mp2_relaxed_opdm(self) -> np.ndarray:
-        """Relaxed MP2 one-particle correlation density (``nmo x nmo``): the unrelaxed
-        ``Doo``/``Dvv`` plus the orbital-relaxation blocks from the Z-vector solve.
-        Dispatches on ``orbital_basis``; the spin-adapted closed-shell path is frozen-core
-        aware (:meth:`_mp2_relaxed_densities`)."""
-        if self.orbital_basis != 'spinorbital':
-            D, Gam, W, hf = self._mp2_relaxed_densities()
-            return D
-        o, v = self.o, self.v
-        nmo = self.no + self.nv
-        Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
         D = np.zeros((nmo, nmo))
         D[o, o] = np.asarray(Doo)
         D[v, v] = np.asarray(Dvv)
-        D[v, o] = -z
-        D[o, v] = -z.T
+        Ip = self._so_mp2_lagrangian(D, Gam)
+
+        if nfzc:
+            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            D[co, o] = Pco
+            D[o, co] = Pco.T
+
+        X = Ip[ofull, v] - Ip[v, ofull].T
+        if nfzc:
+            zjc = -Pco.T                                   # z_jc, active-occupied x core
+            X = X - (np.einsum('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
+                     + np.einsum('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+
+        # Full-occupied spin-orbital orbital Hessian A_{ia,jb} = <aj||ib> + <ab||ij>
+        # + (eps_a - eps_i) delta; solve A z = X over the full ndocc x nv space.
+        G = (np.einsum('ajib->iajb', ERI[v, ofull, ofull, v])
+             + np.einsum('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
+        G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
+        z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv).T
+        D[v, ofull] = -z
+        D[ofull, v] = -z.T
+
+        W = self._so_mp2_lagrangian(D, Gam)
+        return D, Gam, W
+
+    def mp2_relaxed_opdm(self) -> np.ndarray:
+        """Relaxed MP2 one-particle correlation density (``nmo x nmo``): the unrelaxed
+        ``Doo``/``Dvv`` plus the orbital-relaxation blocks from the Z-vector solve. Both the
+        spin-orbital and spin-adapted closed-shell paths are frozen-core aware
+        (:meth:`_so_mp2_relaxed_densities` / :meth:`_mp2_relaxed_densities`)."""
+        if self.orbital_basis == 'spinorbital':
+            D, Gam, W = self._so_mp2_relaxed_densities()
+        else:
+            D, Gam, W, hf = self._mp2_relaxed_densities()
         return D
-
-    def _so_energy_weighted_opdm(self, Ip, z) -> np.ndarray:
-        """Spin-orbital MP2 energy-weighted density ``I_pq`` (the gradient's overlap-
-        derivative weight), from the Lagrangian ``I'`` and the Z-vector (GSB notes):
-
-            I_ij = I'_ij + sum_ak z_ak (<ai||kj> + <aj||ki>),   I_ab = I'_ab,
-            I_ia = I_ai = I'_ia + z_ai eps_i."""
-        o, v = self.o, self.v
-        nmo = self.no + self.nv
-        ERI = np.asarray(self.H.ERI)
-        eps = np.diag(np.asarray(self.H.F))
-        I = np.zeros((nmo, nmo))
-        I[o, o] = (Ip[o, o] + np.einsum('ak,aikj->ij', z, ERI[v, o, o, o])
-                   + np.einsum('ak,ajki->ij', z, ERI[v, o, o, o]))
-        I[v, v] = Ip[v, v]
-        I[o, v] = Ip[o, v] + (z * eps[o][None, :]).T
-        I[v, o] = Ip[o, v].T + z * eps[o][None, :]
-        return I
 
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
@@ -345,12 +368,11 @@ class MPwfn(Wavefunction):
     def _so_gradient(self) -> np.ndarray:
         """Spin-orbital MP2 gradient: the antisymmetrized ``<pq||rs>^X`` from the
         spin-orbital ``self.derivatives.so_*`` (semicanonical gauge), ``f^X = h^X +
-        sum_m <pm||qm>^X``."""
+        sum_m <pm||qm>^X`` with ``m`` over the full occupied space (frozen-core aware;
+        :meth:`_so_mp2_relaxed_densities`)."""
         from .hfwfn import HFwfn
-        o = self.o
-        Doo, Dvv, Gam, Ip, z = self._so_mp2_zvector()
-        D = self.mp2_relaxed_opdm()
-        I = self._so_energy_weighted_opdm(Ip, z)
+        ofull = slice(0, self.o.stop)
+        D, Gam, W = self._so_mp2_relaxed_densities()
 
         d = self.derivatives
         grad = np.zeros((d.natom, 3))
@@ -359,8 +381,8 @@ class MPwfn(Wavefunction):
             Sx = d.so_overlap(atom)
             ERIx = d.so_eri(atom)
             for c in range(3):
-                fx = hx[c] + np.einsum('pmqm->pq', ERIx[c][:, o, :, o])  # skeleton Fock deriv
+                fx = hx[c] + np.einsum('pmqm->pq', ERIx[c][:, ofull, :, ofull])  # Fock deriv (full occ)
                 grad[atom, c] = (np.einsum('pq,pq->', D, fx)
                                  + np.einsum('pqrs,pqrs->', Gam, ERIx[c])
-                                 + np.einsum('pq,pq->', I, Sx[c]))
+                                 + np.einsum('pq,pq->', W, Sx[c]))
         return HFwfn(self.ref).gradient() + grad

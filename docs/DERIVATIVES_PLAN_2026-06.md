@@ -112,7 +112,7 @@ on `MPwfn` (MP2-specific, per the decision above).
 
 ## Status / progress
 
-_Last updated 2026-06-22._
+_Last updated 2026-06-23._
 
 | Phase | Status | Landed |
 |---|---|---|
@@ -121,7 +121,8 @@ _Last updated 2026-06-22._
 | C — **spin-orbital** relaxed density (GSB Lagrangian + Z-vector) | ✅ done | this branch |
 | D — **spin-orbital** gradient assembly (keystone) | ✅ done | this branch |
 | **spin-adapted** (closed-shell RHF) MP2 gradient | ✅ done | merged |
-| **frozen-core** spin-adapted MP2 gradient | ✅ done | `feature/mp2-frozen-core-gradient` |
+| **frozen-core** spin-adapted MP2 gradient | ✅ done | merged (#158) |
+| **full-MO spin-orbital Hamiltonian** + **frozen-core SO MP2 gradient** + triples audit | ✅ done | `feature/spinorbital-fc-gradient` |
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
@@ -178,10 +179,29 @@ gradient vs a **5-point finite difference of PyCC's own frozen-core MP2 energy**
 (the ground-truth oracle -- Psi4's *analytic* frozen-core MP2 gradient is itself inconsistent
 with its *own energy's* finite difference at ~7e-6, so it is not used as the oracle).
 
+**Frozen-core spin-orbital MP2 gradient + full-MO Hamiltonian consistency -- DONE.** The
+spin-orbital Hamiltonian is now built over the **full MO space** (frozen core included),
+mirroring the spatial path: `_init_spinorbital` orders the spin orbitals
+`[a-core, b-core, a-occ, b-occ, a-vir, b-vir]` with `co`/`o`/`v` slices skipping the core
+(`nfzc=0` is byte-identical to before). This gives the spin-orbital gradient its
+core-virtual/core-active response integrals; the recipe (core-active divide, full-occ
+Z-vector with the `z_jc` coupling, `W = I'(D_r)`) then applies **literally** in the
+spin-orbital basis (no spin-adaptation), with the full-occupied orbital Hessian built
+inline. Validated (`test_061`): keystone **SO == spatial** frozen-core gradient to ~1e-16,
+plus the SO relaxed dipole.
+
+The full-MO spin-orbital Hamiltonian exposed a latent **`occ-starts-at-0`** assumption in
+the correlated triples kernels (they indexed the Hamiltonian/perturbation with loop
+variables, e.g. `ERI[j,k,v,v]`, `pert[k,v]`, valid only when the active occupied began at
+index 0). Audited and fixed across the (T), CC3 T-residual/Λ/response, and the `pertbar`
+`[A,T3]` term -- each made relative to the `o`/`v` slices (behavior-preserving for
+`nfzc=0`). Validated: frozen-core UCCSD(T) (`test_005`), frozen-core CC3 energy + Λ
+keystones vs Psi4 (`test_031`), and frozen-core CC3 polarizability vs a finite field of the
+CC3 energy (`test_059`).
+
 Next: the MP2 property path (APT / Hessian) or CC gradients (swap the densities; the
 Z-vector + assembly carry over). Frozen-core CC gradients reuse the same full-occ response
-machinery. The spin-orbital frozen-core gradient remains deferred (its Hamiltonian is
-active-only, so it lacks the core integrals the response needs).
+machinery, now available on both the spatial and spin-orbital paths.
 
 The original spatial Phases A (`MPwfn.cphf` access to the CPHF Z-vector solver) and B (the
 spatial MP2 `Doo`/`Dvv` and `oovv` 2-PDM in the `l2 = 2u` convention) were committed while

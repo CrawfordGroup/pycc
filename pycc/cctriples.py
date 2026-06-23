@@ -782,19 +782,27 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
     no = t1.shape[0]
     Wvvvo = ERI[v,v,v,o]
     Wovoo = ERI[o,v,o,o]
+    # Pre-slice the integrals to the active occupied space, so the (i,j,k,l) loop indices
+    # are relative to it. The spin-orbital Hamiltonian is full-MO (frozen core included);
+    # under frozen core the active occupied does not start at index 0, so the loop indices
+    # must not be used as absolute Hamiltonian indices.
+    Woovv = ERI[o,o,v,v]
+    Wvovv = ERI[v,o,v,v]
+    Wooov = ERI[o,o,o,v]
+    Fov = F[o,v]
 
     for i in range(no):
         for j in range(no):
             for k in range(no):
                 t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                x1[i] += 0.25 * contract('bc,abc->a', ERI[j,k,v,v], t3)
+                x1[i] += 0.25 * contract('bc,abc->a', Woovv[j,k], t3)
                 # Occ-vir Fock term (cf. the CC3 Fme[k] term): nonzero only for a
                 # non-canonical (semicanonical ROHF) reference, where f_kc != 0.
-                x2[i,j] += contract('c,abc->ab', F[k,v], t3)
-                tmp = 0.5 * contract('dbc,abc->ad', ERI[v,k,v,v], t3)
+                x2[i,j] += contract('c,abc->ab', Fov[k], t3)
+                tmp = 0.5 * contract('dbc,abc->ad', Wvovv[:,k], t3)
                 x2[i,j] += tmp - tmp.swapaxes(0,1)
                 for l in range(no):
-                    tmp = 0.5 * contract('c,abc->ab', ERI[j,k,l,v], t3)
+                    tmp = 0.5 * contract('c,abc->ab', Wooov[j,k,l], t3)
                     x2[i,l] -= tmp
                     x2[l,i] += tmp
 

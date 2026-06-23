@@ -84,6 +84,46 @@ def test_cc3_polarizability_zz():
     assert abs(alpha_zz - DALTON_POLAR[2, 2]) < 1e-6
 
 
+def test_cc3_polarizability_zz_frzc():
+    """Frozen-core CC3 static polarizability alpha_zz vs a 5-point finite field of the
+    frozen-core CC3 energy. Validates the frozen-core CC3 *response* triples: with the
+    full-MO spin-orbital Hamiltonian the perturbation operator must be sliced to the active
+    space (``pert[o,v][k]``) before being indexed by occupied loop variables -- otherwise
+    the [A,T3] contribution to Avvoo hits the frozen core. The finite-field oracle is sound
+    here because the field's [V,T3] coupling (T3 solve, store_triples) slices V the same way."""
+    psi4.core.clean()
+    psi4.core.be_quiet()
+    psi4.geometry(H2O)
+    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'mp2_type': 'conv',
+                      'freeze_core': 'true', 'reference': 'rhf',
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'r_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+
+    # analytic static (omega=0) alpha_zz
+    cc = pycc.CCwfn(wfn, model='CC3', orbital_basis='spinorbital', store_triples=True)
+    assert cc.nfzc > 0
+    cc.solve_cc(e_conv=1e-13, r_conv=1e-13)
+    hbar = pycc.cchbar(cc)
+    lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-13, r_conv=1e-13)
+    dens = pycc.ccdensity(cc, lam, onlyone=True)
+    resp = pycc.ccresponse(dens)
+    A = resp.pertbar["MU_Z"]
+    X0, _ = resp.solve_right(A, 0.0)
+    alpha_analytic = -resp.linresp_sym(A, X0, A, X0)
+
+    # finite-field oracle: alpha_zz = -d^2 E_CC3 / dF^2 (store_triples -> [V,T3] coupling)
+    def E(s):
+        kw = dict(model='CC3', orbital_basis='spinorbital', store_triples=True)
+        if s:
+            kw.update(field=True, field_strength=s, field_axis='Z')
+        return pycc.CCwfn(wfn, **kw).solve_cc(e_conv=1e-13, r_conv=1e-13)
+    F = 2e-3
+    e0, ep, e2p, em, e2m = E(0.0), E(F), E(2 * F), E(-F), E(-2 * F)
+    alpha_ff = -(-e2p + 16 * ep - 30 * e0 + 16 * em - e2m) / (12 * F * F)
+
+    assert abs(alpha_analytic - alpha_ff) < 1e-6
+
+
 @pytest.mark.slow
 def test_cc3_polarizability():
     """Spin-orbital CC3 dynamic polarizability (omega=0.1).

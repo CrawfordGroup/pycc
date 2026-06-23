@@ -79,11 +79,11 @@ def test_mp2_relaxed_dipole_ccpvdz():
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
-def _pycc_gradient(geom, basis, orbital_basis='spinorbital'):
+def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
@@ -197,3 +197,23 @@ def test_fc_mp2_gradient_vs_energy_fd_631g():
             e = [_fc_mp2_total_energy((i, c, k * h), basis) for k in (-2, -1, 1, 2)]
             gF[i, c] = (e[0] - 8 * e[1] + 8 * e[2] - e[3]) / (12 * h)
     assert np.max(np.abs(gA - gF)) < 1e-8
+
+
+def test_fc_so_mp2_relaxed_dipole_631g():
+    """Frozen-core relaxed spin-orbital MP2 dipole (mu_z) vs a 5-point finite field of
+    (E_MP2 - E_SCF), H2O/6-31G (C1). Exercises the full-MO spin-orbital Hamiltonian (the
+    frozen core is now kept in H) and the spin-orbital frozen-core relaxed 1-PDM."""
+    geom = WATER + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
+               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+
+
+def test_fc_mp2_gradient_spatial_vs_so_631g():
+    """Keystone: the frozen-core spin-orbital and spin-adapted MP2 gradients agree on a
+    closed shell (H2O/6-31G, C1). Both are the exact derivative of the MP2(fc) energy, so
+    they must match to machine precision -- the cleanest frozen-core validation, and a check
+    that the full-MO spin-orbital Hamiltonian carries the same core response as the spatial
+    path."""
+    geom = WATER + "symmetry c1\n"
+    assert np.max(np.abs(_pycc_gradient(geom, '6-31G', orbital_basis='spatial', freeze_core='true')
+                         - _pycc_gradient(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true'))) < 1e-10
