@@ -267,21 +267,36 @@ class MPwfn(Wavefunction):
     # inside d_x f / d_x <pq||rs>, not in a relaxed density). This is the building block of
     # the analytic MP2 polarizability (the second derivative); for an electric-field
     # perturbation the first derivative is the (negative) correlation dipole, which must
-    # reproduce :meth:`relaxed_dipole`. Spin-orbital path first.
+    # reproduce :meth:`relaxed_dipole`. Spatial closed-shell default; spin-orbital via the
+    # ``_so_`` route (the convention used throughout HFwfn/MPwfn). All-electron.
 
     def _corr_energy_deriv(self, pert) -> float:
         """First derivative of the MP2 correlation energy along ``pert`` (a
         :class:`~pycc.cphf.Perturbation`)::
 
-            dE_corr/dx = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq||rs>
+            dE_corr/dx = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq|rs>
 
         with the unrelaxed correlation 1-PDM ``gamma`` (``Doo``/``Dvv``) and the 2PDM
         ``Gamma`` (``oovv``/``vvoo``), and the explicit derivatives from
-        :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-orbital path only."""
-        if self.orbital_basis != 'spinorbital':
-            raise NotImplementedError(
-                "the explicit-derivative correlation gradient is implemented for the "
-                "spin-orbital path only so far.")
+        :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-adapted (closed-shell
+        RHF) here; the spin-orbital path is :meth:`_so_corr_energy_deriv`."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_corr_energy_deriv(pert)
+        nmo, o, v = self.nmo, self.o, self.v
+        Doo, Dvv = self._mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = self._mp2_cumulant()
+        df = self.cphf.perturbed_fock(pert)
+        deri = self.cphf.perturbed_eri(pert)
+        return (self.contract('pq,pq->', gamma, df)
+                + self.contract('pqrs,pqrs->', Gam, deri))
+
+    def _so_corr_energy_deriv(self, pert) -> float:
+        """Spin-orbital first derivative of the MP2 correlation energy along ``pert`` --
+        the antisymmetrized-integral form of :meth:`_corr_energy_deriv` (unrelaxed
+        ``gamma`` and 2PDM ``Gamma``, with the spin-orbital perturbed derivatives)."""
         nmo, o, v = self.nmo, self.o, self.v
         Doo, Dvv = self._so_mp2_corr_opdm()
         gamma = np.zeros((nmo, nmo))
@@ -298,7 +313,8 @@ class MPwfn(Wavefunction):
         explicit-derivative route -- ``mu_a = -dE_corr/dF_a`` from :meth:`_corr_energy_deriv`
         for the three electric-field perturbations. An independent cross-check of
         :meth:`relaxed_dipole` (same number, computed without the relaxed density / Z-vector)
-        and the validation that the CPHF perturbed-derivative engine is correct."""
+        and the validation that the CPHF perturbed-derivative engine is correct. Basis-aware,
+        all-electron."""
         from .cphf import Perturbation
         return np.array([-self._corr_energy_deriv(Perturbation('field', a))
                          for a in range(3)])
@@ -309,8 +325,8 @@ class MPwfn(Wavefunction):
         :meth:`_corr_energy_deriv` for each nuclear perturbation. The "simple but
         inefficient" form -- one nuclear CPHF solve per perturbation (``3*natom``) and a full
         perturbed-integral build, instead of the single Z-vector of :meth:`gradient`. An
-        independent cross-check of the relaxed-density correlation gradient (:meth:`gradient`,
-        which is now correlation-only). Spin-orbital, all-electron path."""
+        independent cross-check of the relaxed-density correlation gradient (:meth:`gradient`).
+        Basis-aware, all-electron."""
         from .cphf import Perturbation
         natom = self.derivatives.natom
         g = np.zeros((natom, 3))

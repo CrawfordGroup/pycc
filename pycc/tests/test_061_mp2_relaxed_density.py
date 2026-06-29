@@ -85,7 +85,7 @@ def test_mp2_relaxed_dipole_ccpvdz():
 # correlation dipole, and the validation of the perturbed-derivative engine that the
 # analytic MP2 polarizability will build on. Spin-orbital path.
 
-def _pycc_corr_dipole_explicit(geom, basis, freeze_core='false'):
+def _pycc_corr_dipole_explicit(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
     """PyCC relaxed-MP2 correlation mu_z via :meth:`MPwfn._corr_dipole_explicit`."""
     psi4.core.clean()
     psi4.core.clean_options()
@@ -93,7 +93,7 @@ def _pycc_corr_dipole_explicit(geom, basis, freeze_core='false'):
     psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
     return mp._corr_dipole_explicit()[2]
 
@@ -105,52 +105,71 @@ def test_mp2_explicit_corr_dipole_631g():
                - _ff_corr_dipole(geom, '6-31G')) < 1e-8
 
 
+def test_sa_mp2_explicit_corr_dipole_631g():
+    """Explicit-derivative spin-adapted (spatial) MP2 correlation dipole vs the finite
+    field, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial')
+               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+
+
 def test_mp2_explicit_equals_relaxed_631g():
     """Keystone: the explicit-derivative correlation dipole equals the relaxed-density
-    route (same number, computed without the Z-vector / relaxed density), H2O/6-31G."""
+    route (same number, computed without the Z-vector / relaxed density), both bases, H2O/6-31G."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole_explicit(geom, '6-31G')
                - _pycc_corr_dipole(geom, '6-31G')) < 1e-10
+    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial')
+               - _pycc_corr_dipole(geom, '6-31G', orbital_basis='spatial')) < 1e-10
 
 
 def test_mp2_explicit_corr_dipole_ccpvdz():
-    """Explicit-derivative SO MP2 correlation dipole vs finite field, H2O/cc-pVDZ (C2v:
-    polarization functions and A2-irrep MOs)."""
+    """Explicit-derivative MP2 correlation dipole vs finite field, H2O/cc-pVDZ (C2v:
+    polarization functions and A2-irrep MOs), both bases."""
     assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ')
+               - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+    assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ', orbital_basis='spatial')
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
-def _pycc_corr_gradient_explicit_and_relaxed(geom, basis):
-    """SO MP2 correlation nuclear gradient two ways: the explicit-derivative route
-    (`_corr_gradient_explicit`) and the relaxed-density route (`gradient`, which is now
-    correlation-only)."""
+def _pycc_corr_gradient_explicit_and_relaxed(geom, basis, orbital_basis='spinorbital'):
+    """MP2 correlation nuclear gradient two ways: the explicit-derivative route
+    (`_corr_gradient_explicit`) and the relaxed-density route (`gradient`, correlation-only)."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
     psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    g_explicit = mp._corr_gradient_explicit()
-    g_relaxed = mp.gradient()
-    return g_explicit, g_relaxed
+    return mp._corr_gradient_explicit(), mp.gradient()
 
 
 def test_mp2_explicit_corr_gradient_631g():
     """Keystone: the explicit-derivative SO MP2 correlation nuclear gradient equals the
-    relaxed-density route (`MPwfn.gradient` minus the HF gradient), H2O/6-31G (C1) -- the
-    nuclear analog of the field engine, exercising the full skeleton + CPHF response."""
+    relaxed-density route, H2O/6-31G (C1) -- the nuclear analog of the field engine,
+    exercising the full skeleton + CPHF response."""
     geom = WATER + "symmetry c1\n"
     g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(geom, '6-31G')
     assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
 
 
-def test_mp2_explicit_corr_gradient_ccpvdz():
-    """Explicit-derivative SO MP2 correlation gradient == relaxed-density route, H2O/cc-pVDZ
-    (C2v: polarization functions and A2-irrep MOs)."""
-    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ')
+def test_sa_mp2_explicit_corr_gradient_631g():
+    """Keystone: the explicit-derivative spin-adapted (spatial) MP2 correlation gradient
+    equals the relaxed-density route, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(geom, '6-31G', 'spatial')
     assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
+
+
+def test_mp2_explicit_corr_gradient_ccpvdz():
+    """Explicit-derivative MP2 correlation gradient == relaxed-density route, H2O/cc-pVDZ
+    (C2v: polarization functions and A2-irrep MOs), both bases."""
+    g_so_e, g_so_r = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ')
+    assert np.max(np.abs(g_so_e - g_so_r)) < 1e-9
+    g_sa_e, g_sa_r = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ', 'spatial')
+    assert np.max(np.abs(g_sa_e - g_sa_r)) < 1e-9
 
 
 def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
