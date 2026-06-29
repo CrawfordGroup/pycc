@@ -45,7 +45,8 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false'):
 
 
 def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
-    """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted)."""
+    """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted),
+    via the user-API :meth:`MPwfn.relaxed_dipole`."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
@@ -54,8 +55,7 @@ def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='fal
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    D = mp.mp2_relaxed_opdm()
-    return -np.einsum('pq,pq->', D, np.asarray(mp.H.mu[2]))
+    return mp.relaxed_dipole()[2]
 
 
 def test_mp2_relaxed_dipole_631g():

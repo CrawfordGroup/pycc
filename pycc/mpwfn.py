@@ -223,6 +223,23 @@ class MPwfn(Wavefunction):
             D, Gam, W, hf = self._mp2_relaxed_densities()
         return D
 
+    def relaxed_dipole(self) -> np.ndarray:
+        """MP2 correlation contribution to the electronic dipole moment (a.u.), shape
+        ``(3,)`` (x, y, z).
+
+        The relaxed (orbital-response) correlation one-particle density contracted with
+        the MO dipole integrals, ``mu_a^corr = - sum_pq D_pq (mu_a)_pq`` (:meth:`mp2_relaxed_opdm`,
+        ``H.mu``). This is the *correlation* dipole only: the reference (SCF) electronic
+        dipole and the nuclear term are kept separate (and are trivially cheap) -- the total
+        MP2 dipole is the SCF dipole plus this. Basis-aware (the relaxed density dispatches
+        on the orbital basis) and frozen-core aware.
+
+        The field analog of :meth:`HFwfn.polarizability`'s response; validated against a
+        finite field of (E_MP2 - E_SCF)."""
+        D = self.mp2_relaxed_opdm()
+        return np.array([-self.contract('pq,pq->', D, np.asarray(self.H.mu[a]))
+                         for a in range(3)])
+
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
     # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,
