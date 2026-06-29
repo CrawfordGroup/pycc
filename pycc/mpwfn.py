@@ -223,6 +223,141 @@ class MPwfn(Wavefunction):
             D, Gam, W, hf = self._mp2_relaxed_densities()
         return D
 
+    def relaxed_dipole(self) -> np.ndarray:
+        """MP2 correlation contribution to the electronic dipole moment (a.u.), shape
+        ``(3,)`` (x, y, z).
+
+        The relaxed (orbital-response) correlation one-particle density contracted with
+        the MO dipole integrals, ``mu_a^corr = sum_pq D_pq (mu_a)_pq`` (:meth:`mp2_relaxed_opdm`,
+        ``H.mu`` = ``-e r``). This is the *correlation* dipole only: the reference (SCF) dipole
+        is kept separate (:meth:`HFwfn.dipole`) -- the total MP2 dipole is their sum.
+        Basis-aware (the relaxed density dispatches on the orbital basis) and frozen-core aware.
+
+        Validated against a finite field of (E_MP2 - E_SCF)."""
+        D = self.mp2_relaxed_opdm()
+        return np.array([self.contract('pq,pq->', D, np.asarray(self.H.mu[a]))
+                         for a in range(3)])
+
+    # ---- total (reference + correlation) properties ----
+    # MPwfn.gradient/relaxed_dipole are the correlation contributions only; these add the
+    # all-electron SCF reference (HFwfn, frozen_core=False) for the full molecular property.
+
+    def _reference_hf(self):
+        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the
+        reference dipole and gradient for the total MP2 properties."""
+        if getattr(self, '_ref_hf', None) is None:
+            from .hfwfn import HFwfn
+            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
+        return self._ref_hf
+
+    def total_dipole(self) -> np.ndarray:
+        """Total MP2 electric-dipole moment (a.u.), shape ``(3,)``: the SCF reference dipole
+        (:meth:`HFwfn.dipole`) plus the MP2 correlation dipole (:meth:`relaxed_dipole`)."""
+        return self._reference_hf().dipole() + self.relaxed_dipole()
+
+    def total_gradient(self) -> np.ndarray:
+        """Total MP2 analytic nuclear gradient (a.u.), shape ``(natom, 3)``: the SCF reference
+        gradient (:meth:`HFwfn.gradient`) plus the MP2 correlation gradient (:meth:`gradient`)."""
+        return self._reference_hf().gradient() + self.gradient()
+
+    # ---- explicit-derivative property route (notes.pdf) ----
+    # The first derivative of the correlation energy w.r.t. a perturbation, via the
+    # full (CPHF-folded) derivatives of f and <pq||rs> from the shared CPHF engine,
+    # contracted with the *unrelaxed* correlation densities (the orbital relaxation rides
+    # inside d_x f / d_x <pq||rs>, not in a relaxed density). This is the building block of
+    # the analytic MP2 polarizability (the second derivative); for an electric-field
+    # perturbation the first derivative is the (negative) correlation dipole, which must
+    # reproduce :meth:`relaxed_dipole`. Spatial closed-shell default; spin-orbital via the
+    # ``_so_`` route (the convention used throughout HFwfn/MPwfn).
+
+    def _full_occ_cphf(self):
+        """A CPHF over the **full** occupied space (frozen core + active) in this wavefunction's
+        own MO ordering (cached). The explicit-derivative engine needs the orbital response over
+        the full occupied space (core<->active and core-virtual), which ``self.cphf`` (active
+        only) can't supply; building it here -- rather than borrowing an all-electron ``HFwfn``
+        -- keeps the spin-orbital ordering consistent with the densities (the all-electron SO
+        ``HFwfn`` orders the spins differently). For ``nfzc=0`` it coincides with ``self.cphf``."""
+        if getattr(self, '_focphf', None) is None:
+            from .cphf import CPHF
+            self._focphf = CPHF(self, full_occ=True)
+        return self._focphf
+
+    def _corr_energy_deriv(self, pert) -> float:
+        """First derivative of the MP2 correlation energy along ``pert`` (a
+        :class:`~pycc.cphf.Perturbation`)::
+
+            dE_corr/dx = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq|rs>
+
+        with the unrelaxed correlation 1-PDM ``gamma`` (``Doo``/``Dvv``) and the 2PDM
+        ``Gamma`` (``oovv``/``vvoo``), and the explicit derivatives from
+        :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-adapted (closed-shell
+        RHF) here; the spin-orbital path is :meth:`_so_corr_energy_deriv`.
+
+        Frozen-core aware with no rearrangement: the densities stay in the active space
+        (``Doo``/``Dvv``/``Gamma`` placed at the active ``o``/``v`` blocks of full-MO arrays),
+        while the perturbed derivatives are built over the **full occupied space**
+        (:meth:`_full_occ_cphf`) with the core<->active block of ``U`` from ``ncore``. The
+        contraction against the full ``f``/``<pq|rs>`` derivatives carries the core response."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_corr_energy_deriv(pert)
+        nmo, o, v = self.nmo, self.o, self.v
+        Doo, Dvv = self._mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = self._mp2_cumulant()
+        ncore = o.stop - self.no                    # frozen-core orbitals at the front of o
+        cphf = self._full_occ_cphf()
+        df = cphf.perturbed_fock(pert, ncore)
+        deri = cphf.perturbed_eri(pert, ncore)
+        return (self.contract('pq,pq->', gamma, df)
+                + self.contract('pqrs,pqrs->', Gam, deri))
+
+    def _so_corr_energy_deriv(self, pert) -> float:
+        """Spin-orbital first derivative of the MP2 correlation energy along ``pert`` --
+        the antisymmetrized-integral form of :meth:`_corr_energy_deriv` (unrelaxed
+        ``gamma`` and 2PDM ``Gamma``, with the spin-orbital perturbed derivatives over the
+        full occupied space; ``ncore`` = the frozen spin orbitals at the front of ``o``)."""
+        nmo, o, v = self.nmo, self.o, self.v
+        Doo, Dvv = self._so_mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = self._so_mp2_cumulant()
+        ncore = o.stop - self.no                    # frozen-core spin orbitals at the front of o
+        cphf = self._full_occ_cphf()
+        df = cphf.perturbed_fock(pert, ncore)
+        deri = cphf.perturbed_eri(pert, ncore)
+        return (self.contract('pq,pq->', gamma, df)
+                + self.contract('pqrs,pqrs->', Gam, deri))
+
+    def _corr_dipole_explicit(self) -> np.ndarray:
+        """MP2 correlation electronic dipole (a.u.), shape ``(3,)``, via the
+        explicit-derivative route -- ``mu_a = -dE_corr/dF_a`` from :meth:`_corr_energy_deriv`
+        for the three electric-field perturbations. An independent cross-check of
+        :meth:`relaxed_dipole` (same number, computed without the relaxed density / Z-vector)
+        and the validation that the CPHF perturbed-derivative engine is correct. Basis-aware,
+        all-electron."""
+        from .cphf import Perturbation
+        return np.array([-self._corr_energy_deriv(Perturbation('field', a))
+                         for a in range(3)])
+
+    def _corr_gradient_explicit(self) -> np.ndarray:
+        """MP2 correlation contribution to the nuclear gradient (a.u.), shape
+        ``(natom, 3)``, via the explicit-derivative route: ``dE_corr/dX_Ac`` from
+        :meth:`_corr_energy_deriv` for each nuclear perturbation. The "simple but
+        inefficient" form -- one nuclear CPHF solve per perturbation (``3*natom``) and a full
+        perturbed-integral build, instead of the single Z-vector of :meth:`gradient`. An
+        independent cross-check of the relaxed-density correlation gradient (:meth:`gradient`).
+        Basis-aware, all-electron."""
+        from .cphf import Perturbation
+        natom = self.derivatives.natom
+        g = np.zeros((natom, 3))
+        for atom in range(natom):
+            for c in range(3):
+                g[atom, c] = self._corr_energy_deriv(Perturbation('nuclear', (atom, c)))
+        return g
+
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
     # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,
@@ -331,24 +466,25 @@ class MPwfn(Wavefunction):
     # ---- MP2 nuclear gradient ----
 
     def gradient(self) -> np.ndarray:
-        """MP2 analytic nuclear energy gradient (a.u.), shape (natom, 3): the SCF
-        (``HFwfn``) gradient plus the correlation contribution
+        """MP2 **correlation** contribution to the analytic nuclear energy gradient (a.u.),
+        shape (natom, 3)
 
             dE_corr/dX = sum_pq D_pq f^X_pq + sum_pqrs Gamma_pqrs <pq|rs>^X
                          + sum_pq I_pq S^X_pq
 
         with the relaxed 1-PDM ``D``, cumulant 2-PDM ``Gamma``, and energy-weighted density
-        ``W`` (Gauss/Stanton/Bartlett). This is the spin-adapted (closed-shell RHF) path,
-        frozen-core aware: the skeleton derivative integrals come from ``self.derivatives``
-        in the full spatial MO basis (chemist ``(pq|rs)^X``, converted to physicist here),
-        ``f^X = h^X + sum_m L[p,m,q,m]^X`` is the closed-shell skeleton Fock derivative with
-        ``m`` over the full occupied space (core + active), and the relaxed density/orbital
-        response span the full occupied space (:meth:`_mp2_relaxed_densities`). The
-        spin-orbital path is :meth:`_so_gradient`."""
+        ``W`` (Gauss/Stanton/Bartlett). The **reference (SCF) gradient is kept separate** (as
+        for :meth:`relaxed_dipole`): the total MP2 gradient is ``HFwfn(ref).gradient()`` plus
+        this. This is the spin-adapted (closed-shell RHF) path, frozen-core aware: the skeleton
+        derivative integrals come from ``self.derivatives`` in the full spatial MO basis
+        (chemist ``(pq|rs)^X``, converted to physicist here), ``f^X = h^X + sum_m L[p,m,q,m]^X``
+        is the closed-shell skeleton Fock derivative with ``m`` over the full occupied space
+        (core + active), and the relaxed density/orbital response span the full occupied space
+        (:meth:`_mp2_relaxed_densities`). The spin-orbital path is :meth:`_so_gradient`."""
         if self.orbital_basis == 'spinorbital':
             return self._so_gradient()
         ofull = slice(0, self.nfzc + self.no)
-        D, Gam, W, hf = self._mp2_relaxed_densities()
+        D, Gam, W, _ = self._mp2_relaxed_densities()
 
         d = self.derivatives
         grad = np.zeros((d.natom, 3))
@@ -363,14 +499,13 @@ class MPwfn(Wavefunction):
                 grad[atom, c] = (self.contract('pq,pq->', D, fx)
                                  + self.contract('pqrs,pqrs->', Gam, phys)
                                  + self.contract('pq,pq->', W, Sx[c]))
-        return hf.gradient() + grad
+        return grad
 
     def _so_gradient(self) -> np.ndarray:
-        """Spin-orbital MP2 gradient: the antisymmetrized ``<pq||rs>^X`` from the
-        spin-orbital ``self.derivatives.so_*`` (semicanonical gauge), ``f^X = h^X +
-        sum_m <pm||qm>^X`` with ``m`` over the full occupied space (frozen-core aware;
-        :meth:`_so_mp2_relaxed_densities`)."""
-        from .hfwfn import HFwfn
+        """Spin-orbital MP2 **correlation** gradient (the reference gradient kept separate;
+        see :meth:`gradient`): the antisymmetrized ``<pq||rs>^X`` from the spin-orbital
+        ``self.derivatives.so_*`` (semicanonical gauge), ``f^X = h^X + sum_m <pm||qm>^X`` with
+        ``m`` over the full occupied space (frozen-core aware; :meth:`_so_mp2_relaxed_densities`)."""
         ofull = slice(0, self.o.stop)
         D, Gam, W = self._so_mp2_relaxed_densities()
 
@@ -385,4 +520,4 @@ class MPwfn(Wavefunction):
                 grad[atom, c] = (self.contract('pq,pq->', D, fx)
                                  + self.contract('pqrs,pqrs->', Gam, ERIx[c])
                                  + self.contract('pq,pq->', W, Sx[c]))
-        return HFwfn(self.ref).gradient() + grad
+        return grad
