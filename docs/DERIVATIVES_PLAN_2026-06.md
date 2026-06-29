@@ -164,11 +164,14 @@ static (omega=0) electric-dipole correlation polarizability `alpha_corr_ab` (3x3
 computes `alpha_corr`; the reference `alpha_HF` stays in `HFwfn.polarizability()` (effectively
 free), and the total is `alpha_HF + alpha_corr`.
 
-**Approach — explicit ("simple but inefficient") energy derivatives, NOT 2n+1.** The earlier
-2n+1 / Z-vector-interchange plan was dropped in favor of the explicit-derivative formalism in
-`notes.pdf`: rather than separate the orbital response into a Z-vector + relaxed density, fold
-the CPHF coefficients `U^x` directly into the **full** derivatives of the Fock matrix and the
-antisymmetrized two-electron integrals, then contract with the **unrelaxed** densities:
+**Approach — explicit ("simple but inefficient") energy derivatives first.** We build the
+explicit-derivative formalism from `notes.pdf` before the 2n+1 / Z-vector-interchange route.
+The 2n+1 formulation is **not abandoned** — it is deferred until these simpler approaches are
+in place (it remains the efficient long-term target, and the explicit route is a stepping stone
+and a cross-check for it). The explicit route: rather than separate the orbital response into a
+Z-vector + relaxed density, fold the CPHF coefficients `U^x` directly into the **full**
+derivatives of the Fock matrix and the antisymmetrized two-electron integrals, then contract
+with the **unrelaxed** densities:
 
     d_x E_corr = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq||rs>      (notes.pdf)
 
