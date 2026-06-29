@@ -240,6 +240,49 @@ class MPwfn(Wavefunction):
         return np.array([-self.contract('pq,pq->', D, np.asarray(self.H.mu[a]))
                          for a in range(3)])
 
+    # ---- explicit-derivative property route (notes.pdf) ----
+    # The first derivative of the correlation energy w.r.t. a perturbation, via the
+    # full (CPHF-folded) derivatives of f and <pq||rs> from the shared CPHF engine,
+    # contracted with the *unrelaxed* correlation densities (the orbital relaxation rides
+    # inside d_x f / d_x <pq||rs>, not in a relaxed density). This is the building block of
+    # the analytic MP2 polarizability (the second derivative); for an electric-field
+    # perturbation the first derivative is the (negative) correlation dipole, which must
+    # reproduce :meth:`relaxed_dipole`. Spin-orbital path first.
+
+    def _corr_energy_deriv(self, pert) -> float:
+        """First derivative of the MP2 correlation energy along ``pert`` (a
+        :class:`~pycc.cphf.Perturbation`)::
+
+            dE_corr/dx = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq||rs>
+
+        with the unrelaxed correlation 1-PDM ``gamma`` (``Doo``/``Dvv``) and the 2PDM
+        ``Gamma`` (``oovv``/``vvoo``), and the explicit derivatives from
+        :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-orbital path only."""
+        if self.orbital_basis != 'spinorbital':
+            raise NotImplementedError(
+                "the explicit-derivative correlation gradient is implemented for the "
+                "spin-orbital path only so far.")
+        nmo, o, v = self.nmo, self.o, self.v
+        Doo, Dvv = self._so_mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = self._so_mp2_cumulant()
+        df = self.cphf.perturbed_fock(pert)
+        deri = self.cphf.perturbed_eri(pert)
+        return (self.contract('pq,pq->', gamma, df)
+                + self.contract('pqrs,pqrs->', Gam, deri))
+
+    def _corr_dipole_explicit(self) -> np.ndarray:
+        """MP2 correlation electronic dipole (a.u.), shape ``(3,)``, via the
+        explicit-derivative route -- ``mu_a = -dE_corr/dF_a`` from :meth:`_corr_energy_deriv`
+        for the three electric-field perturbations. An independent cross-check of
+        :meth:`relaxed_dipole` (same number, computed without the relaxed density / Z-vector)
+        and the validation that the CPHF perturbed-derivative engine is correct."""
+        from .cphf import Perturbation
+        return np.array([-self._corr_energy_deriv(Perturbation('field', a))
+                         for a in range(3)])
+
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
     # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,
