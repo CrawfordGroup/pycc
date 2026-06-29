@@ -404,37 +404,30 @@ class CPHF(object):
         provider; the unperturbed L is H.L. Validated to ~1e-8 via the dipole-
         derivative / APT-transpose check against finite difference of the SCF dipole.
 
-        The spin-orbital path dispatches to :meth:`_so_build_nuclear`.
+        The skeleton derivatives (including the dominant ``nmo^4`` ERI derivative) come from
+        the unified :meth:`_skeleton` cache, computed once per atom/cart and reused by the
+        explicit perturbed-integral engine. The spin-orbital path dispatches to
+        :meth:`_so_build_nuclear`.
         """
         if self.wfn.orbital_basis == 'spinorbital':
             return self._so_build_nuclear(atom)
-        o, v, no, nv = self.o, self.v, self.no, self.nv
+        o, v = self.o, self.v
         eps_o = self.eps[o]
-        L = np.asarray(self.wfn.H.L)  # spin-adapted, physicist, unperturbed
-
-        d = self.wfn.derivatives
-        Sx = d.overlap(atom)                                   # 3 x (nmo,nmo)
-        hx = d.core(atom)                                      # 3 x (nmo,nmo)
-        gx = [g.swapaxes(1, 2) for g in                        # chemist -> physicist
-              d.eri(atom)]                                     # 3 x (nmo^4) <pq|rs>^X
-
-        Lvooo = L[v, o, o, o]
+        Lvooo = np.asarray(self.wfn.H.L)[v, o, o, o]   # spin-adapted, unperturbed
         B, Foo, Soo = [], [], []
         for c in range(3):
-            Lx = 2.0 * gx[c] - gx[c].swapaxes(2, 3)            # derivative spin-adapted L
-            # skeleton derivative Fock: F^X_pq = h^X + sum_k L[p,k,q,k]^X
-            Fx = hx[c] + self.contract('pkqk->pq', Lx[:, o, :, o])
+            Fx, Sx, _ = self._skeleton(Perturbation('nuclear', (atom, c)))
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the
             # ov block:  -1/2 S^X_kl ( L[a,k,i,l] + L[a,l,i,k] ).
-            coupling = (self.contract('akil,kl->ia', Lvooo, Sx[c][o, o])
-                        + self.contract('alik,kl->ia', Lvooo, Sx[c][o, o]))
+            coupling = (self.contract('akil,kl->ia', Lvooo, Sx[o, o])
+                        + self.contract('alik,kl->ia', Lvooo, Sx[o, o]))
             # The CPHF RHS is minus the first-order off-diagonal ("perturbation")
             # Fock that the response drives to zero -- B = -Q (nuclear analog of the
             # field's B = -mu).
-            Q = Fx[o, v] - eps_o[:, None] * Sx[c][o, v] - 0.5 * coupling
+            Q = Fx[o, v] - eps_o[:, None] * Sx[o, v] - 0.5 * coupling
             B.append(-Q)
             Foo.append(Fx[o, o])
-            Soo.append(Sx[c][o, o])
+            Soo.append(Sx[o, o])
         return B, Foo, Soo
 
     def _so_build_nuclear(self, atom: int):
