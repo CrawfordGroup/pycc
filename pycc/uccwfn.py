@@ -27668,20 +27668,21 @@ class UCCWfn:
 
     def compute_onepdm(self, t_vo, t_vvoo, tdag_vo, tdag_vvoo):
         """
-        Compute the UCC one-particle density matrix (correlation part only).
+        Compute the UCC one-particle density matrix (bubble-corrected, correlation only).
+
+        Includes the disconnected norm (bubble) diagrams that restore exact
+        Hermiticity at consistent BCH truncation order.
 
         Parameters
         ----------
         t_vo      : ndarray (nv, no)           T1 in Ajay convention
         t_vvoo    : ndarray (nv, nv, no, no)   T2 in Ajay convention
-        tdag_vo   : ndarray (nv, no)           pre-conjugated T1† (from _prep_tdag)
-        tdag_vvoo : ndarray (nv, nv, no, no)   pre-conjugated T2† (from _prep_tdag)
+        tdag_vo   : ndarray (nv, no)           pre-conjugated T1†
+        tdag_vvoo : ndarray (nv, nv, no, no)   pre-conjugated T2†
 
         Returns
         -------
-        opdm : ndarray (nmo, nmo)
-            Correlation 1-RDM in MO basis [occ | virt].
-            Blocks: D_oo (no,no), D_vv (nv,nv), D_vo (nv,no), D_vo.T (no,nv).
+        opdm : ndarray (nmo, nmo)  correlation 1-RDM, Hermitian by construction.
         """
         nocc  = self.no
         nvirt = self.nv
@@ -27690,597 +27691,50 @@ class UCCWfn:
         t_dag_oovv_fn = lambda: self._contract('abic->icab', tdag_vvoo)
         t_dag_ov_fn   = lambda: self._contract('ai->ia',     tdag_vo)
 
-        # 1-RDM occ-occ block
+        # D_oo  (no, no)
+        D_oo = np.zeros((nocc, nocc), dtype=complex, order='F')
 
-        D_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_oo += self._contract('ai,ab->ib', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_oo += 2 * self._contract('ai,ab->ib', I_vo, t_vo)
-        del I_vo
         t_dag_ov = t_dag_ov_fn()
         D_oo += -2 * self._contract('ia,ab->ib', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        D_oo += -2 * self._contract('ai,ba->bi', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ba->ci', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_oo += self._contract('ai,ab->ib', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ba->ci', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_oo += -1/2 * self._contract('ai,ab->ib', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ba->ci', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_oo += -1 * self._contract('ai,ab->ib', I_vo, t_vo)
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_oo += -2 * self._contract('ai,ab->ib', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        D_oo += self._contract('ai,ba->bi', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
+
         t_dag_oovv = t_dag_oovv_fn()
         D_oo += -4 * self._contract('iabc,bcda->id', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
+
         t_dag_oovv = t_dag_oovv_fn()
         D_oo += 2 * self._contract('iabc,cbda->id', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
 
-        # ======================================================================
-        # 1-RDM vir-vir block
-        # ======================================================================
+        # D_vv  (nv, nv)
+        D_vv = np.zeros((nvirt, nvirt), dtype=complex, order='F')
 
-        D_vv = np.zeros((nvirt, nvirt), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vv += 1/2 * self._contract('ai,bi->ba', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
         t_dag_oovv = t_dag_oovv_fn()
         D_vv += -2 * self._contract('iabc,dcai->db', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vv += self._contract('ai,bi->ba', I_vo, t_vo)
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vv += -1 * self._contract('ai,bi->ba', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vv += 2 * self._contract('ai,bi->ba', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        D_vv += 2 * self._contract('ai,ib->ab', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vv += -2 * self._contract('ai,bi->ba', I_vo, t_vo)
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ca->bi', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I2_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vv += -1 * self._contract('ai,bi->ba', I_vo, I2_vo)
-        del I2_vo
-        del I_vo
-        t_dag_ov = t_dag_ov_fn()
-        D_vv += 2 * self._contract('ia,bi->ba', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        D_vv += -1 * self._contract('ai,ib->ab', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
+
         t_dag_oovv = t_dag_oovv_fn()
         D_vv += 4 * self._contract('iabc,dcia->db', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
 
-        # ======================================================================
-        # 1-RDM occ-vir block
-        # ======================================================================
+        t_dag_ov = t_dag_ov_fn()
+        D_vv += 2 * self._contract('ia,bi->ba', t_dag_ov, t_vo)
 
-        D_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('ai,bcda->dibc', I_vo, t_dag_oovv)
-        del t_dag_oovv
-        del I_vo
-        D_vo += -2 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vooo += self._contract('ia,bacd->bicd', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oooo = np.zeros((nocc, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oooo += self._contract('iabc,cbde->deia', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -2 * self._contract('aibc,dibc->ad', I_vooo, I_oooo)
-        del I_oooo
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,bacd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdae->eidc', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += -2 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,bacd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdae->eicd', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,abcd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdea->eicd', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,abcd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdea->eidc', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += -2 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,abcd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdae->eidc', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,abcd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdae->eicd', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += -8 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,bacd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdea->eidc', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I2_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I2_vooo += self._contract('ia,bacd->bcdi', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('aibc,bdea->eicd', I2_vooo, t_dag_oovv)
-        del t_dag_oovv
-        del I2_vooo
-        D_vo += -2 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vooo += self._contract('ia,bacd->bicd', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oooo = np.zeros((nocc, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oooo += self._contract('iabc,bcde->deia', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 4 * self._contract('aibc,dibc->ad', I_vooo, I_oooo)
-        del I_oooo
-        del I_vooo
-        Z = 0.0
-        t_dag_ov = t_dag_ov_fn()
-        Z += self._contract('ia,ai->', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vo += -1 * Z * self._contract('ai->ai', I_vo)
-        del I_vo
-        del Z
-        Z = 0.0
-        t_dag_ov = t_dag_ov_fn()
-        Z += self._contract('ia,ai->', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vo += 2 * Z * self._contract('ai->ai', I_vo)
-        del I_vo
-        del Z
-        Z = 0.0
-        t_dag_ov = t_dag_ov_fn()
-        Z += self._contract('ia,ai->', t_dag_ov, t_vo)
-        del t_dag_ov
-        D_vo += -2 * Z * self._contract('ai->ai', t_vo)
-        del Z
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('ai,bcad->dibc', I_vo, t_dag_oovv)
-        del t_dag_oovv
-        del I_vo
-        D_vo += -8 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('ai,bcda->dibc', I_vo, t_dag_oovv)
-        del t_dag_oovv
-        del I_vo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,bcdi->da', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 4 * self._contract('ai,bi->ab', I_vo, I_oo)
-        del I_oo
-        del I_vo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,cbda->di', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 2 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,bcdi->da', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -2 * self._contract('ai,bi->ab', I_vo, I_oo)
-        del I_oo
-        del I_vo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        I_oo += self._contract('ai,ba->ib', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
-        D_vo += -4 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
+        # D_vo  (nv, no)
+        D_vo = np.zeros((nvirt, nocc), dtype=complex, order='F')
+
         t_dag_ov = t_dag_ov_fn()
         D_vo += 2 * self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,bcia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 2 * Z * self._contract('ai->ai', I_vo)
-        del Z
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,bcia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -1 * Z * self._contract('ai->ai', I_vo)
-        del Z
-        del I_vo
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,bcia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -2 * Z * self._contract('ai->ai', t_vo)
-        del Z
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_oo += self._contract('ia,ab->bi', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vo += -4 * self._contract('ia,ba->bi', I_oo, I_vo)
-        del I_vo
-        del I_oo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,cbdi->da', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -8 * self._contract('ai,bi->ab', I_vo, I_oo)
-        del I_oo
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,cbia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -1 * Z * self._contract('ai->ai', I_vo)
-        del Z
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,cbia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 1/2 * Z * self._contract('ai->ai', I_vo)
-        del Z
-        del I_vo
-        Z = 0.0
-        t_dag_oovv = t_dag_oovv_fn()
-        Z += self._contract('iabc,cbia->', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += Z * self._contract('ai->ai', t_vo)
-        del Z
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_oo += self._contract('ia,ab->bi', t_dag_ov, t_vo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        D_vo += 2 * self._contract('ia,ba->bi', I_oo, I_vo)
-        del I_vo
-        del I_oo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_oo += self._contract('ia,ab->bi', t_dag_ov, t_vo)
-        del t_dag_ov
-        D_vo += -2 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('ai,bcad->dibc', I_vo, t_dag_oovv)
-        del t_dag_oovv
-        del I_vo
-        D_vo += 4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,cbdi->da', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += 4 * self._contract('ai,bi->ab', I_vo, I_oo)
-        del I_oo
-        del I_vo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_oo += self._contract('iabc,bcda->di', t_dag_oovv, t_vvoo)
-        del t_dag_oovv
-        D_vo += -4 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_ov = t_dag_ov_fn()
-        I_vo += self._contract('ia,abci->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        t_dag_ov = t_dag_ov_fn()
-        I_oo += self._contract('ai,ba->ib', I_vo, t_dag_ov)
-        del t_dag_ov
-        del I_vo
-        D_vo += 2 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
+
         t_dag_ov = t_dag_ov_fn()
         D_vo += -1 * self._contract('ia,baic->bc', t_dag_ov, t_vvoo)
-        del t_dag_ov
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,bi->ca', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += -4 * self._contract('ai,baci->bc', I_vo, t_vvoo)
-        del I_vo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,bi->ca', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += 2 * self._contract('ai,baic->bc', I_vo, t_vvoo)
-        del I_vo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,bi->ca', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I_oo += self._contract('ai,ab->bi', I_vo, t_vo)
-        del I_vo
-        D_vo += 2 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += 2 * self._contract('ai,baci->bc', I_vo, t_vvoo)
-        del I_vo
-        I_oo = np.zeros((nocc, nocc), order='F', dtype=complex)
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        I_oo += self._contract('ai,ab->bi', I_vo, t_vo)
-        del I_vo
-        D_vo += -1 * self._contract('ia,ba->bi', I_oo, t_vo)
-        del I_oo
-        I_vo = np.zeros((nvirt, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vo += self._contract('iabc,ci->ba', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += -1 * self._contract('ai,baic->bc', I_vo, t_vvoo)
-        del I_vo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('iabc,bd->cdia', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += -4 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
-        I_vooo = np.zeros((nvirt, nocc, nocc, nocc), order='F', dtype=complex)
-        t_dag_oovv = t_dag_oovv_fn()
-        I_vooo += self._contract('iabc,cd->bdia', t_dag_oovv, t_vo)
-        del t_dag_oovv
-        D_vo += 2 * self._contract('aibc,dabc->di', I_vooo, t_vvoo)
-        del I_vooo
+
         D_vo += 2 * self._contract('ai->ai', t_vo)
 
+        # Assemble full opdm — correlation only, Hermitian by construction
         opdm = np.zeros((nmo, nmo), dtype=complex)
         o = slice(0, nocc)
         v = slice(nocc, nmo)
 
-        opdm[o, o] = D_oo          # (no, no)
-        opdm[v, v] = D_vv          # (nv, nv)
-        opdm[v, o] = D_vo          # (nv, no)
-        opdm[o, v] = D_vo.conj().T # (no, nv)  exact Hermitian conjugate
+        opdm[o, o] = D_oo
+        opdm[v, v] = D_vv
+        opdm[v, o] = D_vo
+        opdm[o, v] = D_vo.conj().T
 
         return opdm
 
