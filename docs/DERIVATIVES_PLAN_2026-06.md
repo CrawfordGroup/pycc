@@ -197,18 +197,26 @@ the engine is purely a `U`-rotation; `nuclear`/`magnetic` add their (nonzero) sk
 into the same assembly later. `MPwfn` holds a persistent `CPHF` so the caches survive across
 property calls.
 
-**Status — first derivative DONE (field + nuclear, both bases, all-electron).**
+**Status — first derivative DONE (field + nuclear, both bases, all-electron AND frozen-core).**
 `MPwfn._corr_energy_deriv(pert)` contracts the engine with `gamma` (`Doo`/`Dvv`) and `Gamma`
 (the 2PDM); the field case gives the (negative) correlation dipole (`_corr_dipole_explicit`),
 the nuclear case the correlation gradient (`_corr_gradient_explicit`). Both the spatial
 closed-shell (default) and spin-orbital (`_so_` route) paths are implemented; the perturbed
 Fock's two-electron weight switches L (spatial) / `<pq||rs>` (SO), and `perturbed_eri` rotates
-`H.ERI` (already the right integral per basis). Validated (`test_061`): explicit ==
-relaxed-density route to ~1e-16 and the finite field to <1e-8 (6-31G C1, cc-pVDZ C2v). Both
-nuclear CPHF paths now source skeleton derivatives from one `_skeleton` cache.
+`H.ERI` (already the right integral per basis).
 
-Next: **frozen-core** versions (both bases), then the **analytic second derivative** (the
-polarizability; its term structure to be written up here before coding).
+Frozen core needs no rearrangement of the contraction: the densities stay active, and the
+engine runs over the **full** occupied space via a `CPHF` `full_occ` view on `MPwfn`
+(`_full_occ_cphf`, kept in `MPwfn`'s own ordering so SO doesn't have to borrow a differently-
+ordered all-electron SO `HFwfn`). The only extra ingredient is the non-redundant
+**core<->active block of `U`**, set by the canonical Brillouin condition `d_x f_ij = 0` (a
+direct divide; `_full_U`'s `ncore` argument), with the redundant blocks left at `-1/2 S^x`.
+
+Validated (`test_061`): explicit == relaxed-density route to ~1e-16 for all four cases
+(spatial/SO x all-electron/frozen-core), and the finite field to <1e-8 (6-31G C1, cc-pVDZ C2v).
+
+Next: the **analytic second derivative** (the polarizability; its term structure to be written
+up here before coding).
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
