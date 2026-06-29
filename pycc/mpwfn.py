@@ -279,7 +279,13 @@ class MPwfn(Wavefunction):
         with the unrelaxed correlation 1-PDM ``gamma`` (``Doo``/``Dvv``) and the 2PDM
         ``Gamma`` (``oovv``/``vvoo``), and the explicit derivatives from
         :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-adapted (closed-shell
-        RHF) here; the spin-orbital path is :meth:`_so_corr_energy_deriv`."""
+        RHF) here; the spin-orbital path is :meth:`_so_corr_energy_deriv`.
+
+        Frozen-core aware with no rearrangement: the densities stay in the active space
+        (``Doo``/``Dvv``/``Gamma`` placed at the active ``o``/``v`` blocks of full-MO arrays),
+        while the perturbed derivatives are built over the **full occupied space** by the
+        all-electron reference CPHF (:meth:`_reference_hf`). The final contraction against the
+        full ``f``/``<pq|rs>`` derivatives then carries the core response automatically."""
         if self.orbital_basis == 'spinorbital':
             return self._so_corr_energy_deriv(pert)
         nmo, o, v = self.nmo, self.o, self.v
@@ -288,8 +294,9 @@ class MPwfn(Wavefunction):
         gamma[o, o] = np.asarray(Doo)
         gamma[v, v] = np.asarray(Dvv)
         Gam = self._mp2_cumulant()
-        df = self.cphf.perturbed_fock(pert)
-        deri = self.cphf.perturbed_eri(pert)
+        cphf = self._reference_hf().cphf            # full-occupied (all-electron) CPHF
+        df = cphf.perturbed_fock(pert, self.nfzc)
+        deri = cphf.perturbed_eri(pert, self.nfzc)
         return (self.contract('pq,pq->', gamma, df)
                 + self.contract('pqrs,pqrs->', Gam, deri))
 

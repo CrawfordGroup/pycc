@@ -261,7 +261,7 @@ class CPHF(object):
             return self.solve_nuclear(atom)[cart]
         raise NotImplementedError("ov response wired for 'field'/'nuclear' only.")
 
-    def _full_U(self, pert: "Perturbation") -> np.ndarray:
+    def _full_U(self, pert: "Perturbation", ncore: int = 0) -> np.ndarray:
         """The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 
         The matrix element ``U_qp = <phi_q|d phi_p/dx>`` (the coefficient of orbital ``q`` in
@@ -270,18 +270,46 @@ class CPHF(object):
         derivative, ``U_ij = -1/2 S^x_ij`` and ``U_ab = -1/2 S^x_ab``; the CPHF solve gives the
         occupied response ``Uia[i,a] = <phi_a|d phi_i> = U_ai`` (so ``U[v,o] = Uia.T``), and
         orthonormality ``U_pq + U_qp = -S^x_pq`` fixes ``U[o,v] = -S^x[o,v] - Uia``. For an
-        electric field ``S^x = 0``, so the oo/vv blocks vanish and ``U[o,v] = -Uia``."""
+        electric field ``S^x = 0``, so the oo/vv blocks vanish and ``U[o,v] = -Uia``.
+
+        ``ncore > 0`` (frozen-core correlated derivatives): the lowest ``ncore`` occupied
+        orbitals are the frozen core. Core<->active-occupied rotations are non-redundant (they
+        move the frozen/active partition), so that block is *not* left at the orthonormality
+        value but determined by the canonical Brillouin condition ``d_x f_ij = 0`` -- a direct
+        divide by ``(eps_i - eps_j)``, using the already-solved ov response. The redundant
+        core-core, active-active, and vir-vir blocks stay at ``-1/2 S^x``."""
         o, v, nmo = self.o, self.v, self.wfn.nmo
-        _, Sx, _ = self._skeleton(pert)
+        fx, Sx, _ = self._skeleton(pert)
         Uia = self._ov_response(pert)                       # (no, nv): U_ai = <phi_a|d phi_i>
         U = np.zeros((nmo, nmo))
         U[o, o] = -0.5 * Sx[o, o]
         U[v, v] = -0.5 * Sx[v, v]
         U[v, o] = Uia.T
         U[o, v] = -Sx[o, v] - Uia
+        if ncore:
+            # Core <-> active-occupied block from d_x f_ij = 0 (i core, j active), with
+            # U_ji = -S^x_ij - U_ij eliminated:
+            #   U_ij = -[ f^x_ij - S^x_ij eps_j - 1/2 sum_nm S^x_nm A_injm
+            #             + sum_cm U_cm A_icjm ] / (eps_i - eps_j),
+            # A_pqrs = w[p,q,r,s] + w[p,s,r,q] with w the orbital-Hessian weight.
+            W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
+                 else np.asarray(self.wfn.H.L))
+            eps = self.eps
+            co = slice(o.start, o.start + ncore)            # frozen core
+            ao = slice(o.start + ncore, o.stop)             # active occupied
+            Soo = Sx[o, o]
+            Uvo = U[v, o]
+            Sterm = 0.5 * (self.contract('nm,injm->ij', Soo, W[co, o, ao, o])
+                           + self.contract('nm,imjn->ij', Soo, W[co, o, ao, o]))
+            Uterm = (self.contract('cm,icjm->ij', Uvo, W[co, v, ao, o])
+                     + self.contract('cm,imjc->ij', Uvo, W[co, o, ao, v]))
+            num = fx[co, ao] - Sx[co, ao] * eps[ao][None, :] - Sterm + Uterm
+            Uca = -num / (eps[co][:, None] - eps[ao][None, :])
+            U[co, ao] = Uca
+            U[ao, co] = -(Sx[co, ao] + Uca).T
         return U
 
-    def perturbed_fock(self, pert: "Perturbation") -> np.ndarray:
+    def perturbed_fock(self, pert: "Perturbation", ncore: int = 0) -> np.ndarray:
         """Full first derivative of the MO Fock matrix ``d_x f_pq`` (``nmo x nmo``) for
         ``pert``, with the CPHF response folded in (notes.pdf)::
 
@@ -292,16 +320,18 @@ class CPHF(object):
         (``w`` = the spin-adapted ``L`` on the spatial path, the antisymmetrized ``<pq||rs>``
         on the spin-orbital path), ``n,m`` over occupied and ``c`` over virtual. The skeleton
         ``f^(x)``/``S^x`` come from :meth:`_skeleton`; for an electric field ``S^x = 0`` so the
-        ``S^x`` term drops. Cached per ``pert``."""
-        if pert in self._dfock:
-            return self._dfock[pert]
+        ``S^x`` term drops. ``ncore`` selects the frozen-core core<->active response in ``U``
+        (see :meth:`_full_U`). Cached per ``(pert, ncore)``."""
+        key = (pert, ncore)
+        if key in self._dfock:
+            return self._dfock[key]
         o, v = self.o, self.v
         eps = self.eps
         # Orbital-Hessian two-electron weight: spin-adapted L (spatial) / <pq||rs> (SO).
         W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
              else np.asarray(self.wfn.H.L))
         fx, Sx, _ = self._skeleton(pert)
-        U = self._full_U(pert)
+        U = self._full_U(pert, ncore)
         df = fx + U * eps[:, None] + U.T * eps[None, :]     # f^(x) + U_pq f_pp + U_qp f_qq
         # - 1/2 sum_nm(occ) S^x_nm ( w[p,n,q,m] + w[p,m,q,n] )
         Soo = Sx[o, o]
@@ -311,10 +341,10 @@ class CPHF(object):
         Uvo = U[v, o]
         df = df + (self.contract('cm,pcqm->pq', Uvo, W[:, v, :, o])
                    + self.contract('cm,pmqc->pq', Uvo, W[:, o, :, v]))
-        self._dfock[pert] = df
+        self._dfock[key] = df
         return df
 
-    def perturbed_eri(self, pert: "Perturbation", blocks=None) -> np.ndarray:
+    def perturbed_eri(self, pert: "Perturbation", ncore: int = 0, blocks=None) -> np.ndarray:
         """Full first derivative of the MO two-electron integrals ``d_x <pq|rs>`` for ``pert``
         (notes.pdf)::
 
@@ -325,21 +355,24 @@ class CPHF(object):
         in the basis's integral convention: the plain physicist ``<pq|rs>`` (= ``H.ERI``) on
         the spatial path, the antisymmetrized ``<pq||rs>`` (= ``H.ERI``) on the spin-orbital
         path -- so the same rotation of ``H.ERI`` serves both. The skeleton ``<pq|rs>^(x)``
-        comes from :meth:`_skeleton` (zero for an electric field). The full ``nmo^4`` tensor is
-        built and cached per ``pert`` (geometry-bound, shared across properties). ``blocks`` is
-        an optional 4-tuple of block labels ('o'/'v'/'all'), e.g. ``('o','o','v','v')`` for the
-        MP2 2PDM; the **default returns the full tensor** (CC consumers need the other blocks)."""
-        full = self._deri.get(pert)
+        comes from :meth:`_skeleton` (zero for an electric field). ``ncore`` selects the
+        frozen-core core<->active response in ``U`` (see :meth:`_full_U`). The full ``nmo^4``
+        tensor is built and cached per ``(pert, ncore)`` (geometry-bound, shared across
+        properties). ``blocks`` is an optional 4-tuple of block labels ('o'/'v'/'all'), e.g.
+        ``('o','o','v','v')`` for the MP2 2PDM; the **default returns the full tensor** (CC
+        consumers need the other blocks)."""
+        key = (pert, ncore)
+        full = self._deri.get(key)
         if full is None:
             ERI = np.asarray(self.wfn.H.ERI)
             _, _, gx = self._skeleton(pert)
-            U = self._full_U(pert)
+            U = self._full_U(pert, ncore)
             full = (gx
                     + self.contract('tp,tqrs->pqrs', U, ERI)
                     + self.contract('tq,ptrs->pqrs', U, ERI)
                     + self.contract('tr,pqts->pqrs', U, ERI)
                     + self.contract('ts,pqrt->pqrs', U, ERI))
-            self._deri[pert] = full
+            self._deri[key] = full
         if blocks is None:
             return full
         sl = tuple({'o': self.o, 'v': self.v}.get(b, slice(None)) for b in blocks)

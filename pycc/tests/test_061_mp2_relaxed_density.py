@@ -132,13 +132,14 @@ def test_mp2_explicit_corr_dipole_ccpvdz():
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
-def _pycc_corr_gradient_explicit_and_relaxed(geom, basis, orbital_basis='spinorbital'):
+def _pycc_corr_gradient_explicit_and_relaxed(geom, basis, orbital_basis='spinorbital',
+                                             freeze_core='false'):
     """MP2 correlation nuclear gradient two ways: the explicit-derivative route
     (`_corr_gradient_explicit`) and the relaxed-density route (`gradient`, correlation-only)."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'false',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
@@ -170,6 +171,24 @@ def test_mp2_explicit_corr_gradient_ccpvdz():
     assert np.max(np.abs(g_so_e - g_so_r)) < 1e-9
     g_sa_e, g_sa_r = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ', 'spatial')
     assert np.max(np.abs(g_sa_e - g_sa_r)) < 1e-9
+
+
+def test_fc_sa_mp2_explicit_corr_dipole_631g():
+    """Frozen-core spin-adapted (spatial) explicit-derivative MP2 correlation dipole vs the
+    finite field of (E_MP2 - E_SCF), H2O/6-31G (C1) -- the core<->active orbital response (the
+    canonical d_x f_ij = 0 block of U) is what the explicit route needs for frozen core."""
+    geom = WATER + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial', freeze_core='true')
+               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+
+
+def test_fc_sa_mp2_explicit_corr_gradient_631g():
+    """Keystone: frozen-core spin-adapted explicit-derivative MP2 correlation gradient ==
+    relaxed-density route, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(
+        geom, '6-31G', orbital_basis='spatial', freeze_core='true')
+    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
 
 
 def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
