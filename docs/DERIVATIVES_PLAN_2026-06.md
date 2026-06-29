@@ -197,14 +197,18 @@ the engine is purely a `U`-rotation; `nuclear`/`magnetic` add their (nonzero) sk
 into the same assembly later. `MPwfn` holds a persistent `CPHF` so the caches survive across
 property calls.
 
-**Status — first derivative DONE (field, SO).** `MPwfn._corr_energy_deriv(pert)` contracts the
-engine with `gamma` (`Doo`/`Dvv`) and `Gamma` (the 2PDM); for the field this is the (negative)
-correlation dipole, exposed as `_corr_dipole_explicit()`. Validated (`test_061`):
-`_corr_dipole_explicit` == `relaxed_dipole` (the relaxed-density route) to ~1e-16, and ==
-the finite field of `E_MP2 - E_SCF` to <1e-8 (H2O/6-31G C1 and cc-pVDZ C2v). This is the
-first-derivative foundation; the **analytic second derivative (the polarizability) is next**
-(its detailed term structure to be written up here before coding). Spatial closed-shell and
-frozen-core paths follow the SO field path.
+**Status — first derivative DONE (field + nuclear, both bases, all-electron).**
+`MPwfn._corr_energy_deriv(pert)` contracts the engine with `gamma` (`Doo`/`Dvv`) and `Gamma`
+(the 2PDM); the field case gives the (negative) correlation dipole (`_corr_dipole_explicit`),
+the nuclear case the correlation gradient (`_corr_gradient_explicit`). Both the spatial
+closed-shell (default) and spin-orbital (`_so_` route) paths are implemented; the perturbed
+Fock's two-electron weight switches L (spatial) / `<pq||rs>` (SO), and `perturbed_eri` rotates
+`H.ERI` (already the right integral per basis). Validated (`test_061`): explicit ==
+relaxed-density route to ~1e-16 and the finite field to <1e-8 (6-31G C1, cc-pVDZ C2v). Both
+nuclear CPHF paths now source skeleton derivatives from one `_skeleton` cache.
+
+Next: **frozen-core** versions (both bases), then the **analytic second derivative** (the
+polarizability; its term structure to be written up here before coding).
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
