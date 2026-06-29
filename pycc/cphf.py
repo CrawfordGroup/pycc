@@ -112,6 +112,7 @@ class CPHF(object):
         # inefficient" explicit form), persisting for the life of this CPHF object so that
         # multiple property calculations on one wavefunction share them.
         self._U_field: dict = {}  # axis -> (no, nv) electric-field response U^a
+        self._skel: dict = {}     # Perturbation -> (fx, Sx, gx) skeleton derivatives
         self._dfock: dict = {}    # Perturbation -> (nmo, nmo) full perturbed Fock deriv
         self._deri: dict = {}     # Perturbation -> (nmo^4) full perturbed <pq||rs> deriv
 
@@ -203,28 +204,72 @@ class CPHF(object):
     # response into a Z-vector + relaxed density, fold the CPHF coefficients ``U^x``
     # directly into the full derivatives of the Fock matrix and the antisymmetrized
     # two-electron integrals, then contract with the (unrelaxed) densities. These are the
-    # building blocks of the correlated field properties (dipole now; polarizability next)
-    # and, later, of the nuclear gradient/Hessian. Spin-orbital path first.
+    # building blocks of the correlated properties -- the field dipole/polarizability and
+    # the nuclear gradient. Spin-orbital path first. Each perturbation differs only in its
+    # *skeleton* derivatives and its ov CPHF response; the assembly below is shared.
+
+    def _skeleton(self, pert: "Perturbation"):
+        """Skeleton (fixed-MO-coefficient) derivatives for ``pert``: a triple
+        ``(fx, Sx, gx)`` of the skeleton Fock derivative ``f^(x)_pq`` (``nmo x nmo``), the
+        overlap derivative ``S^x_pq`` (``nmo x nmo``), and the antisymmetrized two-electron
+        derivative ``<pq||rs>^(x)`` (``nmo^4``), cached per ``pert``.
+
+        - **field**: the basis functions do not move, so ``S^x = 0`` and ``<pq||rs>^(x) = 0``;
+          the skeleton Fock derivative is the explicit one-electron operator ``f^(x) = mu``
+          (sign consistent with ``rhs_field``'s ``B = -mu``).
+        - **nuclear** (``comp = (atom, cart)``): the skeleton derivative integrals come from
+          the (spin-orbital) ``Derivatives`` provider; the skeleton Fock derivative is
+          ``f^(x)_pq = h^(x)_pq + sum_k(occ) <pk||qk>^(x)``."""
+        if pert in self._skel:
+            return self._skel[pert]
+        nmo, o = self.wfn.nmo, self.o
+        if pert.kind == 'field':
+            fx = np.asarray(self.wfn.H.mu[pert.comp])
+            Sx = np.zeros((nmo, nmo))
+            gx = 0.0                                         # no skeleton 2e deriv (field)
+        elif pert.kind == 'nuclear':
+            atom, cart = pert.comp
+            d = self.wfn.derivatives
+            hx = np.asarray(d.so_core(atom)[cart])
+            Sx = np.asarray(d.so_overlap(atom)[cart])
+            gx = np.asarray(d.so_eri(atom)[cart])           # antisymmetrized <pq||rs>^(x)
+            fx = hx + self.contract('pkqk->pq', gx[:, o, :, o])  # skeleton Fock derivative
+        else:
+            raise NotImplementedError(
+                "explicit perturbed derivatives are wired for 'field' and 'nuclear' only; "
+                "'magnetic' uses the same machinery but is not yet built.")
+        self._skel[pert] = (fx, Sx, gx)
+        return self._skel[pert]
+
+    def _ov_response(self, pert: "Perturbation") -> np.ndarray:
+        """The independent ov CPHF response ``U_ai`` (``(no, nv)``, indexed ``[i, a]``) for
+        ``pert`` -- ``solve_field`` for the electric field, the cached ``solve_nuclear`` for
+        a nuclear displacement."""
+        if pert.kind == 'field':
+            return self.solve_field(pert.comp)
+        if pert.kind == 'nuclear':
+            atom, cart = pert.comp
+            return self.solve_nuclear(atom)[cart]
+        raise NotImplementedError("ov response wired for 'field'/'nuclear' only.")
 
     def _full_U(self, pert: "Perturbation") -> np.ndarray:
         """The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 
-        The matrix element ``U_qp = <phi_q|d phi_p/dx>`` (the coefficient of orbital ``q``
-        in the first-order change of orbital ``p``, as it enters the integral derivatives).
-        The CPHF solve returns the occupied response ``Uia[i,a] = <phi_a|d phi_i> = U_ai``,
-        so the virtual-occupied block is ``U[v,o] = Uia.T``. For an electric field the basis
-        functions do not move (``S^x = 0``): the occupied-occupied and virtual-virtual blocks
-        vanish (``U_ij = U_ab = -1/2 S^x = 0``) and the ov/vo blocks are antisymmetric
-        (``U_ia = -U_ai``), so ``U[o,v] = -Uia``."""
-        if pert.kind != 'field':
-            raise NotImplementedError(
-                "full perturbed derivatives are wired for 'field' only so far; "
-                "'nuclear'/'magnetic' use the same machinery but are not yet built.")
-        nmo = self.wfn.nmo
-        Uia = self.solve_field(pert.comp)                  # (no, nv): U_ai = <phi_a|d phi_i>
+        The matrix element ``U_qp = <phi_q|d phi_p/dx>`` (the coefficient of orbital ``q`` in
+        the first-order change of orbital ``p``, as it enters the integral derivatives). The
+        non-canonical perturbed-orbital conditions fix the diagonal blocks from the overlap
+        derivative, ``U_ij = -1/2 S^x_ij`` and ``U_ab = -1/2 S^x_ab``; the CPHF solve gives the
+        occupied response ``Uia[i,a] = <phi_a|d phi_i> = U_ai`` (so ``U[v,o] = Uia.T``), and
+        orthonormality ``U_pq + U_qp = -S^x_pq`` fixes ``U[o,v] = -S^x[o,v] - Uia``. For an
+        electric field ``S^x = 0``, so the oo/vv blocks vanish and ``U[o,v] = -Uia``."""
+        o, v, nmo = self.o, self.v, self.wfn.nmo
+        _, Sx, _ = self._skeleton(pert)
+        Uia = self._ov_response(pert)                       # (no, nv): U_ai = <phi_a|d phi_i>
         U = np.zeros((nmo, nmo))
-        U[self.o, self.v] = -Uia
-        U[self.v, self.o] = Uia.T
+        U[o, o] = -0.5 * Sx[o, o]
+        U[v, v] = -0.5 * Sx[v, v]
+        U[v, o] = Uia.T
+        U[o, v] = -Sx[o, v] - Uia
         return U
 
     def perturbed_fock(self, pert: "Perturbation") -> np.ndarray:
@@ -234,10 +279,10 @@ class CPHF(object):
             d_x f_pq = f^(x)_pq + U^x_pq f_pp + U^x_qp f_qq
                        - 1/2 sum_nm S^x_nm A_pnqm + sum_cm U^x_cm A_pcqm
 
-        with ``A_pqrs = <pq||rs> + <ps||qr>`` (the orbital-Hessian two-electron weight).
-        For an electric field ``S^x = 0`` and the skeleton Fock derivative ``f^(x) = mu``
-        (the MO dipole integral, sign consistent with ``rhs_field``'s ``B = -mu``), so the
-        ``S^x`` term drops. Cached per ``pert``. Spin-orbital path only for now."""
+        with ``A_pqrs = <pq||rs> + <ps||qr>`` (the orbital-Hessian two-electron weight),
+        ``n,m`` over occupied and ``c`` over virtual. The skeleton ``f^(x)``/``S^x`` come from
+        :meth:`_skeleton`; for an electric field ``S^x = 0`` so the ``S^x`` term drops. Cached
+        per ``pert``. Spin-orbital path only for now."""
         if self.wfn.orbital_basis != 'spinorbital':
             raise NotImplementedError(
                 "perturbed_fock is implemented for the spin-orbital path only so far.")
@@ -246,9 +291,13 @@ class CPHF(object):
         o, v = self.o, self.v
         eps = self.eps
         ERI = np.asarray(self.wfn.H.ERI)
+        fx, Sx, _ = self._skeleton(pert)
         U = self._full_U(pert)
-        fx = np.asarray(self.wfn.H.mu[pert.comp])          # skeleton field Fock deriv = mu
         df = fx + U * eps[:, None] + U.T * eps[None, :]     # f^(x) + U_pq f_pp + U_qp f_qq
+        # - 1/2 sum_nm(occ) S^x_nm ( <pn||qm> + <pm||qn> )
+        Soo = Sx[o, o]
+        df = df - 0.5 * (self.contract('nm,pnqm->pq', Soo, ERI[:, o, :, o])
+                         + self.contract('nm,pmqn->pq', Soo, ERI[:, o, :, o]))
         # + sum_cm U_cm ( <pc||qm> + <pm||qc> ),  c in vir, m in occ
         Uvo = U[v, o]
         df = df + (self.contract('cm,pcqm->pq', Uvo, ERI[:, v, :, o])
@@ -264,20 +313,22 @@ class CPHF(object):
                            + sum_t ( U^x_tp <tq||rs> + U^x_tq <pt||rs>
                                      + U^x_tr <pq||ts> + U^x_ts <pq||rt> )
 
-        For an electric field the skeleton derivative ``<pq||rs>^(x) = 0``, leaving the
-        ``U``-rotation. The full ``nmo^4`` tensor is built and cached per ``pert`` (memory
-        is geometry-bound, shared across properties). ``blocks`` is an optional 4-tuple of
-        block labels ('o'/'v'/'all'), e.g. ``('o','o','v','v')`` for the MP2 2PDM; the
-        **default returns the full tensor** (CC consumers need the other blocks). Spin-orbital
-        path only for now."""
+        The skeleton ``<pq||rs>^(x)`` comes from :meth:`_skeleton` (zero for an electric
+        field). The full ``nmo^4`` tensor is built and cached per ``pert`` (memory is
+        geometry-bound, shared across properties). ``blocks`` is an optional 4-tuple of block
+        labels ('o'/'v'/'all'), e.g. ``('o','o','v','v')`` for the MP2 2PDM; the **default
+        returns the full tensor** (CC consumers need the other blocks). Spin-orbital path
+        only for now."""
         if self.wfn.orbital_basis != 'spinorbital':
             raise NotImplementedError(
                 "perturbed_eri is implemented for the spin-orbital path only so far.")
         full = self._deri.get(pert)
         if full is None:
             ERI = np.asarray(self.wfn.H.ERI)
-            U = self._full_U(pert)                          # skeleton <pq||rs>^(x) = 0 (field)
-            full = (self.contract('tp,tqrs->pqrs', U, ERI)
+            _, _, gx = self._skeleton(pert)
+            U = self._full_U(pert)
+            full = (gx
+                    + self.contract('tp,tqrs->pqrs', U, ERI)
                     + self.contract('tq,ptrs->pqrs', U, ERI)
                     + self.contract('tr,pqts->pqrs', U, ERI)
                     + self.contract('ts,pqrt->pqrs', U, ERI))
@@ -389,21 +440,21 @@ class CPHF(object):
             B^X_ia = -[ F^X_ia - eps_i S^X_ia
                         - 1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ) ]
 
-        Returns ``(B, Foo, Soo)`` as for the spatial path."""
+        Returns ``(B, Foo, Soo)`` as for the spatial path.
+
+        The skeleton derivative integrals (including the dominant ``nmo^4`` ``so_eri``
+        derivative) come from the unified :meth:`_skeleton` cache, so they are computed once
+        per atom/cart and reused by the explicit perturbed-integral engine
+        (:meth:`perturbed_fock` / :meth:`perturbed_eri`) and by any second-derivative
+        consumer; ``Foo``/``Soo`` are then just the ``oo`` slices of the cached
+        ``f^(x)``/``S^x``."""
         o, v = self.o, self.v
         eps_o = self.eps[o]
         ERI = np.asarray(self.wfn.H.ERI)         # antisymmetrized, unperturbed
-        d = self.wfn.derivatives
-        hx = d.so_core(atom)                     # 3 x (nmo,nmo)
-        Sxa = d.so_overlap(atom)                 # 3 x (nmo,nmo)
-        gx = d.so_eri(atom)                      # 3 x (nmo^4), antisymmetrized <pq||rs>^X
-
         Evooo = ERI[v, o, o, o]
         B, Foo, Soo = [], [], []
         for c in range(3):
-            # skeleton derivative Fock F^X_pq = h^X + sum_k(occ) <pk||qk>^X
-            Fx = hx[c] + self.contract('pkqk->pq', gx[c][:, o, :, o])
-            Sx = Sxa[c]
+            Fx, Sx, _ = self._skeleton(Perturbation('nuclear', (atom, c)))
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^X_kl into the ov
             # block: -1/2 sum_kl S^X_kl ( <ak||il> + <al||ik> ).
             coupling = (self.contract('akil,kl->ia', Evooo, Sx[o, o])

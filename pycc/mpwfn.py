@@ -283,6 +283,22 @@ class MPwfn(Wavefunction):
         return np.array([-self._corr_energy_deriv(Perturbation('field', a))
                          for a in range(3)])
 
+    def _corr_gradient_explicit(self) -> np.ndarray:
+        """MP2 correlation contribution to the nuclear gradient (a.u.), shape
+        ``(natom, 3)``, via the explicit-derivative route: ``dE_corr/dX_Ac`` from
+        :meth:`_corr_energy_deriv` for each nuclear perturbation. The "simple but
+        inefficient" form -- one nuclear CPHF solve per perturbation (``3*natom``) and a full
+        perturbed-integral build, instead of the single Z-vector of :meth:`gradient`. An
+        independent cross-check of the relaxed-density correlation gradient
+        (``gradient() - HFwfn(ref).gradient()``). Spin-orbital, all-electron path."""
+        from .cphf import Perturbation
+        natom = self.derivatives.natom
+        g = np.zeros((natom, 3))
+        for atom in range(natom):
+            for c in range(3):
+                g[atom, c] = self._corr_energy_deriv(Perturbation('nuclear', (atom, c)))
+        return g
+
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
     # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,

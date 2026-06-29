@@ -120,6 +120,38 @@ def test_mp2_explicit_corr_dipole_ccpvdz():
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
+def _pycc_corr_gradient_explicit_and_relaxed(geom, basis):
+    """SO MP2 correlation nuclear gradient two ways: the explicit-derivative route
+    (`_corr_gradient_explicit`) and the relaxed-density route (`gradient` - HF gradient)."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'false',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
+    mp.compute_energy()
+    g_explicit = mp._corr_gradient_explicit()
+    g_relaxed = mp.gradient() - pycc.HFwfn(wfn).gradient()
+    return g_explicit, g_relaxed
+
+
+def test_mp2_explicit_corr_gradient_631g():
+    """Keystone: the explicit-derivative SO MP2 correlation nuclear gradient equals the
+    relaxed-density route (`MPwfn.gradient` minus the HF gradient), H2O/6-31G (C1) -- the
+    nuclear analog of the field engine, exercising the full skeleton + CPHF response."""
+    geom = WATER + "symmetry c1\n"
+    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(geom, '6-31G')
+    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
+
+
+def test_mp2_explicit_corr_gradient_ccpvdz():
+    """Explicit-derivative SO MP2 correlation gradient == relaxed-density route, H2O/cc-pVDZ
+    (C2v: polarization functions and A2-irrep MOs)."""
+    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ')
+    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
+
+
 def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
     psi4.core.clean()
     psi4.core.clean_options()
