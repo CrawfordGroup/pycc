@@ -20,8 +20,9 @@ class rtcc_ucc:
     kick         : 'x','y','z' or None  (None = isotropic)
     """
 
-    def __init__(self, ccwfn, V, energy_fn, residuals_fn, kick=None):
+    def __init__(self, ccwfn, V, energy_fn, residuals_fn, kick=None, uccwfn=None):
         self.ccwfn         = ccwfn
+        self.uccwfn        = uccwfn   # UCCWfn instance; needed for compute_onepdm
         self.V             = V
         self.no            = ccwfn.no
         self.nv            = ccwfn.nv
@@ -798,9 +799,31 @@ class rtcc_ucc:
 
 
     def dipole(self, t1, t2):
-        """Placeholder. Needs Ajay's ucc_onepdm(). Same contraction as rtcc."""
-        raise NotImplementedError(
-            "Implement after Ajay provides ucc_onepdm(): "
-            "opdm = ucc_onepdm(t_vo, t_vvoo, tdag_vo, tdag_vvoo); "
-            "return mu[i].flatten() @ opdm.flatten() for i in 0,1,2."
-        )
+        """
+        Compute the UCC correlated electric dipole moment.
+
+        Parameters
+        ----------
+        t1 : ndarray (no, nv)          T1 amplitudes in PyCC convention
+        t2 : ndarray (no, no, nv, nv)  T2 amplitudes in PyCC convention
+
+        Returns
+        -------
+        x, y, z : complex scalars
+            Cartesian components of the correlated dipole moment
+        """
+        if self.uccwfn is None:
+            raise RuntimeError(
+                "dipole() requires a UCCWfn instance. "
+                "Pass uccwfn=ucc when constructing rtcc_ucc."
+            )
+        t_vo,    t_vvoo    = self._to_ajay(t1, t2)
+        tdag_vo, tdag_vvoo = self._prep_tdag(t_vo, t_vvoo)
+
+        opdm = self.uccwfn.compute_onepdm(t_vo, t_vvoo, tdag_vo, tdag_vvoo)
+
+        x = np.dot(self.mu[0].flatten(), opdm.flatten())
+        y = np.dot(self.mu[1].flatten(), opdm.flatten())
+        z = np.dot(self.mu[2].flatten(), opdm.flatten())
+
+        return x, y, z
