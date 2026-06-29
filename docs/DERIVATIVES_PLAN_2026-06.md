@@ -156,65 +156,52 @@ spatial closed-shell; **all-electron first**, frozen core as a follow-on (reuses
 full-occ machinery already built). When starting, write this phase up in detail here first,
 then code.
 
-### Implementation phase — detailed write-up (2026-06-27)
+### Implementation phase — explicit-derivative route (2026-06-28)
 
 Branch `feature/mp2-polarizability`. Deliverable: `MPwfn.polarizability()` returning the
-static (omega=0) electric-dipole polarizability `alpha_ab` (3x3, a.u.), spin-orbital path
-first, then spatial closed-shell, then frozen core. The total is reported as
-`alpha = alpha_HF + alpha_corr`, with `alpha_HF` from the existing `HFwfn.polarizability()`
-and `alpha_corr` the MP2 correlation contribution assembled here.
+static (omega=0) electric-dipole correlation polarizability `alpha_corr_ab` (3x3, a.u.). The
+**reference (HF) and correlation contributions are kept separate** (per the PI): `MPwfn`
+computes `alpha_corr`; the reference `alpha_HF` stays in `HFwfn.polarizability()` (effectively
+free), and the total is `alpha_HF + alpha_corr`.
 
-**Reference quantity (what we differentiate).** The oracle (Psi4 `perturb_h`, and PyCC's own
-finite field) relaxes the *HF orbitals* to the field and recomputes MP2 in that field-relaxed
-basis. So the target is
+**Approach — explicit ("simple but inefficient") energy derivatives, NOT 2n+1.** The earlier
+2n+1 / Z-vector-interchange plan was dropped in favor of the explicit-derivative formalism in
+`notes.pdf`: rather than separate the orbital response into a Z-vector + relaxed density, fold
+the CPHF coefficients `U^x` directly into the **full** derivatives of the Fock matrix and the
+antisymmetrized two-electron integrals, then contract with the **unrelaxed** densities:
 
-    alpha_corr_ab = - d^2 E_corr(F) / dF_a dF_b   evaluated at F=0,
+    d_x E_corr = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq||rs>      (notes.pdf)
 
-with `E_corr(F) = 1/4 <ij||ab>(F) t_ijab(F)` built from the HF orbitals `phi_p(F) =
-phi_p exp(kappa(F))` and the field-dressed Fock. The *only* explicit F-dependence of
-`E_corr` at fixed orbitals is through the denominators `D_ijab` (the field `-F.mu` shifts the
-orbital energies); the two-electron integrals `<ij||ab>` carry no explicit field (the field is
-one-electron), responding only through the orbital rotation `kappa(F)`.
+a single unrestricted sum with **all prefactors absorbed into the densities** (`gamma`, `Gamma`).
+With PyCC's existing unrelaxed densities this convention gives, at zeroth order, `E_corr =
+sum gamma f + sum Gamma <pq||rs>` (both coefficients 1, since `Tr(gamma f) = -E_corr` and
+`sum Gamma <> = +2 E_corr`); the functional is stationary in the amplitudes, so the
+density-response terms drop and the derivative keeps only `d_x f`, `d_x <pq||rs>`.
 
-**First-order building blocks (all that 2n+1 needs).**
-- `U^a` = the HF electric-field CPHF response for axis `a`, `cphf.solve(cphf.rhs_field(a))`
-  — already used by `HFwfn.polarizability`. This is `kappa^a` (ov block; the oo/vv blocks
-  vanish for a field — no overlap derivative).
-- `g^a_pqrs` = the `U^a`-rotation of the antisymmetrized integrals (first-order change of
-  `<pq||rs>` under `kappa^a`): each index rotated, `g^a_pqrs = sum_t (U^a-mix on p,q,r,s)`.
-- `eps^a_p` = first-order orbital-energy change = the field-dressed first-order Fock diagonal
-  `f^a_pp` (explicit `-mu^a_pp` plus the `U^a`-rotation of the two-electron Fock), giving the
-  denominator response `D^a_ijab = eps^a_i + eps^a_j - eps^a_a - eps^a_b`.
-- `t^a_ijab = (g^a_ijab - t_ijab D^a_ijab) / D_ijab` — the **one genuinely new** building
-  block (quotient derivative of `t = g/D`). Lambda = T for MP2, so no separate `l^a`.
+**The engine (shared, on `CPHF`).** The full derivatives are **response-dressed** (skeleton +
+`U`), so they live on `CPHF` (which owns `U` and consumes the skeleton `Derivatives`), *not*
+on `Derivatives` (kept skeleton-only) — preserving the one-directional layering
+`Derivatives <- CPHF <- HFwfn/MPwfn`. A `Perturbation('field'|'nuclear'|'magnetic', comp)`
+descriptor keys the caches so multi-property runs (e.g. IR + VCD, or an MP2 gradient +
+polarizability) never recompute the expensive (nuclear) ERI derivatives:
 
-**2n+1 assembly.** Writing `E = 1/4 g t` with `t = g/D`, the first derivative reduces (using
-`g t^a = t g^a - t^2 D^a`) to `dE/dF_a = 1/4 sum (2 t g^a - t^2 D^a)`. The second derivative is
+- `CPHF.perturbed_fock(pert)` -> `d_x f_pq` (`nmo x nmo`), cached;
+- `CPHF.perturbed_eri(pert, blocks)` -> `d_x <pq||rs>`, **block-aware with the full `nmo^4`
+  the default** (CC consumers need all blocks; MP2 can ask for `oovv`), cached.
 
-    d^2E/dF_a dF_b = (A) explicit-explicit + (B) explicit-orbital + (C) orbital-orbital
-                     + (D) orbital-gradient . second-order-response,
+For the electric field the skeleton collapses (`S^x = 0`, `<pq||rs>^(x) = 0`, `f^(x) = mu`), so
+the engine is purely a `U`-rotation; `nuclear`/`magnetic` add their (nonzero) skeleton pieces
+into the same assembly later. `MPwfn` holds a persistent `CPHF` so the caches survive across
+property calls.
 
-i.e. terms in `t^a, t^b, g^a, g^b, D^a, D^b` (all first order) plus one term `(dE/dkappa).kappa^{ab}`
-that naively needs the **second-order** orbital response `kappa^{ab}`. That term is removed by
-the Handy-Schaefer interchange using the **ground-state** MP2 orbital-gradient Z-vector `z`
-(`G z = X`, the same `z` already solved in `_so_mp2_relaxed_densities`): since `kappa(F)` is the
-HF response (`G_HF kappa = -B(F)`), `(dE/dkappa).kappa^{ab} = z . (G_HF kappa^{ab}) =
--z . (second-order field RHS)`, and the second-order field RHS is built from `U^a, U^b` only.
-**No perturbed Z-vector** (`z^a`) and **no second-order CPHF** — `z` is the unperturbed
-gradient Z-vector, consistent with the locked formulation (B). The exact per-term index
-expressions and prefactors are **pinned numerically** against the finite-field oracle (the
-documented methodology for this whole effort — Psi4's analytic response is DF/finite-field).
-
-**Validation (mirror `test_061`).** New `test_067_mp2_polarizability` (H2O):
-- `alpha_corr` (and total `alpha`) vs a high-order finite field of PyCC's own
-  `E_MP2(F) - E_SCF(F)` (5-point second-derivative stencil), `< 1e-7`;
-- HF-limit check: total `alpha == HFwfn.polarizability() + alpha_corr`;
-- keystone: spin-orbital `alpha_corr == spatial alpha_corr` on a closed shell (~1e-10);
-- C1 (6-31G) and C2v (cc-pVDZ, polarization + A2-irrep MOs).
-
-Frozen core is a follow-on (reuses the full-occ response machinery, exactly as the gradient).
-The building blocks are validated independently by finite-difference of PyCC's field-relaxed
-intermediates (`U^a`, `eps^a`, `g^a`, `t^a`) before the full contraction is assembled.
+**Status — first derivative DONE (field, SO).** `MPwfn._corr_energy_deriv(pert)` contracts the
+engine with `gamma` (`Doo`/`Dvv`) and `Gamma` (the 2PDM); for the field this is the (negative)
+correlation dipole, exposed as `_corr_dipole_explicit()`. Validated (`test_061`):
+`_corr_dipole_explicit` == `relaxed_dipole` (the relaxed-density route) to ~1e-16, and ==
+the finite field of `E_MP2 - E_SCF` to <1e-8 (H2O/6-31G C1 and cc-pVDZ C2v). This is the
+first-derivative foundation; the **analytic second derivative (the polarizability) is next**
+(its detailed term structure to be written up here before coding). Spatial closed-shell and
+frozen-core paths follow the SO field path.
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
