@@ -191,6 +191,24 @@ def test_fc_sa_mp2_explicit_corr_gradient_631g():
     assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
 
 
+def test_fc_so_mp2_explicit_corr_dipole_631g():
+    """Frozen-core spin-orbital explicit-derivative MP2 correlation dipole vs the finite field
+    of (E_MP2 - E_SCF), H2O/6-31G (C1). The core<->active response is built over MPwfn's own
+    full-occupied SO space (no all-electron SO HFwfn to borrow -- different spin ordering)."""
+    geom = WATER + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
+               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+
+
+def test_fc_so_mp2_explicit_corr_gradient_631g():
+    """Keystone: frozen-core spin-orbital explicit-derivative MP2 correlation gradient ==
+    relaxed-density route, H2O/6-31G (C1)."""
+    geom = WATER + "symmetry c1\n"
+    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(
+        geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
+    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
+
+
 def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
     psi4.core.clean()
     psi4.core.clean_options()

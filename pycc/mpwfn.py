@@ -268,7 +268,19 @@ class MPwfn(Wavefunction):
     # the analytic MP2 polarizability (the second derivative); for an electric-field
     # perturbation the first derivative is the (negative) correlation dipole, which must
     # reproduce :meth:`relaxed_dipole`. Spatial closed-shell default; spin-orbital via the
-    # ``_so_`` route (the convention used throughout HFwfn/MPwfn). All-electron.
+    # ``_so_`` route (the convention used throughout HFwfn/MPwfn).
+
+    def _full_occ_cphf(self):
+        """A CPHF over the **full** occupied space (frozen core + active) in this wavefunction's
+        own MO ordering (cached). The explicit-derivative engine needs the orbital response over
+        the full occupied space (core<->active and core-virtual), which ``self.cphf`` (active
+        only) can't supply; building it here -- rather than borrowing an all-electron ``HFwfn``
+        -- keeps the spin-orbital ordering consistent with the densities (the all-electron SO
+        ``HFwfn`` orders the spins differently). For ``nfzc=0`` it coincides with ``self.cphf``."""
+        if getattr(self, '_focphf', None) is None:
+            from .cphf import CPHF
+            self._focphf = CPHF(self, full_occ=True)
+        return self._focphf
 
     def _corr_energy_deriv(self, pert) -> float:
         """First derivative of the MP2 correlation energy along ``pert`` (a
@@ -283,9 +295,9 @@ class MPwfn(Wavefunction):
 
         Frozen-core aware with no rearrangement: the densities stay in the active space
         (``Doo``/``Dvv``/``Gamma`` placed at the active ``o``/``v`` blocks of full-MO arrays),
-        while the perturbed derivatives are built over the **full occupied space** by the
-        all-electron reference CPHF (:meth:`_reference_hf`). The final contraction against the
-        full ``f``/``<pq|rs>`` derivatives then carries the core response automatically."""
+        while the perturbed derivatives are built over the **full occupied space**
+        (:meth:`_full_occ_cphf`) with the core<->active block of ``U`` from ``ncore``. The
+        contraction against the full ``f``/``<pq|rs>`` derivatives carries the core response."""
         if self.orbital_basis == 'spinorbital':
             return self._so_corr_energy_deriv(pert)
         nmo, o, v = self.nmo, self.o, self.v
@@ -294,24 +306,28 @@ class MPwfn(Wavefunction):
         gamma[o, o] = np.asarray(Doo)
         gamma[v, v] = np.asarray(Dvv)
         Gam = self._mp2_cumulant()
-        cphf = self._reference_hf().cphf            # full-occupied (all-electron) CPHF
-        df = cphf.perturbed_fock(pert, self.nfzc)
-        deri = cphf.perturbed_eri(pert, self.nfzc)
+        ncore = o.stop - self.no                    # frozen-core orbitals at the front of o
+        cphf = self._full_occ_cphf()
+        df = cphf.perturbed_fock(pert, ncore)
+        deri = cphf.perturbed_eri(pert, ncore)
         return (self.contract('pq,pq->', gamma, df)
                 + self.contract('pqrs,pqrs->', Gam, deri))
 
     def _so_corr_energy_deriv(self, pert) -> float:
         """Spin-orbital first derivative of the MP2 correlation energy along ``pert`` --
         the antisymmetrized-integral form of :meth:`_corr_energy_deriv` (unrelaxed
-        ``gamma`` and 2PDM ``Gamma``, with the spin-orbital perturbed derivatives)."""
+        ``gamma`` and 2PDM ``Gamma``, with the spin-orbital perturbed derivatives over the
+        full occupied space; ``ncore`` = the frozen spin orbitals at the front of ``o``)."""
         nmo, o, v = self.nmo, self.o, self.v
         Doo, Dvv = self._so_mp2_corr_opdm()
         gamma = np.zeros((nmo, nmo))
         gamma[o, o] = np.asarray(Doo)
         gamma[v, v] = np.asarray(Dvv)
         Gam = self._so_mp2_cumulant()
-        df = self.cphf.perturbed_fock(pert)
-        deri = self.cphf.perturbed_eri(pert)
+        ncore = o.stop - self.no                    # frozen-core spin orbitals at the front of o
+        cphf = self._full_occ_cphf()
+        df = cphf.perturbed_fock(pert, ncore)
+        deri = cphf.perturbed_eri(pert, ncore)
         return (self.contract('pq,pq->', gamma, df)
                 + self.contract('pqrs,pqrs->', Gam, deri))
 

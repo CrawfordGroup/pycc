@@ -80,12 +80,21 @@ class CPHF(object):
     ('electric' / 'magnetic') and cached, then reused across all perturbations.
     """
 
-    def __init__(self, wfn: Any) -> None:
+    def __init__(self, wfn: Any, full_occ: bool = False) -> None:
         self.wfn = wfn
         self.contract = wfn.contract        # device-aware ContractionBackend (shared)
-        self.o = wfn.o
+        # ``full_occ`` spans the full occupied space (frozen core + active) in the wfn's own
+        # MO ordering, for frozen-core correlated derivatives whose orbital response (incl.
+        # core<->active and core-virtual) the active-space CPHF can't supply. The core block
+        # is the first ``o.stop - no`` orbitals (the frozen core leads ``o`` in both the
+        # spatial and spin-orbital orderings). For ``nfzc=0`` it coincides with the default.
+        if full_occ:
+            self.o = slice(0, wfn.o.stop)
+            self.no = wfn.o.stop
+        else:
+            self.o = wfn.o
+            self.no = wfn.no
         self.v = wfn.v
-        self.no = wfn.no
         self.nv = wfn.nv
         # Orbital energies from the Fock diagonal (energy-ordered, all-electron --
         # HFwfn builds the full MO space).
