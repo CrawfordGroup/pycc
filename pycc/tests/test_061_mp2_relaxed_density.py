@@ -162,9 +162,7 @@ def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    # MPwfn.gradient() is the correlation contribution only; the total MP2 gradient adds
-    # the (separately computed) SCF gradient, mirroring the dipole split.
-    return pycc.HFwfn(wfn).gradient() + mp.gradient()
+    return mp.total_gradient()
 
 
 def _psi4_mp2_gradient(geom, basis):
@@ -264,7 +262,7 @@ def test_fc_mp2_gradient_vs_energy_fd_631g():
     mp = pycc.MPwfn(wfn, orbital_basis='spatial')
     mp.compute_energy()
     assert mp.nfzc > 0                                   # frozen core is actually active
-    gA = pycc.HFwfn(wfn).gradient() + mp.gradient()      # total = SCF + correlation
+    gA = mp.total_gradient()                             # total = SCF + correlation
 
     h = 2.0e-3
     gF = np.zeros((3, 3))
@@ -334,7 +332,7 @@ def test_mp2_total_dipole_631g():
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
     mp.compute_energy()
-    total = pycc.HFwfn(wfn).dipole() + mp.relaxed_dipole()
+    total = mp.total_dipole()
     assert abs(total[2] - _ff_total_dipole(geom, '6-31G', 'mp2')) < 1e-8
 
 

@@ -238,6 +238,28 @@ class MPwfn(Wavefunction):
         return np.array([self.contract('pq,pq->', D, np.asarray(self.H.mu[a]))
                          for a in range(3)])
 
+    # ---- total (reference + correlation) properties ----
+    # MPwfn.gradient/relaxed_dipole are the correlation contributions only; these add the
+    # all-electron SCF reference (HFwfn, frozen_core=False) for the full molecular property.
+
+    def _reference_hf(self):
+        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the
+        reference dipole and gradient for the total MP2 properties."""
+        if getattr(self, '_ref_hf', None) is None:
+            from .hfwfn import HFwfn
+            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
+        return self._ref_hf
+
+    def total_dipole(self) -> np.ndarray:
+        """Total MP2 electric-dipole moment (a.u.), shape ``(3,)``: the SCF reference dipole
+        (:meth:`HFwfn.dipole`) plus the MP2 correlation dipole (:meth:`relaxed_dipole`)."""
+        return self._reference_hf().dipole() + self.relaxed_dipole()
+
+    def total_gradient(self) -> np.ndarray:
+        """Total MP2 analytic nuclear gradient (a.u.), shape ``(natom, 3)``: the SCF reference
+        gradient (:meth:`HFwfn.gradient`) plus the MP2 correlation gradient (:meth:`gradient`)."""
+        return self._reference_hf().gradient() + self.gradient()
+
     # ---- explicit-derivative property route (notes.pdf) ----
     # The first derivative of the correlation energy w.r.t. a perturbation, via the
     # full (CPHF-folded) derivatives of f and <pq||rs> from the shared CPHF engine,
