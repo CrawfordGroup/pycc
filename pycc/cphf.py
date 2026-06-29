@@ -182,15 +182,13 @@ class CPHF(object):
         return np.asarray(self.wfn.H.mu[axis])[self.o, self.v]
 
     def rhs_field(self, axis: int) -> np.ndarray:
-        """Electric-field CPHF RHS for ``axis`` (0/1/2), i.e. ``B = -mu``.
+        """Electric-field CPHF right-hand side for ``axis`` (0/1/2): ``B = +mu``.
 
-        The field enters the Hamiltonian as ``H' = -mu . E`` -- the field-interaction
-        sign is distinct from the electron-charge sign already carried by the dipole
-        integrals (``H.mu`` = -e r) -- so ``dH'/dE = -mu`` and the response RHS is the
-        negated dipole. (For the polarizability the two sign conventions cancel, but
-        the response ``U`` is reused by other properties where they do not.)
+        The field enters as ``H' = -mu . E`` (``H.mu`` is the dipole operator ``-e r``), so the
+        skeleton Fock derivative is ``f^(a) = -mu`` and the CPHF RHS is ``B = -f^(a) = +mu``
+        (no overlap/Pulay term -- the field does not move the basis functions).
         """
-        return -self._mu_ov(axis)
+        return self._mu_ov(axis)
 
     def solve_field(self, axis: int) -> np.ndarray:
         """Electric-field CPHF response ``U^a`` for ``axis`` (0/1/2), ``(no, nv)``, solved
@@ -215,8 +213,7 @@ class CPHF(object):
         derivative ``<pq||rs>^(x)`` (``nmo^4``), cached per ``pert``.
 
         - **field**: the basis functions do not move, so ``S^x = 0`` and ``<pq||rs>^(x) = 0``;
-          the skeleton Fock derivative is the explicit one-electron operator ``f^(x) = mu``
-          (sign consistent with ``rhs_field``'s ``B = -mu``).
+          the skeleton Fock derivative is ``f^(a) = -mu`` (``H' = -mu.E``).
         - **nuclear** (``comp = (atom, cart)``): the skeleton derivative integrals come from
           the (spin-orbital) ``Derivatives`` provider; the skeleton Fock derivative is
           ``f^(x)_pq = h^(x)_pq + sum_k(occ) <pk||qk>^(x)``."""
@@ -224,7 +221,7 @@ class CPHF(object):
             return self._skel[pert]
         nmo, o = self.wfn.nmo, self.o
         if pert.kind == 'field':
-            fx = np.asarray(self.wfn.H.mu[pert.comp])
+            fx = -np.asarray(self.wfn.H.mu[pert.comp])       # f^(a) = -mu  (H' = -mu.E)
             Sx = np.zeros((nmo, nmo))
             gx = 0.0                                         # no skeleton 2e deriv (field)
         elif pert.kind == 'nuclear':

@@ -109,19 +109,36 @@ class HFwfn(Wavefunction):
         self.grad = grad
         return grad
 
+    def dipole(self) -> np.ndarray:
+        """Total SCF electric-dipole moment (a.u.), shape ``(3,)``: the nuclear term plus
+        the electronic term, in the molecule's frame (gauge-independent for a neutral system).
+
+        ``mu_a = sum_A Z_A R_Aa  +  k sum_i (mu_a)_ii``, the electronic part being the occupied
+        trace of the MO dipole integrals (``H.mu`` = ``-e r``; same ``Tr(D mu)`` convention as
+        :meth:`MPwfn.relaxed_dipole`, with the SCF density's occupied block). The prefactor is
+        the orbital occupancy: ``k = 2`` on the spatial closed-shell path, ``k = 1`` for singly
+        occupied spin orbitals. Kept separate from the correlation dipole so the total MP2
+        dipole is ``HFwfn.dipole() + MPwfn.relaxed_dipole()`` (mirroring the gradient split).
+        Basis-aware."""
+        o = self.o
+        k = 1.0 if self.orbital_basis == 'spinorbital' else 2.0
+        mol = self.ref.molecule()
+        geom = np.asarray(mol.geometry())                      # (natom, 3), bohr
+        Z = np.array([mol.Z(A) for A in range(mol.natom())])
+        nuc = np.einsum('a,ax->x', Z, geom)
+        elec = np.array([k * np.trace(np.asarray(self.H.mu[a])[o, o]) for a in range(3)])
+        self.mu_scf = nuc + elec
+        return self.mu_scf
+
     def polarizability(self) -> np.ndarray:
         """Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
 
-        The field perturbation does not move the basis functions, so the response has
-        no overlap/Pulay contribution: solve the electric-field CPHF response for each
-        Cartesian axis (:class:`CPHF`) and contract with the MO dipole integrals,
-        ``alpha_ab = -k sum_ia mu^a_ia U^b_ia``, where ``U^b`` solves ``G U^b = -mu^b``
-        in the ov block. The prefactor counts the ``ov``+``vo`` response (factor 2) and,
-        on the spatial closed-shell path, the double occupancy (another factor 2 ->
-        ``k = 4``); the spin-orbital path has singly occupied spin orbitals, so ``k = 2``
-        and the orbital Hessian carries the spin structure. (The two minus signs -- the
-        ``-mu`` RHS and the ``-k`` contraction -- make alpha positive definite and
-        cancel.) Basis-aware.
+        The field does not move the basis functions, so there is no overlap/Pulay term:
+        solve the electric-field CPHF response per Cartesian axis (:class:`CPHF`) and contract
+        with the MO dipole integrals, ``alpha_ab = k sum_ia mu^a_ia U^b_ia``, where ``U^b``
+        solves ``G U^b = mu^b`` in the ov block. The prefactor counts the ``ov``+``vo``
+        response (factor 2) and the orbital occupancy: ``k = 4`` on the spatial closed-shell
+        path (double occupancy), ``k = 2`` for singly occupied spin orbitals. Basis-aware.
         """
         o, v = self.o, self.v
         k = 2.0 if self.orbital_basis == 'spinorbital' else 4.0
@@ -130,7 +147,7 @@ class HFwfn(Wavefunction):
         alpha = np.zeros((3, 3))
         for a in range(3):
             for b in range(3):
-                alpha[a, b] = -k * self.contract('ia,ia->', mu[a], U[b])
+                alpha[a, b] = k * self.contract('ia,ia->', mu[a], U[b])
         self.alpha = alpha
         return self.alpha
 
