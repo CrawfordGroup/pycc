@@ -358,6 +358,59 @@ class MPwfn(Wavefunction):
                 g[atom, c] = self._corr_energy_deriv(Perturbation('nuclear', (atom, c)))
         return g
 
+    # ---- perturbed amplitudes / densities (for the second derivative) ----
+
+    def _perturbed_t2(self, pert) -> np.ndarray:
+        """First-order response of the MP2 doubles amplitudes to ``pert`` -- closed form,
+        since the MP2 amplitudes are non-iterative::
+
+            t^x_ijab = [ d_x<ij||ab> + sum_c (d_x f_ac t_ijcb + d_x f_bc t_ijac)
+                         - sum_k (d_x f_ik t_kjab + d_x f_jk t_ikab) ] / D_ijab
+
+        from the active ``oovv`` block of :meth:`CPHF.perturbed_eri` and the active ``oo``/``vv``
+        blocks of :meth:`CPHF.perturbed_fock` (the diagonal of ``d_x f`` recovers ``-t d_x D``;
+        the off-diagonal ``oo``/``vv`` blocks are the non-canonical coupling). Basis-agnostic --
+        the integral convention rides in ``H.ERI``. Built over the full occupied space
+        (frozen-core aware) but indexed on the active amplitudes."""
+        o, v = self.o, self.v
+        ncore = o.stop - self.no
+        cphf = self._full_occ_cphf()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        dfoo, dfvv = df[o, o], df[v, v]
+        t2 = np.asarray(self.t2)
+        c = self.contract
+        num = (deri[o, o, v, v]
+               + c('ac,ijcb->ijab', dfvv, t2) + c('bc,ijac->ijab', dfvv, t2)
+               - c('ik,kjab->ijab', dfoo, t2) - c('jk,ikab->ijab', dfoo, t2))
+        return num / np.asarray(self.Dijab)
+
+    def _perturbed_densities(self, pert):
+        """First-order response of the unrelaxed correlation densities to ``pert``: returns
+        ``(d_a gamma, d_a Gamma)`` (full-MO arrays), from the perturbed amplitudes
+        :meth:`_perturbed_t2` by the product rule -- the same density expressions as the
+        unrelaxed densities (:meth:`_so_mp2_corr_opdm`/`_so_mp2_cumulant` and the spatial
+        siblings), differentiated. Basis-aware."""
+        o, v, nmo = self.o, self.v, self.nmo
+        t2 = np.asarray(self.t2)
+        ta = self._perturbed_t2(pert)
+        c = self.contract
+        dgam = np.zeros((nmo, nmo))
+        dGam = np.zeros((nmo, nmo, nmo, nmo))
+        if self.orbital_basis == 'spinorbital':
+            dgam[o, o] = -0.5 * (c('imef,jmef->ij', ta, t2) + c('imef,jmef->ij', t2, ta))
+            dgam[v, v] = 0.5 * (c('mnbe,mnae->ab', ta, t2) + c('mnbe,mnae->ab', t2, ta))
+            u = 0.25 * ta
+        else:
+            l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
+            la = 2.0 * (2.0 * ta - ta.swapaxes(2, 3))
+            dgam[o, o] = -(c('imef,jmef->ij', ta, l2) + c('imef,jmef->ij', t2, la))
+            dgam[v, v] = (c('mnbe,mnae->ab', ta, l2) + c('mnbe,mnae->ab', t2, la))
+            u = 2.0 * ta - ta.swapaxes(2, 3)
+        dGam[o, o, v, v] = u
+        dGam[v, v, o, o] = u.transpose(2, 3, 0, 1)
+        return dgam, dGam
+
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
     # the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` and the spin-adapted ``L`` (= H.L,
