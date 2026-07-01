@@ -215,8 +215,57 @@ direct divide; `_full_U`'s `ncore` argument), with the redundant blocks left at 
 Validated (`test_061`): explicit == relaxed-density route to ~1e-16 for all four cases
 (spatial/SO x all-electron/frozen-core), and the finite field to <1e-8 (6-31G C1, cc-pVDZ C2v).
 
-Next: the **analytic second derivative** (the polarizability; its term structure to be written
-up here before coding).
+### Second derivative — MP2 dipole polarizability (explicit route, 2026-06-30)
+
+Branch `feature/mp2-polarizability`. Deliverable: the static (omega=0) MP2 **correlation**
+polarizability `alpha_corr_ab = -d^2 E_corr / dF_a dF_b` (3x3), with the reference part from
+`HFwfn.polarizability()` (total `alpha = alpha_HF + alpha_corr`, the field analog of the
+gradient/dipole reference+correlation split). Explicit route (PI decision 2026-06-30); the 2n+1
+route remains the efficient long-term alternative, deferred.
+
+**Assembly (Eq. 15 of `notes.pdf`, two field perturbations `a, b`):**
+
+    d_ab E_corr = sum_pq [ d_a(gamma_pq) d_b f_pq + gamma_pq d_ab f_pq ]
+                + sum_pqrs [ d_a(Gamma_pqrs) d_b <pq||rs> + Gamma_pqrs d_ab <pq||rs> ]
+
+Four ingredients; two we already have, two are new:
+- `gamma`, `Gamma` (unrelaxed densities) and `d_b f`, `d_b <pq||rs>` (first derivatives) -- **have**
+  (`perturbed_fock`/`perturbed_eri`).
+- **`d_a gamma`, `d_a Gamma` (density responses)** -- from the perturbed MP2 amplitudes, *closed
+  form* (MP2 amplitudes are non-iterative):
+
+      t^a_ijab = [ d_a<ij||ab> + sum_c (d_a f_ac t_ijcb + d_a f_bc t_ijac)
+                  - sum_k (d_a f_ik t_kjab + d_a f_jk t_ikab) ] / D_ijab
+
+  consuming only the `oovv` block of `perturbed_eri` and the `oo`/`vv` blocks of
+  `perturbed_fock` (the diagonal recovers `-t d_a D`; the off-diagonal `oo`/`vv` blocks are the
+  non-canonical coupling). Then `d_a Gamma = 1/4 d_a t2` and `d_a Doo = -1/2(t^a_imef t_jmef +
+  t_imef t^a_jmef)`, `d_a Dvv` likewise -- closed-form contractions of `t` and `t^a`, no solver.
+- **`d_ab f`, `d_ab <pq||rs>` (second derivatives)** -- Eqs. 17/20, which carry the second-order
+  CPHF coefficients `U^{ab}`. For the **field** the second-order skeleton integrals vanish
+  (`f^(ab) = S^(ab) = <pq||rs>^(ab) = 0`, the field being linear in F), so these are built purely
+  from `U^a`, `U^b`, the second-order orthonormality term `xi^{ab}` (Eq. 18; `S^x=0` leaves only
+  the `U^a U^b` products), and `U^{ab}`.
+
+**Second-order CPHF `U^{ab}`.** Reuses the same orbital Hessian `G` as the first-order solve;
+only a new RHS `B^{ab}` (from Eq. 17's `ai` block set to zero, canonical Brillouin), assembled
+from `U^a`/`U^b`/`xi^{ab}` (skeleton parts zero for the field). Redundant oo/vv blocks of `U^{ab}`
+come from `xi^{ab}` (Eq. 19, `U^{ab}_pq + U^{ab}_qp + xi^{ab}_pq = 0`). Only **6 unique**
+field-field components, so we solve them directly -- cheap. (The `O(N^2)` cost that would make
+`U^{xy}` painful is a *nuclear-Hessian* problem; there the ground-state Z-vector interchange
+`sum U^{xy}_ai X_ai = sum z_ai B^{xy}_ai` avoids it. Not needed for the polarizability.)
+
+**Frozen core.** As for the first derivatives: densities stay active, the engine runs over the
+full occupied space (`_full_occ_cphf`), and the core<->active block of both `U^a` and `U^{ab}`
+uses the canonical condition. All-electron first.
+
+**Validation (mirror `test_061`; new `test_067`).** Oracle = a 5-point finite-field second
+derivative of PyCC's own `E_MP2(F)`. Build up incrementally:
+1. `t^a` vs a finite field of `t2(F)` (pins the sign/permutation bookkeeping);
+2. `d_a gamma`/`d_a Gamma` vs finite field of the densities;
+3. `U^{ab}` / `d_ab f` vs finite difference of `d_a f(F)`;
+4. full `alpha_corr` vs the finite field of `E_MP2`, plus the `alpha = alpha_HF + alpha_corr`
+   HF-limit check and the **SO == spatial** keystone; both bases, all-electron then frozen core.
 
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
