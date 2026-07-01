@@ -537,6 +537,30 @@ smaller problem.
    are PyCC's own dipole/gradient -- Psi4's frozen-core MP2 gradient is inconsistent with its own
    energy, so not used.
 
-Later: magnetic-field derivatives (AATs, for VCD) reuse the same explicit machinery with `H.m`;
-the full MP2 Hessian adds the nuclear-nuclear second-derivative skeletons and the `S^{XY}` term in
-`_xi`.
+Later: magnetic-field derivatives (AATs, for VCD) reuse the same explicit machinery with `H.m`.
+
+## MP2 molecular (nuclear) Hessian — explicit route (2026-07) — DONE
+
+**DONE (branch `feature/mp2-apt`).** `MPwfn.hessian()` (correlation, `3N x 3N`) +
+`total_hessian()`, both spatial and spin-orbital, all-electron and frozen-core. The pure
+nuclear-nuclear second derivative `H_corr[Aa,Bb] = d^2 E_corr / dX_Aa dX_Bb` -- the same
+four-term Eq. 15 assembly as the polarizability/APT, both perturbations nuclear. The
+moving-basis terms the field/APT cases zeroed now activate (Eqs. 17/18/20):
+
+- `_xi`: the **full** Eq. 18 -- `+ S^{XY} - (S^X S^Y + S^Y S^X)` beyond the U-products (the
+  `S^X S^Y` products ride nowhere else; the PI flagged them). Zero for field-field and
+  field-nuclear, so polarizability/APT are byte-unchanged.
+- `_oei2_skeleton` -> `h^{XY}` (`core2`/`so_core2`); new `_overlap2_skeleton` -> `S^{XY}`
+  (`overlap2`/`so_overlap2`); new `_d2eri_skeleton` -> `<pq||rs>^{XY}` (`eri2`/`so_eri2`,
+  physicist/antisymmetrized, bra<->ket symmetrized); `_d2eri` guard removed.
+- Efficiency: `_d2int_blocks` caches the per-atom-pair `mo_*_deriv2` integrals (shared across
+  a pair's 3x3 Cartesian blocks) -- ~7x fewer `mo_tei_deriv2` calls than recomputing per
+  coordinate pair (`test_069`: 8+ min -> ~1 min). The explicit route still solves `U^{XY}` for
+  all `3N(3N+1)/2` pairs (the `O(N^2)` the 2n+1 Z-vector interchange would avoid); acceptable
+  for a reference code.
+
+Validated (`test_069`, 6-31G): Hessian columns vs a 7-point finite difference of the analytic
+gradient ~1e-13; symmetry `H = H.T` and the translational sum rule `sum_B H = 0` ~1e-16;
+SO==spatial keystone ~1e-16. This completes the explicit second-order property path (dipole,
+gradient, polarizability, APT, Hessian). Remaining: magnetic-field derivatives (AATs/VCD) with
+`H.m`, and the deferred 2n+1 route as an efficiency pass + cross-check.
