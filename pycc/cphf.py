@@ -128,6 +128,10 @@ class CPHF(object):
         self._U2cache: dict = {}  # -> (nmo, nmo) second-order response U^{ab}
         self._dfock2: dict = {}   # -> (nmo, nmo) full second perturbed Fock deriv
         self._deri2: dict = {}    # -> (nmo^4) full second perturbed <pq||rs> deriv
+        # Nuclear-nuclear skeleton second-derivative integrals, keyed by atom pair (atom1,
+        # atom2): the expensive mo_*_deriv2 calls are shared across the 3x3 Cartesian blocks
+        # of a pair, so memoize per pair rather than recompute per coordinate pair.
+        self._d2int: dict = {}    # (a1, a2) -> {'eri','core','overlap'}: 9-block lists
 
     # ---- orbital Hessian ----
     def hessian(self, kind: str = "electric") -> np.ndarray:
@@ -409,17 +413,26 @@ class CPHF(object):
     # same index twice (that index's mixed second derivative is U^{ab}, not U^a U^b).
 
     def _xi(self, perta: "Perturbation", pertb: "Perturbation", ncore: int = 0) -> np.ndarray:
-        """Second-order orthonormality term ``xi^{ab}`` (Eq. 18), ``nmo x nmo``. For the field
-        (``S^x = S^{ab} = 0``) it reduces to ``xi^{ab}_pq = sum_r (U^a_qr U^b_pr + U^a_pr U^b_qr)
-        = U^b U^a.T + U^a U^b.T`` (symmetric).
+        """Second-order orthonormality term ``xi^{ab}`` (Eq. 18), ``nmo x nmo``::
 
-        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (electric/magnetic field). For a nuclear
-        displacement the AOs move, so ``S^a`` and ``S^{ab}`` are nonzero and Eq. 18 gains the
-        skeleton overlap terms (``-S^{ab}`` and ``S^a``-``U`` cross terms) that are dropped here.
-        Extending this route to the molecular Hessian requires restoring them."""
+            xi^{ab}_pq = S^{ab}_pq + sum_r (U^a_qr U^b_pr + U^a_pr U^b_qr
+                                            - S^a_qr S^b_pr - S^a_pr S^b_qr)
+                       = S^{ab} + (U^b U^a.T + U^a U^b.T) - (S^b S^a + S^a S^b),
+
+        the U-products (Eq. 18 has no U*S cross terms -- the S info rides in the ``-1/2 S^x``
+        oo/vv blocks of the U's) plus the mixed overlap ``S^{ab}`` minus the ``S^a S^b``
+        products. For an electric field ``S^x = 0``, and for the mixed field-nuclear case
+        ``S^F = S^{FX} = 0``, so all three skeleton-overlap terms vanish and only the
+        U-products survive (polarizability / APT). Both become active only for nuclear-nuclear
+        (the molecular Hessian). ``S^a`` is the first-order MO overlap derivative
+        (:meth:`_skeleton`); ``S^{ab}`` is :meth:`_overlap2_skeleton`."""
         Ua = self._full_U(perta, ncore)
         Ub = self._full_U(pertb, ncore)
-        return Ub @ Ua.T + Ua @ Ub.T
+        xi = Ub @ Ua.T + Ua @ Ub.T
+        _, Sa, _ = self._skeleton(perta)
+        _, Sb, _ = self._skeleton(pertb)
+        Sab = self._overlap2_skeleton(perta, pertb)
+        return xi + Sab - (Sb @ Sa + Sa @ Sb)
 
     def _cross_eri(self, Ua: np.ndarray, Ub: np.ndarray, T: np.ndarray) -> np.ndarray:
         """The cross-index (different-slot) product of two single rotations on ``T`` (Eq. 20):
@@ -445,29 +458,77 @@ class CPHF(object):
             return np.asarray((d.so_core(atom) if so else d.core(atom))[cart])
         raise NotImplementedError("one-electron skeleton wired for 'field'/'nuclear' only.")
 
+    def _d2int_blocks(self, a1: int, a2: int) -> dict:
+        """Cached nuclear-nuclear skeleton second-derivative integrals for the atom pair
+        ``(a1, a2)``: the 9 ``(cart1, cart2)`` blocks of the core Hamiltonian ``h^{XY}``, the
+        overlap ``S^{XY}``, and the two-electron ``<pq||rs>^{XY}`` (in the basis's ERI
+        convention). The ``mo_*_deriv2`` calls -- ``mo_tei_deriv2`` especially -- are shared
+        across a pair's 3x3 Cartesian blocks, so compute once per atom pair (not per coordinate
+        pair). Returns ``{'core','overlap','eri'}`` -> lists of 9 arrays (indexed ``c1*3+c2``)."""
+        key = (a1, a2)
+        if key not in self._d2int:
+            so = self.wfn.orbital_basis == 'spinorbital'
+            d = self.wfn.derivatives
+            if so:
+                core = [np.asarray(m) for m in d.so_core2(a1, a2)]
+                overlap = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
+                eri = [np.asarray(m) for m in d.so_eri2(a1, a2)]     # <pq||rs>^{XY} (antisym)
+            else:
+                core = [np.asarray(m) for m in d.core2(a1, a2)]
+                overlap = [np.asarray(m) for m in d.overlap2(a1, a2)]
+                eri = []
+                for ch in d.eri2(a1, a2):                            # chemist (pq|rs)^{XY}
+                    ch = np.asarray(ch)
+                    ch = 0.5 * (ch + ch.transpose(2, 3, 0, 1))       # enforce (pq|rs)=(rs|pq)
+                    eri.append(ch.swapaxes(1, 2))                    # -> physicist <pq|rs>^{XY}
+            self._d2int[key] = {'core': core, 'overlap': overlap, 'eri': eri}
+        return self._d2int[key]
+
     def _oei2_skeleton(self, perta: "Perturbation", pertb: "Perturbation"):
         """Mixed one-electron skeleton second derivative ``h^(ab)_pq`` (fixed MO coefficients).
 
         - field-field: ``0`` (the field is linear in F).
         - field-nuclear: ``-d(mu_alpha)/dX_beta`` (dipole-derivative integrals) -- because
-          ``d_F h = -mu``, so ``d_{F X} h = -mu^X``. This is the one genuinely new integral for
-          the APT, and it is already provided (``Derivatives.dipole`` / ``so_dipole``).
-        - nuclear-nuclear: the core-Hamiltonian second derivative (``core2``) -- part of the
-          molecular Hessian, not yet built."""
+          ``d_F h = -mu``, so ``d_{F X} h = -mu^X`` (``Derivatives.dipole`` / ``so_dipole``).
+        - nuclear-nuclear: the core-Hamiltonian second derivative ``h^{XY}`` (``core2`` /
+          ``so_core2``), indexed ``cart1*3 + cart2`` for the atom pair (molecular Hessian)."""
         kinds = {perta.kind, pertb.kind}
         if kinds == {'field'}:
             return 0.0
+        so = self.wfn.orbital_basis == 'spinorbital'
+        d = self.wfn.derivatives
         if kinds == {'field', 'nuclear'}:
             fld, nuc = (perta, pertb) if perta.kind == 'field' else (pertb, perta)
             alpha = fld.comp
             atom, beta = nuc.comp
-            so = self.wfn.orbital_basis == 'spinorbital'
-            d = self.wfn.derivatives
             dip = (d.so_dipole(atom) if so else d.dipole(atom))[alpha * 3 + beta]
             return -np.asarray(dip)
-        raise NotImplementedError(
-            "mixed one-electron skeleton wired for field-field and field-nuclear (APT); "
-            "nuclear-nuclear (the molecular Hessian) needs core2.")
+        if kinds == {'nuclear'}:
+            (a1, c1), (a2, c2) = perta.comp, pertb.comp
+            return self._d2int_blocks(a1, a2)['core'][c1 * 3 + c2]
+        raise NotImplementedError("mixed one-electron skeleton wired for 'field'/'nuclear'.")
+
+    def _overlap2_skeleton(self, perta: "Perturbation", pertb: "Perturbation"):
+        """Mixed second overlap skeleton ``S^{ab}_pq`` (fixed MO coefficients), for the
+        ``xi^{ab}`` term (Eq. 18). Zero unless both perturbations are nuclear (``S^F = 0``);
+        nuclear-nuclear reads ``overlap2`` / ``so_overlap2`` (indexed ``cart1*3 + cart2``)."""
+        if not (perta.kind == 'nuclear' and pertb.kind == 'nuclear'):
+            return 0.0
+        (a1, c1), (a2, c2) = perta.comp, pertb.comp
+        return self._d2int_blocks(a1, a2)['overlap'][c1 * 3 + c2]
+
+    def _d2eri_skeleton(self, perta: "Perturbation", pertb: "Perturbation"):
+        """Mixed second two-electron skeleton ``<pq||rs>^{ab}`` (fixed MO coefficients), in the
+        basis's ERI convention (SO: antisymmetrized ``<pq||rs>``; spatial: physicist ``<pq|rs>``).
+        Zero unless both perturbations are nuclear (the field never enters the 2-e integrals) --
+        the ``d_{F X} <> = 0`` fact that made the APT need no such term. Nuclear-nuclear reads
+        ``eri2`` / ``so_eri2`` (indexed ``cart1*3 + cart2``), mirroring the first-order skeleton
+        convention in :meth:`_skeleton` (chemist -> physicist, with the bra<->ket
+        symmetrization ``so_eri2`` already applies and ``eri2`` gets here)."""
+        if not (perta.kind == 'nuclear' and pertb.kind == 'nuclear'):
+            return 0.0
+        (a1, c1), (a2, c2) = perta.comp, pertb.comp
+        return self._d2int_blocks(a1, a2)['eri'][c1 * 3 + c2]
 
     def _d2eri(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
         """Second perturbed two-electron derivative ``d_ab <pq||rs>`` (``nmo^4``) given the
@@ -479,20 +540,15 @@ class CPHF(object):
                             + <pq||rs>^(ab)
 
         where ``<pq||rs>^(x)`` is the first-order two-electron skeleton (fixed MO coefficients,
-        from :meth:`_skeleton`). For the electric field ``<pq||rs>^(x) = 0`` (the field never
+        from :meth:`_skeleton`) and ``<pq||rs>^(ab)`` the mixed second-order skeleton
+        (:meth:`_d2eri_skeleton`). For the electric field ``<pq||rs>^(x) = 0`` (the field never
         enters the two-electron integrals), so only the first three (rotation) terms survive --
-        the polarizability case. For a nuclear displacement ``<pq||rs>^(x)`` is nonzero, adding
-        the ``rotate(U^x, <>^(y))`` cross-skeleton terms; the **field-nuclear** mixed second-order
-        skeleton ``<pq||rs>^(FX) = 0`` (again, the field is absent from the 2-e integrals), so the
-        APT needs no ``<>^(ab)`` term.
+        the polarizability case. Field-nuclear adds the ``rotate(U^F, <>^X)`` cross-skeleton term
+        (``<>^(FX) = 0``, the APT case); nuclear-nuclear adds the second cross-skeleton and the
+        direct ``<pq||rs>^(XY)`` (the molecular Hessian).
 
         Takes ``U2`` as an argument so the second-order CPHF solve can call it with the ov
-        response zeroed (no recursion through :meth:`_full_U2`). NUCLEAR-NUCLEAR (the molecular
-        Hessian) additionally needs the direct ``<pq||rs>^(XY)`` second-derivative integrals --
-        not built (guarded below)."""
-        if {perta.kind, pertb.kind} == {'nuclear'}:
-            raise NotImplementedError(
-                "nuclear-nuclear second 2e skeleton <pq||rs>^(XY) not built (molecular Hessian).")
+        response zeroed (no recursion through :meth:`_full_U2`)."""
         ERI = np.asarray(self.wfn.H.ERI)
         Ua = self._full_U(perta, ncore)
         Ub = self._full_U(pertb, ncore)
@@ -504,6 +560,9 @@ class CPHF(object):
             d2e = d2e + self._rotate_eri(Ua, np.asarray(gxb))
         if np.ndim(gxa):
             d2e = d2e + self._rotate_eri(Ub, np.asarray(gxa))
+        gxab = self._d2eri_skeleton(perta, pertb)          # mixed 2e skeleton (nuclear-nuclear)
+        if np.ndim(gxab):
+            d2e = d2e + gxab
         return d2e
 
     def _d2fock(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
