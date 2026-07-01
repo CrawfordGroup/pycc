@@ -260,6 +260,13 @@ class MPwfn(Wavefunction):
         gradient (:meth:`HFwfn.gradient`) plus the MP2 correlation gradient (:meth:`gradient`)."""
         return self._reference_hf().gradient() + self.gradient()
 
+    def total_dipole_derivatives(self) -> np.ndarray:
+        """Total MP2 atomic polar tensors (nuclear dipole derivatives, a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]``: the SCF reference APTs
+        (:meth:`HFwfn.dipole_derivatives`, which carry the ``Z_A`` nuclear term) plus the MP2
+        correlation APTs (:meth:`dipole_derivatives`)."""
+        return self._reference_hf().dipole_derivatives() + self.dipole_derivatives()
+
     # ---- explicit-derivative property route (notes.pdf) ----
     # The first derivative of the correlation energy w.r.t. a perturbation, via the
     # full (CPHF-folded) derivatives of f and <pq||rs> from the shared CPHF engine,
@@ -459,6 +466,57 @@ class MPwfn(Wavefunction):
                       + c('pqrs,pqrs->', dGam[a], dbe) + c('pqrs,pqrs->', Gam, d2e))
                 alpha[a, b] = -e2
         return alpha
+
+    def dipole_derivatives(self) -> np.ndarray:
+        """MP2 **correlation** contribution to the atomic polar tensors (nuclear dipole
+        derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
+        ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed
+        field/nuclear analog of :meth:`polarizability`, via the explicit route (Eq. 15)::
+
+            d_{F X} E_corr = sum_pq [ d_X gamma_pq d_F f_pq + gamma_pq d_{F X} f_pq ]
+                           + sum_pqrs [ d_X Gamma d_F <pq||rs> + Gamma d_{F X} <pq||rs> ]
+
+        with the unrelaxed densities ``gamma``/``Gamma``, the **nuclear** density responses
+        ``d_X gamma``/``d_X Gamma`` (:meth:`_perturbed_densities`), the field first derivatives
+        (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the mixed second derivatives
+        (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order response
+        ``U^{FX}`` and the ``-mu^X`` mixed skeleton). Electronic only; the nuclear ``Z_A`` term
+        is in the reference (:meth:`HFwfn.dipole_derivatives`), so the total is their sum
+        (:meth:`total_dipole_derivatives`). Basis-aware. Validated against a finite nuclear
+        displacement of the analytic dipole (``test_068``)."""
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        ncore = o.stop - self.no
+        if self.orbital_basis == 'spinorbital':
+            Doo, Dvv = self._so_mp2_corr_opdm()
+            Gam = self._so_mp2_cumulant()
+        else:
+            Doo, Dvv = self._mp2_corr_opdm()
+            Gam = self._mp2_cumulant()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = np.asarray(Gam)
+        cphf = self._full_occ_cphf()
+        c = self.contract
+        natom = self.derivatives.natom
+        field = [Perturbation('field', a) for a in range(3)]
+        dFf = [np.asarray(cphf.perturbed_fock(field[a], ncore)) for a in range(3)]
+        dFe = [np.asarray(cphf.perturbed_eri(field[a], ncore)) for a in range(3)]
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            for beta in range(3):
+                pX = Perturbation('nuclear', (A, beta))
+                dgX, dGX = self._perturbed_densities(pX)
+                dgX = np.asarray(dgX)
+                dGX = np.asarray(dGX)
+                for alpha in range(3):
+                    d2f = np.asarray(cphf.perturbed_fock2(field[alpha], pX, ncore))
+                    d2e = np.asarray(cphf.perturbed_eri2(field[alpha], pX, ncore))
+                    e2 = (c('pq,pq->', dgX, dFf[alpha]) + c('pq,pq->', gamma, d2f)
+                          + c('pqrs,pqrs->', dGX, dFe[alpha]) + c('pqrs,pqrs->', Gam, d2e))
+                    P[A, beta, alpha] = -e2
+        return P
 
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
