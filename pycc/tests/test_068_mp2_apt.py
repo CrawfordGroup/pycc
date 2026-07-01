@@ -44,11 +44,11 @@ def _geom(coords):
     return s
 
 
-def _mpwfn(coords, basis, orbital_basis='spatial'):
+def _mpwfn(coords, basis, orbital_basis='spatial', freeze_core='false'):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(_geom(coords))
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'false',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-13, 'd_convergence': 1e-13})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
@@ -67,12 +67,12 @@ def _dens_invariants(mp):
     return np.sum(g * g), np.sum(Gam * Gam)
 
 
-def _corr_dipfd(basis, orbital_basis, alpha, atom, cart, h=0.002):
-    """|P_corr[A,cart,alpha]| via a 7-point O(h^6) FD of the analytic correlation dipole
+def _corr_dipfd(basis, orbital_basis, alpha, atom, cart, freeze_core='false', h=0.002):
+    """P_corr[A,cart,alpha] via a 7-point O(h^6) FD of the analytic correlation dipole
     component `alpha` over the nuclear coordinate (atom, cart)."""
     def mu(delta):
         c = BASE.copy(); c[atom, cart] += delta
-        return _mpwfn(c, basis, orbital_basis)._corr_dipole_explicit()[alpha]
+        return _mpwfn(c, basis, orbital_basis, freeze_core)._corr_dipole_explicit()[alpha]
     return (-mu(-3*h) + 9*mu(-2*h) - 45*mu(-h)
             + 45*mu(h) - 9*mu(2*h) + mu(3*h)) / (60*h)
 
@@ -132,3 +132,34 @@ def test_mp2_apt_translational_sum_rule_631g():
     P_tot = mp0.total_dipole_derivatives()
     assert np.max(np.abs(np.sum(P_corr, axis=0))) < 1e-10
     assert np.max(np.abs(np.sum(P_tot, axis=0))) < 1e-10
+
+
+# ---- frozen core (the mixed field/nuclear core<->active response) ----
+
+def test_fc_mp2_corr_apt_dipfd_631g():
+    """Frozen-core spatial correlation APT vs the 7-point dipole-over-nuclear FD, H2O/6-31G.
+
+    Exercises the mixed field/nuclear core<->active response: the frozen-core U^{FX} (with the
+    core<->active canonical divide and the ov xi-seed) and the nuclear density response over
+    the active space. Works with no APT-specific code change -- the ncore machinery carries
+    over from the gradient/polarizability."""
+    P = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true').dipole_derivatives()
+    for (alpha, atom, cart) in [(2, 0, 2), (1, 2, 1), (2, 1, 1)]:
+        assert abs(P[atom, cart, alpha]
+                   - _corr_dipfd('6-31G', 'spatial', alpha, atom, cart,
+                                 freeze_core='true')) < 1e-10
+
+
+def test_fc_so_mp2_corr_apt_vs_spatial_631g():
+    """Keystone (6-31G, frozen core): spin-orbital == spin-adapted correlation APT."""
+    P_so = _mpwfn(BASE, '6-31G', 'spinorbital', freeze_core='true').dipole_derivatives()
+    P_sa = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true').dipole_derivatives()
+    assert np.max(np.abs(P_so - P_sa)) < 1e-11
+
+
+def test_fc_mp2_apt_translational_sum_rule_631g():
+    """Frozen-core acoustic sum rule: sum over atoms of the total (and correlation) APT
+    vanishes for neutral water."""
+    mp0 = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')
+    assert np.max(np.abs(np.sum(mp0.dipole_derivatives(), axis=0))) < 1e-10
+    assert np.max(np.abs(np.sum(mp0.total_dipole_derivatives(), axis=0))) < 1e-10
