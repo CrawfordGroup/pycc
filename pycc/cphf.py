@@ -509,6 +509,10 @@ class CPHF(object):
         ``U^{ab}_ij = -F0_ij / (eps_i - eps_j) - 1/2 xi_ij``. The redundant core-core,
         active-active, and vir-vir blocks stay at ``-1/2 xi``.
 
+        The frozen-core oo block also makes the ov orthonormality term ``xi_ia`` nonzero, so
+        the ov block is not purely antisymmetric; its ``-xi_ia`` part is seeded before the
+        RHS so the second-order CPHF solve still enforces Brillouin ``d_ab f_ai = 0``.
+
         ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only), inherited from :meth:`_xi`
         (no ``S^{ab}``) and :meth:`_d2fock` (no skeleton second derivatives). Not valid as-is
         for nuclear displacements / the molecular Hessian."""
@@ -520,7 +524,14 @@ class CPHF(object):
         U2 = np.zeros((nmo, nmo))
         U2[o, o] = -0.5 * xi[o, o]
         U2[v, v] = -0.5 * xi[v, v]
-        B = -self._d2fock(perta, pertb, U2, ncore)[o, v]     # ov block, response zeroed
+        # Seed the CPHF-response-independent ov orthonormality part U^{ab}_ia = -xi_ia
+        # (Eq. 19 with the ov response zeroed) *before* forming the RHS, so B captures its
+        # contribution to d_ab f_ov. This is zero for the electric field with no frozen core
+        # (xi_ov vanishes when U has no oo block), but the frozen-core core<->active oo block
+        # makes xi_ov nonzero; omitting it leaves the second-order Brillouin condition
+        # d_ab f_ai = 0 unsatisfied (the Hessian G only maps the antisymmetric ov rotation).
+        U2[o, v] = -xi[o, v]
+        B = -self._d2fock(perta, pertb, U2, ncore)[o, v]     # ov CPHF response still zeroed
         Uai = self.solve(B, kind="electric")
         U2[v, o] = Uai.T
         U2[o, v] = -xi[o, v] - Uai

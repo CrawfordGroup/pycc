@@ -424,9 +424,9 @@ class MPwfn(Wavefunction):
         (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the second perturbed derivatives
         (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order CPHF
         response ``U^{ab}``). The reference part is kept separate (:meth:`HFwfn.polarizability`);
-        the total is their sum. Basis-aware; **all-electron only** (frozen-core second
-        derivatives are not yet correct -- see below). Validated against a finite field of
-        ``E_MP2`` for the all-electron case.
+        the total is their sum. Basis-aware; all-electron or frozen-core (the frozen-core
+        core<->active second-order response enters via ``CPHF._full_U2``). Validated against a
+        finite field of ``E_MP2``.
 
         Electric field only. The second-order engine it drives assumes a perturbation-independent
         AO basis (see :meth:`CPHF.perturbed_fock2`/`perturbed_eri2`); a nuclear second derivative

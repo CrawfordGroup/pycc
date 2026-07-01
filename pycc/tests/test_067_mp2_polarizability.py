@@ -18,14 +18,12 @@ Validation (all-electron):
   * keystone: spin-orbital == spin-adapted (closed-shell RHF) correlation alpha.
 
 Oracle note: the finite field is of the MP2 *energy* (not any analytic gradient), so it is
-unaffected by Psi4's frozen-core MP2 gradient bug. Frozen-core second derivatives are not
-yet correct (a residual ~1e-5 remains in the second-order machinery) -- see the xfail below.
+unaffected by Psi4's frozen-core MP2 gradient bug.
 """
 
 import psi4
 import pycc
 import numpy as np
-import pytest
 
 
 WATER = """
@@ -98,11 +96,29 @@ def test_so_mp2_corr_polarizability_vs_spatial_ccpvdz():
     assert np.max(np.abs(a_so - a_sa)) < 1e-11
 
 
-@pytest.mark.xfail(reason="frozen-core MP2 second derivative has a ~1e-5 residual in the "
-                          "second-order machinery (see bug hunt); all-electron is exact",
-                   strict=True)
 def test_fc_mp2_corr_polarizability_diag_631g():
-    """Frozen-core spatial MP2 correlation alpha_zz vs finite field -- KNOWN FAILING
-    (documents the open frozen-core second-derivative bug)."""
+    """Frozen-core spatial MP2 correlation alpha diagonal vs finite field, H2O/6-31G.
+
+    Exercises the frozen-core second-order response: the core<->active U^{ab} from the
+    canonical d_ab f_ij = 0 divide, and the ov second-order CPHF solve seeded with the
+    nonzero ov orthonormality term xi_ia (which vanishes only in the all-electron field
+    case)."""
     a = _pycc_alpha('6-31G', orbital_basis='spatial', freeze_core='true')
-    assert abs(a[2, 2] - _ff_corr_alpha_diag('6-31G', 2, freeze_core='true')) < 1e-7
+    for axis in range(3):
+        assert abs(a[axis, axis]
+                   - _ff_corr_alpha_diag('6-31G', axis, freeze_core='true')) < 1e-7
+
+
+def test_fc_so_mp2_corr_polarizability_diag_631g():
+    """Frozen-core spin-orbital MP2 correlation alpha diagonal vs finite field, H2O/6-31G."""
+    a = _pycc_alpha('6-31G', orbital_basis='spinorbital', freeze_core='true')
+    for axis in range(3):
+        assert abs(a[axis, axis]
+                   - _ff_corr_alpha_diag('6-31G', axis, freeze_core='true')) < 1e-7
+
+
+def test_fc_so_mp2_corr_polarizability_vs_spatial_ccpvdz():
+    """Keystone (cc-pVDZ, frozen core): spin-orbital == spin-adapted correlation alpha."""
+    a_so = _pycc_alpha('cc-pVDZ', orbital_basis='spinorbital', freeze_core='true')
+    a_sa = _pycc_alpha('cc-pVDZ', orbital_basis='spatial', freeze_core='true')
+    assert np.max(np.abs(a_so - a_sa)) < 1e-11
