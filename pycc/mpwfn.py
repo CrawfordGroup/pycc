@@ -267,6 +267,12 @@ class MPwfn(Wavefunction):
         correlation APTs (:meth:`dipole_derivatives`)."""
         return self._reference_hf().dipole_derivatives() + self.dipole_derivatives()
 
+    def total_hessian(self) -> np.ndarray:
+        """Total MP2 molecular (nuclear) Hessian (a.u.), shape ``(3*natom, 3*natom)``: the SCF
+        reference Hessian (:meth:`HFwfn.hessian`, which carries the nuclear-repulsion term) plus
+        the MP2 correlation Hessian (:meth:`hessian`)."""
+        return self._reference_hf().hessian() + self.hessian()
+
     # ---- explicit-derivative property route (notes.pdf) ----
     # The first derivative of the correlation energy w.r.t. a perturbation, via the
     # full (CPHF-folded) derivatives of f and <pq||rs> from the shared CPHF engine,
@@ -517,6 +523,64 @@ class MPwfn(Wavefunction):
                           + c('pqrs,pqrs->', dGX, dFe[alpha]) + c('pqrs,pqrs->', Gam, d2e))
                     P[A, beta, alpha] = -e2
         return P
+
+    def hessian(self) -> np.ndarray:
+        """MP2 **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
+        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` --
+        the nuclear-nuclear analog of :meth:`polarizability`/:meth:`dipole_derivatives`, via
+        the explicit route (Eq. 15)::
+
+            d_{XY} E_corr = sum_pq [ d_X gamma d_Y f + gamma d_{XY} f ]
+                          + sum_pqrs [ d_X Gamma d_Y <pq||rs> + Gamma d_{XY} <pq||rs> ]
+
+        with the nuclear density responses ``d_X gamma``/``d_X Gamma``
+        (:meth:`_perturbed_densities`), the nuclear first derivatives
+        (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the nuclear-nuclear second
+        derivatives (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry ``U^{XY}``, the
+        ``xi^{XY}`` ``S^{XY}``/``S^X S^Y`` overlap terms, and the ``h^{XY}``/``<pq||rs>^{XY}``
+        skeletons). The reference part is separate (:meth:`HFwfn.hessian`); total is their sum
+        (:meth:`total_hessian`). Basis-aware.
+
+        The explicit route solves ``U^{XY}`` for each of the ``3N(3N+1)/2`` unique nuclear
+        pairs -- the ``O(N^2)`` cost the 2n+1 (Z-vector interchange) route would avoid; fine for
+        a reference implementation on small molecules. Validated against a finite difference of
+        the analytic gradient (``test_069``)."""
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        ncore = o.stop - self.no
+        if self.orbital_basis == 'spinorbital':
+            Doo, Dvv = self._so_mp2_corr_opdm()
+            Gam = self._so_mp2_cumulant()
+        else:
+            Doo, Dvv = self._mp2_corr_opdm()
+            Gam = self._mp2_cumulant()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = np.asarray(Doo)
+        gamma[v, v] = np.asarray(Dvv)
+        Gam = np.asarray(Gam)
+        cphf = self._full_occ_cphf()
+        c = self.contract
+        natom = self.derivatives.natom
+        nc = 3 * natom
+        pert = [Perturbation('nuclear', (A, cart)) for A in range(natom) for cart in range(3)]
+        dXf = [np.asarray(cphf.perturbed_fock(pert[i], ncore)) for i in range(nc)]
+        dXe = [np.asarray(cphf.perturbed_eri(pert[i], ncore)) for i in range(nc)]
+        dg, dG = zip(*(self._perturbed_densities(pert[i]) for i in range(nc)))
+        dg = [np.asarray(x) for x in dg]
+        dG = [np.asarray(x) for x in dG]
+        H = np.zeros((nc, nc))
+        for i in range(nc):
+            for j in range(i, nc):                      # d_{XY} f / <> symmetric in X<->Y
+                d2f = np.asarray(cphf.perturbed_fock2(pert[i], pert[j], ncore))
+                d2e = np.asarray(cphf.perturbed_eri2(pert[i], pert[j], ncore))
+                gd2f = c('pq,pq->', gamma, d2f)
+                Gd2e = c('pqrs,pqrs->', Gam, d2e)
+                H[i, j] = (c('pq,pq->', dg[i], dXf[j]) + gd2f
+                           + c('pqrs,pqrs->', dG[i], dXe[j]) + Gd2e)
+                if j != i:
+                    H[j, i] = (c('pq,pq->', dg[j], dXf[i]) + gd2f
+                               + c('pqrs,pqrs->', dG[j], dXe[i]) + Gd2e)
+        return H
 
     # ---- spin-adapted (closed-shell RHF) MP2 relaxed-gradient densities ----
     # The closed-shell analogue of the spin-orbital densities: the spin sum is carried by
