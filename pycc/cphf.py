@@ -431,24 +431,80 @@ class CPHF(object):
                 + c('tp,us,tqru->pqrs', Ua, Ub, T) + c('tq,ur,ptus->pqrs', Ua, Ub, T)
                 + c('tq,us,ptru->pqrs', Ua, Ub, T) + c('tr,us,pqtu->pqrs', Ua, Ub, T))
 
+    def _oei_skeleton(self, pert: "Perturbation") -> np.ndarray:
+        """First-order one-electron (core-Hamiltonian) skeleton derivative ``h^(x)_pq``
+        (``nmo x nmo``, MO basis, fixed MO coefficients) -- the piece of the skeleton Fock
+        derivative *without* the occupied mean field. Field: ``h^(F) = -mu`` (``H' = -mu.E``).
+        Nuclear: the core-Hamiltonian derivative from the ``Derivatives`` provider."""
+        so = self.wfn.orbital_basis == 'spinorbital'
+        if pert.kind == 'field':
+            return -np.asarray(self.wfn.H.mu[pert.comp])
+        if pert.kind == 'nuclear':
+            atom, cart = pert.comp
+            d = self.wfn.derivatives
+            return np.asarray((d.so_core(atom) if so else d.core(atom))[cart])
+        raise NotImplementedError("one-electron skeleton wired for 'field'/'nuclear' only.")
+
+    def _oei2_skeleton(self, perta: "Perturbation", pertb: "Perturbation"):
+        """Mixed one-electron skeleton second derivative ``h^(ab)_pq`` (fixed MO coefficients).
+
+        - field-field: ``0`` (the field is linear in F).
+        - field-nuclear: ``-d(mu_alpha)/dX_beta`` (dipole-derivative integrals) -- because
+          ``d_F h = -mu``, so ``d_{F X} h = -mu^X``. This is the one genuinely new integral for
+          the APT, and it is already provided (``Derivatives.dipole`` / ``so_dipole``).
+        - nuclear-nuclear: the core-Hamiltonian second derivative (``core2``) -- part of the
+          molecular Hessian, not yet built."""
+        kinds = {perta.kind, pertb.kind}
+        if kinds == {'field'}:
+            return 0.0
+        if kinds == {'field', 'nuclear'}:
+            fld, nuc = (perta, pertb) if perta.kind == 'field' else (pertb, perta)
+            alpha = fld.comp
+            atom, beta = nuc.comp
+            so = self.wfn.orbital_basis == 'spinorbital'
+            d = self.wfn.derivatives
+            dip = (d.so_dipole(atom) if so else d.dipole(atom))[alpha * 3 + beta]
+            return -np.asarray(dip)
+        raise NotImplementedError(
+            "mixed one-electron skeleton wired for field-field and field-nuclear (APT); "
+            "nuclear-nuclear (the molecular Hessian) needs core2.")
+
     def _d2eri(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
         """Second perturbed two-electron derivative ``d_ab <pq||rs>`` (``nmo^4``) given the
-        second-order rotation ``U2`` = ``U^{ab}`` (Eq. 20; field skeleton zero)::
+        second-order rotation ``U2`` = ``U^{ab}`` (Eq. 20)::
 
             d_ab <pq||rs> = rotate(U^{ab}, <pq||rs>)
-                            + cross(U^a, U^b, <pq||rs>) + cross(U^b, U^a, <pq||rs>).
+                            + cross(U^a, U^b, <pq||rs>) + cross(U^b, U^a, <pq||rs>)
+                            + rotate(U^a, <pq||rs>^(b)) + rotate(U^b, <pq||rs>^(a))
+                            + <pq||rs>^(ab)
+
+        where ``<pq||rs>^(x)`` is the first-order two-electron skeleton (fixed MO coefficients,
+        from :meth:`_skeleton`). For the electric field ``<pq||rs>^(x) = 0`` (the field never
+        enters the two-electron integrals), so only the first three (rotation) terms survive --
+        the polarizability case. For a nuclear displacement ``<pq||rs>^(x)`` is nonzero, adding
+        the ``rotate(U^x, <>^(y))`` cross-skeleton terms; the **field-nuclear** mixed second-order
+        skeleton ``<pq||rs>^(FX) = 0`` (again, the field is absent from the 2-e integrals), so the
+        APT needs no ``<>^(ab)`` term.
 
         Takes ``U2`` as an argument so the second-order CPHF solve can call it with the ov
-        response zeroed (no recursion through :meth:`_full_U2`).
-
-        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only): there is no skeleton
-        (direct AO) second-derivative term ``<pq||rs>^{ab}``, which vanishes for a field but
-        not for a nuclear displacement. The molecular Hessian would add it here."""
+        response zeroed (no recursion through :meth:`_full_U2`). NUCLEAR-NUCLEAR (the molecular
+        Hessian) additionally needs the direct ``<pq||rs>^(XY)`` second-derivative integrals --
+        not built (guarded below)."""
+        if {perta.kind, pertb.kind} == {'nuclear'}:
+            raise NotImplementedError(
+                "nuclear-nuclear second 2e skeleton <pq||rs>^(XY) not built (molecular Hessian).")
         ERI = np.asarray(self.wfn.H.ERI)
         Ua = self._full_U(perta, ncore)
         Ub = self._full_U(pertb, ncore)
-        return (self._rotate_eri(U2, ERI)
-                + self._cross_eri(Ua, Ub, ERI) + self._cross_eri(Ub, Ua, ERI))
+        _, _, gxa = self._skeleton(perta)
+        _, _, gxb = self._skeleton(pertb)
+        d2e = (self._rotate_eri(U2, ERI)
+               + self._cross_eri(Ua, Ub, ERI) + self._cross_eri(Ub, Ua, ERI))
+        if np.ndim(gxb):                                    # gxb is an array (nuclear), not 0.0 (field)
+            d2e = d2e + self._rotate_eri(Ua, np.asarray(gxb))
+        if np.ndim(gxa):
+            d2e = d2e + self._rotate_eri(Ub, np.asarray(gxa))
+        return d2e
 
     def _d2fock(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
         """Second perturbed Fock derivative ``d_ab f_pq`` (``nmo x nmo``) given ``U2`` = ``U^{ab}``.
@@ -458,32 +514,37 @@ class CPHF(object):
         with the correct multilinear rule (rotation + cross-index products, *no* same-index
         terms)::
 
-            d_ab h = rotate2(U^{ab}, h) + cross2(U^a, U^b, h)          [+ cross2(U^b,U^a,h)]
-                     + rotate2(U^a, -mu_b) + rotate2(U^b, -mu_a)       (field skeleton f^(x)=-mu)
-            d_ab G_pq = sum_m d_ab w[p,m,q,m]                          (from d_ab <pq||rs>)
+            d_ab h = rotate2(U^{ab}, h) + cross2(U^a, U^b, h) + cross2(U^b, U^a, h)
+                     + rotate2(U^a, h^(b)) + rotate2(U^b, h^(a))   (first-order oei skeletons)
+                     + h^(ab)                                      (mixed oei skeleton)
+            d_ab G_pq = sum_m d_ab w[p,m,q,m]                      (from d_ab <pq||rs>)
 
-        with ``rotate2(U, M) = U.T M + M U`` and ``cross2(U^a,U^b,M) = U^a.T M U^b``. Takes
-        ``U2`` as an argument (no recursion through :meth:`_full_U2`).
+        with ``rotate2(U, M) = U.T M + M U`` and ``cross2(U^a,U^b,M) = U^a.T M U^b``. The
+        one-electron skeletons come from :meth:`_oei_skeleton` (field ``h^(F) = -mu``, nuclear
+        the core-Hamiltonian derivative) and :meth:`_oei2_skeleton` (field-field ``0``,
+        field-nuclear ``-mu^X``). ``d_ab G`` inherits the (now perturbation-general) second
+        two-electron derivative from :meth:`_d2eri`. Takes ``U2`` as an argument (no recursion
+        through :meth:`_full_U2`).
 
-        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only). The one-electron skeleton is
-        just ``f^(x) = -mu`` with no ``h^{ab}``, and ``d_ab G`` inherits the field-only
-        ``d_ab <pq||rs>`` from :meth:`_d2eri`. A nuclear displacement would add the direct AO
-        second derivatives ``h^{ab}`` and ``<pq||rs>^{ab}`` (and the ``S``-dependent terms via
-        ``U2``); this routine does not."""
+        Handles field-field (polarizability) and field-nuclear (APT). NUCLEAR-NUCLEAR (the
+        molecular Hessian) additionally needs ``h^(XY)`` (``core2``) and ``<pq||rs>^(XY)``
+        (guarded in :meth:`_d2eri`), and the ``S^{XY}`` term in :meth:`_xi`."""
         o = self.o
         c = self.contract
         f = np.asarray(self.wfn.H.F)
         so = self.wfn.orbital_basis == 'spinorbital'
         W = np.asarray(self.wfn.H.ERI) if so else np.asarray(self.wfn.H.L)
         h = f - c('pmqm->pq', W[:, o, :, o])                 # bare one-electron MO Fock
-        mua = np.asarray(self.wfn.H.mu[perta.comp])
-        mub = np.asarray(self.wfn.H.mu[pertb.comp])
         Ua = self._full_U(perta, ncore)
         Ub = self._full_U(pertb, ncore)
+        hxa = self._oei_skeleton(perta)                      # first-order oei skeletons
+        hxb = self._oei_skeleton(pertb)
+        hxab = self._oei2_skeleton(perta, pertb)             # mixed oei skeleton (0 for field-field)
         d2h = (c('rp,rq->pq', U2, h) + c('pr,rq->pq', h, U2)             # rotate2(U^{ab}, h)
                + c('rp,rs,sq->pq', Ua, h, Ub) + c('rp,rs,sq->pq', Ub, h, Ua)  # cross2
-               - c('rp,rq->pq', Ua, mub) - c('pr,rq->pq', mub, Ua)      # rotate2(U^a, -mu_b)
-               - c('rp,rq->pq', Ub, mua) - c('pr,rq->pq', mua, Ub))     # rotate2(U^b, -mu_a)
+               + c('rp,rq->pq', Ua, hxb) + c('pr,rq->pq', hxb, Ua)      # rotate2(U^a, h^(b))
+               + c('rp,rq->pq', Ub, hxa) + c('pr,rq->pq', hxa, Ub)      # rotate2(U^b, h^(a))
+               + hxab)                                                   # mixed oei skeleton
         d2e = self._d2eri(perta, pertb, U2, ncore)
         d2W = d2e if so else (2.0 * d2e - d2e.swapaxes(2, 3))
         d2G = c('pmqm->pq', d2W[:, o, :, o])                 # sum_m d_ab w[p,m,q,m]

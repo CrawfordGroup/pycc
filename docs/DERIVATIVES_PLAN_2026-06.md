@@ -267,6 +267,23 @@ derivative of PyCC's own `E_MP2(F)`. Build up incrementally:
 4. full `alpha_corr` vs the finite field of `E_MP2`, plus the `alpha = alpha_HF + alpha_corr`
    HF-limit check and the **SO == spatial** keystone; both bases, all-electron then frozen core.
 
+**MP2 dipole polarizability — DONE (PR #163, on `main`).** All-electron and frozen-core, both
+bases, both spin paths. Second-order block on `CPHF` (`_xi`, `_cross_eri`, `_d2eri`, `_d2fock`
+via the `h` + occupied-mean-field decomposition, `_full_U2`, `perturbed_fock2`/`perturbed_eri2`);
+`MPwfn.polarizability()` assembles Eq. 15. Eq. 17 verified against the independent `_d2fock` to
+~3e-15 (with the Eq. 3 typo corrected, `A_pqrs = <pq||rs> + <ps||rq>`). **Frozen-core subtlety
+found & fixed:** the second-order ov CPHF solve reused the first-order Hessian `G`, which maps
+only the *antisymmetric* ov rotation, but the core<->active oo block makes `xi_ov != 0`, so
+`U^{ab}_ov = -xi_ov - Uai` is not antisymmetric; seeding `U^{ab}_ov = -xi_ov` before the RHS
+restores second-order Brillouin `d_ab f_ai = 0` (all-electron `xi_ov = 0`, so a no-op there). It
+hid because first-order Brillouin *did* hold for frozen core but the validated dipole never
+touches the `[v,o]` block. Validated (`test_067`) via a **7-point O(h^6) finite difference of the
+analytic dipole** (`alpha = d mu / dF`, a `1/h` stencil ~3 orders tighter than an energy `1/h^2`
+second difference) to ~1e-12, with an external energy-FD guard and the SO==spatial keystone. The
+whole second-order block assumes a perturbation-independent AO basis (electric field only);
+docstrings on `_xi`/`_d2eri`/`_d2fock`/`_full_U2`/`perturbed_*2` flag the skeleton
+derivative-integral terms a nuclear (molecular-Hessian) extension requires.
+
 Phase D (SO): `MPwfn.gradient()` assembles the MP2 analytic nuclear gradient
 
     dE/dX = E_SCF gradient (HFwfn) + sum_pq D_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X
@@ -444,3 +461,82 @@ correlated (MP2) gradient, frozen core, then CC gradients / the MP2 property pat
 
 Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
 lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.
+
+## MP2 APT (atomic polar tensors / dipole derivatives) — explicit route (2026-07) — DONE
+
+**DONE (branch `feature/mp2-apt`).** `MPwfn.dipole_derivatives()` (correlation APT,
+`3 x 3N`) + `total_dipole_derivatives()`, both spatial and spin-orbital, all-electron and
+frozen-core. Both predictions of the plan held: (1) the nuclear T2 density response works
+through the generic `_perturbed_densities` with no change (validated via the gauge-invariant
+`Tr(gamma^2)`/`||Gamma||^2` scalars); (2) the only new machinery was the skeleton
+generalization of `_d2fock`/`_d2eri` (`_oei_skeleton`, `_oei2_skeleton` giving `-mu^X`, and
+the `rotate(U^F, <>^X)` cross-skeleton) -- `_xi` needed no change (`S^F = S^{FX} = 0`), and
+frozen core needed no APT-specific fix (the ov `xi`-seed and core<->active divide carried over
+from the polarizability). Validated (`test_068`): APT vs a 7-point FD of the analytic dipole
+over nuclear displacement ~1e-12; SO==spatial keystone ~1e-15; the acoustic (translational)
+sum rule `sum_A P = 0` (total and correlation) ~1e-15; nuclear T2 response ~1e-9. Field-field
+polarizability unregressed. The 2n+1 route remains the deferred efficient alternative.
+
+The original planning notes follow.
+
+Branch (planned): `feature/mp2-apt`. Deliverable: the MP2 **correlation** atomic polar tensor
+`P_corr_{a,Xb} = d(mu_a)/d(X_b) = -d^2 E_corr / dF_a dX_b` (the IR-intensity tensor, `3 x 3N`),
+with the reference part from `HFwfn.dipole_derivatives()` (total `P = P_HF + P_corr`). Explicit
+route, consistent with the polarizability; the 2n+1 (Z-vector interchange) route remains the
+deferred efficient alternative. **Spin-orbital first, all-electron first** (then spatial, then
+frozen core), mirroring the gradient/polarizability phasing.
+
+**Assembly (mixed field `F_a` / nuclear `X_b`, Eq. 15 with one field + one nuclear perturbation):**
+
+    d_{F_a X_b} E_corr = sum_pq   [ d_{X_b}(gamma_pq) d_{F_a} f_pq + gamma_pq d_{F_a X_b} f_pq ]
+                       + sum_pqrs [ d_{X_b}(Gamma)    d_{F_a} <pq||rs> + Gamma d_{F_a X_b} <pq||rs> ]
+
+(equivalently `d_{F_a}` of the gradient integrand -- the two are equal.)
+
+**What we already have.** First-order field derivatives `d_F f`/`d_F <>` and nuclear derivatives
+`d_X f`/`d_X <>` (`perturbed_fock`/`perturbed_eri`, both kinds -- nuclear validated for the
+gradient); the field density response `d_F gamma/Gamma`; the **dipole-derivative integrals**
+`mu^X` (`Derivatives.dipole`/`so_dipole`, already used by the HF APT); `HFwfn.dipole_derivatives()`
+(reference APT); `_xi` (Eq. 18 -- products of the first-order `U`'s, the `S^x` info riding in via
+their `-1/2 S^x` oo/vv blocks, no explicit `U*S` cross terms), the ov `xi`-seed, and the
+core<->active canonical divide (all from the polarizability).
+
+**Genuinely new -- two pieces:**
+
+1. **Nuclear density response `d_X gamma`, `d_X Gamma`** via `d_X t2`. `_perturbed_t2` /
+   `_perturbed_densities` are generic in the perturbation and already call the nuclear
+   `perturbed_fock/eri`, so they should work as-is (same closed form; the non-canonical `d_X f`
+   oo/vv blocks fold in). Task: **validate** `d_X t2`/`d_X gamma` vs a finite nuclear displacement.
+
+2. **Skeleton generalization of `_d2fock` / `_d2eri`** -- the one real piece of new machinery.
+   Today they hardcode the field skeleton (`f^(a) = -mu`, `<>^(a) = 0`). Generalize to use each
+   perturbation's own first-order skeleton from `_skeleton`, add the cross-rotations
+   `rotate(U^a, skel_b) + rotate(U^b, skel_a)`, and the mixed second-order skeleton. For F/X:
+     - Fock: `d_{F X} f_skel = -mu^X` (existing `Derivatives.dipole`), plus
+       `rotate(U^F, f^X) + rotate(U^X, -mu)`.
+     - ERI: mixed 2-e skeleton `= 0` (the field never touches the two-electron integrals), but
+       `rotate(U^F, <>^X)` is new.
+   Because the field does not move the basis, `S^F = 0` and `S^{FX} = 0`, so **`_xi` needs no
+   change** (Eq. 18 with the nuclear `U^X` carrying `-1/2 S^X` in its oo/vv blocks) and there is
+   no mixed overlap second derivative. `_full_U2(field, nuclear)` then follows: the ov `xi`-seed
+   and the core<->active divide carry over unchanged.
+
+**Why APT before the Hessian.** The mixed F/X second derivative exercises all of the moving-basis
+second-order machinery (nuclear skeletons in `_d2fock`/`_d2eri`, `S^X` via the first-order `U^X`)
+*without* the pure nuclear-nuclear skeletons (`h^{XY}`, `<>^{XY}`, `S^{XY}` -- the geometric-Hessian
+integrals) or the `S^{XY}` term in `_xi`. So it de-risks most of the Hessian generalization on a
+smaller problem.
+
+**Validation (new `test_068`).** Build up incrementally:
+1. `d_X t2` / `d_X gamma` vs a finite nuclear displacement (pins the nuclear T2 response);
+2. `d_{F X} f` vs a finite difference of `d_F f(X)` (the mixed second-order integral / `U^{FX}`);
+3. full `P_corr` vs a **7-point O(h^6) finite difference of the analytic dipole over nuclear
+   displacement** (`P = d mu / dX`, a `1/h` stencil ~1e-11), plus the **SO == spatial** keystone,
+   the `P = P_HF + P_corr` split, and the **acoustic (translational) sum rule** `sum_atoms P = 0`
+   (electronic part). External guard: a mixed `1/h^2` finite difference of `E_MP2(F, X)`. Oracles
+   are PyCC's own dipole/gradient -- Psi4's frozen-core MP2 gradient is inconsistent with its own
+   energy, so not used.
+
+Later: magnetic-field derivatives (AATs, for VCD) reuse the same explicit machinery with `H.m`;
+the full MP2 Hessian adds the nuclear-nuclear second-derivative skeletons and the `S^{XY}` term in
+`_xi`.
