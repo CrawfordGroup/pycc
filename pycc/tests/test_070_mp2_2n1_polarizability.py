@@ -41,28 +41,36 @@ def _mpwfn(basis, orbital_basis='spinorbital', freeze_core='false'):
 
 
 def test_2n1_polarizability_vs_explicit_631g():
-    """2n+1 == explicit correlation polarizability (spin-orbital, all-electron, 6-31G)."""
-    mp = _mpwfn('6-31G')
-    a_2n1 = np.asarray(mp.polarizability(route='2n+1'))
-    a_exp = np.asarray(mp.polarizability(route='explicit'))
-    assert np.max(np.abs(a_2n1 - a_exp)) < 1e-11
-    assert np.max(np.abs(a_2n1 - a_2n1.T)) < 1e-11        # symmetric
+    """2n+1 == explicit correlation polarizability, all-electron, 6-31G, both spin paths."""
+    for ob in ('spinorbital', 'spatial'):
+        mp = _mpwfn('6-31G', orbital_basis=ob)
+        a_2n1 = np.asarray(mp.polarizability(route='2n+1'))
+        a_exp = np.asarray(mp.polarizability(route='explicit'))
+        assert np.max(np.abs(a_2n1 - a_exp)) < 1e-11
+        assert np.max(np.abs(a_2n1 - a_2n1.T)) < 1e-11        # symmetric
 
 
 def test_2n1_polarizability_vs_explicit_ccpvdz():
-    """2n+1 == explicit correlation polarizability (cc-pVDZ, polarization functions)."""
-    mp = _mpwfn('cc-pVDZ')
-    a_2n1 = np.asarray(mp.polarizability(route='2n+1'))
-    a_exp = np.asarray(mp.polarizability(route='explicit'))
-    assert np.max(np.abs(a_2n1 - a_exp)) < 1e-11
+    """2n+1 == explicit correlation polarizability (cc-pVDZ), both spin paths."""
+    for ob in ('spinorbital', 'spatial'):
+        mp = _mpwfn('cc-pVDZ', orbital_basis=ob)
+        a_2n1 = np.asarray(mp.polarizability(route='2n+1'))
+        a_exp = np.asarray(mp.polarizability(route='explicit'))
+        assert np.max(np.abs(a_2n1 - a_exp)) < 1e-11
+
+
+def test_2n1_polarizability_so_vs_spatial_631g():
+    """Keystone: 2n+1 spin-orbital == spin-adapted correlation polarizability (6-31G)."""
+    a_so = np.asarray(_mpwfn('6-31G', 'spinorbital').polarizability(route='2n+1'))
+    a_sa = np.asarray(_mpwfn('6-31G', 'spatial').polarizability(route='2n+1'))
+    assert np.max(np.abs(a_so - a_sa)) < 1e-11
 
 
 def test_2n1_polarizability_guards():
-    """The 2n+1 path is spin-orbital / all-electron so far; spatial and frozen-core raise,
-    and an unknown route raises."""
-    with pytest.raises(NotImplementedError):
-        _mpwfn('6-31G', orbital_basis='spatial').polarizability(route='2n+1')
+    """The 2n+1 path is all-electron so far; frozen core raises, as does an unknown route."""
     with pytest.raises(NotImplementedError):
         _mpwfn('6-31G', freeze_core='true').polarizability(route='2n+1')
+    with pytest.raises(NotImplementedError):
+        _mpwfn('6-31G', orbital_basis='spatial', freeze_core='true').polarizability(route='2n+1')
     with pytest.raises(ValueError):
         _mpwfn('6-31G').polarizability(route='bogus')

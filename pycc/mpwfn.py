@@ -535,9 +535,10 @@ class MPwfn(Wavefunction):
 
         ``route='2n+1'`` -- the 2n+1 route (:meth:`_polarizability_2n1`): differentiate the
         relaxed-density gradient, using only the first-order perturbed *relaxed* density
-        (:meth:`_so_perturbed_relaxed_opdm`, which carries the perturbed Z-vector). Spin-orbital
-        / all-electron so far; reproduces the explicit route to ~machine precision (an
-        independent cross-check, and the efficient route for the APT/Hessian).
+        (:meth:`_so_perturbed_relaxed_opdm` / :meth:`_perturbed_relaxed_opdm`, which carry the
+        perturbed Z-vector). All-electron so far (both spin-orbital and spin-adapted paths);
+        reproduces the explicit route to ~machine precision (an independent cross-check, and
+        the efficient route for the APT/Hessian).
 
         The reference part is kept separate (:meth:`HFwfn.polarizability`); the total is their
         sum. Electric field only (the second-order engine assumes a perturbation-independent AO
@@ -575,7 +576,8 @@ class MPwfn(Wavefunction):
         return alpha
 
     def _polarizability_2n1(self) -> np.ndarray:
-        """MP2 correlation polarizability via the 2n+1 route (spin-orbital, all-electron).
+        """MP2 correlation polarizability via the 2n+1 route (all-electron; spin-orbital and
+        spin-adapted paths).
 
         Differentiating the relaxed-density gradient in a field: ``d_b E = -Tr(D_rel mu_b)``
         (field skeleton ``f^(b) = -mu_b``), so::
@@ -588,18 +590,21 @@ class MPwfn(Wavefunction):
         (``d_a f^(b) = rotate(U^a, -mu_b)``). No second-order CPHF ``U^{ab}`` -- only first-order
         responses. Reproduces the explicit route to ~machine precision."""
         from .cphf import Perturbation
-        if self.orbital_basis != 'spinorbital':
-            raise NotImplementedError("2n+1 polarizability: spin-orbital path only so far.")
         if self.o.stop - self.no:
             raise NotImplementedError("2n+1 polarizability: all-electron only so far.")
         cphf = self._full_occ_cphf()
         c = self.contract
-        Drel, _, _, _, _ = self._so_zvector()
+        if self.orbital_basis == 'spinorbital':
+            Drel = self._so_zvector()[0]
+            perturbed_opdm = self._so_perturbed_relaxed_opdm
+        else:
+            Drel = self._zvector()[0]
+            perturbed_opdm = self._perturbed_relaxed_opdm
         mu = [np.asarray(self.H.mu[a]) for a in range(3)]
         field = [Perturbation('field', b) for b in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
-            dDrel = self._so_perturbed_relaxed_opdm(field[b])
+            dDrel = perturbed_opdm(field[b])
             Ub = np.asarray(cphf._full_U(field[b], 0))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
@@ -819,6 +824,93 @@ class MPwfn(Wavefunction):
 
         W = self._mp2_lagrangian(D, Gam)
         return D, Gam, W, hf
+
+    # ---- 2n+1 route: spatial perturbed relaxed density (Phase A) ----
+    # Spin-adapted analogue of the _so_ methods above: the two-electron 1-PDM term / orbital
+    # Hessian carry the spin-adapted L (= H.L) in place of <pq||rs>, and the Z-vector is solved
+    # through the all-electron HFwfn CPHF (closed-shell singlet Hessian) rather than an inline G.
+
+    def _zvector(self):
+        """Spatial (closed-shell) unperturbed Z-vector data (cached, all-electron): relaxed
+        1-PDM ``D_rel``, cumulant ``Gam``, unrelaxed ``D_u``, the Z-vector amplitudes ``z``
+        (indexed ``(i,a)``), and the all-electron ``HFwfn`` whose CPHF carries the orbital
+        Hessian. Mirrors the ``nfzc=0`` branch of :meth:`_mp2_relaxed_densities`, exposing
+        ``z`` and ``hf`` for the perturbed response."""
+        if getattr(self, '_zvec', None) is None:
+            from .hfwfn import HFwfn
+            nmo, o, v = self.nmo, self.o, self.v
+            Doo, Dvv = self._mp2_corr_opdm()
+            Gam = np.asarray(self._mp2_cumulant())
+            Du = np.zeros((nmo, nmo))
+            Du[o, o] = np.asarray(Doo)
+            Du[v, v] = np.asarray(Dvv)
+            Ip = self._mp2_lagrangian(Du, Gam)
+            hf = HFwfn(self.ref)
+            zia = hf.cphf.solve(Ip[o, v] - Ip[v, o].T)      # (i,a)
+            Drel = Du.copy()
+            Drel[v, o] = -zia.T
+            Drel[o, v] = -zia
+            self._zvec = (Drel, Gam, Du, zia, hf)
+        return self._zvec
+
+    def _perturbed_lagrangian(self, pert) -> np.ndarray:
+        """Spatial first-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
+        the closed-shell analogue of :meth:`_so_perturbed_lagrangian`: the spin-adapted ``L``
+        (and its derivative ``dL = 2 d_x<pq|rs> - d_x<pq|sr>``) in the two-electron 1-PDM term,
+        ``<pr|st>`` (H.ERI) with ``Gamma`` in the 2-PDM term."""
+        nmo, o, v = self.nmo, self.o, self.v
+        ofull = slice(0, o.stop)
+        ncore = o.stop - self.no
+        ERI = np.asarray(self.H.ERI)
+        L = np.asarray(self.H.L)
+        eps = np.diag(np.asarray(self.H.F))
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        _, _, Du, _, _ = self._zvector()
+        Gam = np.asarray(self._mp2_cumulant())
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        dL = 2.0 * deri - deri.swapaxes(2, 3)
+        deps = np.diag(df)
+        dDg, dGam = self._perturbed_densities(pert)
+        dD = np.asarray(dDg)
+        dGam = np.asarray(dGam)
+        dA = deps[:, None] * (Du + Du.T) + eps[:, None] * (dD + dD.T)
+        dB = np.zeros((nmo, nmo))
+        dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull])
+                        + c('rs,rpsq->pq', Du, dL[:, :, :, ofull])
+                        + c('rs,rqsp->pq', dD, L[:, ofull, :, :])
+                        + c('rs,rqsp->pq', Du, dL[:, ofull, :, :]))
+        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
+        return -0.5 * (dA + dB + dC)
+
+    def _perturbed_relaxed_opdm(self, pert) -> np.ndarray:
+        """Spatial first-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),
+        all-electron: the unrelaxed oo/vv responses plus the perturbed Z-vector ``z^x`` in the
+        ov/vo blocks. ``z^x`` reuses the all-electron HFwfn CPHF (same orbital Hessian as the
+        gradient's Z-vector) with the perturbed RHS ``X^x - A^x z``; ``A^x z`` uses ``dL`` and
+        the full non-canonical ``d_x f`` vv/oo blocks."""
+        nmo, o, v = self.nmo, self.o, self.v
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        _, _, _, zia, hf = self._zvector()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        dL = 2.0 * deri - deri.swapaxes(2, 3)
+        dIp = self._perturbed_lagrangian(pert)
+        dX = dIp[o, v] - dIp[v, o].T
+        Axz = (c('ajib,jb->ia', dL[v, o, o, v], zia) + c('abij,jb->ia', dL[v, v, o, o], zia)
+               + c('ab,ib->ia', df[v, v], zia) - c('ij,ja->ia', df[o, o], zia))
+        zx = hf.cphf.solve(dX - Axz)                          # (i,a)
+        dDg, _ = self._perturbed_densities(pert)
+        dDg = np.asarray(dDg)
+        dD = np.zeros((nmo, nmo))
+        dD[o, o] = dDg[o, o]
+        dD[v, v] = dDg[v, v]
+        dD[v, o] = -zx.T
+        dD[o, v] = -zx
+        return dD
 
     # ---- MP2 nuclear gradient ----
 
