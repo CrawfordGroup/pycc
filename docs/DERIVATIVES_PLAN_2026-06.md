@@ -462,7 +462,22 @@ correlated (MP2) gradient, frozen core, then CC gradients / the MP2 property pat
 Once the SO HF gradient is in, `MPwfn.gradient()` can use an SO `HFwfn` for the SCF term,
 lifting the closed-shell-only restriction on the spin-orbital MP2 gradient.
 
-## Next up: MP2 APT (atomic polar tensors / dipole derivatives) — explicit route (2026-07)
+## MP2 APT (atomic polar tensors / dipole derivatives) — explicit route (2026-07) — DONE
+
+**DONE (branch `feature/mp2-apt`).** `MPwfn.dipole_derivatives()` (correlation APT,
+`3 x 3N`) + `total_dipole_derivatives()`, both spatial and spin-orbital, all-electron and
+frozen-core. Both predictions of the plan held: (1) the nuclear T2 density response works
+through the generic `_perturbed_densities` with no change (validated via the gauge-invariant
+`Tr(gamma^2)`/`||Gamma||^2` scalars); (2) the only new machinery was the skeleton
+generalization of `_d2fock`/`_d2eri` (`_oei_skeleton`, `_oei2_skeleton` giving `-mu^X`, and
+the `rotate(U^F, <>^X)` cross-skeleton) -- `_xi` needed no change (`S^F = S^{FX} = 0`), and
+frozen core needed no APT-specific fix (the ov `xi`-seed and core<->active divide carried over
+from the polarizability). Validated (`test_068`): APT vs a 7-point FD of the analytic dipole
+over nuclear displacement ~1e-12; SO==spatial keystone ~1e-15; the acoustic (translational)
+sum rule `sum_A P = 0` (total and correlation) ~1e-15; nuclear T2 response ~1e-9. Field-field
+polarizability unregressed. The 2n+1 route remains the deferred efficient alternative.
+
+The original planning notes follow.
 
 Branch (planned): `feature/mp2-apt`. Deliverable: the MP2 **correlation** atomic polar tensor
 `P_corr_{a,Xb} = d(mu_a)/d(X_b) = -d^2 E_corr / dF_a dX_b` (the IR-intensity tensor, `3 x 3N`),
