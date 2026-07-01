@@ -124,6 +124,10 @@ class CPHF(object):
         self._skel: dict = {}     # Perturbation -> (fx, Sx, gx) skeleton derivatives
         self._dfock: dict = {}    # Perturbation -> (nmo, nmo) full perturbed Fock deriv
         self._deri: dict = {}     # Perturbation -> (nmo^4) full perturbed <pq||rs> deriv
+        # Second-order (field) caches, keyed by (perta, pertb, ncore).
+        self._U2cache: dict = {}  # -> (nmo, nmo) second-order response U^{ab}
+        self._dfock2: dict = {}   # -> (nmo, nmo) full second perturbed Fock deriv
+        self._deri2: dict = {}    # -> (nmo^4) full second perturbed <pq||rs> deriv
 
     # ---- orbital Hessian ----
     def hessian(self, kind: str = "electric") -> np.ndarray:
@@ -376,12 +380,181 @@ class CPHF(object):
             ERI = np.asarray(self.wfn.H.ERI)
             _, _, gx = self._skeleton(pert)
             U = self._full_U(pert, ncore)
-            full = (gx
-                    + self.contract('tp,tqrs->pqrs', U, ERI)
-                    + self.contract('tq,ptrs->pqrs', U, ERI)
-                    + self.contract('tr,pqts->pqrs', U, ERI)
-                    + self.contract('ts,pqrt->pqrs', U, ERI))
+            full = gx + self._rotate_eri(U, ERI)
             self._deri[key] = full
+        if blocks is None:
+            return full
+        sl = tuple({'o': self.o, 'v': self.v}.get(b, slice(None)) for b in blocks)
+        return full[sl]
+
+    def _rotate_eri(self, U: np.ndarray, T: np.ndarray) -> np.ndarray:
+        """Orbital-rotation of a 4-index integral tensor by ``U`` (each index rotated)::
+
+            sum_t ( U_tp T_tqrs + U_tq T_ptrs + U_tr T_pqts + U_ts T_pqrt ).
+
+        Shared by the first-order integral derivative (rotation of the unperturbed ERIs) and
+        the second-order one (rotation of ``U^{ab}`` with the ERIs, and of ``U^a`` with the
+        first perturbed ERIs)."""
+        return (self.contract('tp,tqrs->pqrs', U, T)
+                + self.contract('tq,ptrs->pqrs', U, T)
+                + self.contract('tr,pqts->pqrs', U, T)
+                + self.contract('ts,pqrt->pqrs', U, T))
+
+    # ---- second-order (two-field) perturbed derivatives ----
+    # For two electric fields the second-order skeleton integrals vanish (the field is linear
+    # in F), so d_ab f and d_ab <pq||rs> are built purely from U^a, U^b, the second-order
+    # response U^{ab}, and the second-order orthonormality term xi^{ab} (Eqs. 17/20). The MO
+    # integrals are multilinear in the orbital rotation, so the mixed second derivative is the
+    # U^{ab} rotation of each index plus U^a/U^b products on *distinct* indices -- never the
+    # same index twice (that index's mixed second derivative is U^{ab}, not U^a U^b).
+
+    def _xi(self, perta: "Perturbation", pertb: "Perturbation", ncore: int = 0) -> np.ndarray:
+        """Second-order orthonormality term ``xi^{ab}`` (Eq. 18), ``nmo x nmo``. For the field
+        (``S^x = S^{ab} = 0``) it reduces to ``xi^{ab}_pq = sum_r (U^a_qr U^b_pr + U^a_pr U^b_qr)
+        = U^b U^a.T + U^a U^b.T`` (symmetric).
+
+        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (electric/magnetic field). For a nuclear
+        displacement the AOs move, so ``S^a`` and ``S^{ab}`` are nonzero and Eq. 18 gains the
+        skeleton overlap terms (``-S^{ab}`` and ``S^a``-``U`` cross terms) that are dropped here.
+        Extending this route to the molecular Hessian requires restoring them."""
+        Ua = self._full_U(perta, ncore)
+        Ub = self._full_U(pertb, ncore)
+        return Ub @ Ua.T + Ua @ Ub.T
+
+    def _cross_eri(self, Ua: np.ndarray, Ub: np.ndarray, T: np.ndarray) -> np.ndarray:
+        """The cross-index (different-slot) product of two single rotations on ``T`` (Eq. 20):
+        ``U^a`` on one integral index, ``U^b`` on another, over the 6 slot pairs. (No
+        same-index products -- the integral is multilinear, so a single index's mixed second
+        derivative is ``U^{ab}``, not ``U^a U^b``.)"""
+        c = self.contract
+        return (c('tp,uq,turs->pqrs', Ua, Ub, T) + c('tp,ur,tqus->pqrs', Ua, Ub, T)
+                + c('tp,us,tqru->pqrs', Ua, Ub, T) + c('tq,ur,ptus->pqrs', Ua, Ub, T)
+                + c('tq,us,ptru->pqrs', Ua, Ub, T) + c('tr,us,pqtu->pqrs', Ua, Ub, T))
+
+    def _d2eri(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
+        """Second perturbed two-electron derivative ``d_ab <pq||rs>`` (``nmo^4``) given the
+        second-order rotation ``U2`` = ``U^{ab}`` (Eq. 20; field skeleton zero)::
+
+            d_ab <pq||rs> = rotate(U^{ab}, <pq||rs>)
+                            + cross(U^a, U^b, <pq||rs>) + cross(U^b, U^a, <pq||rs>).
+
+        Takes ``U2`` as an argument so the second-order CPHF solve can call it with the ov
+        response zeroed (no recursion through :meth:`_full_U2`).
+
+        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only): there is no skeleton
+        (direct AO) second-derivative term ``<pq||rs>^{ab}``, which vanishes for a field but
+        not for a nuclear displacement. The molecular Hessian would add it here."""
+        ERI = np.asarray(self.wfn.H.ERI)
+        Ua = self._full_U(perta, ncore)
+        Ub = self._full_U(pertb, ncore)
+        return (self._rotate_eri(U2, ERI)
+                + self._cross_eri(Ua, Ub, ERI) + self._cross_eri(Ub, Ua, ERI))
+
+    def _d2fock(self, perta, pertb, U2: np.ndarray, ncore: int = 0) -> np.ndarray:
+        """Second perturbed Fock derivative ``d_ab f_pq`` (``nmo x nmo``) given ``U2`` = ``U^{ab}``.
+
+        The Fock is the one-electron ``h`` plus the occupied mean field ``G_pq = sum_m
+        w[p,m,q,m]`` (``w`` = ``<pq||rs>`` (SO) / ``L`` (spatial)). Differentiating each piece
+        with the correct multilinear rule (rotation + cross-index products, *no* same-index
+        terms)::
+
+            d_ab h = rotate2(U^{ab}, h) + cross2(U^a, U^b, h)          [+ cross2(U^b,U^a,h)]
+                     + rotate2(U^a, -mu_b) + rotate2(U^b, -mu_a)       (field skeleton f^(x)=-mu)
+            d_ab G_pq = sum_m d_ab w[p,m,q,m]                          (from d_ab <pq||rs>)
+
+        with ``rotate2(U, M) = U.T M + M U`` and ``cross2(U^a,U^b,M) = U^a.T M U^b``. Takes
+        ``U2`` as an argument (no recursion through :meth:`_full_U2`).
+
+        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only). The one-electron skeleton is
+        just ``f^(x) = -mu`` with no ``h^{ab}``, and ``d_ab G`` inherits the field-only
+        ``d_ab <pq||rs>`` from :meth:`_d2eri`. A nuclear displacement would add the direct AO
+        second derivatives ``h^{ab}`` and ``<pq||rs>^{ab}`` (and the ``S``-dependent terms via
+        ``U2``); this routine does not."""
+        o = self.o
+        c = self.contract
+        f = np.asarray(self.wfn.H.F)
+        so = self.wfn.orbital_basis == 'spinorbital'
+        W = np.asarray(self.wfn.H.ERI) if so else np.asarray(self.wfn.H.L)
+        h = f - c('pmqm->pq', W[:, o, :, o])                 # bare one-electron MO Fock
+        mua = np.asarray(self.wfn.H.mu[perta.comp])
+        mub = np.asarray(self.wfn.H.mu[pertb.comp])
+        Ua = self._full_U(perta, ncore)
+        Ub = self._full_U(pertb, ncore)
+        d2h = (c('rp,rq->pq', U2, h) + c('pr,rq->pq', h, U2)             # rotate2(U^{ab}, h)
+               + c('rp,rs,sq->pq', Ua, h, Ub) + c('rp,rs,sq->pq', Ub, h, Ua)  # cross2
+               - c('rp,rq->pq', Ua, mub) - c('pr,rq->pq', mub, Ua)      # rotate2(U^a, -mu_b)
+               - c('rp,rq->pq', Ub, mua) - c('pr,rq->pq', mua, Ub))     # rotate2(U^b, -mu_a)
+        d2e = self._d2eri(perta, pertb, U2, ncore)
+        d2W = d2e if so else (2.0 * d2e - d2e.swapaxes(2, 3))
+        d2G = c('pmqm->pq', d2W[:, o, :, o])                 # sum_m d_ab w[p,m,q,m]
+        return d2h + d2G
+
+    def _full_U2(self, perta, pertb, ncore: int = 0) -> np.ndarray:
+        """Full second-order orbital-rotation matrix ``U^{ab}`` for two fields (cached). The
+        symmetric (oo/vv) blocks come from the second-order orthonormality (Eq. 19,
+        ``U^{ab}_pq + U^{ab}_qp + xi^{ab}_pq = 0`` -> ``-1/2 xi``); the ov block from the
+        second-order CPHF ``G U^{ab}_ov = B^{ab}`` (canonical Brillouin ``d_ab f_ai = 0``),
+        with ``B^{ab}`` the ov block of ``d_ab f`` evaluated with the ov response zeroed --
+        the same ``G`` as the first-order solve.
+
+        ``ncore > 0`` (frozen-core correlated second derivatives): the core<->active-occupied
+        block is non-redundant (it moves the frozen/active partition), so it is fixed by the
+        second-order canonical condition ``d_ab f_ij = 0`` (``i`` core, ``j`` active) rather than
+        left at ``-1/2 xi``. As at first order, this decouples: the antisymmetric core<->active
+        part enters ``d_ab f`` only through the eps-diagonal ``eps_i U^{ab}_ij + eps_j U^{ab}_ji``
+        (the occupied mean field sees only the *symmetric* part ``-1/2 xi``, unchanged between the
+        placeholder and the true value, and the ov solve is likewise blind to it). Evaluating
+        ``d_ab f`` with the ``-1/2 xi`` placeholder in place (``F0``) and imposing Eq. 19
+        (``U^{ab}_ji = -xi_ij - U^{ab}_ij``) gives the explicit correction
+        ``U^{ab}_ij = -F0_ij / (eps_i - eps_j) - 1/2 xi_ij``. The redundant core-core,
+        active-active, and vir-vir blocks stay at ``-1/2 xi``.
+
+        ASSUMES A PERTURBATION-INDEPENDENT AO BASIS (field only), inherited from :meth:`_xi`
+        (no ``S^{ab}``) and :meth:`_d2fock` (no skeleton second derivatives). Not valid as-is
+        for nuclear displacements / the molecular Hessian."""
+        key = (perta, pertb, ncore)
+        if key in self._U2cache:
+            return self._U2cache[key]
+        o, v, nmo = self.o, self.v, self.wfn.nmo
+        xi = self._xi(perta, pertb, ncore)
+        U2 = np.zeros((nmo, nmo))
+        U2[o, o] = -0.5 * xi[o, o]
+        U2[v, v] = -0.5 * xi[v, v]
+        B = -self._d2fock(perta, pertb, U2, ncore)[o, v]     # ov block, response zeroed
+        Uai = self.solve(B, kind="electric")
+        U2[v, o] = Uai.T
+        U2[o, v] = -xi[o, v] - Uai
+        if ncore:
+            eps = self.eps
+            co = slice(o.start, o.start + ncore)             # frozen core
+            ao = slice(o.start + ncore, o.stop)              # active occupied
+            F0 = self._d2fock(perta, pertb, U2, ncore)       # placeholder core<->active in U2
+            gap = eps[co][:, None] - eps[ao][None, :]
+            Uca = -F0[co, ao] / gap - 0.5 * xi[co, ao]
+            U2[co, ao] = Uca
+            U2[ao, co] = -(xi[co, ao] + Uca).T               # Eq. 19: U^{ab}_ji = -xi_ij - U^{ab}_ij
+        self._U2cache[key] = U2
+        return U2
+
+    def perturbed_fock2(self, perta, pertb, ncore: int = 0) -> np.ndarray:
+        """Full second perturbed Fock derivative ``d_ab f_pq`` (``nmo x nmo``) for two fields,
+        cached per ``(perta, pertb, ncore)``. Field only -- assumes a perturbation-independent
+        AO basis (see :meth:`_d2fock`); not valid for nuclear displacements."""
+        key = (perta, pertb, ncore)
+        if key not in self._dfock2:
+            self._dfock2[key] = self._d2fock(perta, pertb, self._full_U2(perta, pertb, ncore), ncore)
+        return self._dfock2[key]
+
+    def perturbed_eri2(self, perta, pertb, ncore: int = 0, blocks=None) -> np.ndarray:
+        """Full second perturbed two-electron derivative ``d_ab <pq||rs>`` for two fields
+        (Eq. 20), cached per ``(perta, pertb, ncore)``. ``blocks`` slices as in
+        :meth:`perturbed_eri`. Field only -- assumes a perturbation-independent AO basis (see
+        :meth:`_d2eri`); not valid for nuclear displacements."""
+        key = (perta, pertb, ncore)
+        full = self._deri2.get(key)
+        if full is None:
+            full = self._d2eri(perta, pertb, self._full_U2(perta, pertb, ncore), ncore)
+            self._deri2[key] = full
         if blocks is None:
             return full
         sl = tuple({'o': self.o, 'v': self.v}.get(b, slice(None)) for b in blocks)
