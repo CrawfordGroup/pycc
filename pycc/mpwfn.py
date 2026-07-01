@@ -212,6 +212,99 @@ class MPwfn(Wavefunction):
         W = self._so_mp2_lagrangian(D, Gam)
         return D, Gam, W
 
+    # ---- 2n+1 route: perturbed relaxed density (Phase A) ----
+    # The relaxed-density gradient is already the 2n+1 first derivative; its second derivative
+    # (polarizability/APT/Hessian) needs the *response* of the relaxed density, whose new piece
+    # is the perturbed Z-vector z^x (same orbital Hessian as the gradient, perturbed RHS).
+    # Spin-orbital, all-electron first; see mp2_2n1_perturbed.tex / DERIVATIVES_PLAN.
+
+    def _so_zvector(self):
+        """Unperturbed spin-orbital Z-vector data (cached, all-electron): the relaxed 1-PDM
+        ``D_rel``, cumulant ``Gam``, the Z-vector amplitudes ``z`` (indexed ``(i,a)``), and the
+        orbital Hessian ``G`` (``no*nv`` square) -- shared by the relaxed density and its
+        perturbed response. Reproduces the ``nfzc=0`` branch of
+        :meth:`_so_mp2_relaxed_densities`, additionally exposing ``z`` and ``G``."""
+        if getattr(self, '_so_zvec', None) is None:
+            nmo, o, v = self.nmo, self.o, self.v
+            no, nv = o.stop - o.start, v.stop - v.start
+            ERI = np.asarray(self.H.ERI)
+            eps = np.diag(np.asarray(self.H.F))
+            c = self.contract
+            Doo, Dvv = self._so_mp2_corr_opdm()
+            Gam = np.asarray(self._so_mp2_cumulant())
+            Du = np.zeros((nmo, nmo))
+            Du[o, o] = np.asarray(Doo)
+            Du[v, v] = np.asarray(Dvv)
+            Ip = self._so_mp2_lagrangian(Du, Gam)
+            X = Ip[o, v] - Ip[v, o].T
+            G = (c('ajib->iajb', ERI[v, o, o, v])
+                 + c('abij->iajb', ERI[v, v, o, o])).reshape(no * nv, no * nv)
+            G[np.diag_indices(no * nv)] += (eps[v][None, :] - eps[o][:, None]).reshape(-1)
+            zia = np.linalg.solve(G, X.reshape(-1)).reshape(no, nv)
+            Drel = Du.copy()
+            Drel[v, o] = -zia.T
+            Drel[o, v] = -zia
+            self._so_zvec = (Drel, Gam, Du, zia, G)
+        return self._so_zvec
+
+    def _so_perturbed_lagrangian(self, pert) -> np.ndarray:
+        """First-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
+        spin-orbital, using the **unrelaxed** densities and their responses (this is the
+        Z-vector RHS derivative). Differentiates :meth:`_so_mp2_lagrangian` term by term with
+        the perturbed integrals (:meth:`CPHF.perturbed_fock`/`perturbed_eri`) and the unrelaxed
+        density responses (:meth:`_perturbed_densities`)."""
+        nmo, o, v = self.nmo, self.o, self.v
+        ofull = slice(0, o.stop)
+        ncore = o.stop - self.no
+        ERI = np.asarray(self.H.ERI)
+        eps = np.diag(np.asarray(self.H.F))
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        _, _, Du, _, _ = self._so_zvector()
+        Gam = np.asarray(self._so_mp2_cumulant())
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        deps = np.diag(df)
+        dDg, dGam = self._perturbed_densities(pert)
+        dD = np.asarray(dDg)
+        dGam = np.asarray(dGam)
+        dA = deps[:, None] * (Du + Du.T) + eps[:, None] * (dD + dD.T)
+        dB = np.zeros((nmo, nmo))
+        dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull])
+                        + c('rs,rpsq->pq', Du, deri[:, :, :, ofull])
+                        + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :])
+                        + c('rs,rqsp->pq', Du, deri[:, ofull, :, :]))
+        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
+        return -0.5 * (dA + dB + dC)
+
+    def _so_perturbed_relaxed_opdm(self, pert) -> np.ndarray:
+        """First-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),
+        spin-orbital, all-electron: the unrelaxed oo/vv responses (:meth:`_perturbed_densities`)
+        plus the **perturbed Z-vector** ``z^x`` in the ov/vo blocks. ``z^x`` solves the same
+        orbital Hessian ``G`` as the gradient's Z-vector with the perturbed RHS
+        ``X^x - A^x z`` (``A^x z`` uses the full non-canonical ``d_x f`` vv/oo blocks)."""
+        nmo, o, v = self.nmo, self.o, self.v
+        no, nv = o.stop - o.start, v.stop - v.start
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        _, _, _, zia, G = self._so_zvector()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        dIp = self._so_perturbed_lagrangian(pert)
+        dX = dIp[o, v] - dIp[v, o].T
+        Axz = (c('ajib,jb->ia', deri[v, o, o, v], zia) + c('abij,jb->ia', deri[v, v, o, o], zia)
+               + c('ab,ib->ia', df[v, v], zia) - c('ij,ja->ia', df[o, o], zia))
+        zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(no, nv)
+        dDg, _ = self._perturbed_densities(pert)
+        dDg = np.asarray(dDg)
+        dD = np.zeros((nmo, nmo))
+        dD[o, o] = dDg[o, o]
+        dD[v, v] = dDg[v, v]
+        dD[v, o] = -zx.T
+        dD[o, v] = -zx
+        return dD
+
     def mp2_relaxed_opdm(self) -> np.ndarray:
         """Relaxed MP2 one-particle correlation density (``nmo x nmo``): the unrelaxed
         ``Doo``/``Dvv`` plus the orbital-relaxation blocks from the Z-vector solve. Both the
@@ -424,10 +517,12 @@ class MPwfn(Wavefunction):
         dGam[v, v, o, o] = u.transpose(2, 3, 0, 1)
         return dgam, dGam
 
-    def polarizability(self) -> np.ndarray:
+    def polarizability(self, route: str = 'explicit') -> np.ndarray:
         """MP2 **correlation** contribution to the static (omega=0) dipole polarizability
-        (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b`` via the explicit
-        route (``notes.pdf`` Eq. 15)::
+        (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``.
+
+        ``route='explicit'`` (default) -- the explicit second-derivative route (``notes.pdf``
+        Eq. 15)::
 
             d_ab E_corr = sum_pq [ d_a gamma_pq d_b f_pq + gamma_pq d_ab f_pq ]
                         + sum_pqrs [ d_a Gamma_pqrs d_b <pq||rs> + Gamma_pqrs d_ab <pq||rs> ]
@@ -436,15 +531,21 @@ class MPwfn(Wavefunction):
         ``d_a Gamma`` (:meth:`_perturbed_densities`), the first perturbed derivatives
         (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the second perturbed derivatives
         (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order CPHF
-        response ``U^{ab}``). The reference part is kept separate (:meth:`HFwfn.polarizability`);
-        the total is their sum. Basis-aware; all-electron or frozen-core (the frozen-core
-        core<->active second-order response enters via ``CPHF._full_U2``). Validated against a
-        finite field of ``E_MP2``.
+        response ``U^{ab}``). Basis-aware; all-electron or frozen-core.
 
-        Electric field only. The second-order engine it drives assumes a perturbation-independent
-        AO basis (see :meth:`CPHF.perturbed_fock2`/`perturbed_eri2`); a nuclear second derivative
-        (the molecular Hessian) would require the skeleton derivative-integral terms those
-        routines omit."""
+        ``route='2n+1'`` -- the 2n+1 route (:meth:`_polarizability_2n1`): differentiate the
+        relaxed-density gradient, using only the first-order perturbed *relaxed* density
+        (:meth:`_so_perturbed_relaxed_opdm`, which carries the perturbed Z-vector). Spin-orbital
+        / all-electron so far; reproduces the explicit route to ~machine precision (an
+        independent cross-check, and the efficient route for the APT/Hessian).
+
+        The reference part is kept separate (:meth:`HFwfn.polarizability`); the total is their
+        sum. Electric field only (the second-order engine assumes a perturbation-independent AO
+        basis)."""
+        if route == '2n+1':
+            return self._polarizability_2n1()
+        if route != 'explicit':
+            raise ValueError(f"unknown polarizability route {route!r} (use 'explicit' or '2n+1')")
         from .cphf import Perturbation
         o, v, nmo = self.o, self.v, self.nmo
         ncore = o.stop - self.no
@@ -471,6 +572,38 @@ class MPwfn(Wavefunction):
                 e2 = (c('pq,pq->', dgam[a], dbf) + c('pq,pq->', gamma, d2f)
                       + c('pqrs,pqrs->', dGam[a], dbe) + c('pqrs,pqrs->', Gam, d2e))
                 alpha[a, b] = -e2
+        return alpha
+
+    def _polarizability_2n1(self) -> np.ndarray:
+        """MP2 correlation polarizability via the 2n+1 route (spin-orbital, all-electron).
+
+        Differentiating the relaxed-density gradient in a field: ``d_b E = -Tr(D_rel mu_b)``
+        (field skeleton ``f^(b) = -mu_b``), so::
+
+            alpha_ab = sum_pq d_a D_rel_pq (mu_b)_pq
+                     + sum_pq D_rel_pq [ (U^a).T mu_b + mu_b U^a ]_pq
+
+        The first term is the perturbed relaxed density (:meth:`_so_perturbed_relaxed_opdm`,
+        carrying the perturbed Z-vector); the second is the MO dipole rotating under the field
+        (``d_a f^(b) = rotate(U^a, -mu_b)``). No second-order CPHF ``U^{ab}`` -- only first-order
+        responses. Reproduces the explicit route to ~machine precision."""
+        from .cphf import Perturbation
+        if self.orbital_basis != 'spinorbital':
+            raise NotImplementedError("2n+1 polarizability: spin-orbital path only so far.")
+        if self.o.stop - self.no:
+            raise NotImplementedError("2n+1 polarizability: all-electron only so far.")
+        cphf = self._full_occ_cphf()
+        c = self.contract
+        Drel, _, _, _, _ = self._so_zvector()
+        mu = [np.asarray(self.H.mu[a]) for a in range(3)]
+        field = [Perturbation('field', b) for b in range(3)]
+        alpha = np.zeros((3, 3))
+        for b in range(3):
+            dDrel = self._so_perturbed_relaxed_opdm(field[b])
+            Ub = np.asarray(cphf._full_U(field[b], 0))
+            for a in range(3):
+                rot = Ub.T @ mu[a] + mu[a] @ Ub
+                alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
     def dipole_derivatives(self) -> np.ndarray:
