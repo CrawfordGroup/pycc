@@ -565,7 +565,7 @@ SO==spatial keystone ~1e-16. This completes the explicit second-order property p
 gradient, polarizability, APT, Hessian). Remaining: magnetic-field derivatives (AATs/VCD) with
 `H.m`, and the deferred 2n+1 route as an efficiency pass + cross-check.
 
-## 2n+1 second-derivative route — Phases A–B DONE (2026-07); C–D planned
+## 2n+1 second-derivative route — Phases A–C DONE (2026-07); D planned
 
 The efficient long-term alternative to the explicit route, and an independent cross-check of
 the whole explicit second-derivative suite. Starting point (PI decision): the **relaxed-density
@@ -630,12 +630,26 @@ precision -- same numbers, different code path):**
   (`-d_x f[co,co] @ P + P @ d_x f[o,o]`), *not* just the diagonal orbital-energy shift.
   (Reference: Baeck, Watts, Bartlett, JCP 107, 3853 (1997), Eqs. 22-28 -- the frozen-core
   gradient recipe, differentiated here; see `mp2_2n1_perturbed.tex` Eq. (12).)
-- **C. APT (2n+1).** Interchange onto the field side (3 responses) contracted with `3N` nuclear
-  skeletons; reproduce `MPwfn.dipole_derivatives()`. Needs `d_x I` (perturbed energy-weighted
-  density) for the nuclear `S^x` term. NOT started.
+- **C. APT (2n+1). ✅ DONE** (both spin paths, all-electron and frozen core; `test_068`).
+  `MPwfn.dipole_derivatives(route=...)` gains **two** 2n+1 routes, both reproducing the explicit
+  route to ~machine precision (the PI's call -- IR/VCD stores the field and nuclear responses
+  anyway, so both are of interest):
+  * **`'2n+1-nuclear'`** -- differentiate the relaxed dipole `Tr(D_rel mu_a)` w.r.t. the nuclei:
+    `P[X,a] = Tr(d_X D_rel mu_a) + Tr(D_rel [mu_a^X + rotate(U^X, mu_a)])`. `3N` nuclear
+    relaxed-density responses; reuses `_perturbed_relaxed_opdm` verbatim, no new machinery (the
+    field gradient has no `S^X`/2e-skeleton term, so no energy-weighted density appears).
+  * **`'2n+1-field'`** -- differentiate the relaxed nuclear gradient w.r.t. the field: 3 field
+    responses (`d_F D_rel`, `d_F Gamma`, and the perturbed energy-weighted density `d_F W`)
+    contracted with the `3N` nuclear skeletons **and their field rotations**. The clean
+    "pure-skeleton" form is wrong by ~1e-2: the nuclear skeletons genuinely carry
+    `d_a f^X = rotate(U^a, f^X) - mu_a^X + [occupied-sum response]`, `d_a<>^X = rotate4(U^a,<>^X)`,
+    `d_a S^X = rotate(U^a, S^X)`. `d_F W` = `_so_perturbed_lagrangian` at the *relaxed* density
+    (the perturbed-Lagrangian helper now takes an arbitrary `(D, dD)`; the full-Fock `termA`
+    `d_x f @ (D+D.T)` matters here because `D_rel` has ov/core-active blocks).
 - **D. Hessian (2n+1).** The `O(N)` payoff -- `3N x {U^x, t^x, z^x}` first-order solves vs the
   explicit `O(N^2)` `U^{xy}`; reproduce `MPwfn.hessian()`. NOT started.
 
-Spin-orbital / all-electron first, then spatial, then frozen core, as throughout (A-B done across
-all six combinations). API: `route=` on the property methods (default `explicit`; `route='2n+1'`).
-2n+2 (fourth-derivative / cubic-response economies) not in scope.
+Spin-orbital / all-electron first, then spatial, then frozen core, as throughout (A-C done across
+all six combinations). API: `route=` on the property methods (`polarizability(route='2n+1')`;
+`dipole_derivatives(route='2n+1-nuclear'|'2n+1-field')`). 2n+2 (fourth-derivative / cubic-response
+economies) not in scope.

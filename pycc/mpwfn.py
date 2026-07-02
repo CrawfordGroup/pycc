@@ -533,12 +533,20 @@ class MPwfn(Wavefunction):
             self._so_zvec = (Drel, Gam, Du, zia, G, Pco)
         return self._so_zvec
 
-    def _so_perturbed_lagrangian(self, pert) -> np.ndarray:
+    def _so_perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """First-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
-        spin-orbital, using the **unrelaxed** densities and their responses (this is the
-        Z-vector RHS derivative). Differentiates :meth:`_so_mp2_lagrangian` term by term with
-        the perturbed integrals (:meth:`CPHF.perturbed_fock`/`perturbed_eri`) and the unrelaxed
-        density responses (:meth:`_perturbed_densities`)."""
+        spin-orbital. Differentiates :meth:`_so_mp2_lagrangian` term by term with the perturbed
+        integrals (:meth:`CPHF.perturbed_fock`/`perturbed_eri`) and the density response.
+
+        With ``D``/``dD`` omitted this uses the **unrelaxed** 1-PDM and its response
+        (:meth:`_perturbed_densities`) -- the Z-vector RHS derivative. Passing ``D`` = the
+        relaxed 1-PDM and ``dD`` = its response (:meth:`_so_perturbed_relaxed_opdm`) gives
+        instead ``d_x W`` (the perturbed energy-weighted density; :meth:`_so_gradient` uses
+        ``W = I'(D_rel)`` with the nuclear ``S^X``). The 2-PDM response ``dGam`` is the same
+        either way (:meth:`_perturbed_densities`). The ``termA`` derivative is the full Fock
+        matrix product ``d_x f @ (D + D.T)`` (the diagonal ``d_x eps`` alone suffices for the
+        unrelaxed ``D`` -- no ov block -- but the relaxed ``D`` has ov/core-active blocks that
+        the off-diagonal ``d_x f`` couples)."""
         nmo, o, v = self.nmo, self.o, self.v
         ofull = slice(0, o.stop)
         ncore = o.stop - self.no
@@ -546,20 +554,20 @@ class MPwfn(Wavefunction):
         eps = np.diag(np.asarray(self.H.F))
         c = self.contract
         cphf = self._full_occ_cphf()
-        _, _, Du, _, _, _ = self._so_zvector()
         Gam = np.asarray(self._so_mp2_tpdm())
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
         deri = np.asarray(cphf.perturbed_eri(pert, ncore))
-        deps = np.diag(df)
         dDg, dGam = self._perturbed_densities(pert)
-        dD = np.asarray(dDg)
         dGam = np.asarray(dGam)
-        dA = deps[:, None] * (Du + Du.T) + eps[:, None] * (dD + dD.T)
+        if D is None:
+            _, _, D, _, _, _ = self._so_zvector()      # unrelaxed 1-PDM
+            dD = np.asarray(dDg)
+        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
         dB = np.zeros((nmo, nmo))
         dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull])
-                        + c('rs,rpsq->pq', Du, deri[:, :, :, ofull])
+                        + c('rs,rpsq->pq', D, deri[:, :, :, ofull])
                         + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :])
-                        + c('rs,rqsp->pq', Du, deri[:, ofull, :, :]))
+                        + c('rs,rqsp->pq', D, deri[:, ofull, :, :]))
         dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
         return -0.5 * (dA + dB + dC)
 
@@ -650,11 +658,13 @@ class MPwfn(Wavefunction):
             self._zvec = (Drel, Gam, Du, zia, hf, Pco)
         return self._zvec
 
-    def _perturbed_lagrangian(self, pert) -> np.ndarray:
+    def _perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """Spatial first-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
         the closed-shell analogue of :meth:`_so_perturbed_lagrangian`: the spin-adapted ``L``
         (and its derivative ``dL = 2 d_x<pq|rs> - d_x<pq|sr>``) in the two-electron 1-PDM term,
-        ``<pr|st>`` (H.ERI) with ``Gamma`` in the 2-PDM term."""
+        ``<pr|st>`` (H.ERI) with ``Gamma`` in the 2-PDM term. ``D``/``dD`` default to the
+        unrelaxed 1-PDM and its response (Z-vector RHS); pass the relaxed 1-PDM and its response
+        for ``d_x W``. See :meth:`_so_perturbed_lagrangian`."""
         nmo, o, v = self.nmo, self.o, self.v
         ofull = slice(0, o.stop)
         ncore = o.stop - self.no
@@ -663,21 +673,21 @@ class MPwfn(Wavefunction):
         eps = np.diag(np.asarray(self.H.F))
         c = self.contract
         cphf = self._full_occ_cphf()
-        _, _, Du, _, _, _ = self._zvector()
         Gam = np.asarray(self._mp2_tpdm())
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
         deri = np.asarray(cphf.perturbed_eri(pert, ncore))
         dL = 2.0 * deri - deri.swapaxes(2, 3)
-        deps = np.diag(df)
         dDg, dGam = self._perturbed_densities(pert)
-        dD = np.asarray(dDg)
         dGam = np.asarray(dGam)
-        dA = deps[:, None] * (Du + Du.T) + eps[:, None] * (dD + dD.T)
+        if D is None:
+            _, _, D, _, _, _ = self._zvector()          # unrelaxed 1-PDM
+            dD = np.asarray(dDg)
+        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
         dB = np.zeros((nmo, nmo))
         dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull])
-                        + c('rs,rpsq->pq', Du, dL[:, :, :, ofull])
+                        + c('rs,rpsq->pq', D, dL[:, :, :, ofull])
                         + c('rs,rqsp->pq', dD, L[:, ofull, :, :])
-                        + c('rs,rqsp->pq', Du, dL[:, ofull, :, :]))
+                        + c('rs,rqsp->pq', D, dL[:, ofull, :, :]))
         dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
         return -0.5 * (dA + dB + dC)
 
@@ -821,11 +831,13 @@ class MPwfn(Wavefunction):
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def dipole_derivatives(self) -> np.ndarray:
+    def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
         """MP2 **correlation** contribution to the atomic polar tensors (nuclear dipole
         derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
         ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed
-        field/nuclear analog of :meth:`polarizability`, via the explicit route (Eq. 15)::
+        field/nuclear analog of :meth:`polarizability`.
+
+        ``route='explicit'`` (default) -- the explicit second-derivative route (Eq. 15)::
 
             d_{F X} E_corr = sum_pq [ d_X gamma_pq d_F f_pq + gamma_pq d_{F X} f_pq ]
                            + sum_pqrs [ d_X Gamma d_F <pq||rs> + Gamma d_{F X} <pq||rs> ]
@@ -834,10 +846,26 @@ class MPwfn(Wavefunction):
         ``d_X gamma``/``d_X Gamma`` (:meth:`_perturbed_densities`), the field first derivatives
         (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the mixed second derivatives
         (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order response
-        ``U^{FX}`` and the ``-mu^X`` mixed skeleton). Electronic only; the nuclear ``Z_A`` term
-        is in the reference (:meth:`HFwfn.dipole_derivatives`), so the total is their sum
+        ``U^{FX}`` and the ``-mu^X`` mixed skeleton).
+
+        ``route='2n+1-nuclear'`` / ``'2n+1-field'`` -- the two 2n+1 routes
+        (:meth:`_dipole_derivatives_2n1`), which use only first-order responses (no ``U^{FX}``)
+        and reproduce the explicit route to ~machine precision. ``'2n+1-nuclear'`` differentiates
+        the relaxed dipole w.r.t. the nuclei (``3N`` nuclear relaxed-density responses);
+        ``'2n+1-field'`` differentiates the relaxed nuclear gradient w.r.t. the field (3 field
+        responses -- ``d_F D_rel``, ``d_F Gamma``, ``d_F W`` -- contracted with the ``3N`` nuclear
+        skeletons). Both are of interest for the IR/VCD path (which stores the field and nuclear
+        responses anyway).
+
+        Electronic only; the nuclear ``Z_A`` term is in the reference
+        (:meth:`HFwfn.dipole_derivatives`), so the total is their sum
         (:meth:`total_dipole_derivatives`). Basis-aware. Validated against a finite nuclear
         displacement of the analytic dipole (``test_068``)."""
+        if route in ('2n+1-nuclear', '2n+1-field'):
+            return self._dipole_derivatives_2n1(route)
+        if route != 'explicit':
+            raise ValueError(f"unknown dipole-derivative route {route!r} "
+                             "(use 'explicit', '2n+1-nuclear', or '2n+1-field')")
         from .cphf import Perturbation
         o, v, nmo = self.o, self.v, self.nmo
         ncore = o.stop - self.no
@@ -870,6 +898,99 @@ class MPwfn(Wavefunction):
                     e2 = (c('pq,pq->', dgX, dFf[alpha]) + c('pq,pq->', gamma, d2f)
                           + c('pqrs,pqrs->', dGX, dFe[alpha]) + c('pqrs,pqrs->', Gam, d2e))
                     P[A, beta, alpha] = -e2
+        return P
+
+    def _dipole_derivatives_2n1(self, route: str) -> np.ndarray:
+        """MP2 correlation atomic polar tensors via the 2n+1 route (both spin paths, frozen-core
+        aware); ``route`` is ``'2n+1-nuclear'`` or ``'2n+1-field'``. See :meth:`dipole_derivatives`.
+
+        Nuclear side -- differentiate the relaxed dipole ``Tr(D_rel mu_a)`` w.r.t. the nucleus
+        (the field gradient has no ``S^X``/2e-skeleton term, so no energy-weighted density
+        appears)::
+
+            P[X,a] = Tr(d_X D_rel mu_a) + Tr(D_rel [mu_a^X + rotate(U^X, mu_a)]).
+
+        Field side -- differentiate the relaxed nuclear gradient
+        ``E^X = sum D_rel f^X + sum Gamma <pq||rs>^X + sum W S^X`` w.r.t. the field::
+
+            P[X,a] = -[ sum d_a D_rel f^X + sum D_rel d_a f^X + sum d_a Gamma <>^X
+                        + sum Gamma d_a <>^X + sum d_a W S^X + sum W d_a S^X ],
+
+        with the 3 field responses ``d_a D_rel`` (:meth:`_so_perturbed_relaxed_opdm`),
+        ``d_a Gamma`` (:meth:`_perturbed_densities`), and the perturbed energy-weighted density
+        ``d_a W`` (:meth:`_so_perturbed_lagrangian` at the relaxed density). The field-derivatives
+        of the nuclear skeletons carry the orbital rotation ``rotate(U^a, .)`` plus, for
+        ``d_a f^X``, the occupied-sum response and the ``-mu_a^X`` mixed skeleton (the field
+        enters ``h``)."""
+        from .cphf import Perturbation
+        c = self.contract
+        so = self.orbital_basis == 'spinorbital'
+        o = self.o
+        ofull = slice(0, o.stop)
+        ncore = o.stop - self.no
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        Drel = (self._so_zvector() if so else self._zvector())[0]
+        popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
+        mu = [np.asarray(self.H.mu[a]) for a in range(3)]
+        P = np.zeros((natom, 3, 3))
+
+        if route == '2n+1-nuclear':
+            for A in range(natom):
+                dip = d.so_dipole(A) if so else d.dipole(A)          # [alpha*3 + beta]
+                for beta in range(3):
+                    pX = Perturbation('nuclear', (A, beta))
+                    dDrel = popdm(pX)
+                    UX = np.asarray(cphf._full_U(pX, ncore))
+                    for alpha in range(3):
+                        dmu = np.asarray(dip[alpha * 3 + beta])       # skeleton d(mu_a)/dX_beta
+                        rot = UX.T @ mu[alpha] + mu[alpha] @ UX
+                        P[A, beta, alpha] = (c('pq,pq->', dDrel, mu[alpha])
+                                             + c('pq,pq->', Drel, dmu + rot))
+            return P
+
+        # route == '2n+1-field'
+        lagr = self._so_perturbed_lagrangian if so else self._perturbed_lagrangian
+        Gam = np.asarray(self._so_mp2_tpdm() if so else self._mp2_tpdm())
+        W = (self._so_mp2_lagrangian if so else self._mp2_lagrangian)(Drel, Gam)
+        field = [Perturbation('field', a) for a in range(3)]
+        dDrel = [popdm(field[a]) for a in range(3)]
+        dGamF = [np.asarray(self._perturbed_densities(field[a])[1]) for a in range(3)]
+        dW = [lagr(field[a], Drel, dDrel[a]) for a in range(3)]      # perturbed energy-weighted density
+        U = [np.asarray(cphf._full_U(field[a], ncore)) for a in range(3)]
+
+        def rot1(Um, M):
+            return Um.T @ M + M @ Um
+
+        def rot4(Um, T):
+            return (c('tp,tqrs->pqrs', Um, T) + c('tq,ptrs->pqrs', Um, T)
+                    + c('tr,pqts->pqrs', Um, T) + c('ts,pqrt->pqrs', Um, T))
+
+        for A in range(natom):
+            hx = d.so_core(A) if so else d.core(A)
+            Sx = d.so_overlap(A) if so else d.overlap(A)
+            dip = d.so_dipole(A) if so else d.dipole(A)
+            if so:
+                eriF = [np.asarray(e) for e in d.so_eri(A)]          # <pq||rs>^X (Fock and Gamma)
+                gamX = eriF
+            else:
+                phys = [np.asarray(ch).transpose(0, 2, 1, 3) for ch in d.eri(A)]  # <pq|rs>^X (Gamma)
+                eriF = [2.0 * p - p.transpose(0, 1, 3, 2) for p in phys]          # L^X (Fock)
+                gamX = phys
+            for beta in range(3):
+                fX = np.asarray(hx[beta]) + c('pmqm->pq', eriF[beta][:, ofull, :, ofull])
+                SX = np.asarray(Sx[beta])
+                gX, eX = gamX[beta], eriF[beta]
+                for alpha in range(3):
+                    Um = U[alpha]
+                    muX = np.asarray(dip[alpha * 3 + beta])
+                    occ = (c('rm,prqm->pq', Um[:, ofull], eX[:, :, :, ofull])
+                           + c('rm,pmqr->pq', Um[:, ofull], eX[:, ofull, :, :]))
+                    dfX = rot1(Um, fX) - muX + occ
+                    P[A, beta, alpha] = -(c('pq,pq->', dDrel[alpha], fX) + c('pq,pq->', Drel, dfX)
+                                          + c('pqrs,pqrs->', dGamF[alpha], gX) + c('pqrs,pqrs->', Gam, rot4(Um, gX))
+                                          + c('pq,pq->', dW[alpha], SX) + c('pq,pq->', W, rot1(Um, SX)))
         return P
 
     def hessian(self) -> np.ndarray:

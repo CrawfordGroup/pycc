@@ -141,3 +141,6 @@ o.dat
 *.out
 *.toc
 *.synctex.gz
+
+# PR summary scratch (written to repo root for easy copy; not tracked)
+PR_SUMMARY.md
