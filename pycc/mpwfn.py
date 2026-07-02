@@ -993,11 +993,12 @@ class MPwfn(Wavefunction):
                                           + c('pq,pq->', dW[alpha], SX) + c('pq,pq->', W, rot1(Um, SX)))
         return P
 
-    def hessian(self) -> np.ndarray:
+    def hessian(self, route: str = 'explicit') -> np.ndarray:
         """MP2 **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` --
-        the nuclear-nuclear analog of :meth:`polarizability`/:meth:`dipole_derivatives`, via
-        the explicit route (Eq. 15)::
+        the nuclear-nuclear analog of :meth:`polarizability`/:meth:`dipole_derivatives`.
+
+        ``route='explicit'`` (default) -- the explicit second-derivative route (Eq. 15)::
 
             d_{XY} E_corr = sum_pq [ d_X gamma d_Y f + gamma d_{XY} f ]
                           + sum_pqrs [ d_X Gamma d_Y <pq||rs> + Gamma d_{XY} <pq||rs> ]
@@ -1007,13 +1008,23 @@ class MPwfn(Wavefunction):
         (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the nuclear-nuclear second
         derivatives (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry ``U^{XY}``, the
         ``xi^{XY}`` ``S^{XY}``/``S^X S^Y`` overlap terms, and the ``h^{XY}``/``<pq||rs>^{XY}``
-        skeletons). The reference part is separate (:meth:`HFwfn.hessian`); total is their sum
-        (:meth:`total_hessian`). Basis-aware.
+        skeletons). This solves ``U^{XY}`` for each of the ``3N(3N+1)/2`` unique nuclear pairs --
+        an ``O(N^2)`` count of second-order solves.
 
-        The explicit route solves ``U^{XY}`` for each of the ``3N(3N+1)/2`` unique nuclear
-        pairs -- the ``O(N^2)`` cost the 2n+1 (Z-vector interchange) route would avoid; fine for
-        a reference implementation on small molecules. Validated against a finite difference of
-        the analytic gradient (``test_069``)."""
+        ``route='2n+1'`` -- the 2n+1 route (:meth:`_hessian_2n1`): differentiate the relaxed
+        nuclear gradient w.r.t. a second nucleus, using only ``3N`` *first-order* solves (the
+        perturbed relaxed density / energy-weighted density and ``U^Y``), no ``U^{XY}``. The
+        nuclear-nuclear analog of the ``'2n+1-field'`` APT, with the full second skeletons
+        ``f^{XY}``/``<pq||rs>^{XY}``/``S^{XY}`` (all nonzero here). Reproduces the explicit route
+        to ~machine precision.
+
+        The reference part is separate (:meth:`HFwfn.hessian`); total is their sum
+        (:meth:`total_hessian`). Basis-aware. Validated against a finite difference of the
+        analytic gradient (``test_069``)."""
+        if route == '2n+1':
+            return self._hessian_2n1()
+        if route != 'explicit':
+            raise ValueError(f"unknown hessian route {route!r} (use 'explicit' or '2n+1')")
         from .cphf import Perturbation
         o, v, nmo = self.o, self.v, self.nmo
         ncore = o.stop - self.no
@@ -1049,6 +1060,94 @@ class MPwfn(Wavefunction):
                 if j != i:
                     H[j, i] = (c('pq,pq->', dg[j], dXf[i]) + gd2f
                                + c('pqrs,pqrs->', dG[j], dXe[i]) + Gd2e)
+        return H
+
+    def _hessian_2n1(self) -> np.ndarray:
+        """MP2 correlation molecular Hessian via the 2n+1 route (both spin paths, frozen-core
+        aware). Differentiate the relaxed nuclear gradient
+        ``E^X = sum D_rel f^X + sum Gamma <pq||rs>^X + sum W S^X`` w.r.t. a second nucleus ``Y``::
+
+            H[X,Y] = sum d_Y D_rel f^X + sum D_rel d_Y f^X + sum d_Y Gamma <>^X
+                     + sum Gamma d_Y <>^X + sum d_Y W S^X + sum W d_Y S^X,
+
+        the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`_dipole_derivatives_2n1`).
+        Only ``3N`` first-order solves -- the perturbed relaxed density ``d_Y D_rel``
+        (:meth:`_so_perturbed_relaxed_opdm`), the perturbed energy-weighted density ``d_Y W``
+        (:meth:`_so_perturbed_lagrangian` at ``D_rel``), ``d_Y Gamma``
+        (:meth:`_perturbed_densities`), and ``U^Y`` (:meth:`CPHF._full_U`) -- vs the explicit
+        route's ``O(N^2)`` ``U^{XY}`` solves.
+
+        The field-derivatives of the nuclear skeletons carry (i) the full second integral
+        skeletons ``f^{XY}``/``<>^{XY}``/``S^{XY}`` (:meth:`CPHF._d2int_blocks`, cached per atom
+        pair -- all nonzero here, unlike the field case where only ``-mu^X`` survived), and (ii)
+        the ``U^Y`` orbital rotation of the ``X`` skeletons. The rotations are hoisted off the
+        ``O(N^2)`` pair loop onto the (per-``Y``) densities via ``sum A rot(U,B) = sum rot(U^T,A) B``:
+        ``Dtil = U D + D U^T``, ``Wtil`` likewise, ``Gtil = rotate4(U^T, Gamma)``, and the
+        Fock skeleton's occupied-sum response as the per-``X`` intermediate ``J^X`` contracted
+        with ``U^Y`` (so no ``O(N^2)`` four-index rotation)."""
+        from .cphf import Perturbation
+        c = self.contract
+        so = self.orbital_basis == 'spinorbital'
+        ofull = slice(0, self.o.stop)
+        ncore = self.o.stop - self.no
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        nc = 3 * natom
+        Drel = (self._so_zvector() if so else self._zvector())[0]
+        Gam = np.asarray(self._so_mp2_tpdm() if so else self._mp2_tpdm())
+        W = (self._so_mp2_lagrangian if so else self._mp2_lagrangian)(Drel, Gam)
+        popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
+        lagr = self._so_perturbed_lagrangian if so else self._perturbed_lagrangian
+        pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
+
+        def rot4(Um, T):
+            return (c('tp,tqrs->pqrs', Um, T) + c('tq,ptrs->pqrs', Um, T)
+                    + c('tr,pqts->pqrs', Um, T) + c('ts,pqrt->pqrs', Um, T))
+
+        # first-order responses + hoisted per-Y rotated densities (sum A rot(U,B) = sum rot(U^T,A) B)
+        dDrel = [popdm(p) for p in pert]
+        dGamN = [np.asarray(self._perturbed_densities(p)[1]) for p in pert]
+        dW = [lagr(pert[i], Drel, dDrel[i]) for i in range(nc)]
+        U = [np.asarray(cphf._full_U(p, ncore)) for p in pert]
+        Dtil = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
+        Wtil = [U[i] @ W + W @ U[i].T for i in range(nc)]
+        Gtil = [rot4(U[i].T, Gam) for i in range(nc)]
+
+        # per-X first skeletons; J^X carries the Fock skeleton's occupied-sum rotation response
+        fX, gamX, SX, JX = [], [], [], []
+        for p in pert:
+            A, ct = p.comp
+            hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
+            Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
+            if so:
+                eF = np.asarray(d.so_eri(A)[ct])
+                gm = eF
+            else:
+                ph = np.asarray(d.eri(A)[ct]).transpose(0, 2, 1, 3)     # <pq|rs>^X (Gamma)
+                eF = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
+                gm = ph
+            fX.append(hx + c('pmqm->pq', eF[:, ofull, :, ofull]))
+            gamX.append(gm)
+            SX.append(Sx)
+            JX.append(c('pq,prqm->rm', Drel, eF[:, :, :, ofull])
+                      + c('pq,pmqr->rm', Drel, eF[:, ofull, :, :]))
+
+        H = np.zeros((nc, nc))
+        for iy, py in enumerate(pert):
+            Ay, cy = py.comp
+            for ix, px in enumerate(pert):
+                Ax, cx = px.comp
+                blk = cphf._d2int_blocks(Ax, Ay)             # raw second skeletons (no U^{XY})
+                core2 = blk['core'][cx * 3 + cy]
+                ov2 = blk['overlap'][cx * 3 + cy]
+                e2 = blk['eri'][cx * 3 + cy]
+                L2 = e2 if so else 2.0 * e2 - e2.swapaxes(2, 3)
+                f2 = core2 + c('pmqm->pq', L2[:, ofull, :, ofull])       # f^{XY}
+                H[ix, iy] = (c('pq,pq->', dDrel[iy] + Dtil[iy], fX[ix]) + c('pq,pq->', Drel, f2)
+                             + c('pqrs,pqrs->', dGamN[iy] + Gtil[iy], gamX[ix]) + c('pqrs,pqrs->', Gam, e2)
+                             + c('pq,pq->', dW[iy] + Wtil[iy], SX[ix]) + c('pq,pq->', W, ov2)
+                             + float(np.sum(U[iy][:, ofull] * JX[ix])))
         return H
 
     # ---- total (reference + correlation) properties ----

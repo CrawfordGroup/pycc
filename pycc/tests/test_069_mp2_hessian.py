@@ -112,3 +112,26 @@ def test_fc_so_mp2_corr_hessian_vs_spatial_631g():
     H_so = _mpwfn(BASE, 'spinorbital', freeze_core='true').hessian()
     H_sa = _mpwfn(BASE, 'spatial', freeze_core='true').hessian()
     assert np.max(np.abs(H_so - H_sa)) < 1e-11
+
+
+# ---- 2n+1 route (Phase D): O(N) first-order solves, reproduces the explicit Hessian ----
+
+def test_mp2_hessian_2n1_vs_explicit_631g():
+    """2n+1 == explicit correlation Hessian, all four spin/frozen-core combinations (H2O/6-31G).
+
+    The 2n+1 route differentiates the relaxed nuclear gradient w.r.t. a second nucleus using
+    only 3N first-order solves (perturbed relaxed density / energy-weighted density and U^Y) --
+    no U^{XY}. The nuclear-nuclear analog of the '2n+1-field' APT, with the full second integral
+    skeletons f^{XY}/<pq||rs>^{XY}/S^{XY} and the U^Y rotation of the X skeletons (hoisted onto
+    the densities). Result is symmetric and reproduces the explicit route to ~machine
+    precision."""
+    import pytest
+    for ob in ('spinorbital', 'spatial'):
+        for fc in ('false', 'true'):
+            mp = _mpwfn(BASE, ob, freeze_core=fc)
+            He = np.asarray(mp.hessian())
+            Hn = np.asarray(mp.hessian(route='2n+1'))
+            assert np.max(np.abs(Hn - He)) < 1e-11
+            assert np.max(np.abs(Hn - Hn.T)) < 1e-11
+    with pytest.raises(ValueError):
+        _mpwfn(BASE, 'spatial').hessian(route='bogus')

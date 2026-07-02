@@ -565,7 +565,7 @@ SO==spatial keystone ~1e-16. This completes the explicit second-order property p
 gradient, polarizability, APT, Hessian). Remaining: magnetic-field derivatives (AATs/VCD) with
 `H.m`, and the deferred 2n+1 route as an efficiency pass + cross-check.
 
-## 2n+1 second-derivative route — Phases A–C DONE (2026-07); D planned
+## 2n+1 second-derivative route — Phases A–D DONE (2026-07)
 
 The efficient long-term alternative to the explicit route, and an independent cross-check of
 the whole explicit second-derivative suite. Starting point (PI decision): the **relaxed-density
@@ -646,10 +646,20 @@ precision -- same numbers, different code path):**
     `d_a S^X = rotate(U^a, S^X)`. `d_F W` = `_so_perturbed_lagrangian` at the *relaxed* density
     (the perturbed-Lagrangian helper now takes an arbitrary `(D, dD)`; the full-Fock `termA`
     `d_x f @ (D+D.T)` matters here because `D_rel` has ov/core-active blocks).
-- **D. Hessian (2n+1).** The `O(N)` payoff -- `3N x {U^x, t^x, z^x}` first-order solves vs the
-  explicit `O(N^2)` `U^{xy}`; reproduce `MPwfn.hessian()`. NOT started.
+- **D. Hessian (2n+1). ✅ DONE** (both spin paths, all-electron and frozen core; `test_069`).
+  `MPwfn.hessian(route='2n+1')` differentiates the relaxed nuclear gradient w.r.t. a second
+  nucleus -- the nuclear-nuclear analog of the `'2n+1-field'` APT. The **`O(N)` payoff**: only
+  `3N` first-order solves (`d_Y D_rel`, `d_Y W`, `d_Y Gamma`, `U^Y`) vs the explicit route's
+  `O(N^2)` `U^{xy}` solves. New vs the APT: the full **second** integral skeletons
+  `f^{XY}`/`<>^{XY}`/`S^{XY}` (all nonzero, from `CPHF._d2int_blocks`, cached per atom pair) --
+  no `xi^{XY}` / `U^{xy}` needed. The `U^Y` rotations of the `X` skeletons are hoisted off the
+  `O(N^2)` pair loop onto the (per-`Y`) densities via `sum A rot(U,B) = sum rot(U^T,A) B`
+  (`Dtil = U D + D U^T`; `Gtil = rotate4(U^T, Gamma)` -- note the **transpose**, since rot4
+  contracts via `U`'s first index; the Fock occupied-sum response becomes a per-`X` intermediate
+  `J^X` contracted with `U^Y`). Reproduces the explicit Hessian to ~machine precision, symmetric.
 
-Spin-orbital / all-electron first, then spatial, then frozen core, as throughout (A-C done across
+Spin-orbital / all-electron first, then spatial, then frozen core, as throughout (A-D done across
 all six combinations). API: `route=` on the property methods (`polarizability(route='2n+1')`;
-`dipole_derivatives(route='2n+1-nuclear'|'2n+1-field')`). 2n+2 (fourth-derivative / cubic-response
-economies) not in scope.
+`dipole_derivatives(route='2n+1-nuclear'|'2n+1-field')`; `hessian(route='2n+1')`). The full 2n+1
+second-derivative suite (polarizability, APT, Hessian) now cross-checks the explicit suite to
+~machine precision. 2n+2 (fourth-derivative / cubic-response economies) not in scope.
