@@ -163,3 +163,25 @@ def test_fc_mp2_apt_translational_sum_rule_631g():
     mp0 = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')
     assert np.max(np.abs(np.sum(mp0.dipole_derivatives(), axis=0))) < 1e-10
     assert np.max(np.abs(np.sum(mp0.total_dipole_derivatives(), axis=0))) < 1e-10
+
+
+# ---- 2n+1 routes (Phase C): both reproduce the explicit APT to ~machine precision ----
+
+def test_mp2_apt_2n1_routes_vs_explicit_631g():
+    """Both 2n+1 APT routes == the explicit route, all four spin/frozen-core combinations
+    (H2O/6-31G). '2n+1-nuclear' differentiates the relaxed dipole w.r.t. the nuclei (3N
+    responses, reuses _perturbed_relaxed_opdm); '2n+1-field' differentiates the relaxed nuclear
+    gradient w.r.t. the field (3 field responses -- d_F D_rel, d_F Gamma, and the perturbed
+    energy-weighted density d_F W -- contracted with the nuclear skeletons + their field
+    rotations). The two also agree with each other."""
+    import pytest
+    for ob in ('spinorbital', 'spatial'):
+        for fc in ('false', 'true'):
+            mp = _mpwfn(BASE, '6-31G', ob, freeze_core=fc)
+            Pe = np.asarray(mp.dipole_derivatives())
+            Pn = np.asarray(mp.dipole_derivatives(route='2n+1-nuclear'))
+            Pf = np.asarray(mp.dipole_derivatives(route='2n+1-field'))
+            assert np.max(np.abs(Pn - Pe)) < 1e-11
+            assert np.max(np.abs(Pf - Pe)) < 1e-11
+    with pytest.raises(ValueError):
+        _mpwfn(BASE, '6-31G', 'spatial').dipole_derivatives(route='bogus')
