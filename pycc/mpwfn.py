@@ -262,6 +262,22 @@ class MPwfn(Wavefunction):
             D, Gam, W, hf = self._mp2_relaxed_densities()
         return D
 
+    def _mp2_normalization(self) -> float:
+        """MP2 intermediate normalization ``N = 1/sqrt(1 + <T2|2T2 - T2~>)`` (spin-adapted),
+        for the wave-function-overlap AAT (:meth:`atomic_axial_tensors`). The normalized
+        doubles are ``c2 = N t2`` and the reference coefficient is ``c0 = N``."""
+        t2 = np.asarray(self.t2)
+        norm2 = self.contract('ijab,ijab->', t2, 2.0 * t2 - t2.swapaxes(2, 3))
+        return 1.0 / np.sqrt(1.0 + norm2)
+
+    def _so_mp2_normalization(self) -> float:
+        """Spin-orbital MP2 normalization ``N = 1/sqrt(1 + (1/4)<T2|T2>)`` -- the spin-orbital
+        analogue of :meth:`_mp2_normalization` (the ``1/4`` for the antisymmetric double sum).
+        Equal to the spin-adapted value on a closed shell."""
+        t2 = np.asarray(self.t2)
+        norm2 = 0.25 * self.contract('ijab,ijab->', t2, t2)
+        return 1.0 / np.sqrt(1.0 + norm2)
+
     # ---- correlation dipole ----
 
     def relaxed_dipole(self) -> np.ndarray:
@@ -1149,6 +1165,188 @@ class MPwfn(Wavefunction):
                              + c('pq,pq->', dW[iy] + Wtil[iy], SX[ix]) + c('pq,pq->', W, ov2)
                              + float(np.sum(U[iy][:, ofull] * JX[ix])))
         return H
+
+    # ---- atomic axial tensors (VCD, magnetic/nuclear mixed derivative) ----
+
+    def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
+        """MP2 **electronic** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[A, alpha, beta]`` -- the nuclear(``alpha``)/magnetic-field
+        (``beta``) mixed derivative of the wave function, as an overlap of its perturbed
+        derivatives.  This is the full (reference + correlation) **electronic** contribution
+        ``<d_R Psi | d_H Psi>``; the trivial nuclear term (nuclear charge x position) is added
+        separately when forming the total AAT / VCD rotational strengths.  The electron-density formulation follows the diagonal Born-Oppenheimer
+        correction of Gauss, Tajti, Kallay, Stanton & Szalay, J. Chem. Phys. 125, 144111 (2006)
+        [Eqs. (16), (18), (19)], generalized to the mixed nuclear/magnetic derivative (Krishnan,
+        Shumberger & Crawford, in prep.)::
+
+            I = sum_I dc^R_I dc^H_I                    (coefficient overlap,            Icc)
+              + sum_pq g^R_pq <phi_p|d_H phi_q>        (left derivative density x U^H,  Icphi)
+              + sum_pq g^H_pq <phi_p|d_R phi_q>        (right derivative density x U^R, Iphic)
+              + sum_pq gamma_pq <d_R phi_p|d_H phi_q>  (density x both MO derivatives,  Ipp)
+
+        ``g^R``/``g^H`` are derivatives of the unrelaxed correlation 1-PDM: ``g^R`` the
+        **symmetric** derivative (real nuclear perturbation) and ``g^H`` the **antisymmetric** one
+        (imaginary magnetic perturbation -- the anti-Hermitian derivative of a Hermitian density).
+        With that symmetry the folded density expression is **orbital-gauge invariant**.  ``gamma``
+        is the unrelaxed correlation 1-PDM; the orbital relaxation lives entirely in the
+        MO-derivative overlaps, so the cumulant 2-PDM does not contribute (it cancels by the
+        magnetic antisymmetry).
+
+        ``gauge`` selects the redundant magnetic oo/vv orbital response:
+
+        * ``'non-canonical'`` (default): the redundant blocks are zero (numerically preferred --
+          it avoids near-degenerate canonical divides such as close-lying core orbitals); only the
+          non-redundant core<->active block is canonical (frozen core).
+        * ``'canonical'``: all oo/vv blocks canonical.
+
+        The total is invariant to this choice (:meth:`CPHF.magnetic_ints`).  The nuclear MO
+        responses use pycc's ``-1/2 S`` gauge (:meth:`_perturbed_t2` / :meth:`CPHF._full_U`).
+        Magnetic quantities are stripped of their ``i`` (as in the HF AAT); the VCD rotatory
+        strength takes ``Im`` of the APT*AAT product.
+
+        Frozen-core aware (the correlation densities/amplitudes stay in the active space while the
+        orbital responses and reference density span the full occupied space; no Z-vector is
+        needed because the densities are unrelaxed).  Both spin paths (the spin-orbital form is
+        :meth:`_so_atomic_axial_tensors`).  Validated all-electron and frozen-core, both spins,
+        both gauges, against the independent apyib MP2-VCD implementation."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_atomic_axial_tensors(gauge)
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        no = o.stop
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        t2 = np.asarray(self.t2)
+        Dijab = np.asarray(self.Dijab)
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        N = self._mp2_normalization()
+        c0, c2 = N, N * t2
+        # unrelaxed, normalized 1-PDM  gamma = 2 delta_ij + correlation
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = -2.0 * N**2 * c('ikab,jkab->ij', tau, t2)
+        gamma[v, v] = +2.0 * N**2 * c('ijac,ijbc->ab', tau, t2)
+        gamma[np.arange(no), np.arange(no)] += 2.0
+
+        def dt2_from(dF, dERI):
+            # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
+            return ((dERI.swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
+                     + c('ac,ijcb->ijab', dF[v, v], t2) + c('bc,ijac->ijab', dF[v, v], t2)
+                     - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab)
+
+        # magnetic side (3): U^H, magnetic derivative density gamma^H.  gamma^H tilde's the
+        # *perturbed* amplitude (imaginary perturbation -> antisymmetric density derivative),
+        # mirroring gamma^R; this is what makes the folded form orbital-gauge invariant.
+        UH, gH = [], []
+        for b in range(3):
+            U, dF, dERI = cphf.magnetic_ints(b, ncore, gauge)
+            dc2H = c0 * dt2_from(dF, dERI)
+            tauH = 2.0 * dc2H - dc2H.swapaxes(2, 3)
+            UH.append(U)
+            R = np.zeros((nmo, nmo))
+            R[o, o] = -2.0 * c('ikab,jkab->ij', tauH, c2)
+            R[v, v] = +2.0 * c('ijac,ijbc->ab', tauH, c2)
+            gH.append((R, dc2H))
+
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            hs = d.overlap_half(A)                             # 3 x (nmo, nmo), full
+            for cart in range(3):
+                pX = Perturbation('nuclear', (A, cart))
+                dt2R = np.asarray(self._perturbed_t2(pX))      # -1/2 S gauge
+                dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
+                dc2R = dc0R * t2 + c0 * dt2R
+                tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
+                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[cart]).T
+                gR = np.zeros((nmo, nmo))
+                gR[o, o] = -2.0 * c('ikab,jkab->ij', tauR, c2)
+                gR[v, v] = +2.0 * c('ijac,ijbc->ab', tauR, c2)
+                gR[np.arange(no), np.arange(no)] += 2.0 * c0 * dc0R
+                for b in range(3):
+                    RH, dc2H = gH[b]
+                    Icc = c('ijab,ijab->', tauR, dc2H)
+                    Icphi = c('ij,ij->', gR[o, o], UH[b][o, o]) + c('ab,ab->', gR[v, v], UH[b][v, v])
+                    Iphic = c('ij,ji->', RH[o, o], UReff[o, o]) + c('ab,ab->', RH[v, v], UReff[v, v])
+                    Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
+                    P[A, cart, b] = Icc + Icphi + Iphic + Ipp
+        self.aat = P
+        return P
+
+    def _so_atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
+        """Spin-orbital MP2 electronic AATs (``(natom, 3, 3)``) -- the spin-orbital form of
+        :meth:`atomic_axial_tensors` (see there for the theory), in the bare (already-
+        antisymmetrized) spin-orbital amplitudes.  The derivative densities carry the same
+        symmetry as in the spin-adapted path: ``gamma^R`` is the **symmetric** part of
+        ``-1/2 <d c2, c2>`` (real perturbation) and ``gamma^H`` the **antisymmetric** part of
+        ``+1/2 <d c2, c2>`` (imaginary perturbation).  With those, the folded form is
+        orbital-gauge invariant.  Verified equal to the spin-adapted path to machine precision."""
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        no = o.stop
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        t2 = np.asarray(self.t2)
+        Dijab = np.asarray(self.Dijab)
+        N = self._so_mp2_normalization()
+        c0, c2 = N, N * t2
+        Doo, Dvv = self._so_mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))                    # unrelaxed 1-PDM: delta_ij + correlation
+        gamma[o, o] = N**2 * np.asarray(Doo)
+        gamma[v, v] = N**2 * np.asarray(Dvv)
+        gamma[np.arange(no), np.arange(no)] += 1.0
+
+        def dt2_from(dF, dERI):
+            # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
+            return ((dERI.swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
+                     + c('ac,ijcb->ijab', dF[v, v], t2) + c('bc,ijac->ijab', dF[v, v], t2)
+                     - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab)
+
+        def gdens(dc2, imaginary):
+            """Derivative density from ``A = <d c2, c2>``: the symmetric part (real perturbation,
+            gamma^R) or the antisymmetric part (imaginary perturbation, gamma^H).  The oo and vv
+            blocks carry opposite signs (the Doo/Dvv sign), and gamma^R vs gamma^H flip together."""
+            Aoo = c('imef,jmef->ij', dc2, c2)
+            Avv = c('mnbe,mnae->ab', dc2, c2)
+            R = np.zeros((nmo, nmo))
+            if imaginary:                                  # gamma^H: antisymmetric
+                R[o, o] = +0.25 * (Aoo - Aoo.T)
+                R[v, v] = -0.25 * (Avv - Avv.T)
+            else:                                          # gamma^R: symmetric
+                R[o, o] = -0.25 * (Aoo + Aoo.T)
+                R[v, v] = +0.25 * (Avv + Avv.T)
+            return R
+
+        UH, gH, dc2Hs = [], [], []
+        for b in range(3):
+            U, dF, dERI = cphf.magnetic_ints(b, ncore, gauge)
+            dc2H = c0 * dt2_from(dF, dERI)
+            UH.append(U)
+            dc2Hs.append(dc2H)
+            gH.append(gdens(dc2H, imaginary=True))        # antisymmetric
+
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            hs = d.so_overlap_half(A)
+            for cart in range(3):
+                pX = Perturbation('nuclear', (A, cart))
+                dt2R = np.asarray(self._perturbed_t2(pX))
+                dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
+                dc2R = dc0R * t2 + c0 * dt2R
+                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[cart]).T
+                gR = gdens(dc2R, imaginary=False)          # symmetric
+                for b in range(3):
+                    Icc = 0.25 * c('ijab,ijab->', dc2R, dc2Hs[b])
+                    Icphi = c('ij,ij->', gR[o, o], UH[b][o, o]) + c('ab,ab->', gR[v, v], UH[b][v, v])
+                    Iphic = c('ij,ij->', gH[b][o, o], UReff[o, o]) + c('ab,ab->', gH[b][v, v], UReff[v, v])
+                    Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
+                    P[A, cart, b] = Icc + Icphi + Iphic + Ipp
+        self.aat = P
+        return P
 
     # ---- total (reference + correlation) properties ----
     # The correlation methods above are the correlation contribution only; these add the

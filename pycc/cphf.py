@@ -117,6 +117,7 @@ class CPHF(object):
         self._S_nuc: dict = {}  # atom -> list of 3 (no, no) overlap deriv S^X_ij
         self._U_mag: dict = {}  # axis -> (no, nv) magnetic-field response U^B (real)
         self._U_mom: dict = {}  # axis -> (no, nv) linear-momentum response U^A (real)
+        self._mag_int: dict = {}  # axis -> (U^H, dF^H, dERI^H) magnetic engine (for MP2 AATs)
         # Full (CPHF-folded) first-derivative caches, keyed by Perturbation. These hold
         # the response-dressed derivatives d_x f and d_x <pq||rs> (notes: the "simple but
         # inefficient" explicit form), persisting for the life of this CPHF object so that
@@ -747,6 +748,80 @@ class CPHF(object):
         if axis not in self._U_mom:
             self._U_mom[axis] = self.solve(self.rhs_momentum(axis), kind="magnetic")
         return self._U_mom[axis]
+
+    def magnetic_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
+        """Magnetic-field-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
+        ``(U^H, dF^H, dERI^H)`` used by the MP2 atomic axial tensors
+        (:meth:`MPwfn.atomic_axial_tensors`). Cached per ``(axis, ncore, gauge)``.
+
+        The magnetic perturbation ``H' = -m.H`` (``m = -1/2 L``, the real antisymmetric
+        magnetic-dipole matrix, stripped of the ``i`` carried in ``H.m``) is imaginary, so the
+        orbital response is antisymmetric and uses the ``kind='magnetic'`` orbital Hessian.
+
+        ``U^H`` is the **full** ``nmo x nmo`` response: the ov block from the magnetic CPHF solve,
+        the vo block as its (symmetric) transpose, and the oo/vv blocks set by ``gauge``:
+
+        * ``'non-canonical'`` (default): the redundant within-space rotations (core-core,
+          active-active, virtual-virtual) are left at zero -- the ``-1/2 S^H = 0`` common-origin
+          choice.  Only the **non-redundant** core<->active-occupied block (present when
+          ``ncore > 0``, frozen core) is filled from the canonical condition.  This avoids the
+          near-degenerate divides of the fully canonical choice (e.g. close-lying core orbitals)
+          and is numerically preferred.  The AAT total is invariant to this choice.
+        * ``'canonical'``: every oo/vv block from ``d_H f_pq = 0`` (divide by the orbital-energy
+          difference), degeneracy-guarded.
+
+        ``dF^H``/``dERI^H`` are the perturbed Fock / two-electron integrals with the antisymmetric
+        (ket ``+``, bra ``-``) rotation.  ``W`` is the antisymmetrized ``<pq||rs>`` (spin-orbital)
+        or the spin-adapted ``L`` (spatial), matching the rest of the CPHF engine."""
+        key = (axis, ncore, gauge)
+        if key in self._mag_int:
+            return self._mag_int[key]
+        o, v, nmo = self.o, self.v, self.wfn.nmo
+        no, nv = self.no, self.nv
+        t = slice(0, nmo)
+        eps = self.eps
+        c = self.contract
+        ERI = np.asarray(self.wfn.H.ERI)
+        W = ERI if self.wfn.orbital_basis == 'spinorbital' else np.asarray(self.wfn.H.L)
+        core = -W + W.swapaxes(1, 3)                # antisymmetric mean-field weight
+        Gm = (np.einsum('ab,ij->aibj', np.eye(nv), np.eye(no))
+              * (eps[v].reshape(nv, 1, 1, 1) - eps[o].reshape(1, no, 1, 1))
+              + core.swapaxes(1, 2)[v, o, v, o]).reshape(nv * no, nv * no)
+        hmag = np.asarray(-1.0j * self.wfn.H.m[axis]).real
+
+        def _safe_div(num, e):
+            # canonical oo/vv rotation num_pq / (eps_q - eps_p), degeneracy-guarded: where two
+            # orbitals are (near-)degenerate the spin-diagonal magnetic numerator also vanishes,
+            # so set 0/0 (and the diagonal) to zero rather than divide.
+            gap = e[None, :] - e[:, None]
+            out = np.zeros_like(num)
+            m = np.abs(gap) > 1e-7
+            out[m] = num[m] / gap[m]
+            return out
+
+        U = np.zeros((nmo, nmo))
+        U[v, o] = np.linalg.solve(Gm, hmag[v, o].reshape(nv * no)).reshape(nv, no)
+        U[o, v] = U[v, o].T
+        if gauge == 'canonical':
+            U[o, o] = _safe_div(-hmag[o, o] + c('em,iejm->ij', U[v, o], core[o, v, o, o]), eps[o])
+            U[v, v] = _safe_div(-hmag[v, v] + c('em,aebm->ab', U[v, o], core[v, v, v, o]), eps[v])
+        elif ncore:
+            # non-canonical: only the non-redundant core<->active-occupied block is canonical
+            Uoo = _safe_div(-hmag[o, o] + c('em,iejm->ij', U[v, o], core[o, v, o, o]), eps[o])
+            keep = np.zeros((no, no), dtype=bool)
+            keep[:ncore, ncore:] = True
+            keep[ncore:, :ncore] = True
+            U[o, o] = Uoo * keep
+        np.fill_diagonal(U, 0.0)
+        dF = np.zeros((nmo, nmo))
+        dF[o, o] = (-hmag[o, o] + (U[o, o] * eps[o].reshape(-1, 1) - U[o, o].T * eps[o])
+                    + c('em,iejm->ij', U[v, o], core[o, v, o, o]))
+        dF[v, v] = (-hmag[v, v] + (U[v, v] * eps[v].reshape(-1, 1) - U[v, v].T * eps[v])
+                    + c('em,aebm->ab', U[v, o], core[v, v, v, o]))
+        dERI = (c('tr,pqts->pqrs', U[:, t], ERI[t, t, :, t]) + c('ts,pqrt->pqrs', U[:, t], ERI[t, t, t, :])
+                - c('tp,tqrs->pqrs', U[:, t], ERI[:, t, t, t]) - c('tq,ptrs->pqrs', U[:, t], ERI[t, :, t, t]))
+        self._mag_int[key] = (U, dF, dERI)
+        return self._mag_int[key]
 
     def _build_nuclear(self, atom: int):
         """One heavy pass over the derivative integrals for ``atom``; returns three
