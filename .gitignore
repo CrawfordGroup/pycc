@@ -135,3 +135,9 @@ o.dat
 
 # macOS
 .DS_Store
+
+# LaTeX build artifacts (*.log already covered above)
+*.aux
+*.out
+*.toc
+*.synctex.gz
