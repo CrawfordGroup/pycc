@@ -417,3 +417,73 @@ class HFwfn(Wavefunction):
                         + self.contract('ia,ia->', Ub[beta], Shalf[alpha]))
         self.aat = aat
         return self.aat
+
+    def velocity_dipole_derivatives(self) -> np.ndarray:
+        """Velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
+        momentum-form APT, an alternative to the length-gauge :meth:`dipole_derivatives`.
+
+        Formulated (Amos, Jalkanen & Stephens, JPC 92, 5571 (1988), Eq. 14; Shumberger et al.,
+        LG(OI) VCD, Eq. 15) as an overlap of wave-function derivatives -- the nuclear derivative
+        of the bra with the magnetic-vector-potential derivative of the ket::
+
+            [P^A_{beta,alpha}]^VG = -4 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}
+                                    + Z_A delta_{alpha,beta}
+
+        the same overlap structure as the AAT (:meth:`atomic_axial_tensors`) with the linear-
+        momentum response ``U^A`` (:meth:`CPHF.solve_momentum`, ``dPsi/dA``) in place of the
+        magnetic response ``U^B``, and the length-gauge ``Z_A delta`` nuclear term in place of
+        the AAT's Levi-Civita term. ``U^R`` is the nuclear CPHF response; ``<phi^R_i|phi_a>`` the
+        nuclear half-derivative overlap (the vector potential does not move the basis, so this
+        rides on the R side only). The ``-4`` prefactor is the closed-shell value (real-wf
+        doubling x double occupancy; the two imaginary units of ``-2i`` x ``H.p`` fix the sign)
+        -- pinned to the Amos et al. NH3 ``P(pi)`` values.
+
+        Unlike the length-gauge APT, the VG APT differs from it in a finite basis and converges
+        to it only toward the basis-set limit; both are origin-independent. The spin-orbital path
+        dispatches to :meth:`_so_velocity_dipole_derivatives`."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_velocity_dipole_derivatives()
+        d = self.derivatives
+        mol = self.ref.molecule()
+        natom = mol.natom()
+        Ua = [self.cphf.solve_momentum(alpha) for alpha in range(3)]   # 3 x (no,nv)
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            Ur = self.cphf.solve_nuclear(A)                            # 3 x (no,nv)
+            Sh = d.overlap_half(A, 'o', 'v', side="LEFT")              # 3 x (no,nv)
+            for beta in range(3):
+                for alpha in range(3):
+                    val = mol.Z(A) if alpha == beta else 0.0
+                    val += -4.0 * self.contract('ia,ia->', Ur[beta] + Sh[beta], Ua[alpha])
+                    P[A, beta, alpha] = val
+        self.vgapt = P
+        return self.vgapt
+
+    def _so_velocity_dipole_derivatives(self) -> np.ndarray:
+        """Spin-orbital velocity-gauge APTs, shape ``(natom, 3, 3)``. The spin-orbital form of
+        :meth:`velocity_dipole_derivatives`: singly occupied spin orbitals halve the closed-shell
+        prefactor (``-4 -> -2``), with the spin-orbital nuclear/momentum responses
+        (:meth:`CPHF.solve_nuclear`/:meth:`CPHF.solve_momentum`) and half-derivative overlaps
+        (:meth:`Derivatives.so_overlap_half`)::
+
+            [P^A_{beta,alpha}]^VG = -2 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}
+                                    + Z_A delta_{alpha,beta}
+
+        Valid for UHF as well as a closed-shell RHF forced to spin orbitals; ROHF raises (via
+        :meth:`CPHF.solve`)."""
+        d = self.derivatives
+        mol = self.ref.molecule()
+        natom = mol.natom()
+        Ua = [self.cphf.solve_momentum(alpha) for alpha in range(3)]
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            Ur = self.cphf.solve_nuclear(A)
+            Sh = d.so_overlap_half(A, 'o', 'v', side="LEFT")
+            for beta in range(3):
+                for alpha in range(3):
+                    val = mol.Z(A) if alpha == beta else 0.0
+                    val += -2.0 * self.contract('ia,ia->', Ur[beta] + Sh[beta], Ua[alpha])
+                    P[A, beta, alpha] = val
+        self.vgapt = P
+        return self.vgapt

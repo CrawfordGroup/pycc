@@ -116,6 +116,7 @@ class CPHF(object):
         self._F_nuc: dict = {}  # atom -> list of 3 (no, no) skeleton deriv Fock F^X_ij
         self._S_nuc: dict = {}  # atom -> list of 3 (no, no) overlap deriv S^X_ij
         self._U_mag: dict = {}  # axis -> (no, nv) magnetic-field response U^B (real)
+        self._U_mom: dict = {}  # axis -> (no, nv) linear-momentum response U^A (real)
         # Full (CPHF-folded) first-derivative caches, keyed by Perturbation. These hold
         # the response-dressed derivatives d_x f and d_x <pq||rs> (notes: the "simple but
         # inefficient" explicit form), persisting for the life of this CPHF object so that
@@ -718,6 +719,34 @@ class CPHF(object):
         if axis not in self._U_mag:
             self._U_mag[axis] = self.solve(self.rhs_magnetic(axis), kind="magnetic")
         return self._U_mag[axis]
+
+    def _p_ov(self, axis: int) -> np.ndarray:
+        """ov block of the (real) MO linear-momentum integral for ``axis`` (0/1/2).
+
+        ``H.p`` is ``i * <mu|Del|nu>`` in the MO basis (the pure-imaginary linear-momentum
+        operator, carrying the same ``i`` convention as ``H.m``); this strips the ``i`` by
+        multiplying by ``-i`` so the momentum CPHF is a real problem, exactly as
+        :meth:`_m_ov` does for the magnetic dipole."""
+        return np.asarray(-1.0j * self.wfn.H.p[axis])[self.o, self.v].real
+
+    def rhs_momentum(self, axis: int) -> np.ndarray:
+        """Linear-momentum (magnetic vector-potential) CPHF RHS for ``axis`` (0/1/2), real.
+
+        The vector potential enters the Hamiltonian as ``H'(A) = A . pi`` (Amos, Jalkanen &
+        Stephens, JPC 92, 5571 (1988), Eq. 10), so ``dH'/dA = +pi`` -- the (positive) real
+        momentum ov integral (contrast the magnetic ``B = -m``). Like the field/magnetic
+        perturbations, ``A`` does not move the basis functions, so there is no overlap/Pulay
+        term. The momentum perturbation is imaginary, so this uses the antisymmetric
+        (``kind='magnetic'``) orbital Hessian -- the same Hessian as the magnetic response."""
+        return self._p_ov(axis)
+
+    def solve_momentum(self, axis: int) -> np.ndarray:
+        """Linear-momentum CPHF response ``U^A`` for ``axis`` (0/1/2), ``(no, nv)``, solved
+        once and cached. Real. This is the ket derivative ``dPsi/dA`` in the velocity-gauge
+        APT (:meth:`HFwfn.velocity_dipole_derivatives`)."""
+        if axis not in self._U_mom:
+            self._U_mom[axis] = self.solve(self.rhs_momentum(axis), kind="magnetic")
+        return self._U_mom[axis]
 
     def _build_nuclear(self, atom: int):
         """One heavy pass over the derivative integrals for ``atom``; returns three
