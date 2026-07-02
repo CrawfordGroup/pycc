@@ -1,0 +1,195 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+
+\newcommand{\pd}[1]{\partial_{#1}}
+\newcommand{\aeri}[1]{\langle #1 \rangle}   % antisymmetrized <..||..>
+\newcommand{\occ}{\mathrm{occ}}
+
+\title{Perturbed relaxed density, Lagrangian, and Z-vector\\
+       for the $2n{+}1$ MP2 second derivatives}
+\author{PyCC derivation notes}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent
+Companion to \texttt{derivints.pdf}. Spin-orbital basis, antisymmetrized two-electron
+integrals $\aeri{pq\|rs}$. Index convention: $i,j,k$ occupied; $a,b,c$ virtual;
+$p,q,r,s,t$ all MOs. $\varepsilon_p \equiv f_{pp}$.
+
+These notes are kept \emph{method-general}: $D$ and $\Gamma$ are the method's
+\emph{unrelaxed} one- and two-particle correlation densities, and $D^{\mathrm{rel}}$ the
+relaxed one-particle density (unrelaxed plus the orbital-relaxation / Z-vector blocks). The
+generalized-Fock Lagrangian, the orbital Hessian, and the Z-vector are the standard
+Gauss--Stanton--Bartlett orbital-response formalism, identical in structure for MP2 and CC
+(CCSD, CC3, \dots); only the densities $D,\Gamma$ (and, at CC, the amplitude Lagrange
+multipliers $\Lambda$) differ. Points where MP2 \emph{specializes} the general result are
+flagged as \textbf{MP2:} throughout. The MP2 case is what we validate numerically; the CC
+extension is then a density swap, not a re-derivation.
+
+The starting point is the relaxed-density gradient (\texttt{derivints.pdf} Eq.~1, GSB form),
+\begin{equation}
+  \pd{x} E \;=\; \sum_{pq}\gamma_{pq}\,f^{(x)}_{pq}
+             \;+\; \sum_{pqrs}\Gamma_{pqrs}\,\aeri{pq\|rs}^{(x)}
+             \;+\; \sum_{pq}I_{pq}\,S^{(x)}_{pq},
+  \qquad \gamma \equiv D^{\mathrm{rel}},
+\end{equation}
+with skeleton (fixed-MO-coefficient) derivatives $f^{(x)},\aeri{}^{(x)},S^{(x)}$.
+Its second derivative (2n+1) needs only \emph{first-order} responses; the new machinery is
+the response of the relaxed density, which requires the perturbed Z-vector.
+
+\paragraph{Available first-order derivatives.}
+$\pd{x}\aeri{pq\|rs}$ and $\pd{x}f_{pq}$ are the full (CPHF-folded) MO derivatives
+(\texttt{CPHF.perturbed\_eri}, \texttt{perturbed\_fock}); $\pd{x}\varepsilon_p=\pd{x}f_{pp}$.
+$\pd{x}D_{pq}$ and $\pd{x}\Gamma_{pqrs}$ are the unrelaxed density responses, obtained from
+the perturbed amplitudes (and, at CC, perturbed $\Lambda$). $U^x$ is the first-order
+orbital-rotation matrix (\texttt{CPHF.\_full\_U}); $z$ is the unperturbed Z-vector.
+\textbf{MP2:} the unrelaxed density responses are \texttt{MPwfn.\_perturbed\_densities},
+built from the closed-form perturbed doubles $t^x$; the amplitude Lagrange multipliers
+coincide with the amplitudes ($\Lambda=t$), so $\pd{x}\Lambda=t^x$ needs no separate solve.
+
+\section{Unperturbed pieces (for reference)}
+The generalized-Fock Lagrangian, orbital Hessian, and Z-vector below are method-general
+(they depend on the method only through $D$ and $\Gamma$). \textbf{MP2:} the unrelaxed
+correlation densities are
+$D_{ij}=-\tfrac12\,t_{imef}t_{jmef}$, $D_{ab}=+\tfrac12\,t_{mnbe}t_{mnae}$ (no ov block),
+and $\Gamma_{ijab}=\tfrac14\,t_{ijab}$ (oovv/vvoo).
+
+\medskip\noindent
+The generalized-Fock Lagrangian ($D$, $\Gamma$ inputs):
+\begin{equation}
+  I'_{pq} = -\tfrac12\Big[\,
+      \varepsilon_p\,(D_{pq}+D_{qp})
+      + \delta_{q\in\occ}\sum_{rs} D_{rs}\big(\aeri{rp\|sq}+\aeri{rq\|sp}\big)
+      + 4\sum_{rst}\aeri{pr\|st}\,\Gamma_{qrst}\,\Big].
+  \label{eq:lag}
+\end{equation}
+The occupied--virtual antisymmetric part is the Z-vector right-hand side,
+$X_{ia} = I'_{ia}-I'_{ai}$, and the orbital Hessian is
+\begin{equation}
+  A_{ia,jb} = \aeri{aj\|ib} + \aeri{ab\|ij} + (\varepsilon_a-\varepsilon_i)\,\delta_{ij}\delta_{ab}.
+  \label{eq:hess}
+\end{equation}
+Solving $\sum_{jb}A_{ia,jb}\,z_{jb}=X_{ia}$ gives the Z-vector, and
+$D^{\mathrm{rel}}_{ai}=D^{\mathrm{rel}}_{ia}=-z_{ai}$ (with $D^{\mathrm{rel}}_{ij}=D_{ij}$,
+$D^{\mathrm{rel}}_{ab}=D_{ab}$). The energy-weighted density is $W=I'(D^{\mathrm{rel}})$.
+
+\section{Perturbed Lagrangian $\pd{x}I'_{pq}$}
+Differentiating Eq.~\eqref{eq:lag} term by term (product rule), using the \emph{unrelaxed}
+$D,\Gamma$ and their responses:
+\begin{align}
+  \pd{x}I'_{pq} = -\tfrac12\Big[\;
+      & (\pd{x}\varepsilon_p)(D_{pq}+D_{qp}) + \varepsilon_p(\pd{x}D_{pq}+\pd{x}D_{qp})
+      \notag\\[2pt]
+      &+\,\delta_{q\in\occ}\sum_{rs}\Big(
+          \pd{x}D_{rs}\,(\aeri{rp\|sq}+\aeri{rq\|sp})
+          + D_{rs}\,(\pd{x}\aeri{rp\|sq}+\pd{x}\aeri{rq\|sp})\Big)
+      \notag\\[2pt]
+      &+\,4\sum_{rst}\Big(
+          \pd{x}\aeri{pr\|st}\,\Gamma_{qrst} + \aeri{pr\|st}\,\pd{x}\Gamma_{qrst}\Big)
+      \;\Big].
+  \label{eq:dlag}
+\end{align}
+
+\section{Perturbed Z-vector $z^x$}
+Differentiating $A z = X$ gives $A z^x = X^x - A^x z$, i.e.\ the \emph{same} orbital Hessian
+Eq.~\eqref{eq:hess} with a perturbed right-hand side:
+\begin{equation}
+  \sum_{jb} A_{ia,jb}\,z^x_{jb} \;=\; X^x_{ia} - (A^x z)_{ia},
+\end{equation}
+\begin{align}
+  X^x_{ia} &= \pd{x}I'_{ia} - \pd{x}I'_{ai}, \\[4pt]
+  (A^x z)_{ia} &= \sum_{jb}\big(\pd{x}\aeri{aj\|ib}+\pd{x}\aeri{ab\|ij}\big)z_{jb}
+                 \;+\; \sum_{b}\pd{x}f_{ab}\,z_{ib}
+                 \;-\; \sum_{j}\pd{x}f_{ij}\,z_{ja}.
+  \label{eq:Axz}
+\end{align}
+The last two terms are $\pd{x}$ of the $(\varepsilon_a-\varepsilon_i)\delta$ block written in
+its general non-canonical form $f_{ab}\delta_{ij}-f_{ij}\delta_{ab}$; they use the full
+$\pd{x}f$ virtual--virtual and occupied--occupied blocks, not merely $\pd{x}\varepsilon$.
+Then $z^x = A^{-1}(X^x - A^x z)$.
+
+\section{Perturbed relaxed density $\pd{x}D^{\mathrm{rel}}_{pq}$}
+The relaxed density is the unrelaxed density plus the orbital relaxation, in every block:
+\begin{equation}
+  D^{\mathrm{rel}}_{pq} = D_{pq} + D^{\mathrm{orb}}_{pq},\qquad
+  D^{\mathrm{orb}}_{ai}=D^{\mathrm{orb}}_{ia}=-z_{ai},\quad D^{\mathrm{orb}}_{ij}=D^{\mathrm{orb}}_{ab}=0,
+\end{equation}
+so, differentiating,
+\begin{equation}
+  \pd{x}D^{\mathrm{rel}}_{ij} = \pd{x}D_{ij},\qquad
+  \pd{x}D^{\mathrm{rel}}_{ab} = \pd{x}D_{ab},\qquad
+  \boxed{\;\pd{x}D^{\mathrm{rel}}_{ai} = \pd{x}D_{ai} - z^x_{ai}\;}\qquad
+  (\pd{x}D^{\mathrm{rel}}_{ia}=\pd{x}D_{ia}-z^x_{ai}).
+  \label{eq:drel}
+\end{equation}
+The occupied--virtual block carries \emph{both} the unrelaxed ov response and the perturbed
+Z-vector. \textbf{MP2:} the unrelaxed one-particle density has no occupied--virtual block
+(no singles: $f_{ai}=0$ by Brillouin, and the first-order wavefunction is doubles-only), so
+$D_{ai}=0$ and $\pd{x}D_{ai}=0$, leaving $\pd{x}D^{\mathrm{rel}}_{ai}=-z^x_{ai}$ --- the ov
+derivative is the perturbed Z-vector alone. For CC (CCSD, CC3, \dots) singles are present, so
+$D_{ai}\neq0$ and the $\pd{x}D_{ai}$ term in Eq.~\eqref{eq:drel} survives; the CC extension
+supplies it (and $\pd{x}D_{ij}$, $\pd{x}D_{ab}$) from $\pd{x}t$ and $\pd{x}\Lambda$, with
+Eqs.~\eqref{eq:dlag}--\eqref{eq:Axz} unchanged.
+
+\section{Assembly: field second derivative (polarizability)}
+For an electric field the skeleton Fock derivative is $f^{(b)}=-\mu_b$ and
+$\aeri{}^{(b)}=S^{(b)}=0$, so differentiating the gradient in direction $a$ leaves two terms
+($f^{(ab)}=0$ for a field):
+\begin{equation}
+  \alpha_{ab} \;=\; \sum_{pq}\pd{a}D^{\mathrm{rel}}_{pq}\,(\mu_b)_{pq}
+             \;+\; \sum_{pq}D^{\mathrm{rel}}_{pq}\,\big[(U^a)^{\!\top}\mu_b + \mu_b\,U^a\big]_{pq}.
+  \label{eq:alpha}
+\end{equation}
+The second term is the MO dipole rotating under the field, $\pd{a}f^{(b)}=\mathrm{rotate}(U^a,-\mu_b)$.
+Numerically Eq.~\eqref{eq:alpha} reproduces the explicit-route polarizability to
+$\sim\!10^{-15}$ (H$_2$O/6-31G, spin-orbital).
+
+\section{Frozen core}
+The frozen-core gradient recipe (Baeck, Watts, and Bartlett, \emph{J.\ Chem.\ Phys.}\
+\textbf{107}, 3853 (1997), Eqs.~22--28) supplies the orbital-response density in the
+dropped-MO case; here we differentiate it.
+The correlation energy is no longer invariant to core$\leftrightarrow$active-occupied
+rotations, so the occupied--occupied block of $D^{\mathrm{rel}}$ acquires a core--active part.
+Writing $c$ for a frozen-core and $i$ for an active-occupied orbital (so $D^{\mathrm{rel}}_{ci}$
+is a sub-block of the general $D^{\mathrm{rel}}_{ij}$ of Sec.~4, refining it across the
+frozen/active partition), the canonical perturbed-orbital condition (\texttt{derivints.pdf}
+Eq.~14) gives a direct energy-gap divide in place of the unrelaxed value:
+\begin{equation}
+  D^{\mathrm{rel}}_{ci} = \frac{I'_{ci}-I'_{ic}}{\varepsilon_c-\varepsilon_i} = D^{\mathrm{rel}}_{ic},
+\end{equation}
+where the unrelaxed $D_{ci}=0$ (the frozen core is uncorrelated), so this block --- like the
+ov block --- is pure orbital relaxation. It also couples into the ov Z-vector right-hand side
+$X$.
+
+Differentiating Eq.~(11) requires care. The gap divide is the \emph{canonical} form of the
+underlying Sylvester relation
+\begin{equation}
+  \sum_d f_{cd}\,D^{\mathrm{rel}}_{di} - \sum_j D^{\mathrm{rel}}_{cj}\,f_{ji}
+      = I'_{ci}-I'_{ic},
+\end{equation}
+which reduces to Eq.~(11) only because the unperturbed Fock is diagonal
+($f_{cd}=\varepsilon_c\delta_{cd}$, $f_{ji}=\varepsilon_i\delta_{ji}$). Differentiating the
+Sylvester relation and evaluating at the (diagonal) unperturbed Fock gives
+\begin{equation}
+  (\varepsilon_c-\varepsilon_i)\,\pd{x}D^{\mathrm{rel}}_{ci}
+      = \pd{x}I'_{ci}-\pd{x}I'_{ic}
+        - \sum_d \pd{x}f_{cd}\,D^{\mathrm{rel}}_{di}
+        + \sum_j D^{\mathrm{rel}}_{cj}\,\pd{x}f_{ji}.
+  \label{eq:dpco}
+\end{equation}
+The diagonal terms ($d=c$, $j=i$) reproduce the naive quotient-rule shift
+$-D^{\mathrm{rel}}_{ci}(\pd{x}\varepsilon_c-\pd{x}\varepsilon_i)$; the \emph{off-diagonal}
+$j\neq i$ active--active (and $d\neq c$ core--core) pieces of $\pd{x}f$ are essential and are
+\emph{not} captured by differentiating the gap alone --- a field leaves the active occupied
+space non-canonical ($\pd{x}f_{ji}\neq 0$ off-diagonal), so these couple different orbitals
+within the block. Dropping them leaves a residual error (H$_2$O/6-31G frozen core: the
+polarizability is wrong by $\sim\!7\times10^{-7}$; with Eq.~\eqref{eq:dpco} it recovers the
+finite-difference value to $\sim\!10^{-12}$). The perturbed ov Z-vector right-hand side $X^x$
+additionally picks up the derivative of the core--active coupling term. These are folded in
+for the frozen-core path.
+
+\end{document}

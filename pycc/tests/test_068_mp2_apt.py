@@ -60,9 +60,9 @@ def _dens_invariants(mp):
     """Gauge-invariant Tr(gamma^2), ||Gamma||^2 (orthogonal orbital rotations preserve both)."""
     o, v, nmo = mp.o, mp.v, mp.nmo
     if mp.orbital_basis == 'spinorbital':
-        Doo, Dvv = mp._so_mp2_corr_opdm(); Gam = np.asarray(mp._so_mp2_cumulant())
+        Doo, Dvv = mp._so_mp2_corr_opdm(); Gam = np.asarray(mp._so_mp2_tpdm())
     else:
-        Doo, Dvv = mp._mp2_corr_opdm(); Gam = np.asarray(mp._mp2_cumulant())
+        Doo, Dvv = mp._mp2_corr_opdm(); Gam = np.asarray(mp._mp2_tpdm())
     g = np.zeros((nmo, nmo)); g[o, o] = np.asarray(Doo); g[v, v] = np.asarray(Dvv)
     return np.sum(g * g), np.sum(Gam * Gam)
 
@@ -83,7 +83,7 @@ def test_mp2_nuclear_t2_response_631g():
     from pycc.cphf import Perturbation
     mp0 = _mpwfn(BASE, '6-31G', 'spatial')
     o, v, nmo = mp0.o, mp0.v, mp0.nmo
-    Doo, Dvv = mp0._mp2_corr_opdm(); Gam = np.asarray(mp0._mp2_cumulant())
+    Doo, Dvv = mp0._mp2_corr_opdm(); Gam = np.asarray(mp0._mp2_tpdm())
     g = np.zeros((nmo, nmo)); g[o, o] = np.asarray(Doo); g[v, v] = np.asarray(Dvv)
     for (atom, cart) in [(0, 2), (2, 1)]:
         dgX, dGX = mp0._perturbed_densities(Perturbation('nuclear', (atom, cart)))

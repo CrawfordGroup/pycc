@@ -1,0 +1,195 @@
+\documentclass[12pt]{article}
+\usepackage{overcite}
+\usepackage{fullpage}
+\usepackage{amsmath}
+\usepackage{mathtools}
+\renewcommand{\familydefault}{\sfdefault}
+\renewcommand{\thefootnote}{\textit{\alph{footnote}}}
+
+\def\ket#1{| #1 \rangle}
+\def\bra#1{\langle #1 |}
+\def\aint#1#2{\bra{#1}\ket{#2}}
+\def\bm#1{\mbox{\boldmath $#1$}}
+\newcommand{\actocc}{\substack{\textrm{act}{}\\\textrm{occ}}}
+\newcommand{\allocc}{\substack{\textrm{all}{}\\\textrm{occ}}}
+\newcommand{\actvir}{\substack{\textrm{act}{}\\\textrm{vir}}}
+\newcommand{\allvir}{\substack{\textrm{all}{}\\\textrm{vir}}}
+\newcommand{\allmos}{\substack{\textrm{all}{}\\\textrm{MOs}}}
+
+\begin{document}
+
+\begin{center}
+{\bf \large Derivative Integrals for Correlated Gradients and Hessians} \\
+\ \\
+T. Daniel Crawford \\
+{\em Virginia Tech, Blacksburg, Virginia} \\
+29 June 2026
+\end{center}
+
+\section{First Derivatives}
+
+\noindent
+A computationally simple (but inefficient) form of the first derivative of the correlation energy may be expressed as
+\begin{equation}
+\partial_x E = \sum_{pq} \gamma_{pq} \partial_x f_{pq} + \sum_{pqrs}
+\Gamma_{pqrs} \partial_x \aint{pq}{rs},
+\label{Eq:dx_E}
+\end{equation}
+where $\gamma_{pq}$ and $\Gamma_{pq}$ are anti-symmetric, unrelaxed one- and
+two-electron density matrices in the spin-orbital basis.
+For a real perturbation, $x$, the derivative of the elements of the Fock matrix are given by
+\begin{equation}
+\partial_x f_{pq} = f_{pq}^{(x)} + U_{pq}^x f_{pp} + U_{qp}^x f_{qq} 
+- \frac{1}{2} \sum_{nm}^{\allocc} S_{nm}^{(x)} A_{pnqm}
++ \sum_c^{\allvir} \sum_m^{\allocc} U_{cm}^x A_{pcqm},
+\label{Eq:dx_f_pq}
+\end{equation}
+where $f_{pq}^{(x)}$ denotes the derivative of the AO-basis Fock operator
+transformed into the MO basis (the ``skeleton Fock derivatives''), the
+$U_{pq}^x$ are coupled-perturbed Hartree-Fock (CPHF) coefficients, and
+\begin{equation}
+A_{pqrs} \equiv \aint{pq}{rs} + \aint{ps}{rq}.
+\end{equation}
+Note that $A_{pqrs}$ has permutational symmetries:
+\begin{equation}
+A_{pqrs} = A_{psrq} = A_{rqps} = A_{rspq} = A_{qpsr} = A_{qrsp} = A_{spqr} = A_{srqp}.
+\end{equation}
+Separating $\partial_x f_{pq}$ into MO subspaces and choosing the non-canonical perturbed-orbital conditions, 
+\begin{equation}
+U_{ij}^x = -\frac{1}{2} S_{ij}^{(x)}
+\end{equation}
+and
+\begin{equation}
+U_{ab}^x = -\frac{1}{2} S_{ab}^{(x)}
+\end{equation}
+yields
+\begin{equation}
+\partial_x f_{ij} = f_{ij}^{(x)} - \frac{1}{2} S_{ij}^{(x)} (f_{ii} + f_{jj})
+- \frac{1}{2} \sum_{nm}^{\allocc} S_{nm}^{(x)} A_{injm}
++ \sum_c^{\allvir} \sum_m^{\allocc} U_{cm}^x A_{icjm},
+    \label{Eq:dx_f_ij}
+\end{equation}
+\begin{equation}
+\partial_x f_{ab} = f_{ab}^{(x)} - \frac{1}{2} S_{ab}^{(x)} (f_{aa} + f_{bb})
+- \frac{1}{2} \sum_{nm}^{\allocc} S_{nm}^{(x)} A_{anbm}
++ \sum_c^{\allvir} \sum_m^{\allocc} U_{cm}^x A_{acbm},
+\end{equation}
+and
+\begin{equation}
+\partial_x f_{ai} = \partial_x f_{ia} = f_{ai}^{(x)} + U_{ai}^x (f_{aa} - f_{ii}) - S_{ai}^{(x)} f_{ii} 
+- \frac{1}{2} \sum_{nm}^{\allocc} S_{nm}^{(x)} A_{anim}
++ \sum_c^{\allvir} \sum_m^{\allocc} U_{cm}^x A_{acim} = 0.
+\end{equation}
+where the last equality hold for Hartree-Fock orbitals by construction.  This
+is used to obtain the virtual-occupied block of the CPHF coefficients,
+\begin{equation}
+\mathbf{G} \mathbf{U}^x = \mathbf{B}
+\end{equation}
+where
+\begin{equation}
+G_{ai,cm} = (f_{aa} - f_{ii}) \delta_{ac} \delta_{im} + A_{acim}
+\end{equation}
+and
+\begin{equation}
+B_{ai}^x = -f_{ai}^{(x)} + S_{ai}^{(x)} f_{ii} + \frac{1}{2} \sum_{nm}^{\allocc} S_{nm}^{(x)} A_{anim}.
+\end{equation}
+The derivatives of the antisymmetrized two-electron repulsion integrals are
+given by
+\begin{equation}
+\partial_x \aint{pq}{rs} = \aint{pq}{rs}^{(x)} + \sum_t^{\allmos} \left(
+U_{tp}^x \aint{tq}{rs} + U_{tq}^x \aint{pt}{rs} + U_{tr}^x \aint{pq}{ts} + U_{ts}^x \aint{pq}{rt}
+\right),
+\end{equation}
+where $\aint{pq}{rs}^{(x)}$ are the skeleton two-electron integral derivatives.
+
+\vspace{0.2in}
+\noindent
+For frozen-core gradients, all of the above remains unchanged except that the correlation energy is no longer invariant to
+rotations between core and active-occupied MOs. Thus, the non-canonical perturbed-orbital condition for the corresponding
+$U_{ij}^x$ cannot be used.  Instead, one must explicitly solve for the core-active CPHF coefficients using
+Eq.\eqref{Eq:dx_f_ij} under the assumption of canonical MOs, viz., for $i \in$ core and $j \in$ active-occupied,
+\begin{equation}
+U_{ij}^x = -(f_{ii} - f_{jj})^{-1} \left[ f_{ij}^{(x)} - S_{ij}^{(x)} f_{jj} - \frac{1}{2} \sum_{nm}^{\allocc}
+S_{nm}^{(x)} A_{injm} +
+\sum_c^{\allvir} \sum_m^{\allocc} U_{cm}^{x} A_{icjm}\right].
+\end{equation}
+
+\section{Second Derivatives}
+
+\noindent
+Differentiating Eq.~\eqref{Eq:dx_E}, we obtain
+\begin{equation}
+\partial_{xy} E = \partial_y \partial_x E = \sum_{pq} \left[ \partial_x (\gamma_{pq}) \partial_y f_{pq} + \gamma_{pq}
+\partial_{xy} f_{pq} \right] + \sum_{pqrs} \left[ \partial_x (\Gamma_{pqrs}) \partial_y \aint{pq}{rs} + \Gamma_{pqrs}
+\partial_{xy} \aint{pq}{rs} \right],
+\end{equation}
+where we have used parentheses to clarify that the derivative acts only on the function to its immediate right, i.e.\
+we have accounted for the chain rule.  The expressions for the derivatives of the one- and two-electron densities depend
+on the choice of quantum chemical method, so we will not discuss them further.  The first derivatives of $f_{pq}$ and
+$\aint{pq}{rs}$ are given in the previous section, so we are left only with the second-derivatives.
+
+\vspace{0.2in}
+\noindent
+For the Fock derivatives, instead of Eq.~\eqref{Eq:dx_f_pq}, we start from a more general form that does not assume
+canonical orbitals and does not take advantage of the orthonormality condition, viz.
+\begin{equation}
+\partial_x f_{pq} = f_{pq}^{(x)} + \sum_r^{\allmos} \left( U_{rp}^x f_{rq} + U_{rq}^x f_{pr} \right) + \sum_r^{\allmos}
+\sum_m^{\allocc} U_{rm}^x A_{prqm}.
+\end{equation}
+Differentiating this expression under the assumption of canonical MOs yields
+\begin{align}
+\partial_{xy} f_{pq} &= f_{pq}^{(xy)}
++ U_{pq}^{xy} \left(f_{pp} - f_{qq}\right) - \xi_{pq}^{xy} f_{qq}
+- \frac{1}{2} \sum_n^{\allocc}\sum_m^{\allocc} \xi_{nm}^{xy} A_{pnqm}
++ \sum_c^{\allvir}\sum_m^{\allocc} U_{cm}^{xy} A_{pcqm}
+\nonumber \\
+& + \sum_r^{\allmos} \left( U_{rp}^x f_{rq}^{(y)} + U_{rp}^y f_{rq}^{(x)} + U_{rq}^x f_{pr}^{(y)} + U_{rq}^y f_{pr}^{(x)} \right)
++ \sum_{rs}^{\allmos} \left( U_{rp}^x U_{sq}^y + U_{rp}^y U_{sq}^x \right) f_{rs}
+\nonumber \\
+& + \sum_{rs}^{\allmos}\sum_m^{\allocc} U_{rm}^x U_{sm}^y A_{prqs}
++ \sum_r^{\allmos} \sum_m^{\allocc} \left( U_{rm}^x A_{prqm}^{(y)} + U_{rm}^y A_{prqm}^{(x)} \right)
+\nonumber \\
+& + \sum_{rs}^{\allmos}\sum_m^{\allocc} \left( U_{rp}^x U_{sm}^y + U_{rp}^y U_{sm}^x \right) A_{rsqm}
++ \sum_{rs}^{\allmos}\sum_m^{\allocc} \left( U_{rq}^x U_{sm}^y + U_{rq}^y U_{sm}^x \right) A_{psrm},
+\end{align}
+where
+\begin{equation}
+\xi_{pq}^{xy} \equiv S_{pq}^{xy} + \sum_r^{\allmos} \left( 
+U_{qr}^x U_{pr}^y + U_{pr}^x U_{qr}^y - S_{qr}^x S_{pr}^y - S_{pr}^x S_{qr}^y
+\right),
+\end{equation}
+and is obtained from the second derivative of the normalization condition,
+\begin{equation}
+        U_{pq}^{xy} + U_{qp}^{xy} + \xi_{pq}^{xy} = 0.
+\end{equation}
+The second derivatives of the two-electron integrals are given by
+\begin{align}
+\partial_{xy} \aint{pq}{rs} &= \aint{pq}{rs}^{(xy)}
++ \sum_t^{\allmos} \left( U_{tp}^{xy} \aint{tq}{rs} + U_{tq}^{xy} \aint{pt}{rs} + U_{tr}^{xy} \aint{pq}{ts} +
+        U_{ts}^{xy} \aint{pq}{rt} \right)
+\nonumber \\
+& + \sum_t^{\allmos} \left(
+U_{tp}^{x} \aint{tq}{rs}^{(y)} + U_{tq}^{x} \aint{pt}{rs}^{(y)} + U_{tr}^{x} \aint{pq}{ts}^{(y)} + U_{ts}^{x}
+\aint{pq}{rt}^{(y)}
+\right)
+\nonumber \\
+& + \sum_t^{\allmos} \left(
+U_{tp}^{y} \aint{tq}{rs}^{(x)} + U_{tq}^{y} \aint{pt}{rs}^{(x)} + U_{tr}^{y} \aint{pq}{ts}^{(x)} + U_{ts}^{y}
+\aint{pq}{rt}^{(x)}
+\right)
+\nonumber \\
+& + \sum_{tu}^{\allmos} \left[
+\left( U_{tp}^x U_{uq}^y + U_{tp}^y U_{uq}^x \right) \aint{tu}{rs}
++ \left( U_{tp}^x U_{ur}^y + U_{tp}^y U_{ur}^x \right) \aint{tq}{us}
+\right.
+\nonumber \\
+& \qquad + \left( U_{tp}^x U_{us}^y + U_{tp}^y U_{us}^x \right) \aint{tq}{ru}
++ \left( U_{tq}^x U_{ur}^y + U_{tq}^y U_{ur}^x \right) \aint{pt}{us}
+\nonumber \\
+& \left.
+\qquad + \left( U_{tq}^x U_{us}^y + U_{tq}^y U_{us}^x \right) \aint{pt}{ru}
++ \left( U_{tr}^x U_{us}^y + U_{tr}^y U_{us}^x \right) \aint{pq}{tu}
+\right]
+\end{align}
+
+\end{document}
