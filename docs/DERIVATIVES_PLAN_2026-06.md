@@ -565,7 +565,7 @@ SO==spatial keystone ~1e-16. This completes the explicit second-order property p
 gradient, polarizability, APT, Hessian). Remaining: magnetic-field derivatives (AATs/VCD) with
 `H.m`, and the deferred 2n+1 route as an efficiency pass + cross-check.
 
-## 2n+1 second-derivative route — plan (2026-07, code NOT started)
+## 2n+1 second-derivative route — Phases A–B DONE (2026-07); C–D planned
 
 The efficient long-term alternative to the explicit route, and an independent cross-check of
 the whole explicit second-derivative suite. Starting point (PI decision): the **relaxed-density
@@ -615,17 +615,27 @@ separate perturbed-Lambda solve.
 
 **Phasing (each cross-validated against the explicit route we already trust, to ~machine
 precision -- same numbers, different code path):**
-- **A. Perturbed Z-vector + perturbed relaxed densities.** The core new machinery. Unit-check
-  `z^x` and `d_x gamma`/`d_x I` via finite difference of the (validated) relaxed densities /
-  Z-vector over the perturbation.
-- **B. Polarizability (2n+1).** Cheapest assembly; must reproduce `MPwfn.polarizability()`
-  (explicit) to ~1e-12. First end-to-end validation of the new machinery.
+- **A. Perturbed Z-vector + perturbed relaxed densities. ✅ DONE** (both spin paths, all-electron
+  and frozen core). `MPwfn._so_perturbed_relaxed_opdm` / `_perturbed_relaxed_opdm` carry the
+  perturbed Z-vector `z^x` (same orbital Hessian `G` as the gradient, perturbed RHS
+  `X^x - A^x z`) and, for frozen core, the perturbed core-active divide `d_x P_co`. The
+  unperturbed Z-vector data is centralized in `_so_zvector` / `_zvector` (cached; the relaxed-
+  density methods now delegate to them). `d_x gamma`/`d_x Gamma` (`_perturbed_densities`) FD-checked.
+- **B. Polarizability (2n+1). ✅ DONE** (both spin paths, all-electron and frozen core; `test_070`).
+  `MPwfn.polarizability(route='2n+1')` reproduces the explicit route **and** a tight dipole
+  finite-difference to ~1e-12, with the SO == spatial keystone. Frozen core exposed a subtlety:
+  the core-active block `P_co = (I'_ci - I'_ic)/(eps_c - eps_i)` is the *canonical* form of a
+  **Sylvester** relation `f_cc P - P f_oo = I'_ci - I'_ic`; a field leaves the active occupied
+  space non-canonical, so `d_x P_co` needs the off-diagonal `d_x f[o,o]` coupling
+  (`-d_x f[co,co] @ P + P @ d_x f[o,o]`), *not* just the diagonal orbital-energy shift.
+  (Reference: Baeck, Watts, Bartlett, JCP 107, 3853 (1997), Eqs. 22-28 -- the frozen-core
+  gradient recipe, differentiated here; see `mp2_2n1_perturbed.tex` Eq. (12).)
 - **C. APT (2n+1).** Interchange onto the field side (3 responses) contracted with `3N` nuclear
-  skeletons; reproduce `MPwfn.dipole_derivatives()`.
+  skeletons; reproduce `MPwfn.dipole_derivatives()`. Needs `d_x I` (perturbed energy-weighted
+  density) for the nuclear `S^x` term. NOT started.
 - **D. Hessian (2n+1).** The `O(N)` payoff -- `3N x {U^x, t^x, z^x}` first-order solves vs the
-  explicit `O(N^2)` `U^{xy}`; reproduce `MPwfn.hessian()`.
+  explicit `O(N^2)` `U^{xy}`; reproduce `MPwfn.hessian()`. NOT started.
 
-Spin-orbital / all-electron first, then spatial, then frozen core, as throughout. API: likely
-`route=` options on the existing property methods (default explicit; `route='2n+1'`), or parallel
-`_2n1` privates, TBD when the shape settles. 2n+2 (fourth-derivative / cubic-response economies)
-not in scope.
+Spin-orbital / all-electron first, then spatial, then frozen core, as throughout (A-B done across
+all six combinations). API: `route=` on the property methods (default `explicit`; `route='2n+1'`).
+2n+2 (fourth-derivative / cubic-response economies) not in scope.
