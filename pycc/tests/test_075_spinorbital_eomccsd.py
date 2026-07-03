@@ -1,0 +1,96 @@
+"""
+Spin-orbital EOM-CCSD (right-hand roots).
+
+The spin-orbital sigma vectors (cceom._so_s_r1 / _so_s_r2) extend the RHF EOM-CCSD code to
+UHF/ROHF references. Two validations, mirroring the spin-orbital idiom used elsewhere in the
+suite:
+
+1. Closed-shell keystone (iterative): a closed-shell RHF run through the spin-orbital path must
+   reproduce every spatial (spin-adapted singlet) excitation energy, and additionally produce the
+   lower-lying triplet roots that the spin-adapted path cannot represent.
+
+2. Open-shell sigma vs psi4 (dense): for the OH radical (UHF) the spin-orbital sigma operator,
+   diagonalized densely, reproduces psi4's UHF-EOM-CCSD roots. The dense check validates the sigma
+   physics directly, independent of the iterative Davidson (whose robust resolution of the
+   near-degenerate open-shell roots is a separate block-Davidson upgrade, PR2).
+"""
+
+import psi4
+import pycc
+import numpy as np
+
+
+OH = """
+0 2
+O  0.000000  0.000000  0.000000
+H  0.000000  0.000000  0.969000
+symmetry c1
+"""
+
+H2O = """
+O
+H 1 0.96
+H 1 0.96 2 104.5
+symmetry c1
+"""
+
+
+def _eom(wfn, orbital_basis):
+    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis, frozen_core=False)
+    cc.solve_cc(1e-11, 1e-11, 75)
+    return cc, pycc.cceom(cc, pycc.cchbar(cc))
+
+
+def _dense_so_spectrum(eom):
+    """Excitation energies from a dense diagonalization of the spin-orbital sigma operator
+    (built column by column from _so_s_r1 / _so_s_r2), keeping the real, positive roots."""
+    cc = eom.ccwfn
+    no, nv = cc.no, cc.nv
+    n1 = no * nv
+    n = n1 + n1 * n1
+    H = np.zeros((n, n))
+    for k in range(n):
+        vec = np.zeros(n); vec[k] = 1.0
+        C1 = vec[:n1].reshape(no, nv)
+        C2 = vec[n1:].reshape(no, no, nv, nv)
+        H[:n1, k] = eom.s_r1(eom.hbar, C1, C2).ravel()
+        H[n1:, k] = eom.s_r2(eom.hbar, C1, C2).ravel()
+    E = np.linalg.eigvals(H)
+    E = np.sort(E[np.abs(E.imag) < 1e-8].real)
+    return E[E > 1e-3]
+
+
+def test_so_eom_closed_shell_keystone(rhf_wfn):
+    """Closed-shell H2O/STO-3G: the spin-orbital EOM spectrum contains every spatial (spin-adapted
+    singlet) root, plus lower-lying triplets. The spatial singlets come from the (robust) iterative
+    solver; the full spin-orbital spectrum from a dense diagonalization (the triplets interleave the
+    singlets, so covering all singlets iteratively would need many roots)."""
+    wfn = rhf_wfn(H2O, "STO-3G", freeze_core="false")
+    _, eom_s = _eom(wfn, "spatial")
+    _, eom_o = _eom(wfn, "spinorbital")
+
+    E_spatial = np.sort(eom_s.solve_eom(3, 1e-6, 1e-6, 150, "cis", "right")[0].real)
+    E_so = _dense_so_spectrum(eom_o)
+
+    # every spatial singlet root appears in the spin-orbital spectrum
+    for e in E_spatial:
+        assert np.min(np.abs(E_so - e)) < 1e-5, (e, E_so[:12])
+    # the spin-orbital path also finds lower roots (the triplets) the spatial path cannot
+    assert E_so.min() < E_spatial.min() - 1e-3
+
+    # the iterative spin-orbital solver reproduces the lowest (triplet) root
+    E_iter = np.sort(eom_o.solve_eom(4, 1e-6, 1e-6, 150, "cis", "right")[0].real)
+    assert abs(E_iter.min() - E_so.min()) < 1e-5
+
+
+def test_so_eom_sigma_vs_psi4_uhf(uhf_wfn):
+    """Open-shell OH/UHF/STO-3G: the dense spin-orbital EOM spectrum reproduces psi4's
+    UHF-EOM-CCSD roots (the sigma physics, independent of the iterative solver)."""
+    wfn = uhf_wfn(OH, "STO-3G", freeze_core="false")
+    _, eom = _eom(wfn, "spinorbital")
+    E = _dense_so_spectrum(eom)
+
+    # psi4 UHF-EOM-CCSD roots for this geometry (energy('eom-ccsd'), reference uhf)
+    psi4_roots = [0.224266, 0.404873]
+    for e in psi4_roots:
+        assert np.min(np.abs(E - e)) < 1e-5, (e, E[:8])
