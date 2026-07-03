@@ -267,14 +267,22 @@ class ccdensity(object):
         this symmetry natively.)  Densities are placed on the active ``o``/``v`` slices (frozen-core
         rows/columns stay zero).
 
-        **Spin-orbital path:** the 2-PDM is natively antisymmetric, so :meth:`_so_full_twopdm`
-        already assembles the fully-symmetric (here: antisymmetric) ``Gamma`` from the nine
-        representatives -- no four-fold symmetrization needed.  The only twist is the prefactor: the
+        **Spin-orbital path:** :meth:`_so_full_twopdm` assembles the ``Gamma`` that is
+        antisymmetric within the bra and within the ket (``Gamma_pqrs = -Gamma_qprs = -Gamma_pqsr``),
+        but the CC density is **not Hermitian** (``Lambda != T-dagger``), so it is *not* bra-ket
+        symmetric (``Gamma_ijab != Gamma_abij``).  The three-index generalized-Fock ``termC`` needs
+        that bra-ket symmetry, so -- exactly as the spatial four-fold symmetrization does -- the
+        bra-ket average ``Gamma <- 1/2 (Gamma + Gamma_rspq)`` is applied here (for the natively
+        antisymmetric ``Gamma`` the spatial four-fold ``1/4(Gamma + Gamma_qpsr + Gamma_rspq +
+        Gamma_srqp)`` collapses to this, since the bra/ket antisymmetry already supplies the
+        ``qpsr``/``srqp`` images).  It is energy-preserving (the antisymmetric complement contracts
+        to zero against the symmetric ``<pq||rs>``).  The remaining twist is the prefactor: the
         spin-orbital two-electron energy is ``1/4 sum Gamma <pq||rs>``, so to keep the same
         no-extra-prefactor convention (``contract(D, F) + contract(Gamma, ERI) = E_corr``) the ``1/4``
         is absorbed into the returned ``Gamma`` -- matching :meth:`MPwfn._so_mp2_tpdm` (whose oovv
         block is ``1/4 t2``) and the ``termC = 4 sum <pr||st> Gamma_qrst`` in
-        :meth:`MPwfn._so_mp2_lagrangian`."""
+        :meth:`MPwfn._so_mp2_lagrangian`.  (MP2's ``Gamma`` is already bra-ket symmetric --
+        ``oovv = t2``, ``vvoo = t2.T`` -- so it needs no symmetrization.)"""
         if self.onlyone:
             raise RuntimeError("gradient_densities needs the two-particle density "
                                "(construct ccdensity with onlyone=False).")
@@ -283,7 +291,9 @@ class ccdensity(object):
         D = zeros((nmo, nmo), like=self.Doo)
         D[o, o] = self.Doo; D[v, v] = self.Dvv; D[o, v] = self.Dov; D[v, o] = self.Dvo
         if ccwfn.orbital_basis == 'spinorbital':
-            return D, 0.25 * self._so_full_twopdm()
+            Gam = self._so_full_twopdm()
+            Gam = 0.5 * (Gam + Gam.transpose(2, 3, 0, 1))   # bra-ket symmetrize (non-Hermitian CC density)
+            return D, 0.25 * Gam
         G = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
         G[o, o, o, o] = 0.5 * self.Doooo
         G[v, v, v, v] = 0.5 * self.Dvvvv
