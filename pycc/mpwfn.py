@@ -1348,6 +1348,162 @@ class MPwfn(Wavefunction):
         self.aat = P
         return P
 
+    def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
+        """MP2 velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
+        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
+        momentum-form APT.  This is the atomic-axial-tensor machinery
+        (:meth:`atomic_axial_tensors`) with the magnetic-dipole operator replaced by the linear
+        momentum ``p = -i nabla`` (:meth:`CPHF.momentum_ints`) and the AAT's Levi-Civita nuclear
+        term replaced by the length-gauge ``Z_A delta_{alpha,beta}``::
+
+            [P^A_{beta,alpha}]^VG = 2 <d_R Psi | d_A Psi>  +  Z_A delta_{alpha,beta}
+
+        the full (reference + correlation) electronic overlap plus the nuclear charge term.  Like
+        the AAT, the folded density overlap is orbital-gauge invariant (``gauge`` selects the
+        redundant momentum oo/vv response, default ``'non-canonical'``); frozen-core aware; both
+        spin paths (spin-orbital: :meth:`_so_velocity_dipole_derivatives`).  The ``+2`` prefactor
+        is the closed-shell value; it reduces to the HF VG APT
+        (:meth:`HFwfn.velocity_dipole_derivatives`, Amos, Jalkanen & Stephens, JPC 92, 5571 (1988))
+        as the correlation vanishes.
+
+        Unlike the length-gauge APT (:meth:`dipole_derivatives`) the VG APT differs from it in a
+        finite basis, converging to it toward the basis-set limit; both are origin-independent."""
+        if self.orbital_basis == 'spinorbital':
+            return self._so_velocity_dipole_derivatives(gauge)
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        no = o.stop
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        mol = self.ref.molecule()
+        t2 = np.asarray(self.t2)
+        Dijab = np.asarray(self.Dijab)
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        N = self._mp2_normalization()
+        c0, c2 = N, N * t2
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = -2.0 * N**2 * c('ikab,jkab->ij', tau, t2)
+        gamma[v, v] = +2.0 * N**2 * c('ijac,ijbc->ab', tau, t2)
+        gamma[np.arange(no), np.arange(no)] += 2.0
+
+        def dt2_from(dF, dERI):
+            # momentum (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
+            return ((dERI.swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
+                     + c('ac,ijcb->ijab', dF[v, v], t2) + c('bc,ijac->ijab', dF[v, v], t2)
+                     - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab)
+
+        UA, gA = [], []
+        for a in range(3):
+            U, dF, dERI = cphf.momentum_ints(a, ncore, gauge)
+            dc2A = c0 * dt2_from(dF, dERI)
+            tauA = 2.0 * dc2A - dc2A.swapaxes(2, 3)
+            UA.append(U)
+            R = np.zeros((nmo, nmo))
+            R[o, o] = -2.0 * c('ikab,jkab->ij', tauA, c2)
+            R[v, v] = +2.0 * c('ijac,ijbc->ab', tauA, c2)
+            gA.append((R, dc2A))
+
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            hs = d.overlap_half(A)
+            for beta in range(3):
+                pX = Perturbation('nuclear', (A, beta))
+                dt2R = np.asarray(self._perturbed_t2(pX))
+                dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
+                dc2R = dc0R * t2 + c0 * dt2R
+                tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
+                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[beta]).T
+                gR = np.zeros((nmo, nmo))
+                gR[o, o] = -2.0 * c('ikab,jkab->ij', tauR, c2)
+                gR[v, v] = +2.0 * c('ijac,ijbc->ab', tauR, c2)
+                gR[np.arange(no), np.arange(no)] += 2.0 * c0 * dc0R
+                for alpha in range(3):
+                    RA, dc2A = gA[alpha]
+                    Icc = c('ijab,ijab->', tauR, dc2A)
+                    Icphi = c('ij,ij->', gR[o, o], UA[alpha][o, o]) + c('ab,ab->', gR[v, v], UA[alpha][v, v])
+                    Iphic = c('ij,ji->', RA[o, o], UReff[o, o]) + c('ab,ab->', RA[v, v], UReff[v, v])
+                    Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
+                    P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
+                    if alpha == beta:
+                        P[A, beta, alpha] += mol.Z(A)
+        self.vgapt = P
+        return P
+
+    def _so_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
+        """Spin-orbital MP2 velocity-gauge APTs (``(natom, 3, 3)``) -- the spin-orbital form of
+        :meth:`velocity_dipole_derivatives` (see there for the theory), sharing the spin-orbital
+        AAT densities (:meth:`_so_atomic_axial_tensors`) with the linear-momentum response
+        (:meth:`CPHF.momentum_ints`) and the ``Z_A delta`` nuclear term.  The ``+2`` prefactor is
+        the same as the spin-adapted path (the spin-orbital overlap equals the spin-adapted overlap
+        by construction); verified equal to the spin-adapted path to machine precision."""
+        from .cphf import Perturbation
+        o, v, nmo = self.o, self.v, self.nmo
+        no = o.stop
+        ncore = o.stop - self.no
+        c = self.contract
+        cphf = self._full_occ_cphf()
+        d = self.derivatives
+        natom = d.natom
+        mol = self.ref.molecule()
+        t2 = np.asarray(self.t2)
+        Dijab = np.asarray(self.Dijab)
+        N = self._so_mp2_normalization()
+        c0, c2 = N, N * t2
+        Doo, Dvv = self._so_mp2_corr_opdm()
+        gamma = np.zeros((nmo, nmo))
+        gamma[o, o] = N**2 * np.asarray(Doo)
+        gamma[v, v] = N**2 * np.asarray(Dvv)
+        gamma[np.arange(no), np.arange(no)] += 1.0
+
+        def dt2_from(dF, dERI):
+            return ((dERI.swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
+                     + c('ac,ijcb->ijab', dF[v, v], t2) + c('bc,ijac->ijab', dF[v, v], t2)
+                     - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab)
+
+        def gdens(dc2, imaginary):
+            Aoo = c('imef,jmef->ij', dc2, c2)
+            Avv = c('mnbe,mnae->ab', dc2, c2)
+            R = np.zeros((nmo, nmo))
+            if imaginary:
+                R[o, o] = +0.25 * (Aoo - Aoo.T)
+                R[v, v] = -0.25 * (Avv - Avv.T)
+            else:
+                R[o, o] = -0.25 * (Aoo + Aoo.T)
+                R[v, v] = +0.25 * (Avv + Avv.T)
+            return R
+
+        UA, gA, dc2As = [], [], []
+        for a in range(3):
+            U, dF, dERI = cphf.momentum_ints(a, ncore, gauge)
+            dc2A = c0 * dt2_from(dF, dERI)
+            UA.append(U)
+            dc2As.append(dc2A)
+            gA.append(gdens(dc2A, imaginary=True))
+
+        P = np.zeros((natom, 3, 3))
+        for A in range(natom):
+            hs = d.so_overlap_half(A)
+            for beta in range(3):
+                pX = Perturbation('nuclear', (A, beta))
+                dt2R = np.asarray(self._perturbed_t2(pX))
+                dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
+                dc2R = dc0R * t2 + c0 * dt2R
+                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[beta]).T
+                gR = gdens(dc2R, imaginary=False)
+                for alpha in range(3):
+                    Icc = 0.25 * c('ijab,ijab->', dc2R, dc2As[alpha])
+                    Icphi = c('ij,ij->', gR[o, o], UA[alpha][o, o]) + c('ab,ab->', gR[v, v], UA[alpha][v, v])
+                    Iphic = c('ij,ij->', gA[alpha][o, o], UReff[o, o]) + c('ab,ab->', gA[alpha][v, v], UReff[v, v])
+                    Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
+                    P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
+                    if alpha == beta:
+                        P[A, beta, alpha] += mol.Z(A)
+        self.vgapt = P
+        return P
+
     # ---- total (reference + correlation) properties ----
     # The correlation methods above are the correlation contribution only; these add the
     # all-electron SCF reference (HFwfn, frozen_core=False) for the full molecular property.
