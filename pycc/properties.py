@@ -63,6 +63,90 @@ for _a, _b, _g in ((0, 1, 2), (1, 2, 0), (2, 0, 1)):
     _LEVI_CIVITA[_a, _g, _b] = -1.0
 
 
+def _nuclear_dipole(mol) -> np.ndarray:
+    """Nuclear contribution to the electric dipole (a.u.), shape ``(3,)``: ``sum_A Z_A R_A``."""
+    geom = np.asarray(mol.geometry().np)
+    Z = np.array([mol.Z(A) for A in range(mol.natom())])
+    return np.einsum('a,ax->x', Z, geom)
+
+
+def _nuclear_apt(mol) -> np.ndarray:
+    """Nuclear contribution to the APT (length or velocity gauge), shape ``(natom, 3, 3)``
+    indexed ``[A, beta, alpha]``: ``Z_A delta_{alpha,beta}``."""
+    natom = mol.natom()
+    nuc = np.zeros((natom, 3, 3))
+    for A in range(natom):
+        for a in range(3):
+            nuc[A, a, a] = mol.Z(A)
+    return nuc
+
+
+def _dispatch(wfn, hf_method, mp_method):
+    """Reference (SCF electronic) and correlation blocks of a property, computed apart.  For an
+    ``MPwfn`` the reference is the all-electron SCF value (``_reference_hf()``) and the correlation
+    is the MP2 correlation-only method; for an ``HFwfn`` the reference is the SCF value and the
+    correlation is an all-zeros array of the same shape."""
+    from .hfwfn import HFwfn
+    from .mpwfn import MPwfn
+    if isinstance(wfn, MPwfn):
+        reference = np.asarray(getattr(wfn._reference_hf(), hf_method)())
+        correlation = np.asarray(getattr(wfn, mp_method)())
+    elif isinstance(wfn, HFwfn):
+        reference = np.asarray(getattr(wfn, hf_method)())
+        correlation = np.zeros_like(reference)
+    else:
+        raise TypeError(f"unsupported wavefunction type {type(wfn).__name__!r}")
+    return reference, correlation
+
+
+def dipole(wfn) -> PropertyComponents:
+    """Electric-dipole moment as a :class:`PropertyComponents` (``nuclear + reference +
+    correlation``, shape ``(3,)`` each) for any supported wavefunction type."""
+    reference, correlation = _dispatch(wfn, '_dipole_electronic', 'relaxed_dipole')
+    return PropertyComponents(_nuclear_dipole(wfn.ref.molecule()), reference, correlation)
+
+
+def gradient(wfn) -> PropertyComponents:
+    """Analytic energy gradient as a :class:`PropertyComponents` (``nuclear + reference +
+    correlation``, shape ``(natom, 3)`` each).  The nuclear block is the nuclear-repulsion
+    derivative ``dV_NN/dX``."""
+    reference, correlation = _dispatch(wfn, '_gradient_electronic', 'gradient')
+    nuclear = np.asarray(wfn.derivatives.nuclear_repulsion())
+    return PropertyComponents(nuclear, reference, correlation)
+
+
+def polarizability(wfn) -> PropertyComponents:
+    """Static electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)``
+    each.  A pure electronic response property: the nuclear block is zero."""
+    reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability')
+    return PropertyComponents(np.zeros((3, 3)), reference, correlation)
+
+
+def hessian(wfn) -> PropertyComponents:
+    """Molecular (nuclear) Hessian as a :class:`PropertyComponents` (``nuclear + reference +
+    correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
+    repulsion second derivative ``d^2 V_NN/dX dY``."""
+    reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian')
+    nuclear = np.asarray(wfn.derivatives.nuclear_repulsion2())
+    return PropertyComponents(nuclear, reference, correlation)
+
+
+def apt(wfn, gauge='length') -> PropertyComponents:
+    """Atomic polar tensors (nuclear dipole derivatives) as a :class:`PropertyComponents`
+    (``nuclear + reference + correlation``, shape ``(natom, 3, 3)`` each), indexed
+    ``[A, beta, alpha]``.  ``gauge='length'`` (default) is the length-gauge APT
+    (:meth:`dipole_derivatives`); ``gauge='velocity'`` is the velocity-gauge APT
+    (:meth:`velocity_dipole_derivatives`).  The nuclear block is ``Z_A delta_{alpha,beta}``."""
+    if gauge == 'length':
+        reference, correlation = _dispatch(wfn, '_dipole_derivatives_electronic', 'dipole_derivatives')
+    elif gauge == 'velocity':
+        reference, correlation = _dispatch(wfn, '_velocity_dipole_derivatives_electronic',
+                                           'velocity_dipole_derivatives')
+    else:
+        raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
+    return PropertyComponents(_nuclear_apt(wfn.ref.molecule()), reference, correlation)
+
+
 def _nuclear_aat(mol, origin) -> np.ndarray:
     """Nuclear contribution to the AAT (a.u.), shape ``(natom, 3, 3)``::
 

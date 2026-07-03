@@ -105,3 +105,59 @@ def test_aat_frozen_core_total():
     assert np.max(np.abs(r_fc.nuclear - r_ae.nuclear)) < 1e-14
     # freezing changes the correlation (and hence the total) a little, but not wildly
     assert 1e-6 < np.max(np.abs(r_fc.correlation - r_ae.correlation)) < 1e-2
+
+
+# ---- the other properties under the same umbrella ----
+
+def _facade_and_pieces(hf, mp):
+    """Each facade function paired with (HF public method, MP2 correlation method) that
+    reconstruct the physical total, for the composition check."""
+    return [
+        ("dipole",         pycc.dipole(mp),               hf.dipole(),                     mp.relaxed_dipole()),
+        ("gradient",       pycc.gradient(mp),             hf.gradient(),                   mp.gradient()),
+        ("polarizability", pycc.polarizability(mp),       hf.polarizability(),             mp.polarizability()),
+        ("hessian",        pycc.hessian(mp),              hf.hessian(),                    mp.hessian()),
+        ("apt-length",     pycc.apt(mp, 'length'),        hf.dipole_derivatives(),         mp.dipole_derivatives()),
+        ("apt-velocity",   pycc.apt(mp, 'velocity'),      hf.velocity_dipole_derivatives(), mp.velocity_dipole_derivatives()),
+    ]
+
+
+def test_facade_decomposition_and_total():
+    """For every property: PropertyComponents.total == nuclear + reference + correlation, and it
+    equals the physical total (SCF-reference public method + MP2 correlation method)."""
+    hf, mp = _wfns()
+    for name, comp, hf_pub, mp_corr in _facade_and_pieces(hf, mp):
+        assert np.max(np.abs(comp.total - (comp.nuclear + comp.reference + comp.correlation))) < 1e-12, name
+        assert np.max(np.abs(comp.total - (np.asarray(hf_pub) + np.asarray(mp_corr)))) < 1e-10, name
+
+
+def test_facade_hf_wavefunction():
+    """pycc.<property>(HFwfn): correlation is an all-zeros block and the total equals the SCF
+    public method (same shape/type as the MP2 result)."""
+    hf, _ = _wfns()
+    for name, fn, pub in [
+            ("dipole", pycc.dipole, hf.dipole()),
+            ("gradient", pycc.gradient, hf.gradient()),
+            ("polarizability", pycc.polarizability, hf.polarizability()),
+            ("hessian", pycc.hessian, hf.hessian()),
+            ("apt-length", lambda w: pycc.apt(w, 'length'), hf.dipole_derivatives()),
+            ("apt-velocity", lambda w: pycc.apt(w, 'velocity'), hf.velocity_dipole_derivatives())]:
+        r = fn(hf)
+        assert np.all(r.correlation == 0.0), name
+        assert np.max(np.abs(r.total - np.asarray(pub))) < 1e-12, name
+
+
+def test_facade_polarizability_no_nuclear():
+    """The polarizability has no nuclear contribution (pure electronic response)."""
+    _, mp = _wfns()
+    assert np.all(pycc.polarizability(mp).nuclear == 0.0)
+
+
+def test_apt_bad_gauge():
+    """pycc.apt rejects an unknown gauge."""
+    _, mp = _wfns()
+    try:
+        pycc.apt(mp, gauge='nonsense')
+        assert False, "expected ValueError"
+    except ValueError:
+        pass

@@ -52,24 +52,25 @@ def _mpwfn(orbital_basis='spatial', freeze_core='false'):
 
 
 def test_mp2_vg_apt_all_electron():
-    """All-electron spatial MP2 VG APT reproduces the regression reference for (P)-H2O2/STO-3G."""
-    P = np.asarray(_mpwfn()[0].velocity_dipole_derivatives()).reshape(-1, 3)
+    """All-electron spatial MP2 VG APT (total, via the pycc.apt velocity-gauge facade) reproduces
+    the regression reference for (P)-H2O2/STO-3G."""
+    P = np.asarray(pycc.apt(_mpwfn()[0], gauge='velocity').total).reshape(-1, 3)
     for (row, col), ref in VG_REF['false'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
 
 def test_mp2_vg_apt_frozen_core():
-    """Frozen-core spatial MP2 VG APT reproduces the regression reference."""
-    P = np.asarray(_mpwfn(freeze_core='true')[0].velocity_dipole_derivatives()).reshape(-1, 3)
+    """Frozen-core spatial MP2 VG APT (total) reproduces the regression reference."""
+    P = np.asarray(pycc.apt(_mpwfn(freeze_core='true')[0], gauge='velocity').total).reshape(-1, 3)
     for (row, col), ref in VG_REF['true'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
 
 def test_mp2_vg_apt_reduces_to_hf():
-    """The MP2 VG APT reduces to the (Amos-pinned) HF VG APT as the correlation vanishes: the
-    difference is the small MP2 correlation contribution."""
+    """The MP2 VG APT total reduces to the (Amos-pinned) HF VG APT total as the correlation
+    vanishes: the difference is the small MP2 correlation contribution."""
     mp, wfn = _mpwfn()
-    VG = np.asarray(mp.velocity_dipole_derivatives())
+    VG = np.asarray(pycc.apt(mp, gauge='velocity').total)
     HF = np.asarray(pycc.HFwfn(wfn).velocity_dipole_derivatives())
     diff = np.max(np.abs(VG - HF))
     assert diff < 0.05, diff            # small correlation contribution
@@ -77,7 +78,8 @@ def test_mp2_vg_apt_reduces_to_hf():
 
 
 def test_mp2_vg_apt_so_equals_spatial():
-    """Spin-orbital MP2 VG APT == spin-adapted (the keystone), all-electron and frozen-core."""
+    """Spin-orbital MP2 VG APT correlation == spin-adapted (the keystone), all-electron and
+    frozen-core."""
     for fc in ('false', 'true'):
         P = np.asarray(_mpwfn(freeze_core=fc)[0].velocity_dipole_derivatives())
         P_so = np.asarray(_mpwfn('spinorbital', fc)[0].velocity_dipole_derivatives())
