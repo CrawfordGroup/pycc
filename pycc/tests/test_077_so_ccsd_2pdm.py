@@ -90,3 +90,18 @@ def test_so_2pdm_full_assembly(uhf_wfn):
 
     assert np.max(np.abs(Gam + Gam.transpose(1, 0, 2, 3))) < 1e-12   # bra:  Gamma_pqrs = -Gamma_qprs
     assert np.max(np.abs(Gam + Gam.transpose(0, 1, 3, 2))) < 1e-12   # ket:  Gamma_pqrs = -Gamma_pqsr
+
+
+def test_so_gradient_densities_convention(uhf_wfn):
+    """``gradient_densities`` returns the spin-orbital ``D`` and ``Gamma`` in the gradient
+    convention (the ``1/4`` absorbed into ``Gamma``), so the correlation energy is
+    ``contract(D, F) + contract(Gamma, <pq||rs>) = E_corr`` -- no extra prefactor, matching the
+    spatial path and the SO MP2 machinery.  The oovv block is ``1/4 * Gamma_ijab`` (cf.
+    ``MPwfn._so_mp2_tpdm`` whose oovv block is ``1/4 t2``)."""
+    cc, dens, ecc = _so_density(uhf_wfn("0 2\nN\nH 1 1.02\nH 1 1.02 2 103.0", "STO-3G",
+                                        geom_extra="\nsymmetry c1"))
+    D, Gam = dens.gradient_densities()
+    F = np.asarray(cc.H.F)
+    ERI = np.asarray(cc.H.ERI)
+    e = np.einsum('pq,pq->', D, F) + np.einsum('pqrs,pqrs->', Gam, ERI)
+    assert abs(e - ecc) < 1e-9
