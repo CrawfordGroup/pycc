@@ -60,33 +60,80 @@ class CCderiv:
             self._ref_hf = HFwfn(self.ccwfn.ref, orbital_basis=self.ccwfn.orbital_basis)
         return self._ref_hf
 
+    def _lagrangian(self, D, Gam):
+        """The generalized-Fock (orbital-gradient) Lagrangian ``I'_pq`` from a full-MO 1-PDM ``D``
+        and 2-PDM ``Gam`` -- reused verbatim from the MP2 gradient machinery (it is generic in the
+        densities: ``-1/2 [ eps_p(D_pq+D_qp) + delta_{q,occ} sum_rs D_rs(<rp|sq>_L + <rq|sp>_L)
+        + 4 sum_rst <pr|st> Gam_qrst ]``).  Its ov-antisymmetric part is the Z-vector RHS; evaluated
+        at the relaxed density it is the energy-weighted density.  ``Gam`` must carry the proper
+        2-PDM permutational symmetry (:meth:`ccdensity.gradient_densities` symmetrizes it), since
+        the three-index ``termC`` is sensitive to it.  (When an MPderiv is split out this shared
+        primitive will move with it.)"""
+        return self.ccwfn.mp._mp2_lagrangian(D, Gam)
+
     def gradient(self) -> np.ndarray:
         """CCSD **correlation** contribution to the analytic nuclear energy gradient (a.u.), shape
-        ``(natom, 3)``, via the **explicit-derivative route**::
+        ``(natom, 3)``, via the **Z-vector (relaxed-density) route** -- the efficient default
+        (one CPHF solve, not ``3*natom``)::
 
-            dE_corr/dX = sum_pq D_pq (d_X f)_pq + sum_pqrs Gamma_pqrs (d_X <pq|rs>)
+            dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq|rs>^X + sum_pq W_pq S^X_pq
 
-        The CCSD Lambda-response 1- and 2-particle densities
-        (:meth:`ccdensity.gradient_densities`, no-prefactor convention) are contracted with the
-        CPHF-folded perturbed integrals (:meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`)
-        -- one nuclear CPHF solve per perturbation (``3*natom``), the orbital relaxation riding
-        inside ``d_X f`` / ``d_X <pq|rs>`` rather than in a Z-vector.  The perturbed-integral
-        engine is the one built for the MP2 gradient (:meth:`MPwfn._full_occ_cphf`, shared through
-        ``ccwfn.mp``).
+        with the relaxed 1-PDM ``D~`` (the Lambda-response ``D`` plus the orbital-relaxation
+        Z-vector ``z``), the (symmetrized) 2-PDM ``Gamma``, and the energy-weighted density
+        ``W = I'(D~)`` (:meth:`_lagrangian`).  The Z-vector solves ``A z = X`` once, with
+        ``X = I'_ia - I'_ai`` the ov-antisymmetric generalized Fock, using the SCF orbital Hessian
+        (:meth:`HFwfn.cphf`).  ``f^X``/``S^X``/``<pq|rs>^X`` are the skeleton derivative integrals
+        from ``ccwfn.derivatives`` (no per-perturbation CPHF solve).
 
-        The **reference (SCF) gradient is kept separate** (as for MP2): the total CCSD gradient is
+        The **reference (SCF) gradient is kept separate**: the total CCSD gradient is
         ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
 
         Spatial (closed-shell RHF) path only for now; all-electron.  Validated against
-        ``psi4.gradient('ccsd')`` and a finite difference of the CCSD energy.  This "simple but
-        inefficient" route is the analog of :meth:`MPwfn._corr_gradient_explicit`; the Z-vector
-        (relaxed-density) route is the efficient alternative (in development)."""
-        from .cphf import Perturbation
+        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
+        explicit-derivative route (:meth:`_gradient_explicit`)."""
         cc = self.ccwfn
         if cc.orbital_basis != 'spatial':
             raise NotImplementedError(
                 "The CCSD analytic gradient currently requires the spatial (closed-shell RHF) "
                 "path; the spin-orbital two-particle density is not yet implemented.")
+        o, v = cc.o, cc.v
+        c = self.contract
+        D, Gam = self._density().gradient_densities()
+        Ip = self._lagrangian(D, Gam)
+        X = Ip[o, v] - Ip[v, o].T                       # ov-antisymmetric generalized Fock
+        z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (SCF orbital Hessian)
+        Drel = D.copy()
+        Drel[v, o] += -z.T
+        Drel[o, v] += -z
+        W = self._lagrangian(Drel, Gam)                 # energy-weighted density
+        d = cc.derivatives
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)
+            for cart in range(3):
+                phys = ERIx[cart].transpose(0, 2, 1, 3)                 # chemist -> physicist <pq|rs>^X
+                Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
+                fx = hx[cart] + c('pmqm->pq', Lx[:, o, :, o])           # skeleton Fock derivative
+                grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                    + c('pqrs,pqrs->', Gam, phys)
+                                    + c('pq,pq->', W, Sx[cart]))
+        return grad
+
+    def _gradient_explicit(self) -> np.ndarray:
+        """CCSD correlation gradient via the **explicit-derivative route** -- an independent
+        cross-check of :meth:`gradient`::
+
+            dE_corr/dX = sum_pq D_pq (d_X f)_pq + sum_pqrs Gamma_pqrs (d_X <pq|rs>)
+
+        The Lambda-response densities are contracted with the CPHF-folded perturbed integrals
+        (:meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`), the orbital relaxation riding
+        inside ``d_X f`` / ``d_X <pq|rs>`` -- one nuclear CPHF solve per perturbation (the "simple
+        but inefficient" form, analog of :meth:`MPwfn._corr_gradient_explicit`).  Same result as
+        :meth:`gradient` (which uses the single Z-vector solve)."""
+        from .cphf import Perturbation
+        cc = self.ccwfn
+        if cc.orbital_basis != 'spatial':
+            raise NotImplementedError("Explicit CCSD gradient: spatial (closed-shell) only.")
         D, Gam = self._density().gradient_densities()
         cphf = cc.mp._full_occ_cphf()
         ncore = cc.o.stop - cc.no

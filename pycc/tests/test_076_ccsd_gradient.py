@@ -71,3 +71,14 @@ def test_ccsd_gradient_correlation_nonzero():
     assert np.max(np.abs(r.correlation)) > 1e-3
     # the total differs from the bare SCF gradient by the correlation contribution
     assert np.max(np.abs(r.total - (r.nuclear + r.reference))) > 1e-3
+
+
+def test_ccsd_gradient_zvector_equals_explicit():
+    """The efficient Z-vector route (the default gradient()) agrees with the independent
+    explicit-derivative route to machine precision -- they are two formulations of the same
+    correlation gradient (one Z-vector solve vs 3*natom CPHF solves)."""
+    cc = _ccwfn()
+    deriv = pycc.CCderiv(cc)
+    g_zvector = deriv.gradient()
+    g_explicit = deriv._gradient_explicit()
+    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-9, (g_zvector, g_explicit)
