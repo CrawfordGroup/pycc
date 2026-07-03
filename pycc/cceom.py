@@ -7,7 +7,6 @@ import psi4
 import pycc
 from pycc.data.molecules import *
 import numpy as np
-import scipy.linalg
 from pycc.exceptions import InvalidKeywordError
 
 if TYPE_CHECKING:
@@ -76,7 +75,13 @@ class cceom(object):
 
     def solve_eom(self, N: int = 1, e_conv: float = 1e-5, r_conv: float = 1e-5, maxiter: int = 100, guess: str = 'HBAR_SS', eom_type: str = 'RIGHT', root_floor: float = 1e-3):
         """
-        Solves the left and right-hand EOM-CC eigenvalue problem using the Davidson algorithm
+        Solves the left and right-hand EOM-CC eigenvalue problem with a block Davidson-Liu
+        iteration.  The expansion subspace ``V`` and its sigma vectors ``W = A V`` are kept in
+        strict lockstep (new preconditioned residual corrections are orthonormalized against ``V``
+        only, never by re-orthonormalizing the whole subspace), all N roots are expanded as a block
+        with per-root convergence locking, and the subspace is soft-restarted from the current Ritz
+        vectors when it overflows.  This resolves near-degenerate roots -- e.g. the spin-orbital
+        triplets and the near-degenerate excited pairs of open-shell (UHF/ROHF) references
 
         Parameters
         ----------
@@ -104,126 +109,116 @@ class cceom(object):
 
         time_init = time.time()
 
-        hbar = self.hbar
-        o = hbar.o
-        v = hbar.v
-        no = hbar.no
-        nv = hbar.nv
-        H = hbar.ccwfn.H
-        contract = hbar.contract
+        no = self.hbar.no
+        nv = self.hbar.nv
+        contract = self.contract
         D = self.D
-
-        t1 = self.ccwfn.t1
-        t2 = self.ccwfn.t2
-        l1 = self.l1
-        l2 = self.l2
 
         s1_len = no*nv
         s2_len = no*no*nv*nv
+        sigma_len = s1_len + s2_len
 
-        M = N * 2 # initial size of guess space
-        sigma_done = 0 # number of sigma vectors already computed
-        maxM = N * 10 # max size of subspace
+        # Block Davidson-Liu subspace: V holds the orthonormal expansion vectors (rows) and W the
+        # matching sigma vectors W = A V (A = HBAR for RIGHT, its transpose for LEFT, whichever the
+        # sigma builder applies), kept in strict lockstep -- new corrections are orthonormalized
+        # against V only, so V and W never drift out of sync (unlike a full re-orthonormalization
+        # of the whole subspace, which silently rotates near-degenerate vectors away from their
+        # stored sigma vectors).  Cap the subspace, then soft-restart from the current Ritz vectors.
+        max_space = min(sigma_len, max(N * 10, N + 40))
 
-        # Initialize guess vectors
+        eom_type = eom_type.upper()
+
+        # Initialize guess vectors (a small block, a few more than N)
         valid_guesses = ['UNIT', 'CIS', 'HBAR_SS']
         guess = guess.upper()
         if guess not in valid_guesses:
             raise InvalidKeywordError('guess', guess, valid_guesses)
-        _, C1 = self.guess(M, guess)
-        # Store guess vectors as rows of a matrix
-        C = np.hstack((np.reshape(C1, (M, s1_len)), np.zeros((M, s2_len))))
+        nguess = 2 * N
+        _, C1 = self.guess(nguess, guess)
+        V = np.hstack((np.reshape(C1, (nguess, s1_len)), np.zeros((nguess, s2_len))))
+        V = self._orthonormalize(V)
+        W = np.empty((0, sigma_len), float)     # sigma vectors, in lockstep with V
         print("Guess vectors obtained from %s." % (guess))
 
-        # Initialize sigma vector storage
-        sigma_len = s1_len + s2_len
-        S = np.empty((0,sigma_len), float)      
-
-        # Array for excitation energies
         E = np.zeros((N))
-
+        a_sel = None
         converged = False
-        for niter in range(1,maxiter+1):
+        for niter in range(1, maxiter+1):
             E_old = E
 
-            # Orthonormalize current guess vectors
-            Q, _ = np.linalg.qr(C.T)
-            phase = np.diag((C @ Q)[:M])
-            phase = np.append(phase, np.ones(Q.shape[1]-M))
-            Q = phase * Q
-            C = Q.T.copy()
-            M = C.shape[0]
-
+            # Bring W up to date: compute sigma only for the newly added V rows
+            if W.shape[0] < V.shape[0]:
+                W = np.vstack((W, self._eom_sigma(V[W.shape[0]:], eom_type)))
+            M = V.shape[0]
             print("EOM Iter %3d: M = %3d" % (niter, M))
 
-            # Extract guess vectors for sigma calculation
-            nvecs = M - sigma_done
-            C1 = np.reshape(C[sigma_done:M,:s1_len], (nvecs,no,nv))
-            C2 = np.reshape(C[sigma_done:M,s1_len:], (nvecs,no,no,nv,nv))
+            # Subspace matrix G = V W^T (right eigenvectors give the RIGHT EOM vectors, or the LEFT
+            # ones when W was built with the left sigma -- G is the transpose of the old S C^T form,
+            # so the spectrum is identical and the right eigenvectors here match the old left ones).
+            G = V @ W.T
+            theta, a = np.linalg.eig(G)
 
-            # Compute sigma vectors
-            s1 = np.zeros_like(C1)
-            s2 = np.zeros_like(C2)
-            eom_type = eom_type.upper()
-            if eom_type == 'RIGHT':
-                for state in range(nvecs):
-                    s1[state] = self.s_r1(hbar, C1[state], C2[state])
-                    s2[state] = self.s_r2(hbar, C1[state], C2[state])
-            elif eom_type == 'LEFT':
-                for state in range(nvecs): # make sure to include the updated lambdas for each state while computing Goo and Gvv
-                    s1[state] = self.s_l1(hbar, C1[state], C2[state], self.build_Goo(t2, C2[state]), self.build_Gvv(t2, C2[state]))
-                    s2[state] = self.s_l2(hbar, C1[state], C2[state], self.build_Goo(t2, C2[state]), self.build_Gvv(t2, C2[state]))
-            sigma_done = M
-
-            # Build and diagonalize subspace Hamiltonian
-            S = np.vstack((S, np.hstack((np.reshape(s1, (nvecs, s1_len)), np.reshape(s2, (nvecs, s2_len))))))
-            if eom_type == 'RIGHT':
-                G = C @ S.T
-                E, a = np.linalg.eig(G) 
-            elif eom_type == 'LEFT':
-                G = S @ C.T
-                E, a = scipy.linalg.eig(G, left=True,right=False)
-
-            # Select the N target roots.  Physical EOM excitation energies are real and positive;
-            # skip the spurious near-zero manifold (the redundant, non-antisymmetric doubles
-            # components -- ~0 eigenvalues, far more numerous in the spin-orbital basis) and any
-            # complex Ritz values, then take the N smallest of what remains.  Early iterations may
-            # expose fewer than N physical roots, so pad with the next-smallest by real part to
-            # keep N correction vectors flowing.
-            order = E.real.argsort()
-            physical = [i for i in order if abs(E[i].imag) < 1e-6 and E[i].real > root_floor]
+            # Select the N target roots: real, positive, above root_floor (skip the spurious
+            # near-zero manifold of redundant non-antisymmetric doubles and any complex Ritz
+            # values), padding with the next-smallest if fewer than N are exposed yet.
+            order = theta.real.argsort()
+            physical = [i for i in order if abs(theta[i].imag) < 1e-6 and theta[i].real > root_floor]
             if len(physical) < N:
                 physical += [i for i in order if i not in physical]
             idx = np.array(physical[:N])
-            E = E[idx]; a = a[:,idx]
+            E = theta[idx].real
+            a_sel = a[:, idx]
 
-            # Build correction vectors
-            r = a.T @ S - np.diag(E) @ a.T @ C
-            r_norm = np.linalg.norm(r, axis=1)
-            delta = r/np.subtract.outer(E,D) # element-by-element division
+            # Ritz vectors X = a^T V and their images A X = a^T W (real; the operator is real)
+            X = (a_sel.T @ V).real
+            AX = (a_sel.T @ W).real
+            R = AX - E[:, None] * X                  # residuals
+            r_norm = np.linalg.norm(R, axis=1)
 
-            # Print status and check convergence and print status
             dE = E - E_old
             print("             E/state                   dE                 norm")
             for state in range(N):
-                print("%20.12f %20.12f %20.12f" % (E[state].real, dE[state].real, r_norm[state]))
+                print("%20.12f %20.12f %20.12f" % (E[state], dE[state], r_norm[state]))
 
-            if (np.abs(np.linalg.norm(dE)) <= e_conv):
+            if np.max(r_norm) <= r_conv:
                 converged = True
                 break
 
-            if M >= maxM:
-                # Collapse to N vectors if subspace is too large
-                print("\nMaximum allowed subspace dimension (%d) reached. Collapsing to N roots." % (maxM))
-                C = a.T @ C
-                M = N
-                E = E_old
-                sigma_done = 0
-                S = np.empty((0,sigma_len), float)      
-            else:
-                # Add new vectors to guess space
-                C = np.concatenate((C, delta[:N]))
+            # Preconditioned corrections for the unconverged roots only (locking)
+            additions = [R[k] / (E[k] - D) for k in range(N) if r_norm[k] > r_conv]
 
+            # Soft restart if the subspace would overflow: collapse to the current Ritz vectors and
+            # rebuild their sigma vectors (no convergence progress is lost -- the Ritz vectors carry
+            # it), then continue expanding from there.
+            if M + len(additions) > max_space:
+                print("Subspace limit (%d) reached; restarting from the current Ritz vectors." % max_space)
+                V = self._orthonormalize(X)
+                W = np.empty((0, sigma_len), float)
+                continue
+
+            # Orthonormalize each correction against V (twice, for stability) and against the
+            # previously accepted corrections; add it unless it is (numerically) linearly
+            # dependent on the current subspace.  The dependence test is *relative* (how much of
+            # the vector survives projection) -- an absolute size cutoff would wrongly discard the
+            # small-but-valid corrections that appear near convergence and stall the residual.
+            for delta in additions:
+                d = delta.real.copy()
+                nrm0 = np.linalg.norm(d)
+                if nrm0 < 1e-14:
+                    continue
+                for _ in range(2):
+                    d = d - V.T @ (V @ d)
+                nrm = np.linalg.norm(d)
+                if nrm / nrm0 > 1e-6:
+                    V = np.vstack((V, d / nrm))
+
+            # If every correction collapsed (all linearly dependent), restart to avoid a stall.
+            if V.shape[0] == M:
+                V = self._orthonormalize(X)
+                W = np.empty((0, sigma_len), float)
+
+        C = V
+        a = a_sel
         if converged:
             print("\nCCEOM converged in %.3f seconds." % (time.time() - time_init))
             print("\nState     E_h           eV")
@@ -252,6 +247,38 @@ class cceom(object):
 
             return E, norm_eigvec
 
+
+    def _orthonormalize(self, rows):
+        """Return an orthonormal row basis for the row space of ``rows`` (M, sigma_len), dropping
+        linearly dependent rows.  Used to condition the initial guess block and the restart Ritz
+        vectors."""
+        Q, Rm = np.linalg.qr(np.asarray(rows).real.T)
+        keep = np.abs(np.diag(Rm)) > 1e-8
+        return Q.T[keep].copy()
+
+    def _eom_sigma(self, block, eom_type):
+        """Apply the EOM sigma operator to each row of ``block`` (k, sigma_len), returning the
+        sigma vectors as rows (k, sigma_len).  RIGHT uses ``s_r1``/``s_r2`` (sigma = HBAR * C);
+        LEFT uses ``s_l1``/``s_l2`` (sigma = C * HBAR), with the per-vector G intermediates."""
+        hbar = self.hbar
+        no, nv = hbar.no, hbar.nv
+        s1_len = no * nv
+        t2 = self.ccwfn.t2
+        out = np.empty((block.shape[0], block.shape[1]), float)
+        for k in range(block.shape[0]):
+            C1 = block[k, :s1_len].reshape(no, nv)
+            C2 = block[k, s1_len:].reshape(no, no, nv, nv)
+            if eom_type == 'RIGHT':
+                s1 = self.s_r1(hbar, C1, C2)
+                s2 = self.s_r2(hbar, C1, C2)
+            else:
+                Goo = self.build_Goo(t2, C2)
+                Gvv = self.build_Gvv(t2, C2)
+                s1 = self.s_l1(hbar, C1, C2, Goo, Gvv)
+                s2 = self.s_l2(hbar, C1, C2, Goo, Gvv)
+            out[k, :s1_len] = np.asarray(s1).ravel()
+            out[k, s1_len:] = np.asarray(s2).ravel()
+        return out
 
     def guess(self, M, method):
         """
@@ -485,6 +512,8 @@ class cceom(object):
         s1 : NumPy array
             the singles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_l1(hbar, C1, C2, Goo, Gvv)
         contract = hbar.contract
 
         s1 = contract('ie,ea->ia', C1, hbar.Hvv)
@@ -514,6 +543,8 @@ class cceom(object):
         s2 : NumPy array
             the doubles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_l2(hbar, C1, C2, Goo, Gvv)
         contract = hbar.contract
         L = hbar.ccwfn.H.L
         t2 = hbar.ccwfn.t2
@@ -537,4 +568,41 @@ class cceom(object):
         s2 = s2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         s2 = s2 + s2.swapaxes(0,1).swapaxes(2,3)
 
+        return s2.copy()
+
+    def _so_s_l1(self, hbar, C1, C2, Goo, Gvv):
+        """Spin-orbital singles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-singles
+        structure (cclambda._so_r_L1) without the inhomogeneous Hov term (EOM is homogeneous),
+        with l1/l2 -> C1/C2; single antisymmetrized Hovvo, no Hovov."""
+        contract = hbar.contract
+        s1 = contract('ie,ea->ia', C1, hbar.Hvv)
+        s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)
+        s1 = s1 + 0.5 * contract('imef,efam->ia', C2, hbar.Hvvvo)
+        s1 = s1 - 0.5 * contract('mnae,iemn->ia', C2, hbar.Hovoo)
+        s1 = s1 + contract('me,ieam->ia', C1, hbar.Hovvo)
+        s1 = s1 - contract('ef,eifa->ia', Gvv, hbar.Hvovv)
+        s1 = s1 - contract('mn,mina->ia', Goo, hbar.Hooov)
+        return s1.copy()
+
+    def _so_s_l2(self, hbar, C1, C2, Goo, Gvv):
+        """Spin-orbital doubles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-doubles
+        structure (cclambda._so_r_L2) without the inhomogeneous <ij||ab> term, with l1/l2 -> C1/C2;
+        built already antisymmetric under i<->j and a<->b (no trailing symmetrization), from the
+        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI."""
+        contract = hbar.contract
+        ERI = hbar.ccwfn.H.ERI
+        o = hbar.o
+        v = hbar.v
+        s2 = (contract('ia,jb->ijab', C1, hbar.Hov) - contract('ja,ib->ijab', C1, hbar.Hov))
+        s2 = s2 + (contract('jb,ia->ijab', C1, hbar.Hov) - contract('ib,ja->ijab', C1, hbar.Hov))
+        s2 = s2 + (contract('ijae,eb->ijab', C2, hbar.Hvv) - contract('ijbe,ea->ijab', C2, hbar.Hvv))
+        s2 = s2 - (contract('imab,jm->ijab', C2, hbar.Hoo) - contract('jmab,im->ijab', C2, hbar.Hoo))
+        s2 = s2 + 0.5 * contract('ijef,efab->ijab', C2, hbar.Hvvvv)
+        s2 = s2 + 0.5 * contract('mnab,ijmn->ijab', C2, hbar.Hoooo)
+        s2 = s2 + (contract('ie,ejab->ijab', C1, hbar.Hvovv) - contract('je,eiab->ijab', C1, hbar.Hvovv))
+        s2 = s2 - (contract('ma,ijmb->ijab', C1, hbar.Hooov) - contract('mb,ijma->ijab', C1, hbar.Hooov))
+        tmp = contract('imae,jebm->ijab', C2, hbar.Hovvo)
+        s2 = s2 + (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3) + tmp.swapaxes(0,1).swapaxes(2,3))
+        s2 = s2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v]) - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
+        s2 = s2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v]) - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
         return s2.copy()
