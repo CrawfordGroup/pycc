@@ -222,6 +222,52 @@ class ccdensity(object):
         else:
             return opdm
 
+    def gradient_densities(self):
+        """Full-MO one- and two-particle correlation densities for the analytic gradient:
+        ``D`` (``nmo x nmo``) and ``Gamma`` (``nmo^4``, physicist ``<pq|rs>`` ordering).
+
+        The convention is the one the density-based gradient machinery assumes -- **no prefactor**
+        on the two-particle term -- so the two-electron correlation energy is
+        ``contract(Gamma, ERI)`` and the total correlation energy is
+        ``contract(D, F) + contract(Gamma, ERI)`` (cf. :meth:`compute_energy`).
+
+        ``D`` places the ``Doo``/``Dov``/``Dvo``/``Dvv`` blocks; ``Gamma`` places the six stored
+        blocks and their bra-ket (``rspq``) images with per-block factors, then applies the four-fold
+        permutational symmetrization ``Gamma <- 1/4 (Gamma + Gamma_qpsr + Gamma_rspq + Gamma_srqp)``
+        so the result carries the proper spatial 2-PDM symmetry (``Gamma_pqrs = Gamma_rspq =
+        Gamma_qpsr``).  This matters: the two-particle density stored here (:meth:`compute_energy`
+        and the density builders) keeps only asymmetric *representatives* of each block --
+        e.g. ``Doovv`` holds only the ``l2`` piece while the ``vvoo`` partner (``t2 + t1 t1 + ...``)
+        is folded in under the implicit assumption of a subsequent contraction against a *symmetric*
+        quantity (the ERIs, in the energy).  A full 4-index energy/gradient contraction against the
+        (8-fold-symmetric) ``<pq|rs>`` only sees the symmetric projection, so the energy and the
+        explicit-derivative gradient are insensitive to the missing symmetry.  But the
+        generalized-Fock term ``4 sum_rst <pr|st> Gamma_qrst`` contracts only three indices and
+        *does* require it -- so the Z-vector gradient needs the symmetrized ``Gamma`` here.  The
+        symmetrization is energy-preserving (the antisymmetric complement contracts to zero against
+        the symmetric ERI).  (A future re-derivation of the ccdensity 2-PDM equations could carry
+        this symmetry natively.)  Densities are placed on the active ``o``/``v`` slices (frozen-core
+        rows/columns stay zero).  Spatial (closed-shell) only."""
+        if self.onlyone:
+            raise RuntimeError("gradient_densities needs the two-particle density "
+                               "(construct ccdensity with onlyone=False).")
+        ccwfn = self.ccwfn
+        o, v, nmo = ccwfn.o, ccwfn.v, ccwfn.nmo
+        D = zeros((nmo, nmo), like=self.Doo)
+        D[o, o] = self.Doo; D[v, v] = self.Dvv; D[o, v] = self.Dov; D[v, o] = self.Dvo
+        G = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
+        G[o, o, o, o] = 0.5 * self.Doooo
+        G[v, v, v, v] = 0.5 * self.Dvvvv
+        G[o, v, o, v] = self.Dovov
+        G[o, o, v, v] = 0.25 * self.Doovv
+        G[v, v, o, o] = 0.25 * self.Doovv.transpose(2, 3, 0, 1)
+        G[o, o, o, v] = 0.5 * self.Dooov
+        G[o, v, o, o] = 0.5 * self.Dooov.transpose(2, 3, 0, 1)
+        G[v, v, v, o] = 0.5 * self.Dvvvo
+        G[v, o, v, v] = 0.5 * self.Dvvvo.transpose(2, 3, 0, 1)
+        G = 0.25 * (G + G.transpose(1, 0, 3, 2) + G.transpose(2, 3, 0, 1) + G.transpose(3, 2, 1, 0))
+        return D, G
+
     def dipole(self, t1, t2, l1, l2):
         """Correlated (CC) contribution to the electric dipole moment.
 

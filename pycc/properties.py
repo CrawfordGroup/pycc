@@ -104,23 +104,44 @@ def _nuclear_aat(mol, origin) -> np.ndarray:
 # Property facade: dispatch on wavefunction type, assemble the PropertyComponents decomposition.
 # ------------------------------------------------------------------------------------------------
 
-def _dispatch(wfn, hf_method, mp_method, mp_kwargs=None):
-    """Reference (SCF electronic) and correlation blocks of a property, computed apart.  For an
-    ``MPwfn`` the reference is the all-electron SCF value (``_reference_hf()``) and the correlation
-    is the MP2 correlation-only method (called with ``mp_kwargs`` -- ``route``/``gauge`` are
-    MP2-only knobs the SCF reference does not take); for an ``HFwfn`` the reference is the SCF
-    value and the correlation is an all-zeros array of the same shape (``mp_kwargs`` do not
-    apply -- there is no correlation)."""
+# Registry mapping a wavefunction class to its downstream derivative-driver class (the strategy
+# that carries the correlation-property methods, e.g. CCwfn -> CCderiv).  Populated at import
+# (pycc/__init__.py).  A wfn class absent from the registry is treated as carrying its correlation
+# methods itself (the current MPwfn, until an MPderiv is split out) -- see _correlated.
+_DERIV_REGISTRY: dict = {}
+
+
+def register_deriv(wfn_cls, deriv_cls) -> None:
+    """Register ``deriv_cls`` as the derivative driver for wavefunctions of type ``wfn_cls``."""
+    _DERIV_REGISTRY[wfn_cls] = deriv_cls
+
+
+def _correlated(wfn):
+    """For a correlated wavefunction, return ``(reference_hf, target)``: the SCF-reference
+    ``HFwfn`` that carries the reference derivative, and the object that carries the correlation
+    derivative methods -- the registered derivative driver (``deriv_cls(wfn)``) if one exists,
+    else the wavefunction itself (transitional, while a method type's derivative code still lives
+    on its wfn class)."""
+    deriv_cls = _DERIV_REGISTRY.get(type(wfn))
+    if deriv_cls is not None:
+        target = deriv_cls(wfn)
+        return target._reference_hf(), target
+    return wfn._reference_hf(), wfn
+
+
+def _dispatch(wfn, hf_method, corr_method, corr_kwargs=None):
+    """Reference (SCF electronic) and correlation blocks of a property, computed apart.  For a
+    correlated wavefunction the reference is the all-electron SCF value and the correlation comes
+    from its derivative driver (:func:`_correlated`), called with ``corr_kwargs`` (``route`` /
+    ``gauge`` knobs the SCF reference does not take).  For an ``HFwfn`` the reference is the SCF
+    value and the correlation is an all-zeros array of the same shape."""
     from .hfwfn import HFwfn
-    from .mpwfn import MPwfn
-    if isinstance(wfn, MPwfn):
-        reference = np.asarray(getattr(wfn._reference_hf(), hf_method)())
-        correlation = np.asarray(getattr(wfn, mp_method)(**(mp_kwargs or {})))
-    elif isinstance(wfn, HFwfn):
+    if isinstance(wfn, HFwfn):
         reference = np.asarray(getattr(wfn, hf_method)())
-        correlation = np.zeros_like(reference)
-    else:
-        raise TypeError(f"unsupported wavefunction type {type(wfn).__name__!r}")
+        return reference, np.zeros_like(reference)
+    reference_hf, target = _correlated(wfn)
+    reference = np.asarray(getattr(reference_hf, hf_method)())
+    correlation = np.asarray(getattr(target, corr_method)(**(corr_kwargs or {})))
     return reference, correlation
 
 
@@ -140,29 +161,29 @@ def gradient(wfn) -> PropertyComponents:
     return PropertyComponents(nuclear, reference, correlation)
 
 
-def polarizability(wfn, route='explicit') -> PropertyComponents:
+def polarizability(wfn, route='2n+1') -> PropertyComponents:
     """Static electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)``
     each.  A pure electronic response property: the nuclear block is zero.
 
-    ``route`` selects the MP2 correlation algorithm, ``'explicit'`` (default) or ``'2n+1'`` (the
-    O(N)-cheaper 2n+1 route); both give the same tensor and it is ignored for an ``HFwfn``."""
+    ``route`` selects the MP2 correlation algorithm, ``'2n+1'`` (default -- the O(N)-cheaper 2n+1
+    route) or ``'explicit'``; both give the same tensor and it is ignored for an ``HFwfn``."""
     reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability', {'route': route})
     return PropertyComponents(np.zeros((3, 3)), reference, correlation)
 
 
-def hessian(wfn, route='explicit') -> PropertyComponents:
+def hessian(wfn, route='2n+1') -> PropertyComponents:
     """Molecular (nuclear) Hessian as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
     repulsion second derivative ``d^2 V_NN/dX dY``.
 
-    ``route`` selects the MP2 correlation algorithm, ``'explicit'`` (default) or ``'2n+1'`` (the
-    O(N)-cheaper 2n+1 route); both give the same matrix and it is ignored for an ``HFwfn``."""
+    ``route`` selects the MP2 correlation algorithm, ``'2n+1'`` (default -- the O(N)-cheaper 2n+1
+    route) or ``'explicit'``; both give the same matrix and it is ignored for an ``HFwfn``."""
     reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian', {'route': route})
     nuclear = np.asarray(wfn.derivatives.nuclear_repulsion2())
     return PropertyComponents(nuclear, reference, correlation)
 
 
-def apt(wfn, gauge='length', route='explicit', orbital_gauge='non-canonical') -> PropertyComponents:
+def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') -> PropertyComponents:
     """Atomic polar tensors (nuclear dipole derivatives) as a :class:`PropertyComponents`
     (``nuclear + reference + correlation``, shape ``(natom, 3, 3)`` each), indexed
     ``[A, beta, alpha]``.  The nuclear block is ``Z_A delta_{alpha,beta}``.
@@ -170,8 +191,9 @@ def apt(wfn, gauge='length', route='explicit', orbital_gauge='non-canonical') ->
     ``gauge='length'`` (default) is the length-gauge APT (:meth:`dipole_derivatives`);
     ``gauge='velocity'`` is the velocity-gauge APT (:meth:`velocity_dipole_derivatives`).
 
-    ``route`` (length gauge only) selects the MP2 correlation algorithm -- ``'explicit'``
-    (default), ``'2n+1-nuclear'`` or ``'2n+1-field'``; all give the same tensor.
+    ``route`` (length gauge only) selects the MP2 correlation algorithm -- ``'2n+1-field'``
+    (default -- the O(N)-cheaper route, 3 field solves), ``'2n+1-nuclear'``, or ``'explicit'``;
+    all give the same tensor.
 
     ``orbital_gauge`` (velocity gauge only; **expert only**) selects the redundant momentum
     orbital-rotation gauge, ``'non-canonical'`` (default, numerically stable) or ``'canonical'``.
