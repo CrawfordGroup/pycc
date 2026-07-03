@@ -83,6 +83,10 @@ def test_so_eom_closed_shell_keystone(rhf_wfn):
     assert abs(E_iter.min() - E_so.min()) < 1e-5
 
 
+# psi4 UHF-EOM-CCSD roots for OH/STO-3G at this geometry (energy('eom-ccsd'), reference uhf)
+PSI4_UHF_ROOTS = [0.224266, 0.404873]
+
+
 def test_so_eom_sigma_vs_psi4_uhf(uhf_wfn):
     """Open-shell OH/UHF/STO-3G: the dense spin-orbital EOM spectrum reproduces psi4's
     UHF-EOM-CCSD roots (the sigma physics, independent of the iterative solver)."""
@@ -90,7 +94,19 @@ def test_so_eom_sigma_vs_psi4_uhf(uhf_wfn):
     _, eom = _eom(wfn, "spinorbital")
     E = _dense_so_spectrum(eom)
 
-    # psi4 UHF-EOM-CCSD roots for this geometry (energy('eom-ccsd'), reference uhf)
-    psi4_roots = [0.224266, 0.404873]
-    for e in psi4_roots:
+    for e in PSI4_UHF_ROOTS:
         assert np.min(np.abs(E - e)) < 1e-5, (e, E[:8])
+
+
+def test_so_eom_open_shell_iterative(uhf_wfn):
+    """Open-shell OH/UHF/STO-3G: the iterative block-Davidson spin-orbital EOM reproduces psi4's
+    UHF-EOM-CCSD roots. This exercises the full production path (block Davidson + spin-orbital
+    sigma) on the near-degenerate open-shell spectrum that a single-vector Davidson could not
+    resolve."""
+    wfn = uhf_wfn(OH, "STO-3G", freeze_core="false")
+    _, eom = _eom(wfn, "spinorbital")
+    E = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
+
+    # psi4's roots (plus their spin-contamination partners) appear among the iterative roots
+    for e in PSI4_UHF_ROOTS:
+        assert np.min(np.abs(E - e)) < 1e-5, (e, E)
