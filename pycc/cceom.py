@@ -74,7 +74,7 @@ class cceom(object):
             self.l1 = 2.0 * self.ccwfn.t1
             self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
-    def solve_eom(self, N: int = 1, e_conv: float = 1e-5, r_conv: float = 1e-5, maxiter: int = 100, guess: str = 'HBAR_SS', eom_type: str = 'RIGHT'):
+    def solve_eom(self, N: int = 1, e_conv: float = 1e-5, r_conv: float = 1e-5, maxiter: int = 100, guess: str = 'HBAR_SS', eom_type: str = 'RIGHT', root_floor: float = 1e-3):
         """
         Solves the left and right-hand EOM-CC eigenvalue problem using the Davidson algorithm
 
@@ -92,6 +92,10 @@ class cceom(object):
             method to use for computing guess vectors
         eom_type : str
             type of the eienvalue problem to solve, left or right
+        root_floor : float
+            lower bound (hartree) on the real part of an accepted excitation energy; Ritz values
+            below it (the spurious near-zero manifold) are skipped during root selection. Relevant
+            mainly to the spin-orbital path, whose redundant doubles produce many ~0 eigenvalues.
 
         Returns
         -------
@@ -180,8 +184,17 @@ class cceom(object):
                 G = S @ C.T
                 E, a = scipy.linalg.eig(G, left=True,right=False)
 
-            # Sort eigenvalues and corresponding eigenvectors into ascending order
-            idx = E.argsort()[:N]
+            # Select the N target roots.  Physical EOM excitation energies are real and positive;
+            # skip the spurious near-zero manifold (the redundant, non-antisymmetric doubles
+            # components -- ~0 eigenvalues, far more numerous in the spin-orbital basis) and any
+            # complex Ritz values, then take the N smallest of what remains.  Early iterations may
+            # expose fewer than N physical roots, so pad with the next-smallest by real part to
+            # keep N correction vectors flowing.
+            order = E.real.argsort()
+            physical = [i for i in order if abs(E[i].imag) < 1e-6 and E[i].real > root_floor]
+            if len(physical) < N:
+                physical += [i for i in order if i not in physical]
+            idx = np.array(physical[:N])
             E = E[idx]; a = a[:,idx]
 
             # Build correction vectors
@@ -193,7 +206,7 @@ class cceom(object):
             dE = E - E_old
             print("             E/state                   dE                 norm")
             for state in range(N):
-                print("%20.12f %20.12f %20.12f" % (E[state], dE[state], r_norm[state]))
+                print("%20.12f %20.12f %20.12f" % (E[state].real, dE[state].real, r_norm[state]))
 
             if (np.abs(np.linalg.norm(dE)) <= e_conv):
                 converged = True
@@ -298,6 +311,12 @@ class cceom(object):
             H += contract('ab,ij->iajb', hbar.Hvv, np.eye(no))
             H -= contract('ij,ab->iajb', hbar.Hoo, np.eye(nv))
             eps, c = np.linalg.eig(np.reshape(H, (no*nv,no*nv)))
+            # The HBAR singles block is non-Hermitian, so eig can return complex conjugate
+            # eigenpairs for (near-)degenerate roots (e.g. the spin-orbital triplets). Keep the
+            # real span: complex guess vectors otherwise seed spurious near-zero roots in the
+            # Davidson. The real parts of a conjugate pair span the same real subspace, and the
+            # QR orthonormalization in solve_eom removes any resulting redundancy.
+            eps = eps.real; c = c.real
             idx = eps.argsort()
             eps = eps[idx]; c = c[:,idx]
 
