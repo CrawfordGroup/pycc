@@ -35,8 +35,8 @@ symmetry c1
 """
 
 
-def _eom(wfn, orbital_basis):
-    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis, frozen_core=False)
+def _eom(wfn, orbital_basis, frozen_core=False):
+    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis, frozen_core=frozen_core)
     cc.solve_cc(1e-11, 1e-11, 75)
     return cc, pycc.cceom(cc, pycc.cchbar(cc))
 
@@ -122,3 +122,32 @@ def test_so_eom_left_equals_right(rhf_wfn, uhf_wfn):
         E_right = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
         E_left = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "left")[0].real)
         assert np.max(np.abs(E_left - E_right)) < 1e-6, (mol, E_left, E_right)
+
+
+def test_so_eom_rohf(rohf_wfn):
+    """Open-shell OH/ROHF/STO-3G (all-electron): the spin-orbital EOM on a semicanonical ROHF
+    reference reproduces psi4's ROHF-EOM-CCSD roots, and left == right."""
+    wfn = rohf_wfn(OH, "STO-3G", freeze_core="false")
+    _, eom = _eom(wfn, "spinorbital")
+    R = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
+    L = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "left")[0].real)
+    # psi4 ROHF-EOM-CCSD roots (energy('eom-ccsd'), reference rohf): the excitation energy is
+    # (CC ROOT n TOTAL ENERGY) minus the minimum over roots -- for ROHF the ground state is not
+    # root 0 (root 0 is a corr=0 placeholder), so subtracting root 0 would be wrong.
+    for e in (0.224190, 0.403713):
+        assert np.min(np.abs(R - e)) < 1e-5, (e, R)
+    assert np.max(np.abs(L - R)) < 1e-6
+
+
+def test_so_eom_frozen_core(uhf_wfn):
+    """Frozen-core spin-orbital EOM (OH/UHF/STO-3G): reproduces psi4's frozen-core UHF-EOM-CCSD
+    roots, is distinct from the all-electron result, and left == right."""
+    wfn = uhf_wfn(OH, "STO-3G", freeze_core="true")
+    _, eom = _eom(wfn, "spinorbital", frozen_core=True)
+    R = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
+    L = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "left")[0].real)
+    for e in (0.224329, 0.404870):        # psi4 frozen-core UHF-EOM-CCSD roots
+        assert np.min(np.abs(R - e)) < 1e-5, (e, R)
+    assert np.max(np.abs(L - R)) < 1e-6
+    # frozen core actually changes the roots (vs the all-electron 0.224266 / 0.404873)
+    assert np.min(np.abs(R - 0.224266)) > 1e-5
