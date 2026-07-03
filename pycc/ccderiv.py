@@ -28,8 +28,10 @@ class CCderiv:
 
     Notes
     -----
-    Spatial (closed-shell RHF) path only for now -- the spin-orbital two-particle density is not
-    yet implemented.  Lambda and the reduced densities are solved/built on first use and cached.
+    Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported; ROHF is not
+    (the semicanonical response does not reproduce the restricted ROHF response).  Lambda and the
+    reduced densities are solved/built on first use and cached.  The analytic nuclear gradient is
+    implemented (Hessian, APTs, etc. to follow).
     """
 
     def __init__(self, ccwfn: "CCwfn") -> None:
