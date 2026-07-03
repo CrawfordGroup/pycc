@@ -1,6 +1,6 @@
 """
 Spin-orbital coupled cluster on a ROHF reference, via semicanonical orbitals
-(docs/ENHANCEMENT_PLAN_2026-06.md, phase 5).
+(docs/archive/ENHANCEMENT_PLAN_2026-06.md, phase 5).
 
 SpinOrbitalHamiltonian semicanonicalizes the ROHF orbitals (diagonalizing the
 occ-occ and vir-vir Fock blocks per spin), giving well-defined MP2/(T)/CC3

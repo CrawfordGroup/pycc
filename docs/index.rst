@@ -7,9 +7,10 @@ PyCC: A Python electronic-structure package
 =========================================================
 PyCC is a Python *ab initio* electronic-structure package centered on coupled
 cluster, built on a shared :class:`~pycc.wavefunction.Wavefunction` base that also
-hosts Hartree-Fock (with analytic derivative properties) and MP2. It is a reference
-implementation: the emphasis is on clear, equation-shaped code for validating
-production-level quantum-chemistry codes, rather than on raw performance.
+hosts Hartree-Fock and MP2, both with analytic derivative properties (gradients,
+polarizabilities, Hessians, APTs, and AATs -- the ingredients for IR and VCD spectra).
+It is a reference implementation: the emphasis is on clear, equation-shaped code for
+validating production-level quantum-chemistry codes, rather than on raw performance.
 
 .. toctree::
    :maxdepth: 2

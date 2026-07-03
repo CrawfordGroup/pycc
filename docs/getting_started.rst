@@ -59,20 +59,40 @@ MP2 energy
 
     emp2 = pycc.MPwfn(wfn).compute_energy()
 
-Hartree-Fock derivative properties
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-:class:`~pycc.hfwfn.HFwfn` provides MO-basis analytic derivative properties of the RHF
-reference -- the ingredients for IR and VCD spectra::
+Derivative properties (IR / VCD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+PyCC computes analytic MO-basis derivative properties for both the Hartree-Fock reference
+(:class:`~pycc.hfwfn.HFwfn`) and MP2 (:class:`~pycc.mpwfn.MPwfn`) -- the ingredients for IR
+and VCD spectra. The :mod:`pycc.properties` facade is the recommended interface: one call per
+property, dispatching on the wavefunction type and returning a
+:class:`~pycc.properties.PropertyComponents` with the physical decomposition
+``total = nuclear + reference + correlation`` (the ``correlation`` block is an all-zeros array
+for an :class:`~pycc.hfwfn.HFwfn`)::
 
     hf = pycc.HFwfn(wfn)
-    grad  = hf.gradient()              # nuclear gradient             (natom, 3)
-    hess  = hf.hessian()               # nuclear Hessian              (3*natom, 3*natom)
-    alpha = hf.polarizability()        # static dipole polarizability (3, 3)
-    apt   = hf.dipole_derivatives()    # atomic polar tensors         (natom, 3, 3)
-    aat   = hf.atomic_axial_tensors()  # atomic axial tensors         (natom, 3, 3)
+    mp = pycc.MPwfn(wfn); mp.compute_energy()
 
-The nuclear coupled-perturbed Hartree-Fock (CPHF) response is solved once and cached, so
-computing the Hessian and then the dipole/axial tensors does not repeat that work.
+    r = pycc.hessian(mp)               # nuclear Hessian; works with pycc.hessian(hf) too
+    r.total                            # nuclear + reference + correlation  (3*natom, 3*natom)
+    r.reference                        # SCF contribution  (== r.scf == r.hf)
+    r.correlation                      # MP2 correlation contribution
+    r.nuclear                          # nuclear-repulsion second derivative
+
+    pycc.gradient(mp)                  # nuclear gradient             (natom, 3)
+    pycc.polarizability(mp)            # static dipole polarizability (3, 3)
+    pycc.apt(mp, gauge='length')       # atomic polar tensors         (natom, 3, 3)
+    pycc.apt(mp, gauge='velocity')     # velocity-gauge APTs          (natom, 3, 3)
+    pycc.aat(mp)                       # atomic axial tensors (VCD)   (natom, 3, 3)
+
+Every property is available for both spin paths (spin-adapted closed-shell RHF and spin-orbital,
+selected by ``orbital_basis`` on the wavefunction), all-electron and frozen core. The MP2 second
+derivatives (polarizability, APT, Hessian) offer two independent algorithms via ``route='explicit'``
+(default) or ``route='2n+1'`` (O(N)-cheaper) -- an efficiency lever and a mutual cross-check.
+
+The underlying per-wavefunction methods (``hf.gradient()``, ``mp.hessian()``,
+``hf.atomic_axial_tensors()``, ...) remain available for the individual reference or correlation
+contributions. The nuclear coupled-perturbed Hartree-Fock (CPHF) response is solved once and
+cached, so computing several properties does not repeat that work.
 
 GPU and mixed precision
 ~~~~~~~~~~~~~~~~~~~~~~~~~

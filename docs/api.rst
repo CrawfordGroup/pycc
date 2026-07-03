@@ -31,11 +31,12 @@ Coupled-cluster machinery
    pycc.ccresponse
    pycc.cceom
 
-Hartree-Fock derivative properties
-----------------------------------
+Analytic derivative properties
+------------------------------
 .. autosummary::
    :toctree: autosummary
 
+   pycc.properties
    pycc.derivatives
    pycc.cphf
 

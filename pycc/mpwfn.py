@@ -295,7 +295,7 @@ class MPwfn(Wavefunction):
         return np.array([self.contract('pq,pq->', D, np.asarray(self.H.mu[a]))
                          for a in range(3)])
 
-    # ---- first derivatives: explicit-derivative route (notes.pdf) and the nuclear gradient ----
+    # ---- first derivatives: explicit-derivative route (derivints.pdf) and the nuclear gradient ----
     # The correlation-energy first derivative via the full (CPHF-folded) derivatives of f and
     # <pq||rs> (shared CPHF engine) contracted with the *unrelaxed* densities -- the orbital
     # relaxation rides inside d_x f / d_x <pq||rs>, not in a relaxed density. For an electric
@@ -756,7 +756,7 @@ class MPwfn(Wavefunction):
         """MP2 **correlation** contribution to the static (omega=0) dipole polarizability
         (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``.
 
-        ``route='explicit'`` (default) -- the explicit second-derivative route (``notes.pdf``
+        ``route='explicit'`` (default) -- the explicit second-derivative route (``derivints.pdf``
         Eq. 15)::
 
             d_ab E_corr = sum_pq [ d_a gamma_pq d_b f_pq + gamma_pq d_ab f_pq ]

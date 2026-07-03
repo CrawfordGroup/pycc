@@ -9,7 +9,7 @@ device/precision manager. Method-specific machinery (amplitudes, denominators,
 densities, response, ...) lives in the subclasses (CCwfn, MPwfn, HFwfn, and --
 planned -- CIwfn).
 
-Part of the 2026-06 refactor (docs/REFACTOR_PLAN_2026-06.md, Phase 3): the
+Part of the 2026-06 refactor (docs/archive/REFACTOR_PLAN_2026-06.md, Phase 3): the
 reference/orbital/integral setup and the DeviceManager were lifted out of
 ccwfn.__init__ so PyCC can host more than coupled cluster.
 """

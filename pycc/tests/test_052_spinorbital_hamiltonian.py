@@ -1,5 +1,5 @@
 """
-Step 1 of the spin-orbital enhancement (docs/ENHANCEMENT_PLAN_2026-06.md): the
+Step 1 of the spin-orbital enhancement (docs/archive/ENHANCEMENT_PLAN_2026-06.md): the
 SpinOrbitalHamiltonian plus the Wavefunction base's orbital_basis dispatch.
 
 Keystone: forcing the spin-orbital path on a closed-shell RHF reference must

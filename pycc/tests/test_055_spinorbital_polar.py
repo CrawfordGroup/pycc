@@ -1,6 +1,6 @@
 """
 Spin-orbital CCSD dipole polarizability via the symmetric linear-response function
-(right-hand perturbed amplitudes only); docs/ENHANCEMENT_PLAN_2026-06.md.
+(right-hand perturbed amplitudes only); docs/archive/ENHANCEMENT_PLAN_2026-06.md.
 
 Validation:
   * SO-RHF dynamic polarizability (omega != 0) vs Psi4's CCSD polarizability

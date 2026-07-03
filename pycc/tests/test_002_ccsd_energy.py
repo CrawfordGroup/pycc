@@ -2,7 +2,7 @@
 Test CCSD equation solution using various molecule test cases.
 
 Covers both the spin-adapted spatial (RHF) kernel and the spin-orbital (UHF)
-kernel selected by orbital_basis (docs/ENHANCEMENT_PLAN_2026-06.md, phase 3).
+kernel selected by orbital_basis (docs/archive/ENHANCEMENT_PLAN_2026-06.md, phase 3).
 """
 
 # Import package, test suite, and other packages as needed

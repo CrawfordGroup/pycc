@@ -218,7 +218,7 @@ class CPHF(object):
         return self._U_field[axis]
 
     # ---- explicit (CPHF-folded) full first derivatives of f and <pq||rs> ----
-    # The "simple but inefficient" form (notes.pdf): rather than separate the orbital
+    # The "simple but inefficient" form (derivints.pdf): rather than separate the orbital
     # response into a Z-vector + relaxed density, fold the CPHF coefficients ``U^x``
     # directly into the full derivatives of the Fock matrix and the antisymmetrized
     # two-electron integrals, then contract with the (unrelaxed) densities. These are the
@@ -331,7 +331,7 @@ class CPHF(object):
 
     def perturbed_fock(self, pert: "Perturbation", ncore: int = 0) -> np.ndarray:
         """Full first derivative of the MO Fock matrix ``d_x f_pq`` (``nmo x nmo``) for
-        ``pert``, with the CPHF response folded in (notes.pdf)::
+        ``pert``, with the CPHF response folded in (derivints.pdf)::
 
             d_x f_pq = f^(x)_pq + U^x_pq f_pp + U^x_qp f_qq
                        - 1/2 sum_nm S^x_nm A_pnqm + sum_cm U^x_cm A_pcqm
@@ -366,7 +366,7 @@ class CPHF(object):
 
     def perturbed_eri(self, pert: "Perturbation", ncore: int = 0, blocks=None) -> np.ndarray:
         """Full first derivative of the MO two-electron integrals ``d_x <pq|rs>`` for ``pert``
-        (notes.pdf)::
+        (derivints.pdf)::
 
             d_x <pq|rs> = <pq|rs>^(x)
                           + sum_t ( U^x_tp <tq|rs> + U^x_tq <pt|rs>

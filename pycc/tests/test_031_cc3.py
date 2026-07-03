@@ -1,6 +1,6 @@
 """
 Test CC3 equation solution using various molecule test cases, for both the
-spatial (RHF) and spin-orbital (UHF) kernels (docs/ENHANCEMENT_PLAN_2026-06.md,
+spatial (RHF) and spin-orbital (UHF) kernels (docs/archive/ENHANCEMENT_PLAN_2026-06.md,
 phase 4b).
 """
 

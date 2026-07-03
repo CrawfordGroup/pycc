@@ -1,7 +1,7 @@
 """
 Spin-orbital CC3 dynamic response (dipole polarizability + optical rotation) via the
 symmetric linear-response function (right-hand perturbed amplitudes only);
-docs/ENHANCEMENT_PLAN_2026-06.md.
+docs/archive/ENHANCEMENT_PLAN_2026-06.md.
 
 CC3 response requires the full connected triples T3/L3/X3. The store_triples=True
 path forms and stores these via whole-array kernels; store_triples=False uses the

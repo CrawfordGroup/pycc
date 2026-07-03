@@ -1,6 +1,6 @@
 """
 Spin-adapted (spatial) CCSD optical rotation (length gauge) via the symmetric
-linear-response function (docs/ENHANCEMENT_PLAN_2026-06.md).
+linear-response function (docs/archive/ENHANCEMENT_PLAN_2026-06.md).
 
 This pins the spatial spin-adapted symmetric path through optrot (linresp_sym ->
 LCX / LHX1Y1 / LHX2Y2 / LHX1Y2, with the magnetic-dipole pertbars M / M*), which the

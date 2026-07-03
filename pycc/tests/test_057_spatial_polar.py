@@ -1,6 +1,6 @@
 """
 Spin-adapted (spatial) CCSD dipole polarizability via the symmetric linear-response
-function (right-hand perturbed amplitudes only); docs/ENHANCEMENT_PLAN_2026-06.md.
+function (right-hand perturbed amplitudes only); docs/archive/ENHANCEMENT_PLAN_2026-06.md.
 
 This pins the spatial spin-adapted symmetric path (linresp_sym -> LCX / LHX1Y1 /
 LHX2Y2 / LHX1Y2), which the spin-orbital tests in test_055 do NOT exercise: the

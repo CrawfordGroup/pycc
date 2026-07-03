@@ -1,7 +1,7 @@
 """
 Test CCSD Lambda equation solution using various molecule test cases, for both the
 spin-adapted spatial (RHF) and spin-orbital (UHF/ROHF) kernels
-(docs/ENHANCEMENT_PLAN_2026-06.md).
+(docs/archive/ENHANCEMENT_PLAN_2026-06.md).
 """
 
 # Import package, test suite, and other packages as needed
