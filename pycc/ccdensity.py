@@ -100,7 +100,7 @@ class ccdensity(object):
         if onlyone is False:
             if ccwfn.orbital_basis == 'spinorbital':
                 # Spin-orbital 2-PDM: the nine unique (antisymmetric) blocks of Table 6.3.
-                self.G2so = self.build_so_twopdm(t1, t2, l1, l2)
+                self.so_twopdm = self.build_so_twopdm(t1, t2, l1, l2)
             else:
                 self.Doooo = self.build_Doooo(t1, t2, l2)
                 self.Dvvvv = self.build_Dvvvv(t1, t2, l2)
@@ -147,7 +147,7 @@ class ccdensity(object):
             # antisymmetry class has k members contributes k times, since Gamma and <pq||rs> pick up
             # the same sign under each index swap): oooo/vvvv/oovv/vvoo -> 1, the (3+1) blocks -> 2,
             # ovvo -> 4.
-            G = self.G2so
+            G = self.so_twopdm
             etwo = 0.25 * (
                 contract('ijkl,ijkl->', ERI[o,o,o,o], G['ijkl'])
                 + contract('abcd,abcd->', ERI[v,v,v,v], G['abcd'])
@@ -718,7 +718,7 @@ class ccdensity(object):
         generating every block type by index antisymmetry.  Frozen-core rows/columns stay zero."""
         ccwfn = self.ccwfn
         o, v, nmo = ccwfn.o, ccwfn.v, ccwfn.nmo
-        G = self.G2so
+        G = self.so_twopdm
         Gam = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
         Gam[o, o, o, o] = G['ijkl']
         Gam[v, v, v, v] = G['abcd']
