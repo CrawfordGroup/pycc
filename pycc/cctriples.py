@@ -685,7 +685,7 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
 # The spatial t_tjl / t_vikings(_inverted) drivers above are RHF-specific
 # (spin-adapted). These are the spin-orbital "viking" (T) driver and its T3 batch
 # builder, ported from ~/src/socc: they work directly off the antisymmetrized
-# ERI = <pq||rs> (docs/ENHANCEMENT_PLAN_2026-06.md, phase 4).
+# ERI = <pq||rs> (docs/archive/ENHANCEMENT_PLAN_2026-06.md, phase 4).
 
 def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDenom=True):
     """Spin-orbital connected T3 amplitudes for fixed occupied i, j, k.

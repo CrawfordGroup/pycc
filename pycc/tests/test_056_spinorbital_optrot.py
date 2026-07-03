@@ -1,6 +1,6 @@
 """
 Spin-orbital CCSD optical rotation (length gauge) via the symmetric linear-response
-function (docs/ENHANCEMENT_PLAN_2026-06.md).
+function (docs/archive/ENHANCEMENT_PLAN_2026-06.md).
 
 Validation:
   * SO-RHF optical-rotation tensor (chiral H2O2) vs Psi4's CCSD optical rotation --

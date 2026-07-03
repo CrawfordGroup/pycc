@@ -79,7 +79,7 @@ def test_mp2_relaxed_dipole_ccpvdz():
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
 
 
-# ---- explicit-derivative route (notes.pdf): correlation dipole from the full
+# ---- explicit-derivative route (derivints.pdf): correlation dipole from the full
 # CPHF-folded derivatives of f and <pq||rs> (CPHF.perturbed_fock / perturbed_eri),
 # contracted with the *unrelaxed* densities -- an independent computation of the same
 # correlation dipole, and the validation of the perturbed-derivative engine that the

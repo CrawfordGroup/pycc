@@ -1,6 +1,6 @@
 """
 Spin-orbital finite-field CC energies (static external electric-dipole field);
-docs/ENHANCEMENT_PLAN_2026-06.md.
+docs/archive/ENHANCEMENT_PLAN_2026-06.md.
 
 A static field is added to the Fock matrix post-SCF (V = -F*mu_z, fixed orbitals),
 making it non-canonical. CCSD handles this through its Fock intermediates; CC3

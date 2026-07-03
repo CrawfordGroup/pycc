@@ -4,15 +4,18 @@ _Design-of-record and status for the post-HF analytic-derivative-property effort
 correlation gradient, the electric/nuclear second derivatives (polarizability, APT, Hessian),
 and their two independent implementations (explicit-derivative and 2n+1). Started 2026-06;
 this revision 2026-07 (rewritten from the original chronological plan — milestone history is in
-the Changelog appendix). Preceding spin-orbital infrastructure: `ENHANCEMENT_PLAN_2026-06.md`.
+the Changelog appendix). Preceding spin-orbital infrastructure: `archive/ENHANCEMENT_PLAN_2026-06.md`.
 Filename retained for the docstring/test references that point here._
 
 ## 1. Status at a glance
 
-MP2 **correlation** analytic derivatives. Every total property splits as **reference (HF) +
-correlation**: the reference part lives on `HFwfn`, the correlation part on `MPwfn`, and the
-`MPwfn.total_*` methods return the sum. All rows below are implemented for **both spin paths**
-(spin-orbital and spin-adapted closed-shell RHF), **all-electron and frozen-core**, unless noted.
+MP2 **correlation** analytic derivatives. Every total property splits as **nuclear + reference (HF)
++ correlation**: the correlation part lives on `MPwfn`, the reference part on `HFwfn` (pure
+electronic), and the nuclear part is a closed-form geometry/charge term. The `pycc` property facade
+(`pycc.dipole`/`gradient`/`polarizability`/`hessian`/`apt`/`aat`) assembles the three into a
+`PropertyComponents` (`.total`/`.nuclear`/`.reference`/`.correlation`), for any wavefunction type
+(see the property-facade work). All rows below are implemented for **both spin paths** (spin-orbital
+and spin-adapted closed-shell RHF), **all-electron and frozen-core**, unless noted.
 
 | Property (derivative) | order | explicit route | 2n+1 route |
 |---|---|---|---|
@@ -21,10 +24,13 @@ correlation**: the reference part lives on `HFwfn`, the correlation part on `MPw
 | polarizability  `d²E/dF²` | 2nd | ✅ `polarizability()` | ✅ `polarizability(route='2n+1')` |
 | APT  `d²E/dF dX` | 2nd | ✅ `dipole_derivatives()` | ✅ `route='2n+1-nuclear'` / `'2n+1-field'` |
 | Hessian  `d²E/dX²` | 2nd | ✅ `hessian()` | ✅ `hessian(route='2n+1')` |
-| AAT / VCD  `d²E/dB dX` | 2nd | — (next) | — (next) |
+| AAT / VCD  `d²E/dB dX` | 2nd | ✅ `atomic_axial_tensors()` (density/overlap form) | n/a |
+| velocity-gauge APT  `d²E/dp dX` | 2nd | ✅ `velocity_dipole_derivatives()` | n/a |
 
 The explicit and 2n+1 suites agree to ~machine precision — each is an independent cross-check of
-the other. The default `route` is `'explicit'` throughout.
+the other. The default `route` is `'explicit'` throughout. The AAT and velocity-gauge APT use the
+density/wave-function-overlap formulation (unrelaxed densities, no Z-vector); they are orbital-gauge
+invariant, with a numerically stable non-canonical default (`gauge=`).
 
 **Reference layer (`HFwfn`).** Gradient, polarizability, APT, Hessian, and AAT are done for
 **RHF and UHF**, in both spatial and spin-orbital bases (ROHF orbital response deferred, guarded —
@@ -35,7 +41,7 @@ SO machinery through the RHF-forced-to-SO == spatial keystone.
 
 Two independent routes reach the same numbers; PyCC implements both.
 
-**Explicit-derivative route** (`notes.pdf`). Fold the CPHF coefficients `U^x` into the *full*
+**Explicit-derivative route** (`derivints.pdf`). Fold the CPHF coefficients `U^x` into the *full*
 derivatives of the Fock matrix and the antisymmetrized two-electron integrals, then contract with
 the **unrelaxed** densities:
 
@@ -142,10 +148,6 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
 
 ## 6. Roadmap
 
-- **AATs / VCD (next).** Atomic axial tensors — the magnetic/nuclear mixed second derivative
-  `d²E/dB dX` — reusing the explicit machinery with the magnetic-dipole integrals `H.m`. The
-  SO **HF** AAT (`test_066`) is the template; the MP2 correlation AAT is the remaining derivative
-  property, and completes the IR/VCD goal (which needs the Hessian + APT + AAT).
 - **CC gradients.** Swap the MP2 density/Lagrangian for the CCSD relaxed density (Λ exists;
   `ccdensity` has the 2-PDM); the Z-vector solve and gradient assembly carry over. This is where
   the deferred "shared Lagrangian → Z-vector → density → gradient layer" refactor would land
@@ -176,10 +178,16 @@ Reference layer, then the MP2 derivative effort:
 | #166 | **2n+1** polarizability (perturbed Z-vector; frozen-core Sylvester `∂P_co`) |
 | #167 | **2n+1** APT (nuclear- and field-side routes; perturbed energy-weighted density) |
 | #168 | **2n+1** Hessian (the `O(N)`-solve payoff; rotations hoisted onto densities) |
+| #169 | **HF velocity-gauge APT** (`HFwfn.velocity_dipole_derivatives`; momentum response) |
+| #170 | **MP2 AAT** (VCD) — density/overlap form, gauge-invariant, frozen-core, both spins |
+| #171 | **MP2 velocity-gauge APT** — AAT machinery with the linear-momentum operator |
+| #172 | **property facade** — `pycc.PropertyComponents` + `pycc.dipole/gradient/polarizability/hessian/apt/aat`; nuclear un-bundled from the HF methods; `MPwfn.total_*` removed |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
-`test_070` (2n+1 polarizability). The 2n+1 APT/Hessian cross-checks live in `test_068`/`test_069`.
+`test_070` (2n+1 polarizability), `test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
+(MP2 velocity APT), `test_074` (property facade). The 2n+1 APT/Hessian cross-checks live in
+`test_068`/`test_069`.
 
 ## Appendix B: superseded early decisions
 

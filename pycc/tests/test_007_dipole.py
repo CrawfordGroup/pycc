@@ -1,7 +1,7 @@
 """
 Test CCSD electric and magnetic dipole on H2 dimer (spatial RHF), and the
 spin-orbital (UHF/ROHF) CC dipole from ccdensity.dipole
-(docs/ENHANCEMENT_PLAN_2026-06.md).
+(docs/archive/ENHANCEMENT_PLAN_2026-06.md).
 """
 
 # Import package, test suite, and other packages as needed

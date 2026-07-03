@@ -1,6 +1,6 @@
 """
 Test CCSD(T) energies for the spatial (RHF) and spin-orbital (UHF) kernels
-(docs/ENHANCEMENT_PLAN_2026-06.md, phase 4).
+(docs/archive/ENHANCEMENT_PLAN_2026-06.md, phase 4).
 """
 
 # Import package, test suite, and other packages as needed

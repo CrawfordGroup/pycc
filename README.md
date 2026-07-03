@@ -21,10 +21,16 @@ include:
     spin-adapted (closed-shell) and spin-orbital references
   - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
   - Local (PAO, PNO, PNO++) CCSD energies, and local RT-CC
-  - Hartree-Fock (`HFwfn`) MO-basis analytic derivative properties: energy gradient,
-    static dipole polarizability, nuclear Hessian (force-constant matrix), atomic polar
-    tensors (APTs / dipole derivatives), and atomic axial tensors (AATs) -- the building
-    blocks for IR and VCD spectra
+  - Analytic MO-basis derivative properties for Hartree-Fock (`HFwfn`) and MP2 (`MPwfn`):
+    energy gradient, static dipole polarizability, nuclear Hessian (force-constant matrix),
+    atomic polar tensors (APTs / dipole derivatives, in both the length and velocity gauge),
+    and atomic axial tensors (AATs) -- the building blocks for IR and VCD spectra. Both spin
+    paths (spin-adapted closed-shell RHF and spin-orbital), all-electron and frozen-core; the
+    MP2 second derivatives come via two independent routes (explicit-derivative and 2n+1)
+  - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
+    `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that dispatches on wavefunction type and returns
+    each property's nuclear/reference/correlation decomposition as a `PropertyComponents`
+    dataclass (`.total`, `.nuclear`, `.reference`, `.correlation`, `.electronic`)
   - MP2 (`MPwfn`) and CISD/CID (`CIwfn`) energies (closed- and open-shell)
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
