@@ -230,7 +230,7 @@ class cceom(object):
             print("-----  ------------  ------------")
             eVconv = psi4.qcel.constants.get("hartree energy in ev")
             for state in range(N):
-                print("  %3d  %12.10f  %12.10f" %(state, E[state], E[state]*eVconv))
+                print("  %3d  %12.10f  %12.10f" %(state, E[state].real, E[state].real*eVconv))
 
             # Build converged eigenvectors (R vectors) from Krylov basis
             R_full = a.T @ C  # shape (N, s1_len + s2_len)
