@@ -118,6 +118,7 @@ class CPHF(object):
         self._U_mag: dict = {}  # axis -> (no, nv) magnetic-field response U^B (real)
         self._U_mom: dict = {}  # axis -> (no, nv) linear-momentum response U^A (real)
         self._mag_int: dict = {}  # axis -> (U^H, dF^H, dERI^H) magnetic engine (for MP2 AATs)
+        self._mom_int: dict = {}  # axis -> (U^A, dF^A, dERI^A) momentum engine (for MP2 VG APTs)
         # Full (CPHF-folded) first-derivative caches, keyed by Perturbation. These hold
         # the response-dressed derivatives d_x f and d_x <pq||rs> (notes: the "simple but
         # inefficient" explicit form), persisting for the life of this CPHF object so that
@@ -774,8 +775,33 @@ class CPHF(object):
         (ket ``+``, bra ``-``) rotation.  ``W`` is the antisymmetrized ``<pq||rs>`` (spin-orbital)
         or the spin-adapted ``L`` (spatial), matching the rest of the CPHF engine."""
         key = (axis, ncore, gauge)
-        if key in self._mag_int:
-            return self._mag_int[key]
+        if key not in self._mag_int:
+            hmag = np.asarray(-1.0j * self.wfn.H.m[axis]).real
+            self._mag_int[key] = self._antisym_field_ints(hmag, ncore, gauge)
+        return self._mag_int[key]
+
+    def momentum_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
+        """Linear-momentum-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
+        ``(U^A, dF^A, dERI^A)`` used by the MP2 velocity-gauge atomic polar tensors
+        (:meth:`MPwfn.velocity_dipole_derivatives`). Cached per ``(axis, ncore, gauge)``.
+
+        This is the magnetic engine (:meth:`magnetic_ints`) with the magnetic-dipole operator
+        replaced by the linear-momentum operator ``p = -i nabla`` (stripped of the ``i`` carried
+        in ``H.p``).  Momentum is imaginary/anti-Hermitian just like the magnetic dipole, so the
+        orbital response is antisymmetric and shares the ``kind='magnetic'`` orbital Hessian and
+        the identical gauge handling of the redundant oo/vv blocks."""
+        key = (axis, ncore, gauge)
+        if key not in self._mom_int:
+            hmom = np.asarray(-1.0j * self.wfn.H.p[axis]).real
+            self._mom_int[key] = self._antisym_field_ints(hmom, ncore, gauge)
+        return self._mom_int[key]
+
+    def _antisym_field_ints(self, hmag, ncore: int, gauge: str):
+        """Shared engine for the imaginary (anti-Hermitian) one-electron perturbations -- the
+        magnetic dipole (:meth:`magnetic_ints`) and the linear momentum
+        (:meth:`momentum_ints`).  ``hmag`` is the stripped real antisymmetric operator matrix
+        in the MO basis; returns ``(U, dF, dERI)`` with the antisymmetric orbital response and
+        the gauge treatment of the redundant oo/vv blocks documented on :meth:`magnetic_ints`."""
         o, v, nmo = self.o, self.v, self.wfn.nmo
         no, nv = self.no, self.nv
         t = slice(0, nmo)
@@ -787,7 +813,6 @@ class CPHF(object):
         Gm = (np.einsum('ab,ij->aibj', np.eye(nv), np.eye(no))
               * (eps[v].reshape(nv, 1, 1, 1) - eps[o].reshape(1, no, 1, 1))
               + core.swapaxes(1, 2)[v, o, v, o]).reshape(nv * no, nv * no)
-        hmag = np.asarray(-1.0j * self.wfn.H.m[axis]).real
 
         def _safe_div(num, e):
             # canonical oo/vv rotation num_pq / (eps_q - eps_p), degeneracy-guarded: where two
@@ -820,8 +845,7 @@ class CPHF(object):
                     + c('em,aebm->ab', U[v, o], core[v, v, v, o]))
         dERI = (c('tr,pqts->pqrs', U[:, t], ERI[t, t, :, t]) + c('ts,pqrt->pqrs', U[:, t], ERI[t, t, t, :])
                 - c('tp,tqrs->pqrs', U[:, t], ERI[:, t, t, t]) - c('tq,ptrs->pqrs', U[:, t], ERI[t, :, t, t]))
-        self._mag_int[key] = (U, dF, dERI)
-        return self._mag_int[key]
+        return (U, dF, dERI)
 
     def _build_nuclear(self, atom: int):
         """One heavy pass over the derivative integrals for ``atom``; returns three
