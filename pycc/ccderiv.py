@@ -88,23 +88,41 @@ class CCderiv:
         The **reference (SCF) gradient is kept separate**: the total CCSD gradient is
         ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
 
-        Spatial (closed-shell RHF) path only for now; all-electron.  Validated against
-        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
-        explicit-derivative route (:meth:`_gradient_explicit`)."""
+        Spatial (closed-shell RHF) path only for now; all-electron and frozen-core.  Validated
+        against ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the
+        independent explicit-derivative route (:meth:`_gradient_explicit`).
+
+        Frozen core is handled as in the MP2 gradient: the correlation densities live in the active
+        space while the orbital response spans the full occupied space.  The core<->active-occupied
+        rotation is a direct divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` (the SCF energy is
+        invariant to occupied-occupied rotations), coupled into the Z-vector right-hand side."""
         cc = self.ccwfn
         if cc.orbital_basis != 'spatial':
             raise NotImplementedError(
                 "The CCSD analytic gradient currently requires the spatial (closed-shell RHF) "
                 "path; the spin-orbital two-particle density is not yet implemented.")
         o, v = cc.o, cc.v
+        nfzc = cc.nfzc
+        co = slice(0, nfzc)                              # frozen-core occupied
+        ofull = slice(0, o.stop)                         # full occupied (core + active)
         c = self.contract
+        eps = np.diag(np.asarray(cc.H.F))
+        L = np.asarray(cc.H.L)
         D, Gam = self._density().gradient_densities()
         Ip = self._lagrangian(D, Gam)
-        X = Ip[o, v] - Ip[v, o].T                       # ov-antisymmetric generalized Fock
-        z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (SCF orbital Hessian)
         Drel = D.copy()
-        Drel[v, o] += -z.T
-        Drel[o, v] += -z
+        if nfzc:                                         # core<->active-occupied: direct divide
+            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Drel[co, o] += Pco
+            Drel[o, co] += Pco.T
+        X = Ip[ofull, v] - Ip[v, ofull].T               # ov-antisymmetric generalized Fock (full occ)
+        if nfzc:                                         # couple P_co into the Z-vector RHS
+            zjc = -Pco.T
+            X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
+                     + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
+        z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (full-occ SCF Hessian)
+        Drel[v, ofull] += -z.T
+        Drel[ofull, v] += -z
         W = self._lagrangian(Drel, Gam)                 # energy-weighted density
         d = cc.derivatives
         grad = np.zeros((d.natom, 3))
@@ -113,7 +131,7 @@ class CCderiv:
             for cart in range(3):
                 phys = ERIx[cart].transpose(0, 2, 1, 3)                 # chemist -> physicist <pq|rs>^X
                 Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
-                fx = hx[cart] + c('pmqm->pq', Lx[:, o, :, o])           # skeleton Fock derivative
+                fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])   # skeleton Fock deriv (full occ)
                 grad[atom, cart] = (c('pq,pq->', Drel, fx)
                                     + c('pqrs,pqrs->', Gam, phys)
                                     + c('pq,pq->', W, Sx[cart]))

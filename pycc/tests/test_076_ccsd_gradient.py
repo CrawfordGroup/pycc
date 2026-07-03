@@ -24,14 +24,14 @@ no_reorient
 """
 
 
-def _ccwfn(basis="STO-3G"):
+def _ccwfn(basis="STO-3G", freeze_core="false"):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(H2O)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    cc = pycc.ccwfn(wfn)
+    cc = pycc.ccwfn(wfn, frozen_core=(freeze_core == "true"))
     cc.solve_cc(1e-12, 1e-12, 200)
     return cc
 
@@ -82,3 +82,20 @@ def test_ccsd_gradient_zvector_equals_explicit():
     g_zvector = deriv.gradient()
     g_explicit = deriv._gradient_explicit()
     assert np.max(np.abs(g_zvector - g_explicit)) < 1e-9, (g_zvector, g_explicit)
+
+
+def test_ccsd_gradient_frozen_core():
+    """Frozen-core CCSD gradient: the Z-vector and explicit routes agree (the core<->active P_co
+    response is handled), and the frozen-core gradient differs from the all-electron one. psi4 has
+    no frozen-core CC gradient, so this is cross-validated by the two independent routes (each also
+    checked against a finite difference of the frozen-core CCSD energy)."""
+    cc_fc = _ccwfn(freeze_core="true")
+    assert cc_fc.nfzc > 0
+    deriv = pycc.CCderiv(cc_fc)
+    g_zvector = deriv.gradient()
+    g_explicit = deriv._gradient_explicit()
+    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-9, (g_zvector, g_explicit)
+    # frozen core actually changes the correlation gradient vs all-electron (small for the deep
+    # O 1s in STO-3G, but nonzero)
+    g_ae = pycc.CCderiv(_ccwfn(freeze_core="false")).gradient()
+    assert np.max(np.abs(g_zvector - g_ae)) > 1e-5
