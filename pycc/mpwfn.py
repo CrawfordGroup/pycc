@@ -1169,12 +1169,17 @@ class MPwfn(Wavefunction):
     # ---- atomic axial tensors (VCD, magnetic/nuclear mixed derivative) ----
 
     def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
-        """MP2 **electronic** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
+        """MP2 **correlation** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, alpha, beta]`` -- the nuclear(``alpha``)/magnetic-field
         (``beta``) mixed derivative of the wave function, as an overlap of its perturbed
-        derivatives.  This is the full (reference + correlation) **electronic** contribution
-        ``<d_R Psi | d_H Psi>``; the trivial nuclear term (nuclear charge x position) is added
-        separately when forming the total AAT / VCD rotational strengths.  The electron-density formulation follows the diagonal Born-Oppenheimer
+        derivatives.  This is the **correlation** contribution only; the SCF reference AAT
+        (:meth:`HFwfn.atomic_axial_tensors`) and the nuclear (charge x position) term are kept
+        separate and summed by the :func:`pycc.aat` facade.  The correlation is computed directly
+        from the correlation 1-PDM/amplitude derivatives (the reference ``2 delta_ij`` density
+        block never enters), so the pieces are separated in fact, not by subtraction.  Dropping
+        the reference density leaves the result orbital-gauge invariant on its own: the reference
+        block it removes is itself gauge invariant (the antisymmetric magnetic oo/vv response
+        contracts to zero against the symmetric nuclear response).  The electron-density formulation follows the diagonal Born-Oppenheimer
         correction of Gauss, Tajti, Kallay, Stanton & Szalay, J. Chem. Phys. 125, 144111 (2006)
         [Eqs. (16), (18), (19)], generalized to the mixed nuclear/magnetic derivative (Krishnan,
         Shumberger & Crawford, in prep.)::
@@ -1224,11 +1229,12 @@ class MPwfn(Wavefunction):
         tau = 2.0 * t2 - t2.swapaxes(2, 3)
         N = self._mp2_normalization()
         c0, c2 = N, N * t2
-        # unrelaxed, normalized 1-PDM  gamma = 2 delta_ij + correlation
+        # correlation part of the unrelaxed, normalized 1-PDM (the 2 delta_ij reference block is
+        # excluded: it contributes the SCF reference AAT via Ipp, kept separate -- see the method
+        # docstring).  This makes the return the correlation contribution only.
         gamma = np.zeros((nmo, nmo))
         gamma[o, o] = -2.0 * N**2 * c('ikab,jkab->ij', tau, t2)
         gamma[v, v] = +2.0 * N**2 * c('ijac,ijbc->ab', tau, t2)
-        gamma[np.arange(no), np.arange(no)] += 2.0
 
         def dt2_from(dF, dERI):
             # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
@@ -1295,10 +1301,9 @@ class MPwfn(Wavefunction):
         N = self._so_mp2_normalization()
         c0, c2 = N, N * t2
         Doo, Dvv = self._so_mp2_corr_opdm()
-        gamma = np.zeros((nmo, nmo))                    # unrelaxed 1-PDM: delta_ij + correlation
-        gamma[o, o] = N**2 * np.asarray(Doo)
-        gamma[v, v] = N**2 * np.asarray(Dvv)
-        gamma[np.arange(no), np.arange(no)] += 1.0
+        gamma = np.zeros((nmo, nmo))                    # correlation part of the 1-PDM (no delta_ij
+        gamma[o, o] = N**2 * np.asarray(Doo)            # reference: it rides in the SCF AAT, kept
+        gamma[v, v] = N**2 * np.asarray(Dvv)            # separate -- return is correlation only)
 
         def dt2_from(dF, dERI):
             # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)

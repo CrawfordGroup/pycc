@@ -17,8 +17,9 @@ from .ccresponse import ccresponse
 from .ccresponse import pertbar
 from pycc.rt.rtcc import rtcc
 from .cceom import cceom
+from .properties import PropertyComponents, aat
 
-__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom']
+__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'PropertyComponents', 'aat']
 
 # Handle versioneer
 from ._version import get_versions
