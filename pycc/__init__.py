@@ -17,9 +17,13 @@ from .ccresponse import ccresponse
 from .ccresponse import pertbar
 from pycc.rt.rtcc import rtcc
 from .cceom import cceom
-from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian, polarizability
+from .ccderiv import CCderiv
+from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian, polarizability, register_deriv
 
-__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability']
+# Route the property facade's correlation-derivative calls for a CCwfn to its downstream driver.
+register_deriv(CCwfn, CCderiv)
+
+__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'CCderiv', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability']
 
 # Handle versioneer
 from ._version import get_versions

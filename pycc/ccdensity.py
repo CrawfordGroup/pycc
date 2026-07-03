@@ -222,6 +222,40 @@ class ccdensity(object):
         else:
             return opdm
 
+    def gradient_densities(self):
+        """Full-MO one- and two-particle correlation densities for the analytic gradient:
+        ``D`` (``nmo x nmo``) and ``Gamma`` (``nmo^4``, physicist ``<pq|rs>`` ordering).
+
+        The convention is the one the density-based gradient machinery assumes -- **no prefactor**
+        on the two-particle term -- so the two-electron correlation energy is
+        ``contract(Gamma, ERI)`` and the total correlation energy is
+        ``contract(D, F) + contract(Gamma, ERI)`` (cf. :meth:`compute_energy`).
+
+        ``D`` places the ``Doo``/``Dov``/``Dvo``/``Dvv`` blocks; ``Gamma`` places the six unique
+        blocks and their bra-ket (``rspq``) conjugate images with the per-block factors that make
+        the full contraction reproduce the block-weighted energy of :meth:`compute_energy`
+        (self-conjugate ``oooo``/``vvvv``/``ovov`` vs the conjugate pairs ``oovv``/``ooov``/``vvvo``).
+        The densities are placed on the active ``o``/``v`` slices (frozen-core rows/columns stay
+        zero).  Spatial (closed-shell) only, matching the two-particle density."""
+        if self.onlyone:
+            raise RuntimeError("gradient_densities needs the two-particle density "
+                               "(construct ccdensity with onlyone=False).")
+        ccwfn = self.ccwfn
+        o, v, nmo = ccwfn.o, ccwfn.v, ccwfn.nmo
+        D = zeros((nmo, nmo), like=self.Doo)
+        D[o, o] = self.Doo; D[v, v] = self.Dvv; D[o, v] = self.Dov; D[v, o] = self.Dvo
+        G = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
+        G[o, o, o, o] = 0.5 * self.Doooo
+        G[v, v, v, v] = 0.5 * self.Dvvvv
+        G[o, v, o, v] = self.Dovov
+        G[o, o, v, v] = 0.25 * self.Doovv
+        G[v, v, o, o] = 0.25 * self.Doovv.transpose(2, 3, 0, 1)
+        G[o, o, o, v] = 0.5 * self.Dooov
+        G[o, v, o, o] = 0.5 * self.Dooov.transpose(2, 3, 0, 1)
+        G[v, v, v, o] = 0.5 * self.Dvvvo
+        G[v, o, v, v] = 0.5 * self.Dvvvo.transpose(2, 3, 0, 1)
+        return D, G
+
     def dipole(self, t1, t2, l1, l2):
         """Correlated (CC) contribution to the electric dipole moment.
 
