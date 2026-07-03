@@ -873,10 +873,9 @@ class MPwfn(Wavefunction):
         skeletons). Both are of interest for the IR/VCD path (which stores the field and nuclear
         responses anyway).
 
-        Electronic only; the nuclear ``Z_A`` term is in the reference
-        (:meth:`HFwfn.dipole_derivatives`), so the total is their sum
-        (:meth:`total_dipole_derivatives`). Basis-aware. Validated against a finite nuclear
-        displacement of the analytic dipole (``test_068``)."""
+        Correlation only; the nuclear ``Z_A`` and SCF reference terms are separate, and the total
+        (nuclear + reference + correlation) is assembled by :func:`pycc.apt`. Basis-aware.
+        Validated against a finite nuclear displacement of the analytic dipole (``test_068``)."""
         if route in ('2n+1-nuclear', '2n+1-field'):
             return self._dipole_derivatives_2n1(route)
         if route != 'explicit':
@@ -1034,9 +1033,9 @@ class MPwfn(Wavefunction):
         ``f^{XY}``/``<pq||rs>^{XY}``/``S^{XY}`` (all nonzero here). Reproduces the explicit route
         to ~machine precision.
 
-        The reference part is separate (:meth:`HFwfn.hessian`); total is their sum
-        (:meth:`total_hessian`). Basis-aware. Validated against a finite difference of the
-        analytic gradient (``test_069``)."""
+        The reference and nuclear parts are separate; the total (nuclear + reference +
+        correlation) is assembled by :func:`pycc.hessian`. Basis-aware. Validated against a finite
+        difference of the analytic gradient (``test_069``)."""
         if route == '2n+1':
             return self._hessian_2n1()
         if route != 'explicit':
@@ -1169,12 +1168,17 @@ class MPwfn(Wavefunction):
     # ---- atomic axial tensors (VCD, magnetic/nuclear mixed derivative) ----
 
     def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
-        """MP2 **electronic** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
+        """MP2 **correlation** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, alpha, beta]`` -- the nuclear(``alpha``)/magnetic-field
         (``beta``) mixed derivative of the wave function, as an overlap of its perturbed
-        derivatives.  This is the full (reference + correlation) **electronic** contribution
-        ``<d_R Psi | d_H Psi>``; the trivial nuclear term (nuclear charge x position) is added
-        separately when forming the total AAT / VCD rotational strengths.  The electron-density formulation follows the diagonal Born-Oppenheimer
+        derivatives.  This is the **correlation** contribution only; the SCF reference AAT
+        (:meth:`HFwfn.atomic_axial_tensors`) and the nuclear (charge x position) term are kept
+        separate and summed by the :func:`pycc.aat` facade.  The correlation is computed directly
+        from the correlation 1-PDM/amplitude derivatives (the reference ``2 delta_ij`` density
+        block never enters), so the pieces are separated in fact, not by subtraction.  Dropping
+        the reference density leaves the result orbital-gauge invariant on its own: the reference
+        block it removes is itself gauge invariant (the antisymmetric magnetic oo/vv response
+        contracts to zero against the symmetric nuclear response).  The electron-density formulation follows the diagonal Born-Oppenheimer
         correction of Gauss, Tajti, Kallay, Stanton & Szalay, J. Chem. Phys. 125, 144111 (2006)
         [Eqs. (16), (18), (19)], generalized to the mixed nuclear/magnetic derivative (Krishnan,
         Shumberger & Crawford, in prep.)::
@@ -1224,11 +1228,12 @@ class MPwfn(Wavefunction):
         tau = 2.0 * t2 - t2.swapaxes(2, 3)
         N = self._mp2_normalization()
         c0, c2 = N, N * t2
-        # unrelaxed, normalized 1-PDM  gamma = 2 delta_ij + correlation
+        # correlation part of the unrelaxed, normalized 1-PDM (the 2 delta_ij reference block is
+        # excluded: it contributes the SCF reference AAT via Ipp, kept separate -- see the method
+        # docstring).  This makes the return the correlation contribution only.
         gamma = np.zeros((nmo, nmo))
         gamma[o, o] = -2.0 * N**2 * c('ikab,jkab->ij', tau, t2)
         gamma[v, v] = +2.0 * N**2 * c('ijac,ijbc->ab', tau, t2)
-        gamma[np.arange(no), np.arange(no)] += 2.0
 
         def dt2_from(dF, dERI):
             # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
@@ -1295,10 +1300,9 @@ class MPwfn(Wavefunction):
         N = self._so_mp2_normalization()
         c0, c2 = N, N * t2
         Doo, Dvv = self._so_mp2_corr_opdm()
-        gamma = np.zeros((nmo, nmo))                    # unrelaxed 1-PDM: delta_ij + correlation
-        gamma[o, o] = N**2 * np.asarray(Doo)
-        gamma[v, v] = N**2 * np.asarray(Dvv)
-        gamma[np.arange(no), np.arange(no)] += 1.0
+        gamma = np.zeros((nmo, nmo))                    # correlation part of the 1-PDM (no delta_ij
+        gamma[o, o] = N**2 * np.asarray(Doo)            # reference: it rides in the SCF AAT, kept
+        gamma[v, v] = N**2 * np.asarray(Dvv)            # separate -- return is correlation only)
 
         def dt2_from(dF, dERI):
             # magnetic (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
@@ -1351,20 +1355,20 @@ class MPwfn(Wavefunction):
     def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         """MP2 velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
-        momentum-form APT.  This is the atomic-axial-tensor machinery
-        (:meth:`atomic_axial_tensors`) with the magnetic-dipole operator replaced by the linear
-        momentum ``p = -i nabla`` (:meth:`CPHF.momentum_ints`) and the AAT's Levi-Civita nuclear
-        term replaced by the length-gauge ``Z_A delta_{alpha,beta}``::
+        momentum-form APT.  This is the **correlation** contribution only; the SCF reference VG
+        APT (:meth:`HFwfn.velocity_dipole_derivatives`) and the nuclear ``Z_A delta_{alpha,beta}``
+        term are kept separate and summed by the :func:`pycc.apt` (``gauge='velocity'``) facade.
+        Built on the atomic-axial-tensor machinery (:meth:`atomic_axial_tensors`) with the
+        magnetic-dipole operator replaced by the linear momentum ``p = -i nabla``
+        (:meth:`CPHF.momentum_ints`)::
 
-            [P^A_{beta,alpha}]^VG = 2 <d_R Psi | d_A Psi>  +  Z_A delta_{alpha,beta}
+            correlation = 2 <d_R Psi | d_A Psi>_correlation
 
-        the full (reference + correlation) electronic overlap plus the nuclear charge term.  Like
-        the AAT, the folded density overlap is orbital-gauge invariant (``gauge`` selects the
-        redundant momentum oo/vv response, default ``'non-canonical'``); frozen-core aware; both
-        spin paths (spin-orbital: :meth:`_so_velocity_dipole_derivatives`).  The ``+2`` prefactor
-        is the closed-shell value; it reduces to the HF VG APT
-        (:meth:`HFwfn.velocity_dipole_derivatives`, Amos, Jalkanen & Stephens, JPC 92, 5571 (1988))
-        as the correlation vanishes.
+        As for the AAT, the correlation is computed directly (the reference density block never
+        enters) and is orbital-gauge invariant on its own (``gauge`` selects the redundant momentum
+        oo/vv response, default ``'non-canonical'``); frozen-core aware; both spin paths
+        (spin-orbital: :meth:`_so_velocity_dipole_derivatives`).  The ``+2`` prefactor is the
+        closed-shell value.
 
         Unlike the length-gauge APT (:meth:`dipole_derivatives`) the VG APT differs from it in a
         finite basis, converging to it toward the basis-set limit; both are origin-independent."""
@@ -1378,16 +1382,14 @@ class MPwfn(Wavefunction):
         cphf = self._full_occ_cphf()
         d = self.derivatives
         natom = d.natom
-        mol = self.ref.molecule()
         t2 = np.asarray(self.t2)
         Dijab = np.asarray(self.Dijab)
         tau = 2.0 * t2 - t2.swapaxes(2, 3)
         N = self._mp2_normalization()
         c0, c2 = N, N * t2
-        gamma = np.zeros((nmo, nmo))
+        gamma = np.zeros((nmo, nmo))                    # correlation 1-PDM only (no 2 delta ref)
         gamma[o, o] = -2.0 * N**2 * c('ikab,jkab->ij', tau, t2)
         gamma[v, v] = +2.0 * N**2 * c('ijac,ijbc->ab', tau, t2)
-        gamma[np.arange(no), np.arange(no)] += 2.0
 
         def dt2_from(dF, dERI):
             # momentum (imaginary) perturbed T2: dERI enters via the vvoo block (antisymmetric)
@@ -1427,18 +1429,16 @@ class MPwfn(Wavefunction):
                     Iphic = c('ij,ji->', RA[o, o], UReff[o, o]) + c('ab,ab->', RA[v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
                     P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
-                    if alpha == beta:
-                        P[A, beta, alpha] += mol.Z(A)
         self.vgapt = P
         return P
 
     def _so_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
-        """Spin-orbital MP2 velocity-gauge APTs (``(natom, 3, 3)``) -- the spin-orbital form of
-        :meth:`velocity_dipole_derivatives` (see there for the theory), sharing the spin-orbital
-        AAT densities (:meth:`_so_atomic_axial_tensors`) with the linear-momentum response
-        (:meth:`CPHF.momentum_ints`) and the ``Z_A delta`` nuclear term.  The ``+2`` prefactor is
-        the same as the spin-adapted path (the spin-orbital overlap equals the spin-adapted overlap
-        by construction); verified equal to the spin-adapted path to machine precision."""
+        """Spin-orbital MP2 velocity-gauge APTs (``(natom, 3, 3)``) -- the correlation-only
+        spin-orbital form of :meth:`velocity_dipole_derivatives` (see there for the theory),
+        sharing the spin-orbital AAT densities (:meth:`_so_atomic_axial_tensors`) with the
+        linear-momentum response (:meth:`CPHF.momentum_ints`).  The ``+2`` prefactor is the same as
+        the spin-adapted path (the spin-orbital overlap equals the spin-adapted overlap by
+        construction); verified equal to the spin-adapted path to machine precision."""
         from .cphf import Perturbation
         o, v, nmo = self.o, self.v, self.nmo
         no = o.stop
@@ -1447,16 +1447,14 @@ class MPwfn(Wavefunction):
         cphf = self._full_occ_cphf()
         d = self.derivatives
         natom = d.natom
-        mol = self.ref.molecule()
         t2 = np.asarray(self.t2)
         Dijab = np.asarray(self.Dijab)
         N = self._so_mp2_normalization()
         c0, c2 = N, N * t2
         Doo, Dvv = self._so_mp2_corr_opdm()
-        gamma = np.zeros((nmo, nmo))
+        gamma = np.zeros((nmo, nmo))                    # correlation 1-PDM only (no delta ref)
         gamma[o, o] = N**2 * np.asarray(Doo)
         gamma[v, v] = N**2 * np.asarray(Dvv)
-        gamma[np.arange(no), np.arange(no)] += 1.0
 
         def dt2_from(dF, dERI):
             return ((dERI.swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
@@ -1499,42 +1497,19 @@ class MPwfn(Wavefunction):
                     Iphic = c('ij,ij->', gA[alpha][o, o], UReff[o, o]) + c('ab,ab->', gA[alpha][v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
                     P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
-                    if alpha == beta:
-                        P[A, beta, alpha] += mol.Z(A)
         self.vgapt = P
         return P
 
-    # ---- total (reference + correlation) properties ----
-    # The correlation methods above are the correlation contribution only; these add the
-    # all-electron SCF reference (HFwfn, frozen_core=False) for the full molecular property.
+    # ---- reference for the total (reference + correlation) properties ----
+    # The property methods above are the correlation contribution only.  The full molecular
+    # property (nuclear + SCF reference + correlation) is assembled by the pycc property facade
+    # (pycc.dipole/gradient/polarizability/hessian/apt/aat), which pairs each correlation method
+    # with the SCF reference below and the separate nuclear term.
 
     def _reference_hf(self):
-        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the
-        reference dipole and gradient for the total MP2 properties."""
+        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the reference
+        (electronic) contribution to the total MP2 properties via the pycc property facade."""
         if getattr(self, '_ref_hf', None) is None:
             from .hfwfn import HFwfn
             self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
         return self._ref_hf
-
-    def total_dipole(self) -> np.ndarray:
-        """Total MP2 electric-dipole moment (a.u.), shape ``(3,)``: the SCF reference dipole
-        (:meth:`HFwfn.dipole`) plus the MP2 correlation dipole (:meth:`relaxed_dipole`)."""
-        return self._reference_hf().dipole() + self.relaxed_dipole()
-
-    def total_gradient(self) -> np.ndarray:
-        """Total MP2 analytic nuclear gradient (a.u.), shape ``(natom, 3)``: the SCF reference
-        gradient (:meth:`HFwfn.gradient`) plus the MP2 correlation gradient (:meth:`gradient`)."""
-        return self._reference_hf().gradient() + self.gradient()
-
-    def total_dipole_derivatives(self) -> np.ndarray:
-        """Total MP2 atomic polar tensors (nuclear dipole derivatives, a.u.), shape
-        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]``: the SCF reference APTs
-        (:meth:`HFwfn.dipole_derivatives`, which carry the ``Z_A`` nuclear term) plus the MP2
-        correlation APTs (:meth:`dipole_derivatives`)."""
-        return self._reference_hf().dipole_derivatives() + self.dipole_derivatives()
-
-    def total_hessian(self) -> np.ndarray:
-        """Total MP2 molecular (nuclear) Hessian (a.u.), shape ``(3*natom, 3*natom)``: the SCF
-        reference Hessian (:meth:`HFwfn.hessian`, which carries the nuclear-repulsion term) plus
-        the MP2 correlation Hessian (:meth:`hessian`)."""
-        return self._reference_hf().hessian() + self.hessian()

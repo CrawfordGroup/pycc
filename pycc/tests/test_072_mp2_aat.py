@@ -49,32 +49,37 @@ def _mpwfn(orbital_basis='spatial', freeze_core='false'):
 
 
 def test_mp2_aat_all_electron():
-    """All-electron spatial MP2 AAT reproduces the apyib reference for (P)-H2O2/STO-3G."""
-    P = np.asarray(_mpwfn().atomic_axial_tensors()).reshape(-1, 3)
+    """All-electron spatial MP2 electronic AAT (SCF reference + correlation, via the pycc.aat
+    facade) reproduces the apyib reference for (P)-H2O2/STO-3G."""
+    P = np.asarray(pycc.aat(_mpwfn()).electronic).reshape(-1, 3)
     for (row, col), ref in AAT_REF['false'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
 
 def test_mp2_aat_frozen_core():
-    """Frozen-core spatial MP2 AAT reproduces the independent apyib frozen-core reference."""
-    P = np.asarray(_mpwfn(freeze_core='true').atomic_axial_tensors()).reshape(-1, 3)
+    """Frozen-core spatial MP2 electronic AAT reproduces the independent apyib frozen-core
+    reference (all-electron SCF reference + frozen-core correlation)."""
+    P = np.asarray(pycc.aat(_mpwfn(freeze_core='true')).electronic).reshape(-1, 3)
     for (row, col), ref in AAT_REF['true'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
 
 def test_mp2_aat_so_equals_spatial():
-    """Spin-orbital MP2 AAT == spin-adapted (the keystone), all-electron and frozen-core."""
+    """Spin-orbital MP2 correlation AAT == spin-adapted (the keystone), all-electron and
+    frozen-core; the electronic total also matches the apyib reference."""
     for fc in ('false', 'true'):
         P = np.asarray(_mpwfn(freeze_core=fc).atomic_axial_tensors()).reshape(-1, 3)
         P_so = np.asarray(_mpwfn('spinorbital', fc).atomic_axial_tensors()).reshape(-1, 3)
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
+        E_so = np.asarray(pycc.aat(_mpwfn('spinorbital', fc)).electronic).reshape(-1, 3)
         for (row, col), ref in AAT_REF[fc].items():
-            assert abs(P_so[row, col] - ref) < 1e-6, (fc, row, col, P_so[row, col], ref)
+            assert abs(E_so[row, col] - ref) < 1e-6, (fc, row, col, E_so[row, col], ref)
 
 
 def test_mp2_aat_gauge_invariance():
-    """The AAT total is invariant to the orbital gauge of the redundant magnetic oo/vv response
-    (non-canonical default vs canonical), all-electron and frozen-core, both spin paths."""
+    """The MP2 correlation AAT is invariant to the orbital gauge of the redundant magnetic oo/vv
+    response (non-canonical default vs canonical), all-electron and frozen-core, both spin paths.
+    (The dropped SCF-reference block is itself gauge invariant, so the correlation is too.)"""
     for fc in ('false', 'true'):
         for ob in ('spatial', 'spinorbital'):
             mp = _mpwfn(ob, fc)

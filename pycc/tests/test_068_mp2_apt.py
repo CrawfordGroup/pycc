@@ -129,7 +129,7 @@ def test_mp2_apt_translational_sum_rule_631g():
     total APT vanishes (the correlation APT sums to zero on its own -- Tr(gamma_corr) = 0)."""
     mp0 = _mpwfn(BASE, '6-31G', 'spatial')
     P_corr = mp0.dipole_derivatives()
-    P_tot = mp0.total_dipole_derivatives()
+    P_tot = np.asarray(pycc.apt(mp0).total)
     assert np.max(np.abs(np.sum(P_corr, axis=0))) < 1e-10
     assert np.max(np.abs(np.sum(P_tot, axis=0))) < 1e-10
 
@@ -162,7 +162,7 @@ def test_fc_mp2_apt_translational_sum_rule_631g():
     vanishes for neutral water."""
     mp0 = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')
     assert np.max(np.abs(np.sum(mp0.dipole_derivatives(), axis=0))) < 1e-10
-    assert np.max(np.abs(np.sum(mp0.total_dipole_derivatives(), axis=0))) < 1e-10
+    assert np.max(np.abs(np.sum(np.asarray(pycc.apt(mp0).total), axis=0))) < 1e-10
 
 
 # ---- 2n+1 routes (Phase C): both reproduce the explicit APT to ~machine precision ----
