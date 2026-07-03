@@ -65,9 +65,14 @@ class cceom(object):
                 hbar_vir.reshape(-1,1) - hbar_vir)
         self.D = np.hstack((Dia.flatten(), Dijab.flatten()))
 
-        # Get the initial guess for l1 and l2
-        self.l1 = 2.0 * self.ccwfn.t1
-        self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
+        # Get the initial guess for l1 and l2.  The spin-orbital seed is l1 = t1, l2 = t2
+        # (the 2*t1 / 2(2*t2 - t2.T) spin-adaptation factors apply only to the spatial path).
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            self.l1 = self.ccwfn.t1.copy()
+            self.l2 = self.ccwfn.t2.copy()
+        else:
+            self.l1 = 2.0 * self.ccwfn.t1
+            self.l2 = 2.0 * (2.0 * self.ccwfn.t2 - self.ccwfn.t2.swapaxes(2, 3))
 
     def solve_eom(self, N: int = 1, e_conv: float = 1e-5, r_conv: float = 1e-5, maxiter: int = 100, guess: str = 'HBAR_SS', eom_type: str = 'RIGHT'):
         """
@@ -220,11 +225,16 @@ class cceom(object):
             s2_len = no * no * nv * nv
             norm_eigvec = []
 
+            so = (self.ccwfn.orbital_basis == 'spinorbital')
             for itm in range(len(R_full)):
                 r1 = R_full[itm, :s1_len]
                 r2 = R_full[itm, s1_len:]
                 r2 = np.reshape(r2, (no,no,nv,nv))
-                norm = 1/np.sqrt(2*np.sum(r1**2) + contract('ijab,ijab->', (2*r2-r2.swapaxes(2,3)), r2))
+                if so:
+                    # spin-orbital metric <R|R> = r1.r1 + 1/4 r2.r2 (antisymmetrized amplitudes)
+                    norm = 1/np.sqrt(np.sum(r1**2) + 0.25*contract('ijab,ijab->', r2, r2))
+                else:
+                    norm = 1/np.sqrt(2*np.sum(r1**2) + contract('ijab,ijab->', (2*r2-r2.swapaxes(2,3)), r2))
                 norm_eigvec.append(R_full[itm]*norm)
 
             return E, norm_eigvec
@@ -265,14 +275,26 @@ class cceom(object):
         # Use CIS eigenvectors
         elif method == 'CIS':
             F = hbar.ccwfn.H.F
-            L = hbar.ccwfn.H.L
-            H = L[v,o,o,v].swapaxes(0,1).swapaxes(0,2).copy()
+            if hbar.ccwfn.orbital_basis == 'spinorbital':
+                # spin-orbital CIS matrix H_{ia,jb} = f_ab d_ij - f_ij d_ab + <aj||ib>,
+                # using the antisymmetrized <pq||rs> (no L, no factor of 2 -- this yields all
+                # spin states, singlets and triplets, not just the spin-adapted singlets)
+                ERI = hbar.ccwfn.H.ERI
+                H = ERI[v,o,o,v].swapaxes(0,1).swapaxes(0,2).copy()
+            else:
+                L = hbar.ccwfn.H.L
+                H = L[v,o,o,v].swapaxes(0,1).swapaxes(0,2).copy()
             H += contract('ab,ij->iajb', F[v,v], np.eye(no))
             H -= contract('ij,ab->iajb', F[o,o], np.eye(nv))
             eps, c = np.linalg.eigh(np.reshape(H, (no*nv,no*nv)))
         # Use eigenvectors of singles-singles block of hbar (mimics Psi4)
         elif method == 'HBAR_SS':
-            H = (2.0 * hbar.Hovvo.swapaxes(1,2).swapaxes(2,3) - hbar.Hovov.swapaxes(1,3)).copy()
+            if hbar.ccwfn.orbital_basis == 'spinorbital':
+                # spin-orbital singles-singles block: single antisymmetrized Hovvo (no Hovov,
+                # no factor of 2)
+                H = hbar.Hovvo.swapaxes(1,2).swapaxes(2,3).copy()
+            else:
+                H = (2.0 * hbar.Hovvo.swapaxes(1,2).swapaxes(2,3) - hbar.Hovov.swapaxes(1,3)).copy()
             H += contract('ab,ij->iajb', hbar.Hvv, np.eye(no))
             H -= contract('ij,ab->iajb', hbar.Hoo, np.eye(nv))
             eps, c = np.linalg.eig(np.reshape(H, (no*nv,no*nv)))
@@ -300,6 +322,8 @@ class cceom(object):
         s1 : NumPy array
             the singles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_r1(hbar, C1, C2)
         contract = hbar.contract
 
         s1 = contract('ie,ae->ia', C1, hbar.Hvv)
@@ -313,6 +337,18 @@ class cceom(object):
         s1 -= contract('mnie,mnae->ia', hbar.Hooov, C2) * 2.0
         s1 += contract('nmie,mnae->ia', hbar.Hooov, C2)
 
+        return s1.copy()
+
+    def _so_s_r1(self, hbar, C1, C2):
+        """Spin-orbital singles sigma (right), sigma = HBAR * C.  Built from the
+        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov; <pq||rs> for the ERI)."""
+        contract = hbar.contract
+        s1 = contract('ie,ae->ia', C1, hbar.Hvv)
+        s1 -= contract('mi,ma->ia', hbar.Hoo, C1)
+        s1 += contract('maei,me->ia', hbar.Hovvo, C1)
+        s1 += contract('imae,me->ia', C2, hbar.Hov)
+        s1 += 0.5 * contract('imef,amef->ia', C2, hbar.Hvovv)
+        s1 -= 0.5 * contract('mnie,mnae->ia', hbar.Hooov, C2)
         return s1.copy()
 
 
@@ -331,6 +367,8 @@ class cceom(object):
         s2 : NumPy array
             the doubles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_r2(hbar, C1, C2)
         contract = hbar.contract
         L = hbar.ccwfn.H.L
         t2 = hbar.ccwfn.t2
@@ -360,14 +398,56 @@ class cceom(object):
 
         return (s2 + s2.swapaxes(0,1).swapaxes(2,3)).copy()
 
+    def _so_s_r2(self, hbar, C1, C2):
+        """Spin-orbital doubles sigma (right), sigma = HBAR * C.  Built already antisymmetric
+        under i<->j and a<->b (explicit permutations), from the antisymmetrized spin-orbital
+        HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI."""
+        contract = hbar.contract
+        ERI = hbar.ccwfn.H.ERI
+        t2 = hbar.ccwfn.t2
+        o = hbar.o
+        v = hbar.v
+
+        # C1-into-doubles coupling intermediates (built from C1 and the C2 x <mn||ef> pieces)
+        Zvv = contract('amef,mf->ae', hbar.Hvovv, C1)
+        Zvv -= 0.5 * contract('mnaf,mnef->ae', C2, ERI[o,o,v,v])
+        Zoo = -contract('mnie,ne->mi', hbar.Hooov, C1)
+        Zoo -= 0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], C2)
+
+        # terms already antisymmetric in the surviving pair get only the other permutation
+        tmp = contract('ie,abej->ijab', C1, hbar.Hvvvo)          # antisym ab (Hvvvo)
+        s2 = tmp - tmp.swapaxes(0,1)
+        tmp = -contract('mbij,ma->ijab', hbar.Hovoo, C1)         # antisym ij (Hovoo)
+        s2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('ijeb,ae->ijab', t2, Zvv)                 # antisym ij (t2)
+        s2 += tmp - tmp.swapaxes(2,3)
+        tmp = contract('mi,mjab->ijab', Zoo, t2)                 # antisym ab (t2)
+        s2 += tmp - tmp.swapaxes(0,1)
+        tmp = contract('ijeb,ae->ijab', C2, hbar.Hvv)            # antisym ij (C2)
+        s2 += tmp - tmp.swapaxes(2,3)
+        tmp = -contract('mi,mjab->ijab', hbar.Hoo, C2)           # antisym ab (C2)
+        s2 += tmp - tmp.swapaxes(0,1)
+        # fully antisymmetric ladder terms
+        s2 += 0.5 * contract('mnij,mnab->ijab', hbar.Hoooo, C2)
+        s2 += 0.5 * contract('ijef,abef->ijab', C2, hbar.Hvvvv)
+        # ring term: single antisymmetrized Hovvo, full P(ij)P(ab)
+        tmp = contract('imae,mbej->ijab', C2, hbar.Hovvo)
+        s2 += (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3)
+               + tmp.swapaxes(0,1).swapaxes(2,3))
+        return s2.copy()
+
 
     def build_Goo(self, t2, l2):
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return 0.5 * contract('mnef,inef->mi', t2, l2)
         return contract('mjab,ijab->mi', t2, l2)
 
 
     def build_Gvv(self, t2, l2):
         contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return -0.5 * contract('mnef,mnaf->ae', t2, l2)
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
