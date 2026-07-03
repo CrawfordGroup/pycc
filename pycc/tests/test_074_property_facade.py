@@ -161,3 +161,26 @@ def test_apt_bad_gauge():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_facade_route_option():
+    """route (MP2 correlation algorithm) is exposed and gives the same total; ignored for HF."""
+    hf, mp = _wfns()
+    assert np.max(np.abs(pycc.polarizability(mp, route='explicit').total
+                         - pycc.polarizability(mp, route='2n+1').total)) < 1e-12
+    assert np.max(np.abs(pycc.hessian(mp, route='explicit').total
+                         - pycc.hessian(mp, route='2n+1').total)) < 1e-12
+    assert np.max(np.abs(pycc.apt(mp, 'length', route='explicit').total
+                         - pycc.apt(mp, 'length', route='2n+1-nuclear').total)) < 1e-10
+    assert np.all(pycc.hessian(hf, route='2n+1').correlation == 0.0)
+
+
+def test_facade_orbital_gauge_option():
+    """orbital_gauge (expert-only) is exposed on aat / apt(velocity); the tensor is invariant to
+    it (the knob reaches the correlation method, which is gauge invariant), ignored for HF."""
+    hf, mp = _wfns()
+    assert np.max(np.abs(pycc.aat(mp, orbital_gauge='non-canonical').total
+                         - pycc.aat(mp, orbital_gauge='canonical').total)) < 1e-9
+    assert np.max(np.abs(pycc.apt(mp, 'velocity', orbital_gauge='non-canonical').total
+                         - pycc.apt(mp, 'velocity', orbital_gauge='canonical').total)) < 1e-9
+    assert np.all(pycc.apt(hf, 'velocity', orbital_gauge='canonical').correlation == 0.0)
