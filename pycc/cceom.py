@@ -512,6 +512,8 @@ class cceom(object):
         s1 : NumPy array
             the singles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_l1(hbar, C1, C2, Goo, Gvv)
         contract = hbar.contract
 
         s1 = contract('ie,ea->ia', C1, hbar.Hvv)
@@ -541,6 +543,8 @@ class cceom(object):
         s2 : NumPy array
             the doubles components of sigma
         """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_s_l2(hbar, C1, C2, Goo, Gvv)
         contract = hbar.contract
         L = hbar.ccwfn.H.L
         t2 = hbar.ccwfn.t2
@@ -564,4 +568,41 @@ class cceom(object):
         s2 = s2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
         s2 = s2 + s2.swapaxes(0,1).swapaxes(2,3)
 
+        return s2.copy()
+
+    def _so_s_l1(self, hbar, C1, C2, Goo, Gvv):
+        """Spin-orbital singles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-singles
+        structure (cclambda._so_r_L1) without the inhomogeneous Hov term (EOM is homogeneous),
+        with l1/l2 -> C1/C2; single antisymmetrized Hovvo, no Hovov."""
+        contract = hbar.contract
+        s1 = contract('ie,ea->ia', C1, hbar.Hvv)
+        s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)
+        s1 = s1 + 0.5 * contract('imef,efam->ia', C2, hbar.Hvvvo)
+        s1 = s1 - 0.5 * contract('mnae,iemn->ia', C2, hbar.Hovoo)
+        s1 = s1 + contract('me,ieam->ia', C1, hbar.Hovvo)
+        s1 = s1 - contract('ef,eifa->ia', Gvv, hbar.Hvovv)
+        s1 = s1 - contract('mn,mina->ia', Goo, hbar.Hooov)
+        return s1.copy()
+
+    def _so_s_l2(self, hbar, C1, C2, Goo, Gvv):
+        """Spin-orbital doubles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-doubles
+        structure (cclambda._so_r_L2) without the inhomogeneous <ij||ab> term, with l1/l2 -> C1/C2;
+        built already antisymmetric under i<->j and a<->b (no trailing symmetrization), from the
+        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI."""
+        contract = hbar.contract
+        ERI = hbar.ccwfn.H.ERI
+        o = hbar.o
+        v = hbar.v
+        s2 = (contract('ia,jb->ijab', C1, hbar.Hov) - contract('ja,ib->ijab', C1, hbar.Hov))
+        s2 = s2 + (contract('jb,ia->ijab', C1, hbar.Hov) - contract('ib,ja->ijab', C1, hbar.Hov))
+        s2 = s2 + (contract('ijae,eb->ijab', C2, hbar.Hvv) - contract('ijbe,ea->ijab', C2, hbar.Hvv))
+        s2 = s2 - (contract('imab,jm->ijab', C2, hbar.Hoo) - contract('jmab,im->ijab', C2, hbar.Hoo))
+        s2 = s2 + 0.5 * contract('ijef,efab->ijab', C2, hbar.Hvvvv)
+        s2 = s2 + 0.5 * contract('mnab,ijmn->ijab', C2, hbar.Hoooo)
+        s2 = s2 + (contract('ie,ejab->ijab', C1, hbar.Hvovv) - contract('je,eiab->ijab', C1, hbar.Hvovv))
+        s2 = s2 - (contract('ma,ijmb->ijab', C1, hbar.Hooov) - contract('mb,ijma->ijab', C1, hbar.Hooov))
+        tmp = contract('imae,jebm->ijab', C2, hbar.Hovvo)
+        s2 = s2 + (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3) + tmp.swapaxes(0,1).swapaxes(2,3))
+        s2 = s2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v]) - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
+        s2 = s2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v]) - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
         return s2.copy()

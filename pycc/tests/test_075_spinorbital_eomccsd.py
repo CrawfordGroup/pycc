@@ -110,3 +110,15 @@ def test_so_eom_open_shell_iterative(uhf_wfn):
     # psi4's roots (plus their spin-contamination partners) appear among the iterative roots
     for e in PSI4_UHF_ROOTS:
         assert np.min(np.abs(E - e)) < 1e-5, (e, E)
+
+
+def test_so_eom_left_equals_right(rhf_wfn, uhf_wfn):
+    """The spin-orbital left-hand sigma (_so_s_l1 / _so_s_l2) yields the same excitation energies
+    as the right-hand sigma -- they are the left/right eigenvectors of the same (non-Hermitian)
+    EOM operator -- for a closed-shell (H2O) and an open-shell (OH/UHF) reference."""
+    for factory, mol in ((rhf_wfn, H2O), (uhf_wfn, OH)):
+        wfn = factory(mol, "STO-3G", freeze_core="false")
+        _, eom = _eom(wfn, "spinorbital")
+        E_right = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
+        E_left = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "left")[0].real)
+        assert np.max(np.abs(E_left - E_right)) < 1e-6, (mol, E_left, E_right)
