@@ -6,12 +6,14 @@
 \setlength{\tabcolsep}{4.5pt}
 \begin{document}
 \begin{center}{\Large\bfseries pycc test-suite timings}\\[3pt]
-psi4 1.9, conv/pk, macOS single machine. Duration $=$ call$+$setup$+$teardown.\\[2pt]
+psi4 1.9, conv/pk, run on \texttt{ganymede} (macOS single machine), 2026-07-04. Duration $=$ call$+$setup$+$teardown.\\[2pt]
 226 tests with measurable time, total 1422\,s ($\approx$24\,min). Local-cc \texttt{slow} tests excluded; $\sim$12 further ran $<0.005$\,s. FD $=$ executes finite difference.
 \end{center}
 \footnotesize
 % To add a test: insert one row in decreasing-duration order:
 %   \texttt{file::function} & Mol & Basis & seconds & $\bullet$(if FD) \\
+% Rebuild: run pdflatex 2-3x so the longtable column widths converge (a single pass
+% leaves the header/footer misaligned with the body).
 \begin{longtable}{l l l r c}
 \toprule Test (\texttt{file::function}) & Mol. & Basis & s & FD \\ \midrule \endfirsthead
 \toprule Test (\texttt{file::function}) & Mol. & Basis & s & FD \\ \midrule \endhead
