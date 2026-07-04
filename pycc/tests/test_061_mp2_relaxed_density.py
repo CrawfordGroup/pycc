@@ -34,13 +34,13 @@ H 1 1.02 2 103.0
 """
 
 
-def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false'):
+def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf'):
     """Relaxed correlation mu_z by a 5-point finite field of (E_MP2 - E_SCF)."""
     def e(model, Fz):
         psi4.core.clean()
         psi4.core.clean_options()
         psi4.geometry(geom)
-        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv',
+        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12}
         if Fz:
             opt.update({'perturb_h': True, 'perturb_with': 'dipole',
@@ -54,14 +54,14 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false'):
     return mu('mp2') - mu('scf')
 
 
-def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
+def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf'):
     """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted),
     via the user-API :meth:`MPwfn.relaxed_dipole`."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
+                      'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -87,6 +87,14 @@ def test_mp2_relaxed_dipole_ccpvdz():
     and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
     assert abs(_pycc_corr_dipole(WATER, 'cc-pVDZ')
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+
+
+def test_ump2_relaxed_dipole_nh2_631g():
+    """Open-shell UHF-MP2 relaxed correlation dipole (mu_z) vs finite field, NH2 (2-B1) / 6-31G.
+    The open-shell oracle for the spin-orbital relaxed density (Z-vector orbital response)."""
+    geom = NH2 + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole(geom, '6-31G', reference='uhf')
+               - _ff_corr_dipole(geom, '6-31G', reference='uhf')) < 1e-8
 
 
 # ---- explicit-derivative route (derivints.pdf): correlation dipole from the full
