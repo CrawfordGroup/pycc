@@ -17,11 +17,11 @@ import pycc
 E_CONV = R_CONV = 1e-11
 
 
-def _so_ccwfn(geom, reference="uhf", freeze_core="false"):
+def _so_ccwfn(geom, reference="uhf", freeze_core="false", basis="STO-3G"):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'reference': reference,
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
                       'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12,
                       'r_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
@@ -38,6 +38,14 @@ H2O = "O 0.0 0.0 0.118\nH 0.0 0.758 -0.472\nH 0.0 -0.758 -0.472\nunits angstrom\
 # near-degenerate orbital rotation makes the CPHF/Z-vector Hessian near-singular.  NH2's SOMO is
 # non-degenerate, so the reference is unique and the orbital response is well-conditioned.
 NH2 = "0 2\nN\nH 1 1.02\nH 1 1.02 2 103.0\nsymmetry c1\nno_com\nno_reorient"
+# OH radical (2-Pi), run in its computational point group -- NO "symmetry c1", so psi4 uses C2v.
+# This is the *degenerate* open-shell case: the two pi orbitals split into different irreps (b1/b2),
+# which keeps the generalized Fock block-diagonal by irrep and the Z-vector right-hand side
+# orthogonal to the near-singular b1<->b2 rotation.  Symmetry therefore makes the reference
+# well-defined and the gradient platform-reproducible even though the orbital Hessian is
+# near-singular.  (In C1 the SCF could break the degeneracy arbitrarily; C2v does not.)  6-31G, not
+# STO-3G: STO-3G/OH leaves a virtual symmetry block empty, which crashes psi4's C2v CC gradient.
+OH_C2V = "0 2\nO\nH 1 0.97"
 
 
 def test_so_ccsd_gradient_keystone_equals_spatial():
@@ -65,6 +73,25 @@ def test_so_ccsd_gradient_vs_psi4_uhf():
 
     psi4.core.clean_options()
     psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'reference': 'uhf',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12, 'r_convergence': 1e-12})
+    g_psi4 = np.asarray(psi4.gradient('ccsd'))
+    assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
+
+
+def test_so_ccsd_gradient_vs_psi4_uhf_oh_c2v():
+    """Open-shell UHF-CCSD gradient for an *orbitally degenerate* reference: OH (2-Pi) run in the
+    computational point group C2v, vs psi4's analytic UHF-CCSD gradient (6-31G).
+
+    The degenerate pi orbitals fall in different irreps (b1/b2), so symmetry keeps the Z-vector
+    right-hand side orthogonal to the near-singular b1<->b2 orbital rotation -- the reference is
+    well-defined and the gradient is platform-reproducible even though the orbital Hessian is
+    near-singular (this is the case that is *not* reproducible when forced into C1)."""
+    cc, wfn = _so_ccwfn(OH_C2V, reference="uhf", basis="6-31G")
+    assert wfn.molecule().point_group().symbol() == "c2v"        # actually running in C2v
+    r = pycc.gradient(cc)
+
+    psi4.core.clean_options()
+    psi4.set_options({'basis': '6-31G', 'scf_type': 'pk', 'reference': 'uhf',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12, 'r_convergence': 1e-12})
     g_psi4 = np.asarray(psi4.gradient('ccsd'))
     assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
