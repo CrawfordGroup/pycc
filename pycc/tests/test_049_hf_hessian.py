@@ -26,6 +26,19 @@ def test_hf_hessian_h2o(rhf_wfn):
     assert np.allclose(analytic, ref, atol=1e-9)
 
 
+def test_hf_hessian_h2o_ccpvdz(rhf_wfn):
+    """Larger basis (cc-pVDZ): the analytic RHF Hessian reproduces psi4.hessian('scf') for a real
+    virtual space -- polarization functions, several virtuals per irrep, A2-symmetry MOs -- that
+    STO-3G/H2O lacks (frame locked)."""
+    wfn = rhf_wfn("H2O", "cc-pVDZ", geom_extra="\nsymmetry c1\nnoreorient\nnocom",
+                  e_convergence=1e-11, d_convergence=1e-11)
+    analytic = pycc.HFwfn(wfn).hessian()
+    ref = np.asarray(psi4.hessian('scf'))       # cheap SCF oracle, same molecule/options still set
+    assert analytic.shape == ref.shape
+    assert np.allclose(analytic, analytic.T, atol=1e-10)
+    assert np.allclose(analytic, ref, atol=1e-8)
+
+
 def test_hf_hessian_shares_nuclear_cache(rhf_wfn):
     """Computing the Hessian then the APTs solves the nuclear CPHF response once:
     the APT call must not rebuild any per-atom derivative integrals."""

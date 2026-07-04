@@ -64,6 +64,25 @@ def test_ccsd_gradient_density_energy():
     assert abs(E - ecc) < 1e-10, (E, ecc)
 
 
+def test_ccsd_gradient_ccpvdz():
+    """Larger basis (cc-pVDZ): the CCSD gradient reproduces psi4's analytic CCSD gradient, and the
+    gradient-convention densities reconstruct E_corr -- exercising a real virtual space (polarization
+    functions, several virtuals per irrep, A2-symmetry MOs) that STO-3G/H2O lacks."""
+    cc = _ccwfn("cc-pVDZ")
+    r = pycc.gradient(cc)
+    # density-energy reconstruction (analytic; no oracle)
+    dens = pycc.CCderiv(cc)._density()
+    D, G = dens.gradient_densities()
+    E = cc.contract('pq,pq->', D, np.asarray(cc.H.F)) + cc.contract('pqrs,pqrs->', G, np.asarray(cc.H.ERI))
+    assert abs(E - dens.compute_energy()) < 1e-9
+    # vs psi4 (a cheap ~1 s CCSD gradient at this size)
+    psi4.core.clean_options()
+    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'e_convergence': 1e-12,
+                      'd_convergence': 1e-12, 'r_convergence': 1e-12})
+    g_psi4 = np.asarray(psi4.gradient('ccsd'))
+    assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
+
+
 def test_ccsd_gradient_correlation_nonzero():
     """The CCSD correlation gradient is a real, nonzero contribution on top of the SCF reference."""
     cc = _ccwfn()
