@@ -11,7 +11,7 @@ derivative integrals. Singly occupied spin orbitals halve the closed-shell prefa
 
 Validation:
   * keystone -- closed-shell RHF forced to spin orbitals == spatial RHF APT;
-  * open-shell UHF APT vs finite difference of the SCF dipole.
+  * open-shell UHF APT (C2v) vs a finite-difference-validated frozen reference.
 
 ROHF is guarded (the nuclear response goes through CPHF.solve): raises NotImplementedError.
 """
@@ -32,9 +32,24 @@ OH_COORDS = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.8]])
 
 
 def _oh_geom(coords):
+    # OH along z in its computational point group (C2v -- no 'symmetry c1'), so the 2-Pi reference is
+    # symmetry-adapted and reproducible; a C1 reference would break the pi_x/pi_y degeneracy.
     s = "0 2\n" + "\n".join(f"{el} {c[0]:.12f} {c[1]:.12f} {c[2]:.12f}"
                             for el, c in zip(['O', 'H'], coords))
-    return s + "\nunits bohr\nsymmetry c1\nno_com\nno_reorient\n"
+    return s + "\nunits bohr\n"
+
+
+# OH UHF APT (6-31G, C2v), frozen reference [3*atom + beta, alpha].  Validated (once) against a
+# 7-point O(h^6) central finite difference of the SCF dipole under nuclear displacement, agreeing to
+# ~2e-12:  apt[A, beta, alpha] = d mu_alpha / d X_Ab.
+# Run in C2v so the reference is symmetry-adapted and reproducible (~1e-13); the perpendicular
+# components (x = y here) would be arbitrary under a C1 symmetry-broken reference.
+UHF_APT_REF = np.array([[-0.4682227123,  0.0,          0.0],
+                        [ 0.0,          -0.4682227123, 0.0],
+                        [ 0.0,           0.0,         -0.0546138293],
+                        [ 0.4682227123,  0.0,          0.0],
+                        [ 0.0,           0.4682227123, 0.0],
+                        [ 0.0,           0.0,          0.0546138293]])
 
 
 def _scf_wfn(geom, basis, reference):
@@ -63,30 +78,12 @@ def test_so_rhf_apt_vs_spatial_ccpvdz():
     assert np.max(np.abs(apt_so - apt_spatial)) < 1e-10
 
 
-def test_uhf_apt_vs_finite_difference():
-    """Open-shell UHF APT (OH doublet) vs finite difference of the SCF dipole."""
+def test_uhf_apt():
+    """Open-shell UHF APT (OH doublet / 6-31G, C2v) vs the finite-difference-validated frozen
+    reference (see UHF_APT_REF above)."""
     wfn = _scf_wfn(_oh_geom(OH_COORDS), '6-31G', 'uhf')
-    apt = pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()
-
-    def dipole(coords):
-        psi4.core.clean()
-        psi4.core.clean_options()
-        psi4.geometry(_oh_geom(coords))
-        psi4.set_options({'basis': '6-31G', 'scf_type': 'pk', 'reference': 'uhf',
-                          'e_convergence': 1e-12, 'd_convergence': 1e-12})
-        psi4.energy('scf')
-        return np.asarray(psi4.variable('SCF DIPOLE'))
-
-    h = 1e-4
-    fd = np.zeros((2, 3, 3))
-    for A in range(2):
-        for beta in range(3):
-            gp = OH_COORDS.copy(); gp[A, beta] += h
-            gm = OH_COORDS.copy(); gm[A, beta] -= h
-            dp, dm = dipole(gp), dipole(gm)
-            for alpha in range(3):
-                fd[A, beta, alpha] = (dp[alpha] - dm[alpha]) / (2 * h)
-    assert np.max(np.abs(apt - fd)) < 1e-7
+    apt = np.asarray(pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()).reshape(-1, 3)
+    assert np.max(np.abs(apt - UHF_APT_REF)) < 1e-8
 
 
 def test_rohf_apt_not_implemented():

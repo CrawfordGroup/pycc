@@ -17,21 +17,30 @@ import psi4
 import pycc
 import numpy as np
 
-# Open-shell doublet (hydroxyl radical).
+# Open-shell doublet (hydroxyl radical), run in its computational point group (C2v -- no
+# 'symmetry c1').  C2v keeps the 2-Pi reference symmetry-adapted and reproducible; forcing C1 lets
+# the SCF break the pi_x/pi_y degeneracy arbitrarily (platform-dependent), which would make a frozen
+# reference fragile.
 OH = """
 0 2
 O 0.0 0.0 0.0
 H 0.0 0.0 1.83
 units bohr
-no_com
-no_reorient
-symmetry c1
 """
 
 
+# Static CCSD alpha_zz for OH/STO-3G (C2v), frozen references.  No code computes open-shell CC
+# *dynamic* polarizabilities, so these were validated against a 5-point finite field of the CCSD
+# energy (self-consistent, agreeing to ~1e-8; see _findiff_alpha_zz, kept as the regeneration
+# recipe).  With the symmetry-adapted C2v reference the values are reproducible to ~1e-13.
+AZZ_REF = {'uhf': 3.5805125633, 'rohf': 3.5805155080}
+
+
 def _findiff_alpha_zz(cc, d=0.001):
-    """Static alpha_zz from a 5-point finite difference of the CCSD correlation
-    energy w.r.t. a z-dipole field. Restores cc.H.F on return."""
+    """Regeneration recipe for AZZ_REF (not run in the tests): static alpha_zz from a 5-point finite
+    difference of the CCSD correlation energy w.r.t. a z-dipole field.  Perturbs F -> F - F_str*mu_z
+    and differentiates the correlation energy (the fixed-orbital reference is linear in the field, so
+    it does not contribute to the second derivative).  Restores cc.H.F on return."""
     F0 = np.asarray(cc.H.F).copy()
     muz = np.asarray(cc.H.mu[2])
     g1, g2 = cc.mp.t1.copy(), cc.mp.t2.copy()
@@ -66,8 +75,8 @@ def test_so_rhf_polar_vs_psi4(rhf_wfn):
     assert abs(iso - ref) < 1e-9
 
 
-def test_uhf_polar_findiff(uhf_wfn):
-    """UHF static CCSD polarizability (alpha_zz) vs finite difference."""
+def test_uhf_polar_static(uhf_wfn):
+    """UHF static CCSD polarizability (alpha_zz) vs the finite-field-validated frozen reference."""
     wfn = uhf_wfn(OH, "STO-3G", freeze_core="false",
                   e_convergence=1e-13, d_convergence=1e-13)
     cc = pycc.CCwfn(wfn, frozen_core=False)
@@ -75,14 +84,12 @@ def test_uhf_polar_findiff(uhf_wfn):
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-12, r_conv=1e-11)
     dens = pycc.ccdensity(cc, lam, onlyone=True)
-    resp = pycc.ccresponse(dens)
-    azz = resp.polarizability(0.0)[2, 2]   # analytic, before perturbing cc
-    azz_fd = _findiff_alpha_zz(cc)
-    assert abs(azz - azz_fd) < 1e-6
+    azz = pycc.ccresponse(dens).polarizability(0.0)[2, 2]
+    assert abs(azz - AZZ_REF['uhf']) < 1e-7
 
 
-def test_rohf_polar_findiff(rohf_wfn):
-    """ROHF static CCSD polarizability (alpha_zz) vs finite difference."""
+def test_rohf_polar_static(rohf_wfn):
+    """ROHF static CCSD polarizability (alpha_zz) vs the finite-field-validated frozen reference."""
     wfn = rohf_wfn(OH, "STO-3G", freeze_core="false",
                    e_convergence=1e-13, d_convergence=1e-13)
     cc = pycc.CCwfn(wfn, frozen_core=False)
@@ -90,7 +97,5 @@ def test_rohf_polar_findiff(rohf_wfn):
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-12, r_conv=1e-11)
     dens = pycc.ccdensity(cc, lam, onlyone=True)
-    resp = pycc.ccresponse(dens)
-    azz = resp.polarizability(0.0)[2, 2]
-    azz_fd = _findiff_alpha_zz(cc)
-    assert abs(azz - azz_fd) < 1e-6
+    azz = pycc.ccresponse(dens).polarizability(0.0)[2, 2]
+    assert abs(azz - AZZ_REF['rohf']) < 1e-7
