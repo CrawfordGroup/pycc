@@ -23,14 +23,24 @@ H 1 0.96
 H 1 0.96 2 104.5
 """
 
+# Open-shell UHF reference: NH2 (2-B1, bent -- non-degenerate SOMO).  Deliberately not OH (2-Pi),
+# whose degenerate pi orbitals leave the UHF solution non-reproducible across platforms and the
+# orbital Hessian near-singular.
+NH2 = """
+0 2
+N
+H 1 1.02
+H 1 1.02 2 103.0
+"""
 
-def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false'):
+
+def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf'):
     """Relaxed correlation mu_z by a 5-point finite field of (E_MP2 - E_SCF)."""
     def e(model, Fz):
         psi4.core.clean()
         psi4.core.clean_options()
         psi4.geometry(geom)
-        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv',
+        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12}
         if Fz:
             opt.update({'perturb_h': True, 'perturb_with': 'dipole',
@@ -44,14 +54,14 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false'):
     return mu('mp2') - mu('scf')
 
 
-def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
+def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf'):
     """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted),
     via the user-API :meth:`MPwfn.relaxed_dipole`."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
+                      'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -77,6 +87,14 @@ def test_mp2_relaxed_dipole_ccpvdz():
     and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
     assert abs(_pycc_corr_dipole(WATER, 'cc-pVDZ')
                - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+
+
+def test_ump2_relaxed_dipole_nh2_631g():
+    """Open-shell UHF-MP2 relaxed correlation dipole (mu_z) vs finite field, NH2 (2-B1) / 6-31G.
+    The open-shell oracle for the spin-orbital relaxed density (Z-vector orbital response)."""
+    geom = NH2 + "symmetry c1\n"
+    assert abs(_pycc_corr_dipole(geom, '6-31G', reference='uhf')
+               - _ff_corr_dipole(geom, '6-31G', reference='uhf')) < 1e-8
 
 
 # ---- explicit-derivative route (derivints.pdf): correlation dipole from the full
@@ -209,23 +227,23 @@ def test_fc_so_mp2_explicit_corr_gradient_631g():
     assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
 
 
-def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
+def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf'):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
+                      'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
     return np.asarray(pycc.gradient(mp).total)
 
 
-def _psi4_mp2_gradient(geom, basis):
+def _psi4_mp2_gradient(geom, basis, reference='rhf'):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                       'freeze_core': 'false', 'e_convergence': 1e-12,
                       'd_convergence': 1e-12})
     return np.asarray(psi4.gradient('mp2'))
@@ -243,6 +261,20 @@ def test_sa_mp2_gradient_631g():
     geom = WATER + "symmetry c1\n"
     assert np.max(np.abs(_pycc_gradient(geom, '6-31G', orbital_basis='spatial')
                          - _psi4_mp2_gradient(geom, '6-31G'))) < 1e-8
+
+
+def test_ump2_gradient_nh2_631g():
+    """Open-shell UHF-MP2 analytic nuclear gradient vs Psi4, NH2 (2-B1) / 6-31G (C1).
+
+    The open-shell oracle for the spin-orbital Z-vector gradient (``_so_zvector``).  psi4 is the
+    right check here rather than the explicit == relaxed identity: an open-shell UHF spin-orbital
+    orbital Hessian carries a near-zero mode, so the single linear solve both internal routes run
+    through is ill-conditioned and their difference is platform-dependent -- but the final gradient
+    is orthogonal to that mode and reproduces psi4 to machine precision.  NH2 is non-degenerate
+    (unlike OH, 2-Pi, whose degeneracy also makes the reference itself non-reproducible)."""
+    geom = NH2 + "symmetry c1\n"
+    assert np.max(np.abs(_pycc_gradient(geom, '6-31G', reference='uhf')
+                         - _psi4_mp2_gradient(geom, '6-31G', reference='uhf'))) < 1e-8
 
 
 def test_mp2_gradient_spatial_vs_so_631g():

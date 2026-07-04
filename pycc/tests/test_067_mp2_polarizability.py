@@ -41,13 +41,22 @@ H 1 0.96 2 104.5
 symmetry c1
 """
 
+# Open-shell UHF reference: NH2 (2-B1, non-degenerate).
+NH2 = """
+0 2
+N
+H 1 1.02
+H 1 1.02 2 103.0
+symmetry c1
+"""
 
-def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false'):
+
+def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false', geom=WATER, reference='rhf'):
     psi4.core.clean()
     psi4.core.clean_options()
-    psi4.geometry(WATER)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-14, 'd_convergence': 1e-14})
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
+                      'freeze_core': freeze_core, 'e_convergence': 1e-14, 'd_convergence': 1e-14})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -79,16 +88,16 @@ def _dipfd_alpha_diag(basis, axis, orbital_basis='spatial', freeze_core='false',
     return abs(d1)
 
 
-def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002):
+def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002, geom=WATER, reference='rhf'):
     """alpha_corr_(axis,axis) = -d^2(E_MP2 - E_SCF)/dF^2 by a 5-point finite field of the
     energy -- a fully external oracle (independence guard for the dipole cross-check)."""
     def e(model, Fval):
         psi4.core.clean()
         psi4.core.clean_options()
-        psi4.geometry(WATER)
+        psi4.geometry(geom)
         d = [0.0, 0.0, 0.0]
         d[axis] = Fval
-        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv',
+        opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                'freeze_core': freeze_core, 'e_convergence': 1e-13, 'd_convergence': 1e-13}
         if Fval:
             opt.update({'perturb_h': True, 'perturb_with': 'dipole', 'perturb_dipole': d})
@@ -133,6 +142,14 @@ def test_mp2_corr_polarizability_energy_fd_631g():
     derivatives divide by h^2), so a looser tolerance."""
     a = _pycc_alpha('6-31G', orbital_basis='spatial')
     assert abs(a[2, 2] - _energy_fd_alpha_diag('6-31G', 2)) < 1e-7
+
+
+def test_ump2_corr_polarizability_energy_fd_nh2_631g():
+    """Open-shell UHF-MP2 correlation alpha_zz vs a 5-point finite field of the MP2 energy --
+    the external open-shell oracle for the spin-orbital second-order response, NH2 (2-B1) / 6-31G.
+    (Energy second derivatives divide by h^2, so a looser tolerance than the dipole FD.)"""
+    a = _pycc_alpha('6-31G', orbital_basis='spinorbital', geom=NH2, reference='uhf')
+    assert abs(a[2, 2] - _energy_fd_alpha_diag('6-31G', 2, geom=NH2, reference='uhf')) < 1e-6
 
 
 # ---- keystone: spin-orbital == spin-adapted (carries the checks to the SO path) ----

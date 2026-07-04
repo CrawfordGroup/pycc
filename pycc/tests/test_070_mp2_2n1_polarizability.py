@@ -27,13 +27,22 @@ H 1 0.96 2 104.5
 symmetry c1
 """
 
+# Open-shell UHF reference: NH2 (2-B1, non-degenerate).
+NH2 = """
+0 2
+N
+H 1 1.02
+H 1 1.02 2 103.0
+symmetry c1
+"""
 
-def _mpwfn(basis, orbital_basis='spinorbital', freeze_core='false'):
+
+def _mpwfn(basis, orbital_basis='spinorbital', freeze_core='false', geom=WATER, reference='rhf'):
     psi4.core.clean()
     psi4.core.clean_options()
-    psi4.geometry(WATER)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
+                      'freeze_core': freeze_core, 'e_convergence': 1e-13, 'd_convergence': 1e-13})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -82,6 +91,21 @@ def test_2n1_polarizability_so_vs_spatial_631g():
         a_so = np.asarray(_mpwfn('6-31G', 'spinorbital', fc).polarizability(route='2n+1'))
         a_sa = np.asarray(_mpwfn('6-31G', 'spatial', fc).polarizability(route='2n+1'))
         assert np.max(np.abs(a_so - a_sa)) < 1e-11
+
+
+def test_2n1_polarizability_uhf_nh2_631g():
+    """Open-shell UHF-MP2: 2n+1 == explicit correlation polarizability, NH2 (2-B1) / 6-31G.
+
+    The open-shell exercise of the perturbed relaxed density / perturbed Z-vector.  Unlike the
+    nuclear-gradient Z-vector, this second-derivative identity is well-conditioned open-shell (the
+    field-perturbation RHS is clean of the near-zero orbital-Hessian mode), so it holds to machine
+    precision.  The explicit route is anchored to a finite-field oracle for the open shell in
+    test_067."""
+    mp = _mpwfn('6-31G', geom=NH2, reference='uhf')
+    a_2n1 = np.asarray(mp.polarizability(route='2n+1'))
+    a_exp = np.asarray(mp.polarizability(route='explicit'))
+    assert np.max(np.abs(a_2n1 - a_exp)) < 1e-11
+    assert np.max(np.abs(a_2n1 - a_2n1.T)) < 1e-11            # symmetric
 
 
 def test_2n1_polarizability_guards():
