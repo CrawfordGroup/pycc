@@ -28,8 +28,10 @@ class CCderiv:
 
     Notes
     -----
-    Spatial (closed-shell RHF) path only for now -- the spin-orbital two-particle density is not
-    yet implemented.  Lambda and the reduced densities are solved/built on first use and cached.
+    Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported; ROHF is not
+    (the semicanonical response does not reproduce the restricted ROHF response).  Lambda and the
+    reduced densities are solved/built on first use and cached.  The analytic nuclear gradient is
+    implemented (Hessian, APTs, etc. to follow).
     """
 
     def __init__(self, ccwfn: "CCwfn") -> None:
@@ -67,8 +69,12 @@ class CCderiv:
         + 4 sum_rst <pr|st> Gam_qrst ]``).  Its ov-antisymmetric part is the Z-vector RHS; evaluated
         at the relaxed density it is the energy-weighted density.  ``Gam`` must carry the proper
         2-PDM permutational symmetry (:meth:`ccdensity.gradient_densities` symmetrizes it), since
-        the three-index ``termC`` is sensitive to it.  (When an MPderiv is split out this shared
-        primitive will move with it.)"""
+        the three-index ``termC`` is sensitive to it.  Dispatches on the orbital basis: the
+        spin-orbital path uses the antisymmetrized ``_so_mp2_lagrangian`` (``<pq||rs>``), the spatial
+        path the spin-adapted ``_mp2_lagrangian`` (``H.L``).  (When an MPderiv is split out this
+        shared primitive will move with it.)"""
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self.ccwfn.mp._so_mp2_lagrangian(D, Gam)
         return self.ccwfn.mp._mp2_lagrangian(D, Gam)
 
     def gradient(self) -> np.ndarray:
@@ -88,19 +94,18 @@ class CCderiv:
         The **reference (SCF) gradient is kept separate**: the total CCSD gradient is
         ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
 
-        Spatial (closed-shell RHF) path only for now; all-electron and frozen-core.  Validated
-        against ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the
-        independent explicit-derivative route (:meth:`_gradient_explicit`).
+        Spatial (closed-shell RHF) path; all-electron and frozen-core.  Validated against
+        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
+        explicit-derivative route (:meth:`_gradient_explicit`).  The spin-orbital (UHF) path is
+        dispatched to :meth:`_so_gradient`.
 
         Frozen core is handled as in the MP2 gradient: the correlation densities live in the active
         space while the orbital response spans the full occupied space.  The core<->active-occupied
         rotation is a direct divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` (the SCF energy is
         invariant to occupied-occupied rotations), coupled into the Z-vector right-hand side."""
         cc = self.ccwfn
-        if cc.orbital_basis != 'spatial':
-            raise NotImplementedError(
-                "The CCSD analytic gradient currently requires the spatial (closed-shell RHF) "
-                "path; the spin-orbital two-particle density is not yet implemented.")
+        if cc.orbital_basis == 'spinorbital':
+            return self._so_gradient()
         o, v = cc.o, cc.v
         nfzc = cc.nfzc
         co = slice(0, nfzc)                              # frozen-core occupied
@@ -137,6 +142,70 @@ class CCderiv:
                                     + c('pq,pq->', W, Sx[cart]))
         return grad
 
+    def _so_gradient(self) -> np.ndarray:
+        """Spin-orbital (UHF) CCSD **correlation** gradient via the Z-vector route -- the
+        spin-orbital analog of :meth:`gradient`, mirroring :meth:`MPwfn._so_gradient` /
+        :meth:`MPwfn._so_zvector`::
+
+            dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X + sum_pq W_pq S^X_pq
+
+        Differences from the spatial path: the generalized-Fock Lagrangian is the antisymmetrized
+        ``_so_mp2_lagrangian`` (:meth:`_lagrangian` dispatches); the orbital Hessian is built
+        **inline** (``G_ia,jb = <aj||ib> + <ab||ij> + delta (eps_a - eps_i)``) rather than borrowed
+        from an all-electron ``HFwfn`` CPHF -- the all-electron spin-orbital ``HFwfn`` orders the
+        spins differently from the densities, so there is no CPHF to reuse; and the skeleton
+        derivative integrals are the spin-orbital ``derivatives.so_*`` (``f^X = h^X + sum_m
+        <pm||qm>^X`` over the full occupied space).
+
+        **UHF only** -- ROHF is not supported (the semicanonical response does not reproduce the
+        restricted ROHF response).  Frozen-core aware (the core<->active-occupied ``P_co`` divide,
+        coupled into the Z-vector RHS, exactly as the spatial path and :meth:`MPwfn._so_zvector`).
+        Validated against ``psi4.gradient('ccsd')`` (UHF), the spatial closed-shell gradient (SO ==
+        spatial), and the explicit-derivative route (:meth:`_gradient_explicit`)."""
+        cc = self.ccwfn
+        if cc.mp.cphf.is_rohf:
+            raise NotImplementedError(
+                "The spin-orbital CCSD gradient is not implemented for ROHF references (the "
+                "semicanonical response does not reproduce the restricted ROHF response); RHF and "
+                "UHF are supported.")
+        o, v = cc.o, cc.v
+        nfzc, nv = cc.nfzc, cc.nv
+        co = slice(0, o.start)                            # frozen-core occupied (2*nfzc spin-orbitals)
+        ofull = slice(0, o.stop)                          # full occupied (core + active)
+        nof = o.stop
+        c = self.contract
+        eps = np.diag(np.asarray(cc.H.F))
+        ERI = np.asarray(cc.H.ERI)                        # spin-orbital <pq||rs>
+        D, Gam = self._density().gradient_densities()
+        Ip = self._lagrangian(D, Gam)
+        Drel = D.copy()
+        if nfzc:                                          # core<->active-occupied: direct divide
+            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Drel[co, o] += Pco
+            Drel[o, co] += Pco.T
+        X = Ip[ofull, v] - Ip[v, ofull].T                # ov-antisymmetric generalized Fock
+        if nfzc:                                          # couple P_co into the Z-vector RHS
+            zjc = -Pco.T
+            X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
+                     + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+        G = (c('ajib->iajb', ERI[v, ofull, ofull, v])    # orbital Hessian, built inline
+             + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
+        G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
+        z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)   # Z-vector A z = X
+        Drel[v, ofull] += -z.T
+        Drel[ofull, v] += -z
+        W = self._lagrangian(Drel, Gam)                  # energy-weighted density
+        d = cc.derivatives
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.so_core(atom); Sx = d.so_overlap(atom); ERIx = d.so_eri(atom)
+            for cart in range(3):
+                fx = hx[cart] + c('pmqm->pq', ERIx[cart][:, ofull, :, ofull])   # skeleton Fock deriv
+                grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                    + c('pqrs,pqrs->', Gam, ERIx[cart])
+                                    + c('pq,pq->', W, Sx[cart]))
+        return grad
+
     def _gradient_explicit(self) -> np.ndarray:
         """CCSD correlation gradient via the **explicit-derivative route** -- an independent
         cross-check of :meth:`gradient`::
@@ -147,11 +216,11 @@ class CCderiv:
         (:meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`), the orbital relaxation riding
         inside ``d_X f`` / ``d_X <pq|rs>`` -- one nuclear CPHF solve per perturbation (the "simple
         but inefficient" form, analog of :meth:`MPwfn._corr_gradient_explicit`).  Same result as
-        :meth:`gradient` (which uses the single Z-vector solve)."""
+        :meth:`gradient` (which uses the single Z-vector solve).  Basis-agnostic: the perturbed
+        integrals and densities dispatch on the orbital basis, so this cross-checks the spatial and
+        spin-orbital gradients alike."""
         from .cphf import Perturbation
         cc = self.ccwfn
-        if cc.orbital_basis != 'spatial':
-            raise NotImplementedError("Explicit CCSD gradient: spatial (closed-shell) only.")
         D, Gam = self._density().gradient_densities()
         cphf = cc.mp._full_occ_cphf()
         ncore = cc.o.stop - cc.no

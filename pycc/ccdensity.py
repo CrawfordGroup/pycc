@@ -97,18 +97,17 @@ class ccdensity(object):
 
         self.onlyone = onlyone
 
-        if onlyone is False and ccwfn.orbital_basis == 'spinorbital':
-            raise NotImplementedError("Spin-orbital two-particle density is not "
-                                      "implemented; pass onlyone=True (the dipole needs "
-                                      "only the one-particle density).")
-
         if onlyone is False:
-            self.Doooo = self.build_Doooo(t1, t2, l2)
-            self.Dvvvv = self.build_Dvvvv(t1, t2, l2)
-            self.Dooov = self.build_Dooov(t1, t2, l1, l2)
-            self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
-            self.Dovov = self.build_Dovov(t1, t2, l1, l2)
-            self.Doovv = self.build_Doovv(t1, t2, l1, l2)
+            if ccwfn.orbital_basis == 'spinorbital':
+                # Spin-orbital 2-PDM: the nine unique (antisymmetric) blocks of Table 6.3.
+                self.so_twopdm = self.build_so_twopdm(t1, t2, l1, l2)
+            else:
+                self.Doooo = self.build_Doooo(t1, t2, l2)
+                self.Dvvvv = self.build_Dvvvv(t1, t2, l2)
+                self.Dooov = self.build_Dooov(t1, t2, l1, l2)
+                self.Dvvvo = self.build_Dvvvo(t1, t2, l1, l2)
+                self.Dovov = self.build_Dovov(t1, t2, l1, l2)
+                self.Doovv = self.build_Doovv(t1, t2, l1, l2)
 
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
@@ -142,6 +141,25 @@ class ccdensity(object):
         if self.onlyone is True:
             print("Only one-electron density available.")
             ecc = eone
+        elif self.ccwfn.orbital_basis == 'spinorbital':
+            # Spin-orbital two-electron energy, 1/4 sum_pqrs Gamma_pqrs <pq||rs>.  The nine stored
+            # blocks are contracted with their antisymmetric-image multiplicities (a block whose
+            # antisymmetry class has k members contributes k times, since Gamma and <pq||rs> pick up
+            # the same sign under each index swap): oooo/vvvv/oovv/vvoo -> 1, the (3+1) blocks -> 2,
+            # ovvo -> 4.
+            G = self.so_twopdm
+            etwo = 0.25 * (
+                contract('ijkl,ijkl->', ERI[o,o,o,o], G['ijkl'])
+                + contract('abcd,abcd->', ERI[v,v,v,v], G['abcd'])
+                + contract('ijab,ijab->', ERI[o,o,v,v], G['ijab'])
+                + contract('abij,abij->', ERI[v,v,o,o], G['abij'])
+                + 2.0 * contract('ijka,ijka->', ERI[o,o,o,v], G['ijka'])
+                + 2.0 * contract('akij,akij->', ERI[v,o,o,o], G['akij'])
+                + 2.0 * contract('abci,abci->', ERI[v,v,v,o], G['abci'])
+                + 2.0 * contract('ciab,ciab->', ERI[v,o,v,v], G['ciab'])
+                + 4.0 * contract('ibaj,ibaj->', ERI[o,v,v,o], G['ibaj']))
+            print("Two-electron CC energy = %20.15f" % etwo)
+            ecc = eone + etwo
         else:
             oooo_energy = 0.5 * contract('ijkl,ijkl->', ERI[o,o,o,o], self.Doooo)
             vvvv_energy = 0.5 * contract('abcd,abcd->', ERI[v,v,v,v], self.Dvvvv)
@@ -247,7 +265,24 @@ class ccdensity(object):
         symmetrization is energy-preserving (the antisymmetric complement contracts to zero against
         the symmetric ERI).  (A future re-derivation of the ccdensity 2-PDM equations could carry
         this symmetry natively.)  Densities are placed on the active ``o``/``v`` slices (frozen-core
-        rows/columns stay zero).  Spatial (closed-shell) only."""
+        rows/columns stay zero).
+
+        **Spin-orbital path:** :meth:`_so_full_twopdm` assembles the ``Gamma`` that is
+        antisymmetric within the bra and within the ket (``Gamma_pqrs = -Gamma_qprs = -Gamma_pqsr``),
+        but the CC density is **not Hermitian** (``Lambda != T-dagger``), so it is *not* bra-ket
+        symmetric (``Gamma_ijab != Gamma_abij``).  The three-index generalized-Fock ``termC`` needs
+        that bra-ket symmetry, so -- exactly as the spatial four-fold symmetrization does -- the
+        bra-ket average ``Gamma <- 1/2 (Gamma + Gamma_rspq)`` is applied here (for the natively
+        antisymmetric ``Gamma`` the spatial four-fold ``1/4(Gamma + Gamma_qpsr + Gamma_rspq +
+        Gamma_srqp)`` collapses to this, since the bra/ket antisymmetry already supplies the
+        ``qpsr``/``srqp`` images).  It is energy-preserving (the antisymmetric complement contracts
+        to zero against the symmetric ``<pq||rs>``).  The remaining twist is the prefactor: the
+        spin-orbital two-electron energy is ``1/4 sum Gamma <pq||rs>``, so to keep the same
+        no-extra-prefactor convention (``contract(D, F) + contract(Gamma, ERI) = E_corr``) the ``1/4``
+        is absorbed into the returned ``Gamma`` -- matching :meth:`MPwfn._so_mp2_tpdm` (whose oovv
+        block is ``1/4 t2``) and the ``termC = 4 sum <pr||st> Gamma_qrst`` in
+        :meth:`MPwfn._so_mp2_lagrangian`.  (MP2's ``Gamma`` is already bra-ket symmetric --
+        ``oovv = t2``, ``vvoo = t2.T`` -- so it needs no symmetrization.)"""
         if self.onlyone:
             raise RuntimeError("gradient_densities needs the two-particle density "
                                "(construct ccdensity with onlyone=False).")
@@ -255,6 +290,10 @@ class ccdensity(object):
         o, v, nmo = ccwfn.o, ccwfn.v, ccwfn.nmo
         D = zeros((nmo, nmo), like=self.Doo)
         D[o, o] = self.Doo; D[v, v] = self.Dvv; D[o, v] = self.Dov; D[v, o] = self.Dvo
+        if ccwfn.orbital_basis == 'spinorbital':
+            Gam = self._so_full_twopdm()
+            Gam = 0.5 * (Gam + Gam.transpose(2, 3, 0, 1))   # bra-ket symmetrize (non-Hermitian CC density)
+            return D, 0.25 * Gam
         G = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
         G[o, o, o, o] = 0.5 * self.Doooo
         G[v, v, v, v] = 0.5 * self.Dvvvv
@@ -631,6 +670,79 @@ class ccdensity(object):
                 del tmp
 
         return Doovv
+
+    def build_so_twopdm(self, t1, t2, l1, l2):
+        """Spin-orbital CCSD two-particle density -- the nine unique blocks of Table 6.3 of the
+        coupled-cluster notes (Crawford), returned as a dict keyed by block label.
+
+        Because the spin-orbital 2-PDM is fully antisymmetric (``Gamma_pqrs = -Gamma_qprs =
+        -Gamma_pqsr``), these nine blocks are *representatives*: every one of the sixteen o/v
+        block types is generated from them by index antisymmetry (see :meth:`_so_full_twopdm`).
+        The CC density is not Hermitian (``Lambda != T-dagger``), so bra-ket partners are
+        independent -- e.g. ``ijab`` and ``abij`` are distinct blocks, not transposes.
+
+        The effective double-excitation operator is the spin-orbital tau,
+        ``tau^{ab}_{ij} = t^{ab}_{ij} + t^a_i t^b_j - t^a_j t^b_i`` (= ``t2 + P(ij) t1 t1``), which
+        also equals ``t2^{ab}_{ij} + 1/2 P(ij)P(ab) t^a_i t^b_j``.  Validated by reconstructing the
+        CCSD correlation energy, ``contract(gamma, F) + 1/4 contract(Gamma, <pq||rs>) = E_corr``.
+        """
+        contract = self.contract
+        tau = t2 + contract('ia,jb->ijab', t1, t1) - contract('ja,ib->ijab', t1, t1)
+        Pij = lambda Y: Y - Y.swapaxes(0, 1)
+        Pab = lambda Y: Y - Y.swapaxes(2, 3)
+        Pijab = lambda Y: Pij(Pab(Y))
+        # X_{miae} = t^{ae}_{mi} + 2 t^e_i t^a_m  (recurring in the ijab block)
+        X = t2 + 2.0 * contract('ie,ma->miae', t1, t1)
+        G = {}
+        G['ijkl'] = 0.5 * contract('ijef,klef->ijkl', tau, l2)
+        G['abcd'] = 0.5 * contract('mncd,mnab->abcd', tau, l2)
+        G['ijka'] = (-contract('ke,ijea->ijka', l1, tau)
+                     + 0.5 * contract('kmef,ijef,ma->ijka', l2, tau, t1)
+                     + Pij(contract('mkef,imae,jf->ijka', l2, t2, t1))
+                     - 0.5 * Pij(contract('kmef,imef,ja->ijka', l2, t2, t1)))
+        # NB: the t^{ae}_{in} term carries a leading minus sign (erratum vs the printed table).
+        G['ciab'] = (contract('mc,miab->ciab', l1, tau)
+                     - 0.5 * contract('mnce,mnab,ie->ciab', l2, tau, t1)
+                     - Pab(contract('mnce,inae,mb->ciab', l2, t2, t1))
+                     + 0.5 * Pab(contract('mnce,mnae,ib->ciab', l2, t2, t1)))
+        G['abci'] = contract('miab,mc->abci', l2, t1)
+        G['akij'] = -contract('ijae,ke->akij', l2, t1)
+        G['ibaj'] = (contract('ia,jb->ibaj', t1, l1)
+                     + contract('jmbe,miea->ibaj', l2, t2)
+                     - contract('jmbe,ma,ie->ibaj', l2, t1, t1))
+        G['ijab'] = (tau
+                     + 0.25 * contract('mnef,ijef,mnab->ijab', l2, tau, tau)
+                     - 0.5 * Pij(contract('mnef,inef,mjab->ijab', l2, t2, tau))
+                     - Pij(contract('me,mjab,ie->ijab', l1, tau, t1))
+                     - 0.5 * Pab(contract('mnef,mnaf,ijeb->ijab', l2, t2, tau))
+                     - Pab(contract('me,ijeb,ma->ijab', l1, tau, t1))
+                     - 0.5 * Pijab(contract('miae,mnef,jnbf->ijab', X, l2, t2))
+                     - Pijab(contract('miae,me,jb->ijab', X, l1, t1))
+                     + 3.0 * Pijab(contract('me,ia,je,mb->ijab', l1, t1, t1, t1)))
+        G['abij'] = contract('ijab->abij', l2)
+        return G
+
+    def _so_full_twopdm(self):
+        """Assemble the full antisymmetric spin-orbital 2-PDM (``nmo^4``, physicist ``<pq|rs>``
+        ordering) on the active ``o``/``v`` slices from the nine :meth:`build_so_twopdm` blocks,
+        generating every block type by index antisymmetry.  Frozen-core rows/columns stay zero."""
+        ccwfn = self.ccwfn
+        o, v, nmo = ccwfn.o, ccwfn.v, ccwfn.nmo
+        G = self.so_twopdm
+        Gam = zeros((nmo, nmo, nmo, nmo), like=self.Doo)
+        Gam[o, o, o, o] = G['ijkl']
+        Gam[v, v, v, v] = G['abcd']
+        Gam[o, o, v, v] = G['ijab']; Gam[v, v, o, o] = G['abij']
+        Gam[o, o, o, v] = G['ijka']; Gam[o, o, v, o] = -G['ijka'].transpose(0, 1, 3, 2)
+        Gam[v, o, o, o] = G['akij']; Gam[o, v, o, o] = -G['akij'].transpose(1, 0, 2, 3)
+        Gam[v, v, v, o] = G['abci']; Gam[v, v, o, v] = -G['abci'].transpose(0, 1, 3, 2)
+        Gam[v, o, v, v] = G['ciab']; Gam[o, v, v, v] = -G['ciab'].transpose(1, 0, 2, 3)
+        ib = G['ibaj']
+        Gam[o, v, v, o] = ib
+        Gam[v, o, v, o] = -ib.transpose(1, 0, 2, 3)
+        Gam[o, v, o, v] = -ib.transpose(0, 1, 3, 2)
+        Gam[v, o, o, v] = ib.transpose(1, 0, 3, 2)
+        return Gam
 
     # T1-transformed dipole integrals needed in CC3
     def build_Moo(self, no, nv, ints, t1):
