@@ -41,6 +41,16 @@ def test_so_2pdm_reconstructs_energy_rhf(rhf_wfn):
     assert abs(ecc - e_spatial) < 1e-10
 
 
+def test_so_2pdm_reconstructs_energy_ccpvdz(rhf_wfn):
+    """Larger basis (cc-pVDZ): the SO 2-PDM reconstructs E_corr for a real virtual space -- several
+    virtuals per irrep and A2-symmetry MOs that STO-3G/H2O lacks -- and it matches the spatial
+    closed-shell energy (SO == spatial)."""
+    wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false")
+    cc, dens, ecc = _so_density(wfn)
+    assert abs(dens.compute_energy() - ecc) < 1e-9
+    assert abs(ecc - pycc.ccwfn(wfn).solve_cc(E_CONV, R_CONV)) < 1e-9   # SO == spatial
+
+
 def test_so_2pdm_reconstructs_energy_uhf(uhf_wfn):
     """Open-shell UHF references: the SO 2-PDM reconstructs the CCSD correlation energy."""
     for geom in ("0 2\nO\nH 1 0.97",                       # OH doublet

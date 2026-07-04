@@ -39,11 +39,18 @@ VG_REF = {
 }
 
 
-def _mpwfn(orbital_basis='spatial', freeze_core='false'):
+# Water (C1) for the larger-basis (cc-pVDZ) SO==spatial keystone -- the check is molecule-agnostic,
+# and cc-pVDZ H2O is far cheaper than cc-pVDZ H2O2.  (apyib has no MP2 VG APT, so unlike the AAT
+# suite there is no external oracle at cc-pVDZ; the SO==spatial keystone validates the two MP2 code
+# paths against each other with a real virtual space.)
+WATER = "O\nH 1 0.96\nH 1 0.96 2 104.5\nsymmetry c1\n"
+
+
+def _mpwfn(orbital_basis='spatial', freeze_core='false', geom=H2O2, basis='STO-3G'):
     psi4.core.clean()
     psi4.core.clean_options()
-    psi4.geometry(H2O2)
-    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'freeze_core': freeze_core,
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-11, 'd_convergence': 1e-11})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
@@ -84,6 +91,15 @@ def test_mp2_vg_apt_so_equals_spatial():
         P = np.asarray(_mpwfn(freeze_core=fc)[0].velocity_dipole_derivatives())
         P_so = np.asarray(_mpwfn('spinorbital', fc)[0].velocity_dipole_derivatives())
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
+
+
+def test_mp2_vg_apt_so_equals_spatial_ccpvdz():
+    """Larger basis (cc-pVDZ): the spin-orbital MP2 VG APT equals the spin-adapted, for a real
+    virtual space (polarization functions, several virtuals per irrep) that STO-3G lacks.  Analytic
+    keystone (H2O; molecule-agnostic) -- apyib provides no MP2 VG APT oracle at this basis."""
+    P = np.asarray(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')[0].velocity_dipole_derivatives())
+    P_so = np.asarray(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')[0].velocity_dipole_derivatives())
+    assert np.max(np.abs(P_so - P)) < 1e-9, np.max(np.abs(P_so - P))
 
 
 def test_mp2_vg_apt_gauge_invariance():

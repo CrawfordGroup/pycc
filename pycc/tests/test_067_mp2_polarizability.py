@@ -21,7 +21,7 @@ Validation:
     first-order machinery (U, unrelaxed densities), the polarizability the second-order
     machinery (U^{ab}, perturbed densities), so their agreement confirms the two analytic
     derivations are mutually consistent.
-  * independence guard: one component vs a finite field of the MP2 *energy* -- a fully
+  * independence guard: one component vs a *frozen* finite field of the MP2 *energy* -- a fully
     external oracle (the dipole FD is pycc-vs-pycc). The energy FD is of E_MP2, not any
     analytic gradient, so it is unaffected by Psi4's frozen-core MP2 gradient bug.
   * keystone: spin-orbital == spin-adapted (closed-shell RHF) correlation alpha (both bases,
@@ -41,22 +41,27 @@ H 1 0.96 2 104.5
 symmetry c1
 """
 
-# Open-shell UHF reference: NH2 (2-B1, non-degenerate).
+# Open-shell UHF reference: NH2 (2-B1, bent), run in C2v with the 2-B1 ground-state occupation
+# pinned (NH2_OCC) so a poor SCF guess cannot fall into the 2-A1 excited solution ~0.074 Eh higher
+# (which makes the pinned value guess- and platform-independent, hence freezeable).
 NH2 = """
 0 2
 N
 H 1 1.02
 H 1 1.02 2 103.0
-symmetry c1
 """
+NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}   # pin 2-B1 ground state (C2v irreps A1,A2,B1,B2)
 
 
-def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false', geom=WATER, reference='rhf'):
+def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false', geom=WATER, reference='rhf', occ=None):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
-                      'freeze_core': freeze_core, 'e_convergence': 1e-14, 'd_convergence': 1e-14})
+    opt = {'basis': basis, 'scf_type': 'pk', 'reference': reference,
+           'freeze_core': freeze_core, 'e_convergence': 1e-14, 'd_convergence': 1e-14}
+    if occ:
+        opt.update(occ)
+    psi4.set_options(opt)
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -88,7 +93,7 @@ def _dipfd_alpha_diag(basis, axis, orbital_basis='spatial', freeze_core='false',
     return abs(d1)
 
 
-def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002, geom=WATER, reference='rhf'):
+def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002, geom=WATER, reference='rhf', occ=None):
     """alpha_corr_(axis,axis) = -d^2(E_MP2 - E_SCF)/dF^2 by a 5-point finite field of the
     energy -- a fully external oracle (independence guard for the dipole cross-check)."""
     def e(model, Fval):
@@ -99,6 +104,8 @@ def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002, geom=WATER,
         d[axis] = Fval
         opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                'freeze_core': freeze_core, 'e_convergence': 1e-13, 'd_convergence': 1e-13}
+        if occ:
+            opt.update(occ)
         if Fval:
             opt.update({'perturb_h': True, 'perturb_with': 'dipole', 'perturb_dipole': d})
         psi4.set_options(opt)
@@ -134,22 +141,31 @@ def test_fc_mp2_corr_polarizability_dipfd_631g():
                    - _dipfd_alpha_diag('6-31G', axis, freeze_core='true')) < 1e-10
 
 
-# ---- independence guard: external energy finite field ----
+# ---- independence guard: frozen external energy finite field ----
+# alpha_zz from a 5-point finite field of the MP2 *energy* is a disposable *external* oracle (psi4,
+# not pycc), so it is frozen here rather than re-run each time.  Each value was validated against
+# that field to ~2e-9 (see _energy_fd_alpha_diag, the regeneration recipe); the live dipole FD above
+# pins the same alpha internally to ~1e-12.  The NH2 value is made reproducible by pinning the 2-B1
+# occupation (NH2_OCC, C2v); without the pin its UHF is bistable (a 2-A1 solution ~0.074 Eh higher).
+ALPHA_ZZ_ENERGY_FD = {
+    'ae_631g': 0.1951911112,   # H2O/6-31G, all-electron (spatial)
+    'uhf_nh2': 0.1855953897,   # NH2 (2-B1, C2v, pinned occ) / 6-31G (spin-orbital)
+}
+
 
 def test_mp2_corr_polarizability_energy_fd_631g():
-    """All-electron alpha_zz vs a 5-point finite field of the MP2 energy -- a fully
-    external oracle (the dipole FD above is pycc-vs-pycc). Coarser (energy second
-    derivatives divide by h^2), so a looser tolerance."""
+    """All-electron alpha_zz vs the frozen external energy finite field, H2O/6-31G (the live
+    dipole FD above is pycc-vs-pycc; this frozen value is the external anchor)."""
     a = _pycc_alpha('6-31G', orbital_basis='spatial')
-    assert abs(a[2, 2] - _energy_fd_alpha_diag('6-31G', 2)) < 1e-7
+    assert abs(a[2, 2] - ALPHA_ZZ_ENERGY_FD['ae_631g']) < 1e-7
 
 
 def test_ump2_corr_polarizability_energy_fd_nh2_631g():
-    """Open-shell UHF-MP2 correlation alpha_zz vs a 5-point finite field of the MP2 energy --
-    the external open-shell oracle for the spin-orbital second-order response, NH2 (2-B1) / 6-31G.
-    (Energy second derivatives divide by h^2, so a looser tolerance than the dipole FD.)"""
-    a = _pycc_alpha('6-31G', orbital_basis='spinorbital', geom=NH2, reference='uhf')
-    assert abs(a[2, 2] - _energy_fd_alpha_diag('6-31G', 2, geom=NH2, reference='uhf')) < 1e-6
+    """Open-shell UHF-MP2 correlation alpha_zz vs the frozen external energy finite field,
+    NH2 (2-B1, C2v, pinned occupation) / 6-31G -- the open-shell external anchor for the
+    spin-orbital second-order response."""
+    a = _pycc_alpha('6-31G', orbital_basis='spinorbital', geom=NH2, reference='uhf', occ=NH2_OCC)
+    assert abs(a[2, 2] - ALPHA_ZZ_ENERGY_FD['uhf_nh2']) < 1e-7
 
 
 # ---- keystone: spin-orbital == spin-adapted (carries the checks to the SO path) ----

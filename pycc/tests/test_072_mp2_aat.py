@@ -36,11 +36,33 @@ AAT_REF = {
 }
 
 
-def _mpwfn(orbital_basis='spatial', freeze_core='false'):
+# Water, fixed Cartesian frame (bohr), for the larger-basis (cc-pVDZ) AAT.  cc-pVDZ H2O2 AATs run
+# ~100 s (too slow for the default suite); cc-pVDZ H2O is ~12 s.  The frame is locked (no_com,
+# no_reorient) so pycc and the apyib reference below see the identical geometry.
+WATER = """
+O  0.000000000000  0.000000000000 -0.143225816552
+H  0.000000000000  1.638036840407  1.136548822547
+H  0.000000000000 -1.638036840407  1.136548822547
+no_com
+no_reorient
+symmetry c1
+units bohr
+"""
+
+# apyib reference electronic MP2 AAT for H2O / cc-pVDZ (independent implementation, the frame above);
+# only the symmetry-allowed elements are nonzero.  pycc reproduces these (both spin paths) to ~1e-11.
+AAT_REF_CCPVDZ = {
+    (0, 1):  0.1344969130, (1, 0): -0.1531649831,
+    (3, 1): -0.1289334907, (3, 2):  0.1522846408, (4, 0):  0.0925725477, (5, 0): -0.1534201482,
+    (6, 1): -0.1289334907, (6, 2): -0.1522846408, (7, 0):  0.0925725477, (8, 0):  0.1534201482,
+}
+
+
+def _mpwfn(orbital_basis='spatial', freeze_core='false', geom=H2O2, basis='STO-3G'):
     psi4.core.clean()
     psi4.core.clean_options()
-    psi4.geometry(H2O2)
-    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'freeze_core': freeze_core,
+    psi4.geometry(geom)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                       'e_convergence': 1e-11, 'd_convergence': 1e-11})
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
@@ -74,6 +96,17 @@ def test_mp2_aat_so_equals_spatial():
         E_so = np.asarray(pycc.aat(_mpwfn('spinorbital', fc)).electronic).reshape(-1, 3)
         for (row, col), ref in AAT_REF[fc].items():
             assert abs(E_so[row, col] - ref) < 1e-6, (fc, row, col, E_so[row, col], ref)
+
+
+def test_mp2_aat_ccpvdz_vs_apyib():
+    """Larger basis (cc-pVDZ): the electronic MP2 AAT (H2O -- a real virtual space with polarization
+    functions and several virtuals per irrep, unlike STO-3G/H2O) reproduces the independent apyib
+    reference, for BOTH the spin-adapted and the spin-orbital paths (so SO == spatial as well)."""
+    P = np.asarray(pycc.aat(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')).electronic).reshape(-1, 3)
+    P_so = np.asarray(pycc.aat(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')).electronic).reshape(-1, 3)
+    for (row, col), ref in AAT_REF_CCPVDZ.items():
+        assert abs(P[row, col] - ref) < 1e-6, ('spatial', row, col, P[row, col], ref)
+        assert abs(P_so[row, col] - ref) < 1e-6, ('SO', row, col, P_so[row, col], ref)
 
 
 def test_mp2_aat_gauge_invariance():

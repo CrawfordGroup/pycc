@@ -8,7 +8,8 @@ and energy-weighted density against the skeleton derivative integrals. Both foll
 CC gradient formulation (Gauss, Stanton & Bartlett, JCP 95, 2623 (1991)).
 
 Validation:
-  * relaxed MP2 dipole -Tr(D_relaxed mu) vs a 5-point finite field of (E_MP2 - E_SCF);
+  * relaxed MP2 dipole -Tr(D_relaxed mu) vs a finite field of (E_MP2 - E_SCF), frozen (see
+    FF_CORR_MU_Z; the open-shell NH2 value is pinned to its 2-B1 ground state via NH2_OCC);
   * analytic MP2 gradient vs psi4.gradient('mp2');
   * keystone: the spin-adapted and spin-orbital gradients agree on a closed shell.
 """
@@ -23,8 +24,10 @@ H 1 0.96
 H 1 0.96 2 104.5
 """
 
-# Open-shell UHF reference: NH2 (2-B1, bent -- non-degenerate SOMO).  Deliberately not OH (2-Pi),
-# whose degenerate pi orbitals leave the UHF solution non-reproducible across platforms and the
+# Open-shell UHF reference: NH2 (2-B1, bent).  Run in C2v with the ground-state occupation pinned
+# (NH2_OCC) so the SCF cannot fall into the 2-A1 excited solution ~0.074 Eh higher that a poor guess
+# ('core') otherwise reaches; the pinned 2-B1 is guess- and platform-independent, hence freezeable.
+# Deliberately not OH (2-Pi), whose degenerate pi orbitals leave the UHF non-reproducible and the
 # orbital Hessian near-singular.
 NH2 = """
 0 2
@@ -32,9 +35,28 @@ N
 H 1 1.02
 H 1 1.02 2 103.0
 """
+NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}   # pin 2-B1 ground state (C2v irreps A1,A2,B1,B2)
 
 
-def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf'):
+# Frozen finite-field oracles.  The correlation dipole mu_z from the psi4 energy finite field
+# (_ff_corr_dipole / _ff_total_dipole) is a disposable *external* oracle -- it re-derives, through
+# psi4, a number the pycc analytic routes already compute -- so we freeze it once rather than re-run
+# 4-8 psi4 energy evaluations per test.  Each value below was validated against the psi4 5-point
+# field to ~1e-11; the analytic routes are cross-checked live by the explicit==relaxed and (for the
+# gradient) SO==spatial keystones, which all land on these same numbers.  Regenerate with
+# _ff_corr_dipole / _ff_total_dipole.  The open-shell NH2 value is made reproducible by pinning the
+# 2-B1 ground-state occupation (NH2_OCC, C2v); without the pin its UHF is bistable (a 2-A1 solution
+# ~0.074 Eh higher is reachable by a poor SCF guess such as 'core').
+FF_CORR_MU_Z = {
+    ('6-31G', False):  -0.0349952749,   # H2O/6-31G, all-electron
+    ('cc-pVDZ', False): -0.0367852258,   # H2O/cc-pVDZ, all-electron
+    ('6-31G', True):   -0.0351121565,   # H2O/6-31G, frozen core
+}
+FF_TOTAL_MU_Z_631 = 1.0003212210         # total (HF + correlation) MP2 dipole mu_z, H2O/6-31G
+FF_CORR_MU_Z_UHF_NH2 = -0.0249262717     # NH2 (2-B1, C2v, pinned occ) / 6-31G, UHF-MP2 correlation
+
+
+def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf', occ=None):
     """Relaxed correlation mu_z by a 5-point finite field of (E_MP2 - E_SCF)."""
     def e(model, Fz):
         psi4.core.clean()
@@ -42,6 +64,8 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf')
         psi4.geometry(geom)
         opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
                'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12}
+        if occ:
+            opt.update(occ)
         if Fz:
             opt.update({'perturb_h': True, 'perturb_with': 'dipole',
                         'perturb_dipole': [0.0, 0.0, Fz]})
@@ -54,14 +78,17 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf')
     return mu('mp2') - mu('scf')
 
 
-def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf'):
+def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf', occ=None):
     """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted),
     via the user-API :meth:`MPwfn.relaxed_dipole`."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
-                      'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    opt = {'basis': basis, 'scf_type': 'pk', 'reference': reference,
+           'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12}
+    if occ:
+        opt.update(occ)
+    psi4.set_options(opt)
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
@@ -69,32 +96,32 @@ def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='fal
 
 
 def test_mp2_relaxed_dipole_631g():
-    """Relaxed spin-orbital MP2 dipole (mu_z) vs finite field, H2O/6-31G (C1)."""
+    """Relaxed spin-orbital MP2 dipole (mu_z) vs the frozen finite-field oracle, H2O/6-31G (C1)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole(geom, '6-31G')
-               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
 
 
 def test_sa_mp2_relaxed_dipole_631g():
-    """Relaxed spin-adapted (closed-shell RHF) MP2 dipole vs finite field, H2O/6-31G."""
+    """Relaxed spin-adapted (closed-shell RHF) MP2 dipole vs the frozen finite-field oracle, H2O/6-31G."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole(geom, '6-31G', orbital_basis='spatial')
-               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
 
 
 def test_mp2_relaxed_dipole_ccpvdz():
-    """Relaxed MP2 dipole vs finite field, H2O/cc-pVDZ (C2v: polarization functions
-    and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
+    """Relaxed MP2 dipole vs the frozen finite-field oracle, H2O/cc-pVDZ (C2v: polarization
+    functions and A2-irrep MOs). Exercises symmetry-adapted MOs in the relaxed density."""
     assert abs(_pycc_corr_dipole(WATER, 'cc-pVDZ')
-               - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+               - FF_CORR_MU_Z[('cc-pVDZ', False)]) < 1e-8
 
 
 def test_ump2_relaxed_dipole_nh2_631g():
-    """Open-shell UHF-MP2 relaxed correlation dipole (mu_z) vs finite field, NH2 (2-B1) / 6-31G.
-    The open-shell oracle for the spin-orbital relaxed density (Z-vector orbital response)."""
-    geom = NH2 + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole(geom, '6-31G', reference='uhf')
-               - _ff_corr_dipole(geom, '6-31G', reference='uhf')) < 1e-8
+    """Open-shell UHF-MP2 relaxed correlation dipole (mu_z) vs the frozen finite-field oracle,
+    NH2 (2-B1, C2v, pinned occupation) / 6-31G. The open-shell oracle for the spin-orbital relaxed
+    density (Z-vector orbital response)."""
+    assert abs(_pycc_corr_dipole(NH2, '6-31G', reference='uhf', occ=NH2_OCC)
+               - FF_CORR_MU_Z_UHF_NH2) < 1e-8
 
 
 # ---- explicit-derivative route (derivints.pdf): correlation dipole from the full
@@ -117,18 +144,18 @@ def _pycc_corr_dipole_explicit(geom, basis, orbital_basis='spinorbital', freeze_
 
 
 def test_mp2_explicit_corr_dipole_631g():
-    """Explicit-derivative SO MP2 correlation dipole vs the finite field, H2O/6-31G (C1)."""
+    """Explicit-derivative SO MP2 correlation dipole vs the frozen finite-field oracle, H2O/6-31G (C1)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole_explicit(geom, '6-31G')
-               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
 
 
 def test_sa_mp2_explicit_corr_dipole_631g():
-    """Explicit-derivative spin-adapted (spatial) MP2 correlation dipole vs the finite
-    field, H2O/6-31G (C1)."""
+    """Explicit-derivative spin-adapted (spatial) MP2 correlation dipole vs the frozen
+    finite-field oracle, H2O/6-31G (C1)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial')
-               - _ff_corr_dipole(geom, '6-31G')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
 
 
 def test_mp2_explicit_equals_relaxed_631g():
@@ -142,12 +169,12 @@ def test_mp2_explicit_equals_relaxed_631g():
 
 
 def test_mp2_explicit_corr_dipole_ccpvdz():
-    """Explicit-derivative MP2 correlation dipole vs finite field, H2O/cc-pVDZ (C2v:
-    polarization functions and A2-irrep MOs), both bases."""
+    """Explicit-derivative MP2 correlation dipole vs the frozen finite-field oracle, H2O/cc-pVDZ
+    (C2v: polarization functions and A2-irrep MOs), both spin-orbital and spin-adapted."""
     assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ')
-               - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+               - FF_CORR_MU_Z[('cc-pVDZ', False)]) < 1e-8
     assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ', orbital_basis='spatial')
-               - _ff_corr_dipole(WATER, 'cc-pVDZ')) < 1e-8
+               - FF_CORR_MU_Z[('cc-pVDZ', False)]) < 1e-8
 
 
 def _pycc_corr_gradient_explicit_and_relaxed(geom, basis, orbital_basis='spinorbital',
@@ -192,12 +219,12 @@ def test_mp2_explicit_corr_gradient_ccpvdz():
 
 
 def test_fc_sa_mp2_explicit_corr_dipole_631g():
-    """Frozen-core spin-adapted (spatial) explicit-derivative MP2 correlation dipole vs the
-    finite field of (E_MP2 - E_SCF), H2O/6-31G (C1) -- the core<->active orbital response (the
-    canonical d_x f_ij = 0 block of U) is what the explicit route needs for frozen core."""
+    """Frozen-core spin-adapted (spatial) explicit-derivative MP2 correlation dipole vs the frozen
+    finite-field oracle, H2O/6-31G (C1) -- the core<->active orbital response (the canonical
+    d_x f_ij = 0 block of U) is what the explicit route needs for frozen core."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial', freeze_core='true')
-               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
 
 
 def test_fc_sa_mp2_explicit_corr_gradient_631g():
@@ -210,12 +237,12 @@ def test_fc_sa_mp2_explicit_corr_gradient_631g():
 
 
 def test_fc_so_mp2_explicit_corr_dipole_631g():
-    """Frozen-core spin-orbital explicit-derivative MP2 correlation dipole vs the finite field
-    of (E_MP2 - E_SCF), H2O/6-31G (C1). The core<->active response is built over MPwfn's own
-    full-occupied SO space (no all-electron SO HFwfn to borrow -- different spin ordering)."""
+    """Frozen-core spin-orbital explicit-derivative MP2 correlation dipole vs the frozen finite-field
+    oracle, H2O/6-31G (C1). The core<->active response is built over MPwfn's own full-occupied SO
+    space (no all-electron SO HFwfn to borrow -- different spin ordering)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
-               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
 
 
 def test_fc_so_mp2_explicit_corr_gradient_631g():
@@ -227,25 +254,30 @@ def test_fc_so_mp2_explicit_corr_gradient_631g():
     assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
 
 
-def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf'):
+def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf', occ=None):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'reference': reference,
-                      'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    opt = {'basis': basis, 'scf_type': 'pk', 'reference': reference,
+           'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12}
+    if occ:
+        opt.update(occ)
+    psi4.set_options(opt)
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
     return np.asarray(pycc.gradient(mp).total)
 
 
-def _psi4_mp2_gradient(geom, basis, reference='rhf'):
+def _psi4_mp2_gradient(geom, basis, reference='rhf', occ=None):
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
-                      'freeze_core': 'false', 'e_convergence': 1e-12,
-                      'd_convergence': 1e-12})
+    opt = {'basis': basis, 'scf_type': 'pk', 'mp2_type': 'conv', 'reference': reference,
+           'freeze_core': 'false', 'e_convergence': 1e-12, 'd_convergence': 1e-12}
+    if occ:
+        opt.update(occ)
+    psi4.set_options(opt)
     return np.asarray(psi4.gradient('mp2'))
 
 
@@ -264,17 +296,17 @@ def test_sa_mp2_gradient_631g():
 
 
 def test_ump2_gradient_nh2_631g():
-    """Open-shell UHF-MP2 analytic nuclear gradient vs Psi4, NH2 (2-B1) / 6-31G (C1).
+    """Open-shell UHF-MP2 analytic nuclear gradient vs Psi4, NH2 (2-B1, C2v, pinned occupation) / 6-31G.
 
     The open-shell oracle for the spin-orbital Z-vector gradient (``_so_zvector``).  psi4 is the
     right check here rather than the explicit == relaxed identity: an open-shell UHF spin-orbital
     orbital Hessian carries a near-zero mode, so the single linear solve both internal routes run
     through is ill-conditioned and their difference is platform-dependent -- but the final gradient
-    is orthogonal to that mode and reproduces psi4 to machine precision.  NH2 is non-degenerate
-    (unlike OH, 2-Pi, whose degeneracy also makes the reference itself non-reproducible)."""
-    geom = NH2 + "symmetry c1\n"
-    assert np.max(np.abs(_pycc_gradient(geom, '6-31G', reference='uhf')
-                         - _psi4_mp2_gradient(geom, '6-31G', reference='uhf'))) < 1e-8
+    is orthogonal to that mode and reproduces psi4 to machine precision.  The 2-B1 occupation is
+    pinned (NH2_OCC) so the SCF cannot fall into the 2-A1 excited solution; unlike OH (2-Pi) the
+    reference is then reproducible."""
+    assert np.max(np.abs(_pycc_gradient(NH2, '6-31G', reference='uhf', occ=NH2_OCC)
+                         - _psi4_mp2_gradient(NH2, '6-31G', reference='uhf', occ=NH2_OCC))) < 1e-8
 
 
 def test_mp2_gradient_spatial_vs_so_631g():
@@ -327,12 +359,12 @@ def _fc_mp2_total_energy(disp, basis):
 
 
 def test_fc_mp2_relaxed_dipole_631g():
-    """Frozen-core relaxed spin-adapted MP2 dipole (mu_z) vs a 5-point finite field of
-    (E_MP2 - E_SCF), H2O/6-31G (C1) -- validates the frozen-core relaxed 1-PDM (the
-    core-active divide and the full-occ Z-vector)."""
+    """Frozen-core relaxed spin-adapted MP2 dipole (mu_z) vs the frozen finite-field oracle,
+    H2O/6-31G (C1) -- validates the frozen-core relaxed 1-PDM (the core-active divide and the
+    full-occ Z-vector)."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole(geom, '6-31G', orbital_basis='spatial', freeze_core='true')
-               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
 
 
 def test_fc_mp2_gradient_vs_energy_fd_631g():
@@ -409,8 +441,8 @@ def _ff_total_dipole(geom, basis, model, F=0.0005):
 
 
 def test_mp2_total_dipole_631g():
-    """Total MP2 dipole = HFwfn.dipole() + MPwfn.relaxed_dipole() vs a finite field of the
-    total MP2 energy, H2O/6-31G (C1) -- validates the reference/correlation dipole split."""
+    """Total MP2 dipole = HFwfn.dipole() + MPwfn.relaxed_dipole() vs the frozen finite-field
+    oracle of the total MP2 energy, H2O/6-31G (C1) -- validates the reference/correlation split."""
     geom = WATER + "symmetry c1\n"
     psi4.core.clean()
     psi4.core.clean_options()
@@ -421,16 +453,16 @@ def test_mp2_total_dipole_631g():
     mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
     mp.compute_energy()
     total = np.asarray(pycc.dipole(mp).total)
-    assert abs(total[2] - _ff_total_dipole(geom, '6-31G', 'mp2')) < 1e-8
+    assert abs(total[2] - FF_TOTAL_MU_Z_631) < 1e-8
 
 
 def test_fc_so_mp2_relaxed_dipole_631g():
-    """Frozen-core relaxed spin-orbital MP2 dipole (mu_z) vs a 5-point finite field of
-    (E_MP2 - E_SCF), H2O/6-31G (C1). Exercises the full-MO spin-orbital Hamiltonian (the
-    frozen core is now kept in H) and the spin-orbital frozen-core relaxed 1-PDM."""
+    """Frozen-core relaxed spin-orbital MP2 dipole (mu_z) vs the frozen finite-field oracle,
+    H2O/6-31G (C1). Exercises the full-MO spin-orbital Hamiltonian (the frozen core is now kept
+    in H) and the spin-orbital frozen-core relaxed 1-PDM."""
     geom = WATER + "symmetry c1\n"
     assert abs(_pycc_corr_dipole(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
-               - _ff_corr_dipole(geom, '6-31G', freeze_core='true')) < 1e-8
+               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
 
 
 def test_fc_mp2_gradient_spatial_vs_so_631g():

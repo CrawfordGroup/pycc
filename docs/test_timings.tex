@@ -1,0 +1,248 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{longtable,booktabs}
+\usepackage[T1]{fontenc}
+\renewcommand{\arraystretch}{1.03}
+\setlength{\tabcolsep}{4.5pt}
+\begin{document}
+\begin{center}{\Large\bfseries pycc test-suite timings}\\[3pt]
+psi4 1.9, conv/pk, run on \texttt{ganymede} (macOS single machine), 2026-07-04. Duration $=$ call$+$setup$+$teardown.\\[2pt]
+226 tests with measurable time, total 1422\,s ($\approx$24\,min). Local-cc \texttt{slow} tests excluded; $\sim$12 further ran $<0.005$\,s. FD $=$ executes finite difference.
+\end{center}
+\footnotesize
+% To add a test: insert one row in decreasing-duration order:
+%   \texttt{file::function} & Mol & Basis & seconds & $\bullet$(if FD) \\
+% Rebuild: run pdflatex 2-3x so the longtable column widths converge (a single pass
+% leaves the header/footer misaligned with the body).
+\begin{longtable}{l l l r c}
+\toprule Test (\texttt{file::function}) & Mol. & Basis & s & FD \\ \midrule \endfirsthead
+\toprule Test (\texttt{file::function}) & Mol. & Basis & s & FD \\ \midrule \endhead
+\midrule \multicolumn{5}{r}{\emph{continued\ldots}} \\ \endfoot \bottomrule \endlastfoot
+\texttt{test\_059\_cc3\_response::test\_cc3\_polarizability} & H2O & STO-3G & 168.15 &  \\
+\texttt{test\_037\_rtcc3::test\_rtcc\_he\_cc\_pvdz} & H2O & cc-pVDZ & 125.81 &  \\
+\texttt{test\_068\_mp2\_apt::test\_so\_mp2\_corr\_apt\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 109.89 &  \\
+\texttt{test\_065\_spinorbital\_hf\_hessian::test\_so\_rhf\_hessian\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 64.90 &  \\
+\texttt{test\_031\_cc3::test\_so\_cc3\_lambda\_equals\_spatial\_rhf} & H2O & STO-3G & 63.41 &  \\
+\texttt{test\_069\_mp2\_hessian::test\_mp2\_hessian\_2n1\_vs\_explicit\_631g} & H2O & 6-31G & 43.91 &  \\
+\texttt{test\_031\_cc3::test\_cc3\_h2o} & H2O & cc-pVDZ & 40.83 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_fc\_so\_mp2\_corr\_polarizability\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 40.38 &  \\
+\texttt{test\_031\_cc3::test\_so\_cc3\_lambda\_equals\_spatial\_rhf\_frzc} & H2O & STO-3G & 31.82 &  \\
+\texttt{test\_059\_cc3\_response::test\_cc3\_optical\_rotation\_zz} & H2O2 & STO-3G & 31.63 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_so\_mp2\_corr\_polarizability\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 30.01 &  \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_vs\_explicit\_ccpvdz} & H2O & cc-pVDZ & 29.83 &  \\
+\texttt{test\_023\_ms\_int::test\_rtcc\_water\_cc\_pvdz} & H2O & cc-pVDZ & 26.03 &  \\
+\texttt{test\_031\_cc3::test\_so\_cc3\_equals\_spatial\_rhf} & H2O & STO-3G & 22.80 &  \\
+\texttt{test\_031\_cc3::test\_ucc3\_oh} & OH & 6-31G & 22.11 &  \\
+\texttt{test\_054\_rohf::test\_rohf\_cc3\_oh} & OH & 6-31G & 21.84 &  \\
+\texttt{test\_069\_mp2\_hessian::test\_fc\_so\_mp2\_corr\_hessian\_vs\_spatial\_631g} & H2O & 6-31G & 20.97 &  \\
+\texttt{test\_069\_mp2\_hessian::test\_so\_mp2\_corr\_hessian\_vs\_spatial\_631g} & H2O & 6-31G & 18.88 &  \\
+\texttt{test\_068\_mp2\_apt::test\_mp2\_apt\_2n1\_routes\_vs\_explicit\_631g} & H2O & 6-31G & 17.31 &  \\
+\texttt{test\_071\_hf\_velocity\_apt::test\_hf\_vgapt\_so\_vs\_spatial} & NH3 & 6-31G{*}/6-31G{*}{*} & 16.17 &  \\
+\texttt{test\_074\_property\_facade::test\_facade\_route\_option} & H2O2 & STO-3G & 15.28 &  \\
+\texttt{test\_034\_ccsd\_t\_density::test\_ccsd\_t\_h2o} & H2O & STO-3G/cc-pVDZ & 14.43 &  \\
+\texttt{test\_049\_hf\_hessian::test\_hf\_hessian\_h2o\_ccpvdz} & H2O & cc-pVDZ & 14.30 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_explicit\_corr\_gradient\_ccpvdz} & H2O & cc-pVDZ & 13.13 &  \\
+\texttt{test\_031\_cc3::test\_so\_cc3\_equals\_spatial\_rhf\_frzc} & H2O & STO-3G & 11.98 &  \\
+\texttt{test\_072\_mp2\_aat::test\_mp2\_aat\_so\_equals\_spatial} & H2O2 & STO-3G & 11.60 &  \\
+\texttt{test\_074\_property\_facade::test\_facade\_decomposition\_and\_total} & H2O2 & STO-3G & 11.10 &  \\
+\texttt{test\_068\_mp2\_apt::test\_fc\_so\_mp2\_corr\_apt\_vs\_spatial\_631g} & H2O & 6-31G & 9.98 &  \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_so\_equals\_spatial\_ccpvdz} & H2O & cc-pVDZ & 9.95 &  \\
+\texttt{test\_005\_ccsd\_t\_energy::test\_ccsd\_t\_h2o} & H2O & STO-3G/cc-pVDZ & 9.66 &  \\
+\texttt{test\_022\_adap\_int::test\_rtcc\_water\_cc\_pvdz} & H2O & cc-pVDZ & 9.34 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_mp2\_gradient\_vs\_energy\_fd\_631g} & H2O & 6-31G & 9.34 & $\bullet$ \\
+\texttt{test\_043\_eomccsd::test\_eomccsd\_c2h4\_fc} & C2H4 & cc-pVDZ & 8.89 &  \\
+\texttt{test\_036\_lr::test\_linresp} & H2O & aug-cc-pvdz & 8.49 &  \\
+\texttt{test\_064\_spinorbital\_hf\_apt::test\_so\_rhf\_apt\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 7.64 &  \\
+\texttt{test\_068\_mp2\_apt::test\_so\_mp2\_corr\_apt\_vs\_spatial\_631g} & H2O & 6-31G & 7.58 &  \\
+\texttt{test\_058\_spatial\_optrot::test\_spatial\_rhf\_optrot\_vs\_psi4} & H2O2 & cc-pVDZ & 7.58 &  \\
+\texttt{test\_065\_spinorbital\_hf\_hessian::test\_so\_rhf\_hessian\_vs\_spatial\_631g} & H2O & 6-31G & 7.45 &  \\
+\texttt{test\_068\_mp2\_apt::test\_mp2\_corr\_apt\_dipfd\_631g} & H2O & 6-31G & 6.90 & $\bullet$ \\
+\texttt{test\_069\_mp2\_hessian::test\_fc\_mp2\_corr\_hessian\_gradfd\_631g} & H2O & 6-31G & 6.72 & $\bullet$ \\
+\texttt{test\_069\_mp2\_hessian::test\_mp2\_corr\_hessian\_gradfd\_631g} & H2O & 6-31G & 6.48 & $\bullet$ \\
+\texttt{test\_019\_localrt::test\_rtpao} & H2O & cc-pVDZ & 6.18 &  \\
+\texttt{test\_019\_localrt::test\_rtpno} & H2O & cc-pVDZ & 6.12 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_fc\_mp2\_corr\_polarizability\_dipfd\_631g} & H2O & 6-31G & 5.90 & $\bullet$ \\
+\texttt{test\_068\_mp2\_apt::test\_fc\_mp2\_corr\_apt\_dipfd\_631g} & H2O & 6-31G & 5.89 & $\bullet$ \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_closed\_shell\_keystone} & H2O & STO-3G & 5.69 &  \\
+\texttt{test\_054\_rohf::test\_rohf\_mp2\_ccsd\_ccsd\_t\_oh} & OH & cc-pVDZ & 5.39 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_gradient\_ccpvdz} & H2O & cc-pVDZ & 5.36 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_mp2\_corr\_polarizability\_dipfd\_631g} & H2O & 6-31G & 5.24 & $\bullet$ \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_gauge\_invariance} & H2O2 & STO-3G & 5.11 &  \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_so\_equals\_spatial} & H2O2 & STO-3G & 4.82 &  \\
+\texttt{test\_072\_mp2\_aat::test\_mp2\_aat\_gauge\_invariance} & H2O2 & STO-3G & 4.77 &  \\
+\texttt{test\_074\_property\_facade::test\_facade\_hf\_wavefunction} & H2O2 & STO-3G & 4.47 &  \\
+\texttt{test\_005\_ccsd\_t\_energy::test\_uccsd\_t\_oh} & OH & cc-pVDZ & 4.41 &  \\
+\texttt{test\_007\_dipole::test\_so\_dipole\_equals\_spatial\_rhf} & H2O & cc-pVDZ & 4.23 &  \\
+\texttt{test\_026\_autocorrelation::test\_rtcc\_he\_cc\_pvdz\_auto} & He & cc-pVDZ & 4.15 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_2pdm\_reconstructs\_energy\_ccpvdz} & H2O & cc-pVDZ & 3.99 &  \\
+\texttt{test\_057\_spatial\_polar::test\_spatial\_rhf\_polar\_vs\_psi4} & H2O & cc-pVDZ & 3.89 &  \\
+\texttt{test\_006\_rtccsd::test\_rtcc\_he\_cc\_pvdz} & He & cc-pVDZ & 3.82 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_fc\_so\_mp2\_corr\_polarizability\_vs\_spatial\_631g} & H2O & 6-31G & 3.56 &  \\
+\texttt{test\_069\_mp2\_hessian::test\_fc\_mp2\_corr\_hessian\_symmetry\_sum\_rule\_631g} & H2O & 6-31G & 3.18 &  \\
+\texttt{test\_005\_ccsd\_t\_energy::test\_uccsd\_t\_oh\_frzc} & OH & cc-pVDZ & 3.08 &  \\
+\texttt{test\_058\_spatial\_optrot::test\_spatial\_rhf\_optrot\_vs\_spinorbital} & H2O2 & STO-3G & 3.06 &  \\
+\texttt{test\_021\_rk4::test\_rtcc\_water\_cc\_pvdz} & H2O & cc-pVDZ & 3.01 &  \\
+\texttt{test\_056\_spinorbital\_optrot::test\_so\_rhf\_optrot\_vs\_psi4} & H2O2 & STO-3G & 2.96 &  \\
+\texttt{test\_062\_spinorbital\_hf\_gradient::test\_so\_rhf\_gradient\_vs\_spatial\_ccpvdz} & H2O & cc-pVDZ & 2.85 &  \\
+\texttt{test\_071\_hf\_velocity\_apt::test\_hf\_vgapt\_vs\_amos} & NH3 & 6-31G{*}/6-31G{*}{*} & 2.69 &  \\
+\texttt{test\_065\_spinorbital\_hf\_hessian::test\_uhf\_hessian\_vs\_psi4} & OH & 6-31G & 2.64 &  \\
+\texttt{test\_002\_ccsd\_energy::test\_uccsd\_oh} & OH & cc-pVDZ & 2.55 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_ccpvdz} & H2O & cc-pVDZ & 2.52 &  \\
+\texttt{test\_069\_mp2\_hessian::test\_mp2\_corr\_hessian\_symmetry\_sum\_rule\_631g} & H2O & 6-31G & 2.37 &  \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_vs\_explicit\_631g} & H2O & 6-31G & 2.36 &  \\
+\texttt{test\_002\_ccsd\_energy::test\_uccsd\_oh\_frzc} & OH & cc-pVDZ & 2.34 &  \\
+\texttt{test\_059\_cc3\_response::test\_cc3\_polarizability\_zz\_frzc} & H2O & STO-3G & 2.34 & $\bullet$ \\
+\texttt{test\_024\_contract\_cpu::test\_rtcc\_water\_cc\_pvdz} & H2O & cc-pVDZ & 2.33 &  \\
+\texttt{test\_068\_mp2\_apt::test\_mp2\_nuclear\_t2\_response\_631g} & H2O & 6-31G & 2.29 & $\bullet$ \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_vs\_explicit\_fc\_631g} & H2O & 6-31G & 2.26 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_vs\_psi4\_uhf\_oh\_c2v} & OH & 6-31G & 2.24 &  \\
+\texttt{test\_027\_linresp::test\_polar\_h2o\_cc\_pvdz} & H2O & STO-3G & 2.15 &  \\
+\texttt{test\_066\_spinorbital\_hf\_aat::test\_so\_rhf\_aat\_vs\_spatial\_h2o2} & H2O2 & sto-3g & 2.10 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_frozen\_core\_total} & H2O2 & STO-3G & 2.00 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_ump2\_corr\_polarizability\_energy\_fd\_nh2\_631g} & H2O/NH2 & 6-31G & 1.98 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_so\_mp2\_corr\_polarizability\_vs\_spatial\_631g} & H2O & 6-31G & 1.98 &  \\
+\texttt{test\_035\_cpnoppcc::test\_pnopp\_ccsd\_opt} & H2O & cc-pVDZ & 1.96 &  \\
+\texttt{test\_003\_ccsd\_lambda::test\_uhf\_lambda\_vs\_cfour} & OH & cc-pVDZ & 1.90 &  \\
+\texttt{test\_016\_chk::test\_chk} & H2 & cc-pVDZ & 1.90 &  \\
+\texttt{test\_007\_dipole::test\_uhf\_dipole\_vs\_cfour} & OH & cc-pVDZ & 1.88 &  \\
+\texttt{test\_003\_ccsd\_lambda::test\_rohf\_lambda\_vs\_cfour} & OH & cc-pVDZ & 1.88 &  \\
+\texttt{test\_007\_dipole::test\_rohf\_dipole\_vs\_cfour} & OH & cc-pVDZ & 1.82 &  \\
+\texttt{test\_059\_cc3\_response::test\_cc3\_polarizability\_zz} & H2O & STO-3G & 1.81 &  \\
+\texttt{test\_074\_property\_facade::test\_facade\_orbital\_gauge\_option} & H2O2 & STO-3G & 1.79 &  \\
+\texttt{test\_005\_ccsd\_t\_energy::test\_so\_ccsd\_t\_equals\_spatial\_rhf} & H2O & STO-3G & 1.79 &  \\
+\texttt{test\_060\_field\_energies::test\_cc3\_field\_findiff} & H2O & STO-3G & 1.78 & $\bullet$ \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_uhf\_nh2\_631g} & H2O/NH2 & 6-31G & 1.77 &  \\
+\texttt{test\_071\_hf\_velocity\_apt::test\_hf\_vgapt\_origin\_invariant} & NH3 & 6-31G{*} & 1.76 &  \\
+\texttt{test\_035\_cpnoppcc::test\_cpnopp\_ccsd} & H2O & cc-pVDZ & 1.73 &  \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_sigma\_vs\_psi4\_uhf} & OH & STO-3G & 1.70 &  \\
+\texttt{test\_055\_spinorbital\_polar::test\_so\_rhf\_polar\_vs\_psi4} & H2O & STO-3G & 1.68 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_sa\_mp2\_gradient\_ccpvdz} & H2O & cc-pVDZ & 1.64 &  \\
+\texttt{test\_068\_mp2\_apt::test\_fc\_mp2\_apt\_translational\_sum\_rule\_631g} & H2O & 6-31G & 1.61 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_explicit\_corr\_dipole\_ccpvdz} & H2O & cc-pVDZ & 1.57 &  \\
+\texttt{test\_043\_eomccsd::test\_eomccsd\_h2o} & H2O & cc-pVDZ & 1.52 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_genuine\_separation} & H2O2 & STO-3G & 1.50 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_so\_mp2\_explicit\_corr\_gradient\_631g} & H2O & 6-31G & 1.47 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_explicit\_corr\_gradient\_631g} & H2O & 6-31G & 1.41 &  \\
+\texttt{test\_028\_pnoppcc::test\_pnopp\_ccsd\_opt} & H2O & cc-pVDZ & 1.39 &  \\
+\texttt{test\_051\_cisd::test\_rohf\_cisd\_cid\_vs\_cfour} & OH & cc-pVDZ & 1.34 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_mp2\_gradient\_spatial\_vs\_so\_631g} & H2O & 6-31G & 1.31 &  \\
+\texttt{test\_043\_eomccsd::test\_eomccsd\_h2o\_fc} & H2O & cc-pVDZ & 1.31 &  \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_reduces\_to\_hf} & H2O2 & STO-3G & 1.30 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_vs\_psi4\_uhf} & NH2 & STO-3G & 1.27 &  \\
+\texttt{test\_056\_spinorbital\_optrot::test\_rohf\_optrot\_runs} & OH & STO-3G & 1.26 &  \\
+\texttt{test\_068\_mp2\_apt::test\_mp2\_apt\_translational\_sum\_rule\_631g} & H2O & 6-31G & 1.24 &  \\
+\texttt{test\_051\_cisd::test\_uhf\_cisd\_cid\_vs\_cfour} & OH & cc-pVDZ & 1.24 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_gradient\_spatial\_vs\_so\_631g} & H2O & 6-31G & 1.23 &  \\
+\texttt{test\_056\_spinorbital\_optrot::test\_uhf\_optrot\_runs} & OH & STO-3G & 1.23 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_ump2\_gradient\_nh2\_631g} & NH2 & 6-31G & 1.19 &  \\
+\texttt{test\_064\_spinorbital\_hf\_apt::test\_so\_rhf\_apt\_vs\_spatial\_631g} & H2O & 6-31G & 1.18 &  \\
+\texttt{test\_066\_spinorbital\_hf\_aat::test\_so\_rhf\_aat\_vs\_spatial\_631g} & H2O & 6-31G & 1.15 &  \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_so\_vs\_spatial\_631g} & H2O & 6-31G & 1.14 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_decomposition\_identities} & H2O2 & STO-3G & 1.13 &  \\
+\texttt{test\_072\_mp2\_aat::test\_mp2\_aat\_frozen\_core} & H2O2 & STO-3G & 1.12 &  \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_frozen\_core} & H2O2 & STO-3G & 1.11 &  \\
+\texttt{test\_057\_spatial\_polar::test\_spatial\_rhf\_polar\_vs\_spinorbital} & H2O & STO-3G & 1.10 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_gradient\_631g} & H2O & 6-31G & 1.08 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_explicit\_equals\_relaxed\_631g} & H2O & 6-31G & 1.05 &  \\
+\texttt{test\_046\_hf\_gradient::test\_hf\_gradient\_h2o} & H2O & cc-pVDZ & 1.03 &  \\
+\texttt{test\_013\_pnocc::test\_pno\_ccsd\_opt} & H2O & cc-pVDZ & 1.01 &  \\
+\texttt{test\_072\_mp2\_aat::test\_mp2\_aat\_all\_electron} & H2O2 & STO-3G & 1.01 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_origin\_argument} & H2O2 & STO-3G & 1.01 &  \\
+\texttt{test\_028\_pnoppcc::test\_pnopp\_ccsd} & H2O & cc-pVDZ & 0.99 &  \\
+\texttt{test\_046\_hf\_gradient::test\_hf\_gradient\_frozen\_core\_ref} & H2O & cc-pVDZ & 0.99 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_nuclear\_term} & H2O2 & STO-3G & 0.98 &  \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_left\_equals\_right} & H2O/OH & STO-3G & 0.93 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_frozen\_core} & H2O & STO-3G & 0.92 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_vs\_psi4} & H2O & STO-3G & 0.92 &  \\
+\texttt{test\_073\_mp2\_vg\_apt::test\_mp2\_vg\_apt\_all\_electron} & H2O2 & STO-3G & 0.91 &  \\
+\texttt{test\_013\_pnocc::test\_pno\_ccsd} & H2O & cc-pVDZ & 0.91 &  \\
+\texttt{test\_052\_spinorbital\_hamiltonian::test\_so\_equals\_spatial\_rhf\_frozen\_core} & H2O & cc-pVDZ & 0.91 &  \\
+\texttt{test\_052\_spinorbital\_hamiltonian::test\_so\_equals\_spatial\_rhf} & H2O & cc-pVDZ & 0.90 &  \\
+\texttt{test\_063\_spinorbital\_hf\_polarizability::test\_so\_rhf\_polarizability\_vs\_spatial} & H2O & cc-pVDZ & 0.89 &  \\
+\texttt{test\_004\_ccsd\_density::test\_density\_ccsd\_h2o} & H2O & STO-3G/cc-pVDZ & 0.87 &  \\
+\texttt{test\_071\_hf\_velocity\_apt::test\_hf\_vgapt\_differs\_from\_lg\_finite\_basis} & NH3 & 6-31G{*} & 0.86 &  \\
+\texttt{test\_060\_field\_energies::test\_ccsd\_field\_findiff} & H2O & STO-3G & 0.85 & $\bullet$ \\
+\texttt{test\_030\_sp::test\_rtcc\_water\_cc\_pvdz} & H2O & cc-pvdz & 0.85 &  \\
+\texttt{test\_003\_ccsd\_lambda::test\_lambda\_ccsd\_h2o} & H2O & STO-3G/cc-pVDZ & 0.82 &  \\
+\texttt{test\_049\_hf\_hessian::test\_hf\_hessian\_h2o} & H2O & STO-3G & 0.79 &  \\
+\texttt{test\_062\_spinorbital\_hf\_gradient::test\_so\_rhf\_gradient\_vs\_spatial\_631g} & H2O & 6-31G & 0.79 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_relaxed\_dipole\_ccpvdz} & H2O & cc-pVDZ & 0.78 &  \\
+\texttt{test\_002\_ccsd\_energy::test\_ccsd\_h2o} & H2O & STO-3G/cc-pVDZ & 0.78 &  \\
+\texttt{test\_052\_spinorbital\_hamiltonian::test\_uhf\_so\_mp2} & OH & cc-pVDZ & 0.75 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_frozen\_core} & H2O & STO-3G & 0.74 &  \\
+\texttt{test\_064\_spinorbital\_hf\_apt::test\_uhf\_apt} & OH & 6-31G & 0.72 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_2pdm\_reconstructs\_energy\_frozen\_core} & H2O & STO-3G & 0.68 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_zvector\_equals\_explicit} & H2O & STO-3G & 0.67 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_2pdm\_reconstructs\_energy\_uhf} & NH2/OH & STO-3G & 0.66 &  \\
+\texttt{test\_045\_mp2::test\_mp2\_h2o\_frzc} & H2O & cc-pVDZ & 0.64 &  \\
+\texttt{test\_045\_mp2::test\_ump2\_oh} & OH & cc-pVDZ & 0.64 &  \\
+\texttt{test\_045\_mp2::test\_mp2\_h2o} & H2O & cc-pVDZ & 0.64 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_hf\_dipole\_ccpvdz} & H2O & cc-pVDZ & 0.62 &  \\
+\texttt{test\_045\_mp2::test\_ump2\_oh\_frzc} & OH & cc-pVDZ & 0.62 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_sa\_mp2\_gradient\_631g} & H2O & 6-31G & 0.61 &  \\
+\texttt{test\_051\_cisd::test\_so\_cisd\_cid\_equals\_spatial\_rhf} & H2O & 6-31G & 0.61 &  \\
+\texttt{test\_055\_spinorbital\_polar::test\_uhf\_polar\_static} & OH & STO-3G & 0.60 &  \\
+\texttt{test\_047\_cphf\_polarizability::test\_cphf\_polarizability\_h2o} & H2O & cc-pVDZ & 0.60 &  \\
+\texttt{test\_067\_mp2\_polarizability::test\_mp2\_corr\_polarizability\_energy\_fd\_631g} & H2O & 6-31G & 0.59 &  \\
+\texttt{test\_020\_cc2::test\_cc2\_h2o} & H2O & cc-pVDZ & 0.59 &  \\
+\texttt{test\_074\_property\_facade::test\_aat\_hf\_wavefunction} & H2O2 & STO-3G & 0.58 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_sa\_mp2\_explicit\_corr\_gradient\_631g} & H2O & 6-31G & 0.56 &  \\
+\texttt{test\_050\_aat::test\_aat\_h2o2\_vs\_dalton} & H2O2 & STO-3G & 0.56 &  \\
+\texttt{test\_055\_spinorbital\_polar::test\_rohf\_polar\_static} & OH & STO-3G & 0.55 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_sa\_mp2\_explicit\_corr\_gradient\_631g} & H2O & 6-31G & 0.55 &  \\
+\texttt{test\_066\_spinorbital\_hf\_aat::test\_uhf\_aat\_runs} & OH & 6-31G & 0.54 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_keystone\_equals\_spatial} & H2O & STO-3G & 0.54 &  \\
+\texttt{test\_048\_dipole\_derivatives::test\_dipole\_derivatives\_h2o} & H2O & STO-3G & 0.50 &  \\
+\texttt{test\_062\_spinorbital\_hf\_gradient::test\_uhf\_gradient\_vs\_psi4} & OH & 6-31G & 0.50 &  \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_frozen\_core} & OH & STO-3G & 0.50 &  \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_rohf} & OH & STO-3G & 0.50 &  \\
+\texttt{test\_062\_spinorbital\_hf\_gradient::test\_rohf\_gradient\_vs\_psi4} & OH & 6-31G & 0.49 &  \\
+\texttt{test\_072\_mp2\_aat::test\_mp2\_aat\_normalization} & H2O2 & STO-3G & 0.49 &  \\
+\texttt{test\_065\_spinorbital\_hf\_hessian::test\_rohf\_hessian\_not\_implemented} & OH & 6-31G & 0.48 &  \\
+\texttt{test\_051\_cisd::test\_cisd\_h2o} & H2O & cc-pVDZ & 0.47 &  \\
+\texttt{test\_051\_cisd::test\_cisd\_h2o\_frozen\_core} & H2O & cc-pVDZ & 0.46 &  \\
+\texttt{test\_017\_ccd::test\_ccd\_h2o} & H2O & cc-pVDZ & 0.46 &  \\
+\texttt{test\_063\_spinorbital\_hf\_polarizability::test\_uhf\_polarizability\_vs\_psi4} & OH & 6-31G & 0.43 &  \\
+\texttt{test\_049\_hf\_hessian::test\_hf\_hessian\_shares\_nuclear\_cache} & H2O & STO-3G & 0.43 &  \\
+\texttt{test\_051\_cisd::test\_cid\_h2o\_frozen\_core} & H2O & cc-pVDZ & 0.43 &  \\
+\texttt{test\_003\_ccsd\_lambda::test\_so\_lambda\_equals\_spatial\_rhf} & H2O & STO-3G & 0.42 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_so\_mp2\_explicit\_corr\_dipole\_631g} & H2O & 6-31G & 0.41 &  \\
+\texttt{test\_051\_cisd::test\_cid\_h2o} & H2O & cc-pVDZ & 0.41 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_2pdm\_reconstructs\_energy\_rhf} & H2O & STO-3G & 0.41 &  \\
+\texttt{test\_007\_dipole::test\_dipole\_h2\_2\_cc\_pvdz} & (H2)2 & cc-pVDZ & 0.40 &  \\
+\texttt{test\_018\_paocc::test\_pao\_H8} & H8 & cc-pVDZ & 0.38 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_gradient\_densities\_convention} & NH2 & STO-3G & 0.38 &  \\
+\texttt{test\_075\_spinorbital\_eomccsd::test\_so\_eom\_open\_shell\_iterative} & OH & STO-3G & 0.38 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_zvector\_equals\_explicit} & H2O & STO-3G & 0.37 &  \\
+\texttt{test\_052\_spinorbital\_hamiltonian::test\_auto\_dispatch\_rhf\_is\_spatial} & H2O & cc-pVDZ & 0.37 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_ump2\_relaxed\_dipole\_nh2\_631g} & NH2 & 6-31G & 0.36 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_total\_dipole\_631g} & H2O & 6-31G & 0.36 &  \\
+\texttt{test\_064\_spinorbital\_hf\_apt::test\_rohf\_apt\_not\_implemented} & OH & 6-31G & 0.35 &  \\
+\texttt{test\_002\_ccsd\_energy::test\_so\_ccsd\_equals\_spatial\_rhf} & H2O & STO-3G & 0.34 &  \\
+\texttt{test\_077\_so\_ccsd\_2pdm::test\_so\_2pdm\_full\_assembly} & OH & STO-3G & 0.34 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_explicit\_corr\_dipole\_631g} & H2O & 6-31G & 0.32 &  \\
+\texttt{test\_018\_paocc::test\_pao\_h2o} & H2O & 6-31g & 0.32 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_correlation\_nonzero} & H2O & STO-3G & 0.32 &  \\
+\texttt{test\_074\_property\_facade::test\_facade\_polarizability\_no\_nuclear} & H2O2 & STO-3G & 0.30 &  \\
+\texttt{test\_014\_field::test\_dipole\_h2\_2\_field} & (H2)2 & 6-31G & 0.30 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_so\_mp2\_relaxed\_dipole\_631g} & H2O & 6-31G & 0.29 &  \\
+\texttt{test\_076\_ccsd\_gradient::test\_ccsd\_gradient\_density\_energy} & H2O & STO-3G & 0.29 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_sa\_mp2\_explicit\_corr\_dipole\_631g} & H2O & 6-31G & 0.28 &  \\
+\texttt{test\_078\_so\_ccsd\_gradient::test\_so\_ccsd\_gradient\_rohf\_raises} & NH2 & STO-3G & 0.28 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_mp2\_relaxed\_dipole\_631g} & H2O & 6-31G & 0.27 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_sa\_mp2\_explicit\_corr\_dipole\_631g} & H2O & 6-31G & 0.27 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_hf\_dipole\_631g} & H2O & 6-31G & 0.26 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_fc\_mp2\_relaxed\_dipole\_631g} & H2O & 6-31G & 0.25 &  \\
+\texttt{test\_061\_mp2\_relaxed\_density::test\_sa\_mp2\_relaxed\_dipole\_631g} & H2O & 6-31G & 0.25 &  \\
+\texttt{test\_074\_property\_facade::test\_apt\_bad\_gauge} & H2O2 & STO-3G & 0.25 &  \\
+\texttt{test\_070\_mp2\_2n1\_polarizability::test\_2n1\_polarizability\_guards} & H2O & 6-31G & 0.24 &  \\
+\texttt{test\_020\_cc2::test\_cc2\_h2} & H2 & cc-pVDZ & 0.21 &  \\
+\texttt{test\_066\_spinorbital\_hf\_aat::test\_rohf\_aat\_not\_implemented} & OH & 6-31G & 0.20 &  \\
+\texttt{test\_063\_spinorbital\_hf\_polarizability::test\_rohf\_polarizability\_not\_implemented} & OH & 6-31G & 0.20 &  \\
+\texttt{test\_051\_cisd::test\_uhf\_cisd\_equals\_fci} & H2 & 6-31G & 0.18 &  \\
+\texttt{test\_060\_field\_energies::test\_cc3\_field\_requires\_store\_triples} & H2O & STO-3G & 0.17 &  \\
+\texttt{test\_051\_cisd::test\_rohf\_cisd\_equals\_fci} & H2 & 6-31G & 0.17 &  \\
+\texttt{test\_009\_pade::test\_pade\_sanity} & -- & -- & 0.01 &  \\
+\texttt{test\_009\_pade::test\_pade\_sanity\_xfail} & -- & -- & 0.01 &  \\
+\end{longtable}
+\end{document}
