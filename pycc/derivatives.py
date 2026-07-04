@@ -63,6 +63,11 @@ class Derivatives(object):
         self.mints = psi4.core.MintsHelper(wfn.H.basisset)
         self.mol = wfn.ref.molecule()
         self.natom = self.mol.natom()
+        # 1-atom LRU for the heavy first-derivative MO two-electron transforms (eri/so_eri):
+        # hold only the most recent atom's blocks so an atom-outer sweep reuses a block across its
+        # Cartesians and its several callers, without growing the deliberate one-atom footprint.
+        self._d1_atom: Any = None
+        self._d1_cache: dict = {}
 
     # ---- MO block selection ----
     def _mo(self, block: str) -> np.ndarray:
@@ -125,14 +130,30 @@ class Derivatives(object):
         C1, C2 = self._mo(b1), self._mo(b2)
         return [C1.T @ np.asarray(m) @ C2 for m in self.mints.ao_elec_dip_deriv1(atom)]
 
-    # ---- spatial two-electron (heavy: lazy, per atom) ----
+    # ---- spatial two-electron (heavy: lazy, one-atom cache) ----
+    def _tei1_cached(self, atom: int, key, compute):
+        """Return ``compute()`` for ``(atom, key)`` from the 1-atom cache, evicting the
+        previous atom on change. ``key`` distinguishes the transform variant (eri/so_eri) and
+        the MO blocks. The dominant cost is ``psi4.core.mo_tei_deriv1`` (the ``nmo^4`` MO
+        transform), which every caller for a given atom otherwise re-runs; this reuses it
+        across the atom's three Cartesians and callers. The cached arrays are treated
+        read-only (callers already build new arrays via swapaxes/arithmetic)."""
+        if atom != self._d1_atom:
+            self._d1_atom = atom
+            self._d1_cache = {}
+        if key not in self._d1_cache:
+            self._d1_cache[key] = compute()
+        return self._d1_cache[key]
+
     def eri(self, atom: int, b1: str = 'all', b2: str = 'all',
             b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         """Two-electron (ERI) derivatives for ``atom``: 3 (x, y, z) arrays, chemist
-        notation ``(pq|rs)^X``. Computed on demand so a caller iterating over atoms never
-        holds more than one atom's block at a time."""
-        return [np.asarray(m) for m in self.mints.mo_tei_deriv1(
-            atom, self._moM(b1), self._moM(b2), self._moM(b3), self._moM(b4))]
+        notation ``(pq|rs)^X``. Cached one atom at a time (:meth:`_tei1_cached`) so an
+        atom-outer sweep never holds more than one atom's block yet reuses the dominant
+        ``nmo^4`` transform across the atom's Cartesians and its several callers."""
+        return self._tei1_cached(atom, ('eri', b1, b2, b3, b4), lambda: [
+            np.asarray(m) for m in self.mints.mo_tei_deriv1(
+                atom, self._moM(b1), self._moM(b2), self._moM(b3), self._moM(b4))])
 
     def iter_eri(self, b1: str = 'all', b2: str = 'all', b3: str = 'all',
                  b4: str = 'all') -> Iterator[Tuple[int, List[np.ndarray]]]:
@@ -247,27 +268,31 @@ class Derivatives(object):
         """Spin-orbital antisymmetrized two-electron derivatives ``<pq||rs>^x`` for
         ``atom``: 3 (x, y, z) arrays. Spin-blocks the spatial chemist derivative integrals
         over the four spin-conserving combinations ``(s12, s34)``, converts to physicist
-        notation, and antisymmetrizes."""
-        shape, sel = self._so_eri_blocks((b1, b2, b3, b4))
-        chem = [np.zeros(shape) for _ in range(3)]
-        for s12 in (0, 1):
-            p1, C1 = sel[0][s12]
-            p2, C2 = sel[1][s12]
-            if not (p1.size and p2.size):
-                continue
-            for s34 in (0, 1):
-                p3, C3 = sel[2][s34]
-                p4, C4 = sel[3][s34]
-                if not (p3.size and p4.size):
+        notation, and antisymmetrizes. Cached one atom at a time (:meth:`_tei1_cached`): the
+        four spin-block ``mo_tei_deriv1`` transforms are the dominant cost and are otherwise
+        re-run by every caller for the atom."""
+        def compute():
+            shape, sel = self._so_eri_blocks((b1, b2, b3, b4))
+            chem = [np.zeros(shape) for _ in range(3)]
+            for s12 in (0, 1):
+                p1, C1 = sel[0][s12]
+                p2, C2 = sel[1][s12]
+                if not (p1.size and p2.size):
                     continue
-                G = self.mints.mo_tei_deriv1(atom, C1, C2, C3, C4)
-                for c in range(3):
-                    chem[c][np.ix_(p1, p2, p3, p4)] = np.asarray(G[c])
-        out = []
-        for ch in chem:
-            phys = ch.swapaxes(1, 2)
-            out.append(phys - phys.swapaxes(2, 3))
-        return out
+                for s34 in (0, 1):
+                    p3, C3 = sel[2][s34]
+                    p4, C4 = sel[3][s34]
+                    if not (p3.size and p4.size):
+                        continue
+                    G = self.mints.mo_tei_deriv1(atom, C1, C2, C3, C4)
+                    for c in range(3):
+                        chem[c][np.ix_(p1, p2, p3, p4)] = np.asarray(G[c])
+            out = []
+            for ch in chem:
+                phys = ch.swapaxes(1, 2)
+                out.append(phys - phys.swapaxes(2, 3))
+            return out
+        return self._tei1_cached(atom, ('so_eri', b1, b2, b3, b4), compute)
 
     def so_eri2(self, atom1: int, atom2: int, b1: str = 'all', b2: str = 'all',
                 b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
