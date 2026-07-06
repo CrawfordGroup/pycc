@@ -60,7 +60,7 @@ def test_so_rhf_polar_vs_psi4(rhf_wfn):
     """SO-RHF dynamic CCSD polarizability (isotropic, omega=0.1) vs Psi4."""
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12, r_convergence=1e-12)
-    cc = pycc.CCwfn(wfn, frozen_core=False, orbital_basis="spinorbital")
+    cc = pycc.CCwfn(wfn, orbital_basis="spinorbital")
     cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-11, r_conv=1e-11)
@@ -79,7 +79,7 @@ def test_uhf_polar_static(uhf_wfn):
     """UHF static CCSD polarizability (alpha_zz) vs the finite-field-validated frozen reference."""
     wfn = uhf_wfn(OH, "STO-3G", freeze_core="false",
                   e_convergence=1e-13, d_convergence=1e-13)
-    cc = pycc.CCwfn(wfn, frozen_core=False)
+    cc = pycc.CCwfn(wfn)
     cc.solve_cc(e_conv=1e-12, r_conv=1e-11)
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-12, r_conv=1e-11)
@@ -92,7 +92,7 @@ def test_rohf_polar_static(rohf_wfn):
     """ROHF static CCSD polarizability (alpha_zz) vs the finite-field-validated frozen reference."""
     wfn = rohf_wfn(OH, "STO-3G", freeze_core="false",
                    e_convergence=1e-13, d_convergence=1e-13)
-    cc = pycc.CCwfn(wfn, frozen_core=False)
+    cc = pycc.CCwfn(wfn)
     cc.solve_cc(e_conv=1e-12, r_conv=1e-11)
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-12, r_conv=1e-11)

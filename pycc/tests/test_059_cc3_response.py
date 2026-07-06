@@ -68,7 +68,7 @@ def test_cc3_polarizability_zz():
                       'r_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
 
-    cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
+    cc = pycc.CCwfn(wfn, model='CC3',
                     orbital_basis='spinorbital', store_triples=True)
     cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
     hbar = pycc.cchbar(cc)
@@ -146,7 +146,7 @@ def test_cc3_polarizability():
     _, wfn = psi4.energy('scf', return_wfn=True)
 
     def setup(store_triples):
-        cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
+        cc = pycc.CCwfn(wfn, model='CC3',
                         orbital_basis='spinorbital', store_triples=store_triples)
         ecc = cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
         hbar = pycc.cchbar(cc)
@@ -194,7 +194,7 @@ def test_cc3_optical_rotation_zz():
                       'r_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
 
-    cc = pycc.CCwfn(wfn, frozen_core=False, model='CC3',
+    cc = pycc.CCwfn(wfn, model='CC3',
                     orbital_basis='spinorbital', store_triples=True)
     ecc = cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
     hbar = pycc.cchbar(cc)

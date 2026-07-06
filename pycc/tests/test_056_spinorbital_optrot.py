@@ -69,7 +69,7 @@ def test_uhf_optrot_runs(uhf_wfn):
     external open-shell reference exists)."""
     wfn = uhf_wfn(OH, "STO-3G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    optrot = _optrot(wfn, 0.077357, frozen_core=False)
+    optrot = _optrot(wfn, 0.077357)
     assert optrot.shape == (3, 3)
     assert np.all(np.isfinite(optrot))
 
@@ -78,6 +78,6 @@ def test_rohf_optrot_runs(rohf_wfn):
     """Open-shell ROHF optical rotation: runs and returns a finite, real tensor."""
     wfn = rohf_wfn(OH, "STO-3G", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
-    optrot = _optrot(wfn, 0.077357, frozen_core=False)
+    optrot = _optrot(wfn, 0.077357)
     assert optrot.shape == (3, 3)
     assert np.all(np.isfinite(optrot))

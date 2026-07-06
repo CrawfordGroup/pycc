@@ -46,7 +46,7 @@ def _findiff(wfn, model, store_triples):
     """5-point finite-difference mu_z and alpha_zz from the field-on CC correlation
     energy. The field-free SCF (wfn) is shared; the field is applied in CCwfn."""
     def E(strength):
-        kw = dict(frozen_core=False, model=model, orbital_basis='spinorbital',
+        kw = dict(model=model, orbital_basis='spinorbital',
                   store_triples=store_triples)
         if strength != 0.0:
             kw.update(field=True, field_strength=strength, field_axis='Z')
@@ -78,6 +78,6 @@ def test_cc3_field_requires_store_triples():
     """Finite-field CC3 without stored triples is rejected: the non-canonical Fock
     couples the triples, so the full T3 must be retained."""
     with pytest.raises(Exception):
-        pycc.CCwfn(_scf_wfn(), frozen_core=False, model='CC3',
+        pycc.CCwfn(_scf_wfn(), model='CC3',
                    orbital_basis='spinorbital', field=True, field_strength=0.001,
                    field_axis='Z')

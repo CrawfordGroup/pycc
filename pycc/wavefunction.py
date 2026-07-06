@@ -89,24 +89,32 @@ class Wavefunction(object):
     local_mos : str
         'PIPEK_MEZEY' or 'BOYS' (default 'PIPEK_MEZEY'); used only when
         ``localize_occ`` is True.
-    frozen_core : bool
-        whether to honor the reference's frozen core (default True, for correlated
-        methods). In the spatial path the Hamiltonian is built over the full MO
-        space and this flag only sets ``nfzc`` -- how far the active occupied slice
-        ``o`` is offset past the core; in the spin-orbital path it selects the
-        ACTIVE (core-excluded) vs ALL orbital subset. False means no core
-        (``nfzc = 0``); HFwfn passes this, since HF properties are all-electron.
     orbital_basis : str or None
         force the orbital basis: ``'spatial'`` or ``'spinorbital'``. Default None
         auto-selects from the reference -- closed-shell RHF uses the spin-adapted
         spatial path; any open-shell (UHF/ROHF) reference uses spin orbitals.
         Passing ``'spinorbital'`` on a closed shell is supported (and used to
         validate the spin-orbital path against the spatial one).
+    Notes
+    -----
+    The frozen core is taken from the psi4 reference (``ref.frzcpi()`` / ``ref.nfrzc()``,
+    set by psi4's ``freeze_core`` option when the SCF is run) -- there is no pycc-side
+    override.  HFwfn is the sole exception: HF properties are all-electron, so it forces
+    ``nfzc = 0`` via the class attribute :attr:`_all_electron`.
     """
+
+    # HFwfn sets this True so nfzc is forced to 0 regardless of the reference's frozen-core
+    # designation (HF properties are all-electron); correlated subclasses leave it False and
+    # take the frozen core straight from psi4.
+    _all_electron = False
 
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
                  localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
-                 frozen_core: bool = True, orbital_basis: Any = None, **kwargs) -> None:
+                 orbital_basis: Any = None, **kwargs) -> None:
+        if 'frozen_core' in kwargs:
+            raise TypeError(
+                "the 'frozen_core' argument was removed; the frozen core is taken from "
+                "the psi4 reference -- set psi4's 'freeze_core' option when running the SCF.")
         # A subclass may set its own attributes before calling super().__init__;
         # snapshot them so _base_attrs (recorded at the end) captures only what the
         # base itself adds -- which _from_shared_base then replicates.
@@ -132,12 +140,12 @@ class Wavefunction(object):
         self.orbital_basis = self._resolve_orbital_basis(orbital_basis)
 
         if self.orbital_basis == 'spatial':
-            self._init_spatial(localize_occ, frozen_core)
+            self._init_spatial(localize_occ)
         else:
             if localize_occ:
                 raise PyCCError("Local correlation (localize_occ) is not supported "
                                 "in the spin-orbital path.")
-            self._init_spinorbital(frozen_core)
+            self._init_spinorbital()
 
         # Device / precision policy: validates the kwargs (fallback warnings for
         # GPU-without-torch / GPU-without-CUDA), resolves device0/device1, and
@@ -194,18 +202,18 @@ class Wavefunction(object):
             raise InvalidKeywordError('orbital_basis', orbital_basis, valid)
         return ob
 
-    def _init_spatial(self, localize_occ: bool, frozen_core: bool) -> None:
+    def _init_spatial(self, localize_occ: bool) -> None:
         """Build the spatial (spin-adapted, closed-shell RHF) orbital spaces,
         coefficients, and Hamiltonian.
 
         Always builds the FULL-space Hamiltonian; a frozen core is handled purely as
         a slice OFFSET -- the active occupied slice ``o`` starts past the core rather
-        than at 0. ``frozen_core`` only sets how many core orbitals to skip. This
-        gives every method one MO/integral layout: correlated codes work on the
-        active blocks via ``o``/``v``, while all-electron properties (HFwfn) pass
-        frozen_core=False so the slices span the whole space.
+        than at 0. ``nfzc`` (how many core orbitals to skip) comes from the psi4
+        reference's ``frzcpi()``. This gives every method one MO/integral layout:
+        correlated codes work on the active blocks via ``o``/``v``, while all-electron
+        properties (HFwfn, via ``_all_electron``) span the whole space (``nfzc = 0``).
         """
-        self.nfzc = int(sum(self.ref.frzcpi())) if frozen_core else 0
+        self.nfzc = 0 if self._all_electron else int(sum(self.ref.frzcpi()))
         self.no   = int(sum(self.ref.doccpi())) - self.nfzc
         self.nmo  = self.ref.nmo()
         self.nv   = self.nmo - self.no - self.nfzc
@@ -260,7 +268,7 @@ class Wavefunction(object):
         # MO-basis integrals (built once from the final C).
         self.H = Hamiltonian(self.ref, self.C, self.C, self.C, self.C)
 
-    def _init_spinorbital(self, frozen_core: bool) -> None:
+    def _init_spinorbital(self) -> None:
         """Build the spin-orbital (UHF/ROHF) orbital spaces, coefficients, and
         Hamiltonian.
 
@@ -276,7 +284,7 @@ class Wavefunction(object):
         path already relies on this).
         """
         ref = self.ref
-        self.nfzc = ref.nfrzc() if frozen_core else 0
+        self.nfzc = 0 if self._all_electron else ref.nfrzc()
         nao = ref.nalpha() - self.nfzc       # active alpha occupied
         nbo = ref.nbeta() - self.nfzc        # active beta occupied
         nav = ref.nmo() - ref.nalpha()       # active alpha virtual
