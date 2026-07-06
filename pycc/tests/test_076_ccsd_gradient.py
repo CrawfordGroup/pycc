@@ -1,120 +1,150 @@
 """
-CCSD analytic nuclear gradient -- pycc.gradient(ccwfn) via the CCderiv driver (explicit-derivative
-route).  The spatial closed-shell path, all-electron.
+CCSD analytic nuclear gradient -- pycc.gradient(ccwfn) / CCderiv, spatial closed-shell RHF.
 
-Validated against psi4's analytic CCSD gradient, with the density-adapter energy-reconstruction
-check (the two-particle density in the gradient convention reproduces the CCSD correlation energy)
-and the PropertyComponents decomposition.
+Anchored on tight finite differences of pycc's own CCSD correlation energy: each frozen reference is
+the analytic correlation gradient itself, validated once against a 5-point O(h^4) central FD of the
+CCSD correlation energy (h=0.005, CC converged to 1e-13) to ~6e-12 (see _findiff_gradient, the
+regeneration recipe).  All-electron and frozen-core; STO-3G and cc-pVDZ (a real virtual space --
+polarization functions, several virtuals per irrep, A2-symmetry MOs).  Two further pycc-vs-pycc
+cross-checks stay live: the efficient Z-vector route vs the independent explicit-derivative route
+(3*natom CPHF solves) to machine precision, and the gradient-convention densities reconstructing the
+CCSD correlation energy.
 """
 
+import contextlib
+import os
+
+import numpy as np
 import psi4
 import pycc
-import numpy as np
+
+# H2O, fixed frame (bohr), from the original test geometry (0.118 / 0.758 / 0.472 Angstrom).
+ANG2BOHR = 1.8897259886
+ATOMS = ['O', 'H', 'H']
+REF = ANG2BOHR * np.array([
+    [0.0,  0.0,     0.118],
+    [0.0,  0.758,  -0.472],
+    [0.0, -0.758,  -0.472],
+])
+
+# Frozen references: the analytic CCSD *correlation* gradient (a.u.; frame locked; closed-shell, so
+# platform-reproducible to ~1e-14).  Each validated once against a 5-point O(h^4) FD of the CCSD
+# correlation energy (see _findiff_gradient) -- STO-3G AE to 5.7e-12, cc-pVDZ AE to 2.5e-12,
+# STO-3G FC to 6.7e-12.
+GRAD_REF_STO3G = np.array([
+    [0.0,  0.0,                -4.970192865099e-02],
+    [0.0, -2.344510629594e-02,  2.485096432549e-02],
+    [0.0,  2.344510629594e-02,  2.485096432549e-02],
+])
+GRAD_REF_PVDZ = np.array([
+    [0.0,  0.0,                -2.716560855565e-02],
+    [0.0, -1.281727832151e-02,  1.358280427783e-02],
+    [0.0,  1.281727832151e-02,  1.358280427783e-02],
+])
+GRAD_REF_FC_STO3G = np.array([
+    [0.0,  0.0,                -4.974459331509e-02],
+    [0.0, -2.346970548696e-02,  2.487229665755e-02],
+    [0.0,  2.346970548696e-02,  2.487229665755e-02],
+])
 
 
-# H2O, fixed frame (no reorientation) so pycc and psi4 gradients share the molecular axes.
-H2O = """
-O  0.000000  0.000000  0.118000
-H  0.000000  0.758000 -0.472000
-H  0.000000 -0.758000 -0.472000
-symmetry c1
-units angstrom
-no_com
-no_reorient
-"""
+def _geom(coords):
+    body = "\n".join(f"{s} {c[0]:.15f} {c[1]:.15f} {c[2]:.15f}" for s, c in zip(ATOMS, coords))
+    return body + "\nsymmetry c1\nunits bohr\nno_com\nno_reorient\n"
 
 
-def _ccwfn(basis="STO-3G", freeze_core="false"):
+def _scf_wfn(coords, basis, frozen_core=False):
     psi4.core.clean()
     psi4.core.clean_options()
-    psi4.geometry(H2O)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
+    psi4.core.be_quiet()
+    psi4.geometry(_geom(coords))
+    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+                      'freeze_core': 'true' if frozen_core else 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    cc = pycc.ccwfn(wfn, frozen_core=(freeze_core == "true"))
-    cc.solve_cc(1e-12, 1e-12, 200)
+    return wfn
+
+
+def _ccwfn(coords, basis, frozen_core=False):
+    cc = pycc.ccwfn(_scf_wfn(coords, basis, frozen_core))
+    with open(os.devnull, 'w') as dn, contextlib.redirect_stdout(dn):
+        cc.solve_cc(1e-12, 1e-12, 200)
     return cc
 
 
-def test_ccsd_gradient_vs_psi4():
-    """pycc.gradient(ccwfn).total reproduces psi4's analytic CCSD gradient (same frame)."""
-    cc = _ccwfn()
-    r = pycc.gradient(cc)
-    # PropertyComponents decomposition is exact
-    assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
+def _ecorr(coords, basis, frozen_core=False):
+    """CCSD correlation energy at a geometry (for the FD regeneration recipe)."""
+    return _ccwfn(coords, basis, frozen_core).ecc
 
-    psi4.core.clean_options()
-    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'e_convergence': 1e-12,
-                      'd_convergence': 1e-12, 'r_convergence': 1e-12})
-    g_psi4 = np.asarray(psi4.gradient('ccsd'))
-    assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
+
+def _findiff_gradient(basis, frozen_core=False, h=0.005):
+    """Regeneration recipe for the GRAD_REF_* (not run in the tests): 5-point O(h^4) central finite
+    difference of the CCSD correlation energy under nuclear displacement."""
+    g = np.zeros((3, 3))
+    for a in range(3):
+        for x in range(3):
+            e = {}
+            for k in (-2, -1, 1, 2):
+                c = REF.copy(); c[a, x] += k * h
+                e[k] = _ecorr(c, basis, frozen_core)
+            g[a, x] = (e[-2] - 8 * e[-1] + 8 * e[1] - e[2]) / (12 * h)
+    return g
+
+
+def test_ccsd_gradient_vs_findiff():
+    """STO-3G CCSD correlation gradient reproduces the FD-validated frozen reference, and the
+    pycc.gradient facade decomposes exactly (total = nuclear + reference + correlation)."""
+    cc = _ccwfn(REF, "STO-3G")
+    g = np.asarray(pycc.CCderiv(cc).gradient())
+    assert np.max(np.abs(g - GRAD_REF_STO3G)) < 1e-11, g
+    r = pycc.gradient(cc)
+    assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
+    assert np.max(np.abs(np.asarray(r.correlation) - GRAD_REF_STO3G)) < 1e-11
 
 
 def test_ccsd_gradient_density_energy():
     """The gradient-convention densities (CCderiv adapter) reproduce the CCSD correlation energy:
     E_corr = contract(D, F) + contract(Gamma, ERI) (no prefactor on the two-particle term)."""
-    cc = _ccwfn()
-    deriv = pycc.CCderiv(cc)
-    dens = deriv._density()
-    ecc = dens.compute_energy()                       # CCSD correlation energy from the densities
+    cc = _ccwfn(REF, "STO-3G")
+    dens = pycc.CCderiv(cc)._density()
+    ecc = dens.compute_energy()
     D, G = dens.gradient_densities()
-    F = np.asarray(cc.H.F)
-    ERI = np.asarray(cc.H.ERI)
-    E = cc.contract('pq,pq->', D, F) + cc.contract('pqrs,pqrs->', G, ERI)
-    assert abs(E - ecc) < 1e-10, (E, ecc)
+    E = cc.contract('pq,pq->', D, np.asarray(cc.H.F)) + cc.contract('pqrs,pqrs->', G, np.asarray(cc.H.ERI))
+    assert abs(E - ecc) < 1e-12, (E, ecc)
 
 
 def test_ccsd_gradient_ccpvdz():
-    """Larger basis (cc-pVDZ): the CCSD gradient reproduces psi4's analytic CCSD gradient, and the
-    gradient-convention densities reconstruct E_corr -- exercising a real virtual space (polarization
-    functions, several virtuals per irrep, A2-symmetry MOs) that STO-3G/H2O lacks."""
-    cc = _ccwfn("cc-pVDZ")
-    r = pycc.gradient(cc)
-    # density-energy reconstruction (analytic; no oracle)
+    """cc-pVDZ CCSD correlation gradient vs the FD-validated frozen reference -- a real virtual space
+    (polarization functions, several virtuals per irrep, A2-symmetry MOs) that STO-3G lacks -- and
+    the gradient-convention densities reconstruct E_corr."""
+    cc = _ccwfn(REF, "cc-pVDZ")
+    g = np.asarray(pycc.CCderiv(cc).gradient())
+    assert np.max(np.abs(g - GRAD_REF_PVDZ)) < 1e-11, g
     dens = pycc.CCderiv(cc)._density()
     D, G = dens.gradient_densities()
     E = cc.contract('pq,pq->', D, np.asarray(cc.H.F)) + cc.contract('pqrs,pqrs->', G, np.asarray(cc.H.ERI))
-    assert abs(E - dens.compute_energy()) < 1e-9
-    # vs psi4 (a cheap ~1 s CCSD gradient at this size)
-    psi4.core.clean_options()
-    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'e_convergence': 1e-12,
-                      'd_convergence': 1e-12, 'r_convergence': 1e-12})
-    g_psi4 = np.asarray(psi4.gradient('ccsd'))
-    assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
-
-
-def test_ccsd_gradient_correlation_nonzero():
-    """The CCSD correlation gradient is a real, nonzero contribution on top of the SCF reference."""
-    cc = _ccwfn()
-    r = pycc.gradient(cc)
-    assert np.max(np.abs(r.correlation)) > 1e-3
-    # the total differs from the bare SCF gradient by the correlation contribution
-    assert np.max(np.abs(r.total - (r.nuclear + r.reference))) > 1e-3
+    assert abs(E - dens.compute_energy()) < 1e-12
 
 
 def test_ccsd_gradient_zvector_equals_explicit():
     """The efficient Z-vector route (the default gradient()) agrees with the independent
-    explicit-derivative route to machine precision -- they are two formulations of the same
-    correlation gradient (one Z-vector solve vs 3*natom CPHF solves)."""
-    cc = _ccwfn()
+    explicit-derivative route to machine precision -- two formulations of the same correlation
+    gradient (one Z-vector solve vs 3*natom CPHF solves)."""
+    cc = _ccwfn(REF, "STO-3G")
     deriv = pycc.CCderiv(cc)
     g_zvector = deriv.gradient()
     g_explicit = deriv._gradient_explicit()
-    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-9, (g_zvector, g_explicit)
+    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-12, (g_zvector, g_explicit)
 
 
 def test_ccsd_gradient_frozen_core():
-    """Frozen-core CCSD gradient: the Z-vector and explicit routes agree (the core<->active P_co
-    response is handled), and the frozen-core gradient differs from the all-electron one. psi4 has
-    no frozen-core CC gradient, so this is cross-validated by the two independent routes (each also
-    checked against a finite difference of the frozen-core CCSD energy)."""
-    cc_fc = _ccwfn(freeze_core="true")
-    assert cc_fc.nfzc > 0
-    deriv = pycc.CCderiv(cc_fc)
-    g_zvector = deriv.gradient()
-    g_explicit = deriv._gradient_explicit()
-    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-9, (g_zvector, g_explicit)
-    # frozen core actually changes the correlation gradient vs all-electron (small for the deep
-    # O 1s in STO-3G, but nonzero)
-    g_ae = pycc.CCderiv(_ccwfn(freeze_core="false")).gradient()
-    assert np.max(np.abs(g_zvector - g_ae)) > 1e-5
+    """Frozen-core CCSD gradient: vs the FD-validated frozen reference, and the Z-vector and explicit
+    routes agree to machine precision (exercising the core<->active-occupied P_co response).  psi4
+    has no frozen-core CC gradient, so the FD of the frozen-core CCSD energy is the oracle."""
+    cc = _ccwfn(REF, "STO-3G", frozen_core=True)
+    assert cc.nfzc > 0
+    deriv = pycc.CCderiv(cc)
+    g_zvector = np.asarray(deriv.gradient())
+    g_explicit = np.asarray(deriv._gradient_explicit())
+    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-12, (g_zvector, g_explicit)
+    assert np.max(np.abs(g_zvector - GRAD_REF_FC_STO3G)) < 1e-11, g_zvector

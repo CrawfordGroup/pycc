@@ -151,11 +151,143 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
 - **CC gradients.** Swap the MP2 density/Lagrangian for the CCSD relaxed density (Λ exists;
   `ccdensity` has the 2-PDM); the Z-vector solve and gradient assembly carry over. This is where
   the deferred "shared Lagrangian → Z-vector → density → gradient layer" refactor would land
-  (kept MP2-specific so far — no premature abstraction).
+  (kept MP2-specific so far — no premature abstraction). **CCSD(T) gradient (spatial, all-electron)
+  is specced in §7** — the (T) densities/Λ already exist in `t3_density()`; the −½Sˣ orbital
+  response is reused unchanged (all-electron ⇒ no canonical dependent-pair terms).
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
   and does not reproduce the restricted ROHF response; `CPHF.solve` raises for ROHF. The CPHF-free
   ROHF HF gradient is unaffected.
 - Out of scope: 2n+2 / higher-order (cubic-response) economies.
+
+## 7. CCSD(T) gradient — spatial, all-electron (design)
+
+**Scope (phase 1):** closed-shell RHF, spatial MOs, all-electron. Target:
+`pycc.gradient(CCwfn(wfn, model='CCSD(T)'))` through the existing `CCderiv`/`ccdensity` path.
+Frozen-core and spin-orbital are deferred (below).
+
+**References.**
+- **Paper A** — T. J. Lee & A. P. Rendell, *J. Chem. Phys.* **94**, 6229 (1991): closed-shell
+  *spatial* CCSD(T) gradient in the Handy–Schaefer Z-vector / effective-density (Gauss–Stanton–
+  Bartlett) formulation. **This is pycc's formulation — directly applicable.**
+- **Paper B** — Hald, Halkier, Jørgensen, Coriani, Hättig & Helgaker, *J. Chem. Phys.* **118**,
+  2985 (2003): variational Lagrangian, integral-density direct, canonical orbitals. Conceptual
+  cross-check and the frozen-core / canonical-orbital guide.
+
+**Core physics — why (T) needs canonical MOs.** The triples solve
+`⟨μ₃|[F,T₃]+[H,T₂]|HF⟩=0` (B-15) is non-iterative *only because F is diagonal*, so `[F,T₃]`
+collapses to the orbital-energy denominator `D^abc = f_ii+f_jj+f_kk−f_aa−f_bb−f_cc` (A-5).
+Non-canonical F ⇒ triples couple ⇒ iterative. Differentiating that denominator injects the
+orbital-energy-derivative terms `∂f_ii/∂λ`, `∂f_aa/∂λ` (A-6) that the CCSD gradient lacks.
+
+**Resolved theory fork — the perturbed-orbital gauge.** Worry: does (T)'s canonical requirement
+force *canonical perturbed orbitals* in place of pycc's −½Sˣ non-canonical choice? **No, for
+all-electron:**
+- Paper A (p. 6232): *"provided that no core and/or virtual orbitals are excluded … there is no
+  contribution to the gradient from dependent pairs because for these orbitals ΔX_mn = 0."* The
+  occ–occ / virt–virt ("dependent pair") canonical response — the `ΔX_mn/Δf_mn` terms (A-34) —
+  vanishes.
+- Paper B: the canonical orbital-rotation multiplier `κ̄_pq(F_pq−δ_pqε_p)` exists to *simplify
+  the frozen-core approximation*; by the 2n+1 rule the orbital-energy derivatives aren't needed.
+- PI's Psi4 CCSD(T)-gradient code made **no (T)-specific change to the orbital response** and does
+  not support frozen core — consistent.
+
+**Decision:** phase 1 keeps the CCSD −½Sˣ, ov-only Z-vector **unchanged**. The oo/vv canonical
+dependent-pair machinery (`ΔX_mn/Δf_mn`, gated by the numerator threshold `|ΔX_mn|<1e-8`,
+A-p.6232 — never a test on Δf) is **deferred to the frozen-core phase**, where ΔX_mn≠0 for
+core↔active pairs.
+
+**Anatomy — the six (T) additions (Paper A).** Beyond the CCSD gradient:
+
+| Intermediate | A-Eq | Destination |
+|---|---|---|
+| η_iᵃ, γ_kjᶜᵈ | 7, 8 | Λ / Z-vector RHS (couple to ∂T1, ∂T2) |
+| **ε_i, ε_a** | 12, 13 | **diagonal** of effective 1-density Q (17–18) — the orbital-energy response |
+| χ_jkᵇᶜ, ξ_ibᵃᵈ, κ_ijᵃˡ | 15, 9, 10 | effective 2-density G (20–22) |
+
+Then the standard assembly runs: `E^λ = Q h^λ + G (pq|rs)^λ + orbital response` (A 28–33).
+
+**Existing pycc infrastructure** — `CCwfn.t3_density()` (bottom of `ccwfn.py`; deliberately called
+from the energy code so T3 is built once). For `model=='CCSD(T)'` it already yields:
+- (T) 1-PDM `Doo/Dov/Dvv`, (T) 2-PDM `Goovv/Gooov/Gvvvo`;
+- (T) Λ residuals `S1/S2` (Paper A's η/γ), added into Λ₁/Λ₂ (`cclambda:673/743`);
+- validated at **energy** (test_005) and **density/dipole** (test_034).
+
+**Audit findings (2026-07-05).** The probe (H2O/6-31G): pycc `gradient('ccsd(t)')` matches psi4 to
+**2.1e-6** (CCSD gradient exact 6e-13; CCSD(T) *energy* exact 1e-13), so a small (T)-gradient-specific
+term is off (0.2% of the (T) contribution). Localized as follows — note **pycc's (T) density follows
+the Vikings (Hald et al., Paper B) Lagrangian formulation, *not* Lee–Rendell**, so map terms to Paper
+B:
+- **ε ruled out.** Lee–Rendell's ε (A 12–13) is a *diagonal* term the energy already validates; it is
+  present in pycc (adding it explicitly makes the gradient ~60× *worse* — double-counting).
+- **test_034 is blind to the off-diagonals.** `compute_energy`'s `eone = contract(F[o,o],Doo) +
+  contract(F[v,v],Dvv)` with canonical (diagonal) F sees only `diag(Doo)`/`diag(Dvv)` and drops the
+  ov block ("Brillouin condition"). So it validates **diag(D) + Γ** only.
+- **Block-wise Fock-perturbation FD** (`Tr(D_blk·P)` vs FD of E_corr, `P` a masked Fock block; the
+  CCSD control is self-consistent to 5e-11): the (T) 1-PDM fails to differentiate its own energy
+  **only in the off-diagonal occ–occ `Doo` (+4.0e-5) and virt–virt `Dvv` (+3.4e-5)** blocks. **`Dov`
+  is consistent to 6e-11** (matching Lee–Rendell Eq. 19: *no* ov (T) term) and **diag(D) to 3e-10**.
+
+**Resolution (2026-07-06) — canonical perturbed orbitals via the existing frozen-core machinery.**
+The gap is **not** a density block to correct in place; it is a *formulation/gauge* error. Confirmed
+against the PI's own Psi4 CCSD(T)-gradient code (`relax_I_RHF`) and Lee–Rendell §II.B:
+
+- **(T) requires *canonical* perturbed orbitals for the oo/vv blocks** — not pycc's current
+  `U^X = −½S^X`. When canonical perturbed orbitals are used, the occ–occ `(i,j)` and virt–virt
+  `(a,b)` **dependent pairs** contribute to the orbital-response Lagrangian via L–R's `ΔX/Δf` terms
+  (their Eq. 34): `(I'_ij − I'_ji)/(f_ii − f_jj)` and `(I'_ab − I'_ba)/(f_aa − f_bb)`, contracted with
+  the antisymmetrized `A`/`C` integrals, plus the `f·(∂I/∂f)` pieces. (This is `relax_I_RHF`'s
+  `CCSD_T && dertype==1` block; `delta_I/delta_f_{IJ,AB}` are those `ΔX/Δf` responses.) The
+  `|ΔX_mn|<1e-8` threshold there is a **degeneracy** guard, not an all-electron cancellation — my
+  earlier "all-electron ⇒ ΔX=0 ⇒ −½S^X suffices" reading was **Scuseria's** separate formulation, not
+  L–R's or pycc's.
+- **The off-diagonal `Doo`/`Dvv` is extraneous — remove it entirely.** pycc's `t3_density` builds
+  `⟨0|L₃[E_ij,T₃]|0⟩` off-diagonals that appear in **neither** paper's (T) 1-PDM: L–R (Eqs 17–19) and
+  Vikings (Eq 65) give `Dov` + `diag(Doo)`/`diag(Dvv)` only. They are **not** a misplaced density block
+  and **not** the `ΔX` numerator — just wrong (per PI, 2026-07-06). Empirically they were spurious in
+  `D` (removing → unrelaxed dipole self-consistent to 5.7e-11) yet crudely load-bearing in the gradient
+  (removing → 3.0e-5) **only because pycc carries no all-electron oo/vv `κ̄` yet**; supplying that (next
+  bullet) is the real fix, and the off-diagonal plays no part in it.
+- **The oo/vv dependent-pair `κ̄` reuses pycc's frozen-core machinery.** `κ̄_ij = (I'_ij − I'_ji)/(f_ii
+  − f_jj)`, `κ̄_ab = (I'_ab − I'_ba)/(f_aa − f_bb)` — the **Lagrangian asymmetry**, i.e. exactly the
+  frozen-core divide `Pco = (Ip[co,o] − Ip[o,co]ᵀ)/(eps_c − eps_i)` (`MPwfn._so_zvector` ~535 and the
+  spatial `CCderiv.gradient`), **generalized from core↔active-occ to all oo `(i,j)` and vv `(a,b)`
+  pairs**, numerator-gated `|ΔX|<1e-8`, added to `Drel` and coupled into the Z-vector RHS through the
+  antisymmetrized ERI. `I'` is built from the *paper-correct* density (`Dov` + `diag` + `Γ` + (T)-Λ);
+  the (T) enters `κ̄` only through `I'`, never through an explicit off-diagonal `Doo`/`Dvv`. This is the
+  single surviving orbital term `κ̄_pq F^(1)_pq` of `ccsdt_orbital_response.tex`, with `κ̄` running over
+  *all* pairs (ov = CPHF/Z-vector solve; oo/vv = these divides).
+- Superseded framings: "ε diagonal is missing" (ε is present); "off-diagonal is a density block to
+  fix"; "off-diagonal is the `ΔX` numerator misplaced in `D`"; "−½S^X is fine (Scuseria)". Diagonal `ε`
+  and `Dov` (L–R Eq. 19 / Vikings Eq. 65) are correct.
+
+**Fix:**
+1. **Remove** the off-diagonal `Doo`/`Dvv` entirely (in `t3_density`); keep `diag(Doo)`/`diag(Dvv)`
+   and `Dov`.
+2. **Generalize the frozen-core `Pco`** to all oo and vv pairs — the `κ̄` divide above, numerator-gated,
+   added to `Drel` and coupled into the Z-vector RHS. No new (T)-specific term beyond the correct
+   density feeding `I'`.
+3. Keep the ov Z-vector as is.
+4. Add a `Tr(D·μ)`-vs-FD (unrelaxed-dipole / block-wise) assertion to the (T)-density test — the
+   energy reconstruction (test_034) is blind to the off-diagonal blocks.
+
+This reconciles the density (dipole), the gradient, both papers, and the PI's Psi4 implementation.
+Diagnostic scripts (scratchpad): `block_decomp.py`, `unrelaxed_ctrl.py`, `dov_only.py`, `offdiag.py`.
+
+**Plan.**
+1. **Audit** the (T) densities/Λ for gradient-readiness: relaxed vs unrelaxed convention; that
+   `S1/S2` reach the `CCderiv` Z-vector RHS; and the ε question above.
+2. **Wire (T) into `CCderiv`**: assemble the (T) effective Q (ε on the diagonal) and G, add η/γ to
+   the Z-vector RHS; reuse the CCSD Z-vector solve + −½Sˣ assembly unchanged.
+3. **Assemble** `E^λ = D h^λ + Γ (pq|rs)^λ + P S^λ + Z·(CPHF RHS)` — identical to the CCSD path.
+
+**Validation.**
+- Primary oracle: psi4 `gradient('ccsd(t)')` (closed-shell, all-electron) — external analytic.
+- Cross-check: FD of pycc's own CCSD(T) energy.
+- Limit check: CCSD(T)→CCSD (drop triples) reproduces the CCSD gradient (test_076) to machine ε.
+- Start H2O/6-31G and /cc-pVDZ (real virtual space), C1.
+
+**Deferred:** frozen-core (dependent-pair canonical response), spin-orbital (SO==spatial keystone),
+CCSD(T) Hessian/APT.
 
 ## Appendix A: condensed changelog (by PR)
 
