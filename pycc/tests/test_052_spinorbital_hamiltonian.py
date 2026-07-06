@@ -47,7 +47,7 @@ def test_so_equals_spatial_rhf(rhf_wfn):
                   e_convergence=1e-12, d_convergence=1e-12)
 
     e_spatial = pycc.MPwfn(wfn).compute_energy()
-    so = Wavefunction(wfn, orbital_basis="spinorbital", frozen_core=False)
+    so = Wavefunction(wfn, orbital_basis="spinorbital")
     assert so.orbital_basis == "spinorbital"
     e_so = _so_mp2(so)
 
@@ -64,7 +64,7 @@ def test_so_equals_spatial_rhf_frozen_core(rhf_wfn):
                   e_convergence=1e-12, d_convergence=1e-12)
 
     e_spatial = pycc.MPwfn(wfn).compute_energy()
-    so = Wavefunction(wfn, orbital_basis="spinorbital", frozen_core=True)
+    so = Wavefunction(wfn, orbital_basis="spinorbital")
     e_so = _so_mp2(so)
 
     assert abs(e_so - e_spatial) < 1e-12
@@ -85,7 +85,7 @@ def test_uhf_so_mp2(uhf_wfn):
     wfn = uhf_wfn(OH, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
 
-    so = Wavefunction(wfn, frozen_core=False)  # auto -> spinorbital
+    so = Wavefunction(wfn)  # auto -> spinorbital
     assert so.orbital_basis == "spinorbital"
     e_so = _so_mp2(so)
 

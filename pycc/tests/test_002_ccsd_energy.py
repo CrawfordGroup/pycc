@@ -45,9 +45,9 @@ def test_so_ccsd_equals_spatial_rhf(rhf_wfn):
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
 
-    e_spatial = pycc.CCwfn(wfn, frozen_core=False).solve_cc(e_conv=1e-11, r_conv=1e-11)
+    e_spatial = pycc.CCwfn(wfn).solve_cc(e_conv=1e-11, r_conv=1e-11)
 
-    so = pycc.CCwfn(wfn, frozen_core=False, orbital_basis="spinorbital")
+    so = pycc.CCwfn(wfn, orbital_basis="spinorbital")
     assert so.orbital_basis == "spinorbital"
     e_so = so.solve_cc(e_conv=1e-11, r_conv=1e-11)
 
@@ -59,7 +59,7 @@ def test_uccsd_oh(uhf_wfn):
     wfn = uhf_wfn(OH, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
 
-    cc = pycc.CCwfn(wfn, frozen_core=False)
+    cc = pycc.CCwfn(wfn)
     assert cc.orbital_basis == "spinorbital"
     eccsd = cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
 

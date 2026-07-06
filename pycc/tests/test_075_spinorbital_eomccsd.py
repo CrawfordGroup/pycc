@@ -35,8 +35,8 @@ symmetry c1
 """
 
 
-def _eom(wfn, orbital_basis, frozen_core=False):
-    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis, frozen_core=frozen_core)
+def _eom(wfn, orbital_basis):
+    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)
     cc.solve_cc(1e-11, 1e-11, 75)
     return cc, pycc.cceom(cc, pycc.cchbar(cc))
 
@@ -143,7 +143,7 @@ def test_so_eom_frozen_core(uhf_wfn):
     """Frozen-core spin-orbital EOM (OH/UHF/STO-3G): reproduces psi4's frozen-core UHF-EOM-CCSD
     roots, is distinct from the all-electron result, and left == right."""
     wfn = uhf_wfn(OH, "STO-3G", freeze_core="true")
-    _, eom = _eom(wfn, "spinorbital", frozen_core=True)
+    _, eom = _eom(wfn, "spinorbital")
     R = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "right")[0].real)
     L = np.sort(eom.solve_eom(4, 1e-7, 1e-6, 200, "hbar_ss", "left")[0].real)
     for e in (0.224329, 0.404870):        # psi4 frozen-core UHF-EOM-CCSD roots

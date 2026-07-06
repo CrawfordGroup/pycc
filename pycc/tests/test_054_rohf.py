@@ -31,8 +31,8 @@ def test_rohf_mp2_ccsd_ccsd_t_oh(rohf_wfn):
     mp = pycc.MPwfn(wfn)
     assert mp.orbital_basis == "spinorbital"
     emp2 = mp.compute_energy()
-    eccsd = pycc.CCwfn(wfn, frozen_core=False).solve_cc(e_conv=1e-11, r_conv=1e-11)
-    eccsd_t = pycc.CCwfn(wfn, model="CCSD(T)", frozen_core=False).solve_cc(
+    eccsd = pycc.CCwfn(wfn).solve_cc(e_conv=1e-11, r_conv=1e-11)
+    eccsd_t = pycc.CCwfn(wfn, model="CCSD(T)").solve_cc(
         e_conv=1e-11, r_conv=1e-11)
 
     psi4.energy('ccsd(t)')
@@ -47,7 +47,7 @@ def test_rohf_cc3_oh(rohf_wfn):
     wfn = rohf_wfn(OH, "6-31G", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
 
-    e = pycc.CCwfn(wfn, model="CC3", frozen_core=False).solve_cc(e_conv=1e-11, r_conv=1e-11)
+    e = pycc.CCwfn(wfn, model="CC3").solve_cc(e_conv=1e-11, r_conv=1e-11)
 
     psi4.energy('cc3')
     ref = psi4.variable('CC3 CORRELATION ENERGY')

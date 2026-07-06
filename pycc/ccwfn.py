@@ -1336,8 +1336,14 @@ class CCwfn(Wavefunction):
                     Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
                     Doo -= 0.5 * contract('ikl,jkl->ij', M3, (X3 + Y3))
 
-        self.Dvv = Dvv
-        self.Doo = Doo
+        # Keep only the *diagonal* (T) oo/vv one-electron density.  The off-diagonal
+        # <0|L3[E_ij,T3]|0> blocks appear in neither the Lee-Rendell (Eqs 17-19) nor the
+        # Hald et al. (Eq 65) (T) 1-PDM: they are spurious in D (wrongly contributing to
+        # Tr(D.mu) and to D.f^X in the gradient).  The genuine oo/vv orbital response is the
+        # dependent-pair kappa-bar built from the Lagrangian asymmetry in CCderiv.gradient
+        # (the frozen-core (I'_ij-I'_ji)/(eps_i-eps_j) divide, generalized to all oo/vv pairs).
+        self.Dvv = np.diag(np.diag(Dvv))
+        self.Doo = np.diag(np.diag(Doo))
         self.Dov = Dov # Need to add this even though it doesn't contribute to the energy for RHF references
 
         self.Goovv = Goovv
