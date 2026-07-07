@@ -248,7 +248,7 @@ class CIwfn(Wavefunction):
 
     def _cisd_densities(self):
         """Cache (D_pq, D_pq_corr, D_pqrs): full 1-PDM, correlation-only
-        1-PDM, and 2-PDM - direct port of cisd_vcd._build_densities."""
+        1-PDM, and 2-PDM."""
         if getattr(self, '_ci_dens', None) is None:
             c = self.contract
             o, v, nmo, no = self.o, self.v, self.nmo, self.no
@@ -296,7 +296,7 @@ class CIwfn(Wavefunction):
         n0 = self._normalized_amplitudes()[0]
         return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1) + c('ijab,ijab->', tau.conj(), dn2))
 
-    # coupled-perturbed CI  (cisd_vcd.py: solve_cpci)
+    # coupled-perturbed CI 
 
     def _psi4_mints(self):
         """psi4 MintsHelper + C as psi4.core.Matrix"""
@@ -452,17 +452,6 @@ class CIwfn(Wavefunction):
     def _solve_cpci(self, pert, maxiter=100, diis_start=2, diis_max=8,
                      e_convergence=1e-11, d_convergence=1e-11):
         """Coupled-perturbed CI
-
-            self.t1/self.t2         -> self.c1/self.c2  (CIwfn's intermediate-
-                                        normalized amplitudes -- your "t1/t2")
-            self.E_cisd              -> self.eci
-            self.ERI_mo/self.F_mo    -> self.H.ERI/self.H.F
-            self.ci._build_denominators() -> self.Dia/self.Dijab
-            self._build_perturbed_ints(...) -> self._cpci_ints(pert)
-            self.D_pq/self.D_pqrs    -> self._cisd_densities()
-            your DIIS class          -> pycc.utils.helper_diis
-            self._cpci_paths (opt_einsum path caching) -> dropped (perf only)
-
         Returns (dc1, dc2, dc0v)
         """
         if getattr(self, '_cpci_cache', None) is None:
@@ -829,7 +818,7 @@ class CIwfn(Wavefunction):
         dz = dz_ov.T
         return dz, dD_corr
 
-    # AAT  (cisd_vcd.py: compute_Icc/Icphi/Iphic/Iphiphi_AATs, _build_Dtilde)
+    # AAT 
 
     def _build_Dtilde(self, dc1, dc2, dc0):
         c = self.contract
@@ -931,7 +920,7 @@ class CIwfn(Wavefunction):
                  + self.compute_Iphiphi_AATs() + self.compute_Icphi_AATs())
         return total.reshape(natom, 3, 3)
 
-    # velocity-gauge APT  (cisd_vcd.py: compute_Icc/Icphi/Iphic/Iphiphi_VG_APT)
+    # velocity-gauge APT  
     def compute_Icc_VG_APT(self):
         from .cphf import Perturbation
         c = self.contract
