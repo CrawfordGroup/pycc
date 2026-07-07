@@ -1,8 +1,9 @@
 # PyCC post-Hartree–Fock analytic derivatives — design & status
 
 _Design-of-record and status for the post-HF analytic-derivative-property effort: the MP2
-correlation gradient, the electric/nuclear second derivatives (polarizability, APT, Hessian),
-and their two independent implementations (explicit-derivative and 2n+1). Started 2026-06;
+correlation gradient and electric/nuclear second derivatives (polarizability, APT, Hessian) with
+two independent implementations (explicit-derivative and 2n+1); and the coupled-cluster analytic
+gradients (CCSD, CCSD(T)) built on the same Z-vector / relaxed-density machinery. Started 2026-06;
 this revision 2026-07 (rewritten from the original chronological plan — milestone history is in
 the Changelog appendix). Preceding spin-orbital infrastructure: `archive/ENHANCEMENT_PLAN_2026-06.md`.
 Filename retained for the docstring/test references that point here._
@@ -36,6 +37,22 @@ invariant, with a numerically stable non-canonical default (`gauge=`).
 **RHF and UHF**, in both spatial and spin-orbital bases (ROHF orbital response deferred, guarded —
 see Roadmap). These supply the reference contribution to every MP2 total property and anchor the
 SO machinery through the RHF-forced-to-SO == spatial keystone.
+
+**Coupled-cluster gradients.** Analytic nuclear gradients through the `CCderiv` driver, reusing the
+MP2 Z-vector / relaxed-density assembly (`_lagrangian`, the SCF orbital Hessian) with the CCSD/(T)
+densities and Λ:
+
+| Method | spatial (closed-shell RHF) | spin-orbital (UHF) | frozen core |
+|---|---|---|---|
+| CCSD `dE/dX` | ✅ | ✅ | ✅ |
+| CCSD(T) `dE/dX` | ✅ | ⏳ next | ✅ (spatial) |
+
+Validated against a tight finite difference of pycc's own correlation energy (5-point O(h⁴), ~1e-12),
+**not** psi4's analytic gradient (§4). Unlike CCSD — which reuses the −½Sˣ ov-only Z-vector because
+CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) needs canonical perturbed orbitals for
+the oo/vv blocks** (dependent-pair κ̄, even all-electron); see §5 and §7. The efficient Z-vector route
+and the independent explicit-derivative route agree to machine precision for CCSD (the (T) explicit
+route is pending — §6).
 
 ## 2. Formulation
 
@@ -90,6 +107,11 @@ One-directional layering: **`Derivatives` ← `CPHF` ← `HFwfn` / `MPwfn`**.
   `_perturbed_densities`, `_(so_)perturbed_relaxed_opdm`, `_(so_)perturbed_lagrangian` — the last
   takes an optional `(D, dD)`: unrelaxed → Z-vector RHS, relaxed → `d_x I`); and the property
   methods with their `route=` options.
+- **`CCderiv`** — the CCSD / CCSD(T) analytic gradient. Reuses `MPwfn._lagrangian` and the SCF orbital
+  Hessian (through a persistent `HFwfn`/`CPHF`); takes the CC relaxed density + Λ from `ccdensity`,
+  and for (T) the densities/Λ from `CCwfn.t3_density`. `_dependent_pairs` builds the canonical oo/vv
+  κ̄ divides for (T) (§7). Spatial `gradient()` + spin-orbital `_so_gradient()`; the independent
+  `_gradient_explicit()` cross-check (CCSD only so far).
 
 Conventions: spatial methods unlabeled, spin-orbital prefixed `_so_`. `MPwfn` holds a persistent
 full-occupied `CPHF` (`_full_occ_cphf`) so the response caches survive across property calls, and
@@ -145,149 +167,112 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
   core included in the MO list) exposed a latent assumption in the (T)/CC3 triples kernels that the
   active occupied began at index 0 (e.g. `ERI[j,k,v,v]`, `pert[k,v]`). Made relative to the `o`/`v`
   slices (behavior-preserving for `nfzc=0`).
+- **(T) needs canonical perturbed orbitals — even all-electron.** Unlike CCSD (invariant to occ–occ /
+  virt–virt rotations, so the −½Sˣ ov-only Z-vector suffices), the (T) energy is *not* oo/vv-invariant.
+  The canonical perturbed orbitals then acquire dependent-pair rotations `κ̄_ij=(I'_ij−I'_ji)/(ε_i−ε_j)`,
+  `κ̄_ab=(I'_ab−I'_ba)/(ε_a−ε_b)` — exactly the frozen-core core↔active `Pco` divide (§ above) generalized
+  to *all* oo/vv pairs (added to the relaxed density, coupled into the ov Z-vector RHS via the
+  antisymmetrized ERI). An early reading — "all-electron ⇒ ΔX=0 ⇒ −½Sˣ suffices" — was wrong: it
+  conflated Lee–Rendell's *degeneracy* threshold with Scuseria's separate formulation. The correct
+  picture is a single orbital term `κ̄_pq F^(1)_pq` with κ̄ over *all* pairs (ov = CPHF/Z-vector solve;
+  oo/vv = the divides). FD-validated to 1.8e-12 (all-electron) / 1.9e-12 (frozen core). Full derivation:
+  `docs/ccsdt_orbital_response.tex`; §7.
+- **The off-diagonal (T) `Doo`/`Dvv` is not a density term.** `t3_density` had built `⟨0|L₃[E_ij,T₃]|0⟩`
+  oo/vv off-diagonals present in neither Lee–Rendell nor Hald et al.; they corrupt `Tr(D·μ)` yet are
+  invisible to the energy reconstruction (canonical F ⇒ only `diag(D)` enters `eone`). The (T) 1-PDM
+  carries only `{Dov, diag(Doo), diag(Dvv)}`; the oo/vv orbital response is the κ̄ above, not a density.
 
 ## 6. Roadmap
 
-- **CC gradients.** Swap the MP2 density/Lagrangian for the CCSD relaxed density (Λ exists;
-  `ccdensity` has the 2-PDM); the Z-vector solve and gradient assembly carry over. This is where
-  the deferred "shared Lagrangian → Z-vector → density → gradient layer" refactor would land
-  (kept MP2-specific so far — no premature abstraction). **CCSD(T) gradient (spatial, all-electron)
-  is specced in §7** — the (T) densities/Λ already exist in `t3_density()`; the −½Sˣ orbital
-  response is reused unchanged (all-electron ⇒ no canonical dependent-pair terms).
+- **CC gradients — done, extending.** CCSD analytic gradients (spatial RHF, spin-orbital UHF,
+  all-electron + frozen core) and the CCSD(T) gradient (spatial RHF, all-electron + frozen core) are
+  implemented via `CCderiv`, reusing the MP2 Z-vector / relaxed-density assembly with the CCSD/(T)
+  densities and Λ (details + validation in §7). **Next:** spin-orbital CCSD(T) gradient (port the (T)
+  density + oo/vv dependent-pair to the SO path; anchor on the SO==spatial keystone); CCSD(T)
+  Hessian/APT; and extending `_gradient_explicit` to carry the (T) dependent-pair (so the
+  z-vector==explicit cross-check works for (T), as it does for CCSD). `CCderiv` reuses the MP2
+  Lagrangian/CPHF primitives via delegation; the fuller "shared Lagrangian → Z-vector → density →
+  gradient" layer refactor is still deferred (no premature abstraction).
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
   and does not reproduce the restricted ROHF response; `CPHF.solve` raises for ROHF. The CPHF-free
   ROHF HF gradient is unaffected.
 - Out of scope: 2n+2 / higher-order (cubic-response) economies.
 
-## 7. CCSD(T) gradient — spatial, all-electron (design)
+## 7. CCSD(T) gradient — spatial RHF (design & status)
 
-**Scope (phase 1):** closed-shell RHF, spatial MOs, all-electron. Target:
-`pycc.gradient(CCwfn(wfn, model='CCSD(T)'))` through the existing `CCderiv`/`ccdensity` path.
-Frozen-core and spin-orbital are deferred (below).
+**Status.** Done and FD-validated for **closed-shell RHF, spatial MOs, all-electron *and* frozen
+core** (`pycc.gradient(CCwfn(wfn, model='CCSD(T)'))` through `CCderiv`/`ccdensity`). Spin-orbital and
+the CCSD(T) Hessian/APT are deferred (below).
 
 **References.**
 - **Paper A** — T. J. Lee & A. P. Rendell, *J. Chem. Phys.* **94**, 6229 (1991): closed-shell
   *spatial* CCSD(T) gradient in the Handy–Schaefer Z-vector / effective-density (Gauss–Stanton–
-  Bartlett) formulation. **This is pycc's formulation — directly applicable.**
+  Bartlett) formulation — pycc's formulation.
 - **Paper B** — Hald, Halkier, Jørgensen, Coriani, Hättig & Helgaker, *J. Chem. Phys.* **118**,
-  2985 (2003): variational Lagrangian, integral-density direct, canonical orbitals. Conceptual
-  cross-check and the frozen-core / canonical-orbital guide.
+  2985 (2003): variational Lagrangian, canonical orbitals — the frozen-core / canonical-orbital guide.
 
-**Core physics — why (T) needs canonical MOs.** The triples solve
-`⟨μ₃|[F,T₃]+[H,T₂]|HF⟩=0` (B-15) is non-iterative *only because F is diagonal*, so `[F,T₃]`
-collapses to the orbital-energy denominator `D^abc = f_ii+f_jj+f_kk−f_aa−f_bb−f_cc` (A-5).
-Non-canonical F ⇒ triples couple ⇒ iterative. Differentiating that denominator injects the
-orbital-energy-derivative terms `∂f_ii/∂λ`, `∂f_aa/∂λ` (A-6) that the CCSD gradient lacks.
+**Why (T) needs canonical MOs.** The triples solve `⟨μ₃|[F,T₃]+[H,T₂]|HF⟩=0` (B-15) is non-iterative
+*only because F is diagonal*, so `[F,T₃]` collapses to `D^abc = f_ii+f_jj+f_kk−f_aa−f_bb−f_cc` (A-5).
+Non-canonical F ⇒ triples couple ⇒ iterative. The gradient consequence: the perturbed orbitals must
+stay canonical in the oo/vv blocks, so those blocks carry an explicit **dependent-pair** rotation
+instead of pycc's −½Sˣ non-canonical gauge.
 
-**Resolved theory fork — the perturbed-orbital gauge.** Worry: does (T)'s canonical requirement
-force *canonical perturbed orbitals* in place of pycc's −½Sˣ non-canonical choice? **No, for
-all-electron:**
-- Paper A (p. 6232): *"provided that no core and/or virtual orbitals are excluded … there is no
-  contribution to the gradient from dependent pairs because for these orbitals ΔX_mn = 0."* The
-  occ–occ / virt–virt ("dependent pair") canonical response — the `ΔX_mn/Δf_mn` terms (A-34) —
-  vanishes.
-- Paper B: the canonical orbital-rotation multiplier `κ̄_pq(F_pq−δ_pqε_p)` exists to *simplify
-  the frozen-core approximation*; by the 2n+1 rule the orbital-energy derivatives aren't needed.
-- PI's Psi4 CCSD(T)-gradient code made **no (T)-specific change to the orbital response** and does
-  not support frozen core — consistent.
+**The orbital response (the crux).** CCSD is invariant to occ–occ / virt–virt rotations, so its
+gradient uses the −½Sˣ, ov-only Z-vector. **(T) breaks that invariance**, so the canonical perturbed
+orbitals acquire dependent-pair rotations
+`κ̄_ij = (I'_ij − I'_ji)/(ε_i − ε_j)`, `κ̄_ab = (I'_ab − I'_ba)/(ε_a − ε_b)`
+(the Lagrangian asymmetry, Lee–Rendell A-34). This is **exactly the frozen-core core↔active divide
+`Pco = (I'[co,o] − I'[o,co]ᵀ)/(ε_c − ε_i)`** already in pycc — **generalized from core↔active to all
+oo (i,j) and vv (a,b) pairs** (numerator-gated `|ΔX|<1e-8` for degeneracies), added to the relaxed
+density and coupled into the ov Z-vector RHS through the antisymmetrized ERI. Equivalently (Paper B /
+`ccsdt_orbital_response.tex`): the only surviving orbital term is `κ̄_pq F^(1)_pq`, with κ̄ over **all**
+pairs (ov = the CPHF/Z-vector solve; oo/vv = these divides). `I'` is the (T)-inclusive Lagrangian, so
+(T) enters κ̄ only through `I'`.
 
-**Decision:** phase 1 keeps the CCSD −½Sˣ, ov-only Z-vector **unchanged**. The oo/vv canonical
-dependent-pair machinery (`ΔX_mn/Δf_mn`, gated by the numerator threshold `|ΔX_mn|<1e-8`,
-A-p.6232 — never a test on Δf) is **deferred to the frozen-core phase**, where ΔX_mn≠0 for
-core↔active pairs.
+**The (T) one-particle density** carries only `{Dov, diag(Doo), diag(Dvv)}` (Paper A Eqs 17–19,
+Paper B Eq 65). The off-diagonal `Doo`/`Dvv` that `t3_density` originally built (`⟨0|L₃[E_ij,T₃]|0⟩`)
+appears in **neither** paper and is removed: it corrupts `Tr(D·μ)` (spurious in the density) yet is
+invisible to the energy reconstruction (canonical F ⇒ only `diag(D)` enters). The oo/vv orbital
+response is the κ̄ above, **not** a density block.
 
-**Anatomy — the six (T) additions (Paper A).** Beyond the CCSD gradient:
+**Frozen core — no new machinery.** The occupied dependent pairs split into core↔active (carried by
+the existing `Pco`, whose `I'` is (T)-inclusive) and active↔active (the generalized oo κ̄), plus the vv
+κ̄; the ov-occupied index of the (T) coupling runs over the full occupied space (`ofull`), reducing to
+the active space when `nfzc=0`. `Pco` from the (T)-inclusive `I'` **fully captures the (T) core↔active
+response** — FD-confirmed to 1.9e-12, no extra core term needed.
 
-| Intermediate | A-Eq | Destination |
-|---|---|---|
-| η_iᵃ, γ_kjᶜᵈ | 7, 8 | Λ / Z-vector RHS (couple to ∂T1, ∂T2) |
-| **ε_i, ε_a** | 12, 13 | **diagonal** of effective 1-density Q (17–18) — the orbital-energy response |
-| χ_jkᵇᶜ, ξ_ibᵃᵈ, κ_ijᵃˡ | 15, 9, 10 | effective 2-density G (20–22) |
+**Implementation.**
+- `CCwfn.t3_density()` (bottom of `ccwfn.py`; called from the energy code so T3 is built once) yields
+  the (T) contributions: the **diagonal** 1-PDM `diag(Doo)`/`diag(Dvv)` (computed directly —
+  `acd,acd->a` / `ikl,ikl->i` — not full blocks then filtered) plus `Dov`; the 2-PDM
+  `Goovv/Gooov/Gvvvo`; and the Λ residuals `S1/S2` (Paper A's η/γ), added into Λ₁/Λ₂.
+- `CCderiv.gradient` — `_dependent_pairs(I'[block], ε)` builds the κ̄ divides (numerator-gated); the
+  `model=='CCSD(T)'` branch adds κ̄_oo/κ̄_vv to `Drel` and couples them into the Z-vector RHS (ov index
+  over `ofull`). Model-gated, so the CCSD path is untouched. Then the standard GSB assembly runs,
+  `E^λ = D h^λ + Γ (pq|rs)^λ + I S^λ + Z·(CPHF RHS)`, identical to the CCSD path.
 
-Then the standard assembly runs: `E^λ = Q h^λ + G (pq|rs)^λ + orbital response` (A 28–33).
+**Validation** (oracle = FD of pycc's own CCSD(T) correlation energy; **not** psi4 — see §4):
+- Gradient vs a 5-point O(h⁴) FD, H2O/6-31G: **1.8e-12 all-electron, 1.9e-12 frozen core**
+  (h⁴-convergent — the residual is FD truncation, not a real error). Corrects a prior 2.1e-6.
+- The (T) density reconstructs `E_corr`, and `Tr(D·μ)` matches a Fock-perturbation FD to ~1e-13 —
+  guarding the diagonal-only density against a re-introduced off-diagonal.
+- Limit check: CCSD(T)→CCSD (drop the triples) reproduces the CCSD gradient.
+- Tests: `test_083` (gradient, all-electron + frozen core, frozen FD references asserted at 1e-11),
+  `test_034` (density + dipole).
 
-**Existing pycc infrastructure** — `CCwfn.t3_density()` (bottom of `ccwfn.py`; deliberately called
-from the energy code so T3 is built once). For `model=='CCSD(T)'` it already yields:
-- (T) 1-PDM `Doo/Dov/Dvv`, (T) 2-PDM `Goovv/Gooov/Gvvvo`;
-- (T) Λ residuals `S1/S2` (Paper A's η/γ), added into Λ₁/Λ₂ (`cclambda:673/743`);
-- validated at **energy** (test_005) and **density/dipole** (test_034).
+**How we got here (superseded readings).** The first pass concluded phase 1 could keep the −½Sˣ
+ov-only Z-vector unchanged, deferring the dependent-pair terms to a later frozen-core phase, on the
+reading that all-electron ⇒ ΔX_mn=0 ⇒ no dependent-pair contribution. That was **wrong**: it took
+Lee–Rendell's `|ΔX_mn|<1e-8` *degeneracy* guard for an all-electron cancellation (that cancellation is
+Scuseria's separate formulation, which L–R contrast with theirs). A probe (H2O/6-31G) showed
+`gradient('ccsd(t)')` off by 2.1e-6 vs psi4; block-wise Fock-perturbation FD localized it to the
+off-diagonal oo/vv (T) density — which proved *extraneous* (not a misplaced term), the real fix being
+the canonical dependent-pair orbital response above. Also superseded: "ε (A 12–13) is missing" (it is
+present — the energy validates it, and adding it explicitly double-counts). Corroborated by the PI's
+own Psi4 `relax_I_RHF` (its `delta_I/delta_f_{IJ,AB}` are the κ̄ divides). See Appendix B.
 
-**Audit findings (2026-07-05).** The probe (H2O/6-31G): pycc `gradient('ccsd(t)')` matches psi4 to
-**2.1e-6** (CCSD gradient exact 6e-13; CCSD(T) *energy* exact 1e-13), so a small (T)-gradient-specific
-term is off (0.2% of the (T) contribution). Localized as follows — note **pycc's (T) density follows
-the Vikings (Hald et al., Paper B) Lagrangian formulation, *not* Lee–Rendell**, so map terms to Paper
-B:
-- **ε ruled out.** Lee–Rendell's ε (A 12–13) is a *diagonal* term the energy already validates; it is
-  present in pycc (adding it explicitly makes the gradient ~60× *worse* — double-counting).
-- **test_034 is blind to the off-diagonals.** `compute_energy`'s `eone = contract(F[o,o],Doo) +
-  contract(F[v,v],Dvv)` with canonical (diagonal) F sees only `diag(Doo)`/`diag(Dvv)` and drops the
-  ov block ("Brillouin condition"). So it validates **diag(D) + Γ** only.
-- **Block-wise Fock-perturbation FD** (`Tr(D_blk·P)` vs FD of E_corr, `P` a masked Fock block; the
-  CCSD control is self-consistent to 5e-11): the (T) 1-PDM fails to differentiate its own energy
-  **only in the off-diagonal occ–occ `Doo` (+4.0e-5) and virt–virt `Dvv` (+3.4e-5)** blocks. **`Dov`
-  is consistent to 6e-11** (matching Lee–Rendell Eq. 19: *no* ov (T) term) and **diag(D) to 3e-10**.
-
-**Resolution (2026-07-06) — canonical perturbed orbitals via the existing frozen-core machinery.**
-The gap is **not** a density block to correct in place; it is a *formulation/gauge* error. Confirmed
-against the PI's own Psi4 CCSD(T)-gradient code (`relax_I_RHF`) and Lee–Rendell §II.B:
-
-- **(T) requires *canonical* perturbed orbitals for the oo/vv blocks** — not pycc's current
-  `U^X = −½S^X`. When canonical perturbed orbitals are used, the occ–occ `(i,j)` and virt–virt
-  `(a,b)` **dependent pairs** contribute to the orbital-response Lagrangian via L–R's `ΔX/Δf` terms
-  (their Eq. 34): `(I'_ij − I'_ji)/(f_ii − f_jj)` and `(I'_ab − I'_ba)/(f_aa − f_bb)`, contracted with
-  the antisymmetrized `A`/`C` integrals, plus the `f·(∂I/∂f)` pieces. (This is `relax_I_RHF`'s
-  `CCSD_T && dertype==1` block; `delta_I/delta_f_{IJ,AB}` are those `ΔX/Δf` responses.) The
-  `|ΔX_mn|<1e-8` threshold there is a **degeneracy** guard, not an all-electron cancellation — my
-  earlier "all-electron ⇒ ΔX=0 ⇒ −½S^X suffices" reading was **Scuseria's** separate formulation, not
-  L–R's or pycc's.
-- **The off-diagonal `Doo`/`Dvv` is extraneous — remove it entirely.** pycc's `t3_density` builds
-  `⟨0|L₃[E_ij,T₃]|0⟩` off-diagonals that appear in **neither** paper's (T) 1-PDM: L–R (Eqs 17–19) and
-  Vikings (Eq 65) give `Dov` + `diag(Doo)`/`diag(Dvv)` only. They are **not** a misplaced density block
-  and **not** the `ΔX` numerator — just wrong (per PI, 2026-07-06). Empirically they were spurious in
-  `D` (removing → unrelaxed dipole self-consistent to 5.7e-11) yet crudely load-bearing in the gradient
-  (removing → 3.0e-5) **only because pycc carries no all-electron oo/vv `κ̄` yet**; supplying that (next
-  bullet) is the real fix, and the off-diagonal plays no part in it.
-- **The oo/vv dependent-pair `κ̄` reuses pycc's frozen-core machinery.** `κ̄_ij = (I'_ij − I'_ji)/(f_ii
-  − f_jj)`, `κ̄_ab = (I'_ab − I'_ba)/(f_aa − f_bb)` — the **Lagrangian asymmetry**, i.e. exactly the
-  frozen-core divide `Pco = (Ip[co,o] − Ip[o,co]ᵀ)/(eps_c − eps_i)` (`MPwfn._so_zvector` ~535 and the
-  spatial `CCderiv.gradient`), **generalized from core↔active-occ to all oo `(i,j)` and vv `(a,b)`
-  pairs**, numerator-gated `|ΔX|<1e-8`, added to `Drel` and coupled into the Z-vector RHS through the
-  antisymmetrized ERI. `I'` is built from the *paper-correct* density (`Dov` + `diag` + `Γ` + (T)-Λ);
-  the (T) enters `κ̄` only through `I'`, never through an explicit off-diagonal `Doo`/`Dvv`. This is the
-  single surviving orbital term `κ̄_pq F^(1)_pq` of `ccsdt_orbital_response.tex`, with `κ̄` running over
-  *all* pairs (ov = CPHF/Z-vector solve; oo/vv = these divides).
-- Superseded framings: "ε diagonal is missing" (ε is present); "off-diagonal is a density block to
-  fix"; "off-diagonal is the `ΔX` numerator misplaced in `D`"; "−½S^X is fine (Scuseria)". Diagonal `ε`
-  and `Dov` (L–R Eq. 19 / Vikings Eq. 65) are correct.
-
-**Fix:**
-1. **Remove** the off-diagonal `Doo`/`Dvv` entirely (in `t3_density`); keep `diag(Doo)`/`diag(Dvv)`
-   and `Dov`.
-2. **Generalize the frozen-core `Pco`** to all oo and vv pairs — the `κ̄` divide above, numerator-gated,
-   added to `Drel` and coupled into the Z-vector RHS. No new (T)-specific term beyond the correct
-   density feeding `I'`.
-3. Keep the ov Z-vector as is.
-4. Add a `Tr(D·μ)`-vs-FD (unrelaxed-dipole / block-wise) assertion to the (T)-density test — the
-   energy reconstruction (test_034) is blind to the off-diagonal blocks.
-
-This reconciles the density (dipole), the gradient, both papers, and the PI's Psi4 implementation.
-Diagnostic scripts (scratchpad): `block_decomp.py`, `unrelaxed_ctrl.py`, `dov_only.py`, `offdiag.py`.
-
-**Plan.**
-1. **Audit** the (T) densities/Λ for gradient-readiness: relaxed vs unrelaxed convention; that
-   `S1/S2` reach the `CCderiv` Z-vector RHS; and the ε question above.
-2. **Wire (T) into `CCderiv`**: assemble the (T) effective Q (ε on the diagonal) and G, add η/γ to
-   the Z-vector RHS; reuse the CCSD Z-vector solve + −½Sˣ assembly unchanged.
-3. **Assemble** `E^λ = D h^λ + Γ (pq|rs)^λ + P S^λ + Z·(CPHF RHS)` — identical to the CCSD path.
-
-**Validation.**
-- Primary oracle: psi4 `gradient('ccsd(t)')` (closed-shell, all-electron) — external analytic.
-- Cross-check: FD of pycc's own CCSD(T) energy.
-- Limit check: CCSD(T)→CCSD (drop triples) reproduces the CCSD gradient (test_076) to machine ε.
-- Start H2O/6-31G and /cc-pVDZ (real virtual space), C1.
-
-**Deferred:** frozen-core (dependent-pair canonical response), spin-orbital (SO==spatial keystone),
-CCSD(T) Hessian/APT.
+**Deferred:** spin-orbital CCSD(T) gradient (port the (T) density + oo/vv κ̄ to the SO path;
+SO==spatial keystone); CCSD(T) Hessian/APT; extending `_gradient_explicit` to the (T) dependent-pair.
 
 ## Appendix A: condensed changelog (by PR)
 
@@ -314,11 +299,17 @@ Reference layer, then the MP2 derivative effort:
 | #170 | **MP2 AAT** (VCD) — density/overlap form, gauge-invariant, frozen-core, both spins |
 | #171 | **MP2 velocity-gauge APT** — AAT machinery with the linear-momentum operator |
 | #172 | **property facade** — `pycc.PropertyComponents` + `pycc.dipole/gradient/polarizability/hessian/apt/aat`; nuclear un-bundled from the HF methods; `MPwfn.total_*` removed |
+| #176 | **CCSD gradient** — spatial closed-shell RHF via `CCderiv` (CCSD relaxed density + Z-vector, reusing the MP2 assembly) |
+| #177 | **CCSD gradient** — spin-orbital UHF (SO 2-PDM + gradient; all-electron + frozen core) |
+| #183 | **CCSD(T) gradient** — spatial RHF, all-electron; + frozen core sourced from psi4 only (`frozen_core` pycc override removed) |
+| (current) | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
 `test_070` (2n+1 polarizability), `test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
-(MP2 velocity APT), `test_074` (property facade). The 2n+1 APT/Hessian cross-checks live in
+(MP2 velocity APT), `test_074` (property facade). CC gradients: `test_076` (CCSD, spatial),
+`test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), all-electron + frozen
+core), `test_034` (CCSD(T) density/dipole). The 2n+1 APT/Hessian cross-checks live in
 `test_068`/`test_069`.
 
 ## Appendix B: superseded early decisions
@@ -332,5 +323,11 @@ the record stays coherent (rationale is in git history):
 - **"All-electron only first"** → **frozen core throughout** (both spin paths, every property).
 - **"Explicit route; 2n+1 deferred"** → **both routes implemented**, the 2n+1 route as the
   efficient alternative *and* an independent cross-check of the explicit suite.
-- **"MP2-specific, no abstraction"** → still MP2-specific; the shared-layer refactor remains
-  deferred to the CC-gradient work (see Roadmap).
+- **"MP2-specific, no abstraction"** → still largely MP2-specific; `CCderiv` reuses the MP2
+  Lagrangian/CPHF primitives by delegation, but the fuller shared-layer refactor remains deferred
+  (see Roadmap).
+- **"(T) all-electron reuses −½Sˣ, dependent-pair terms deferred to frozen core"** → **(T) needs
+  canonical perturbed orbitals for the oo/vv blocks even all-electron** — the dependent-pair κ̄
+  generalized from the frozen-core `Pco`. The early reading mistook Lee–Rendell's `|ΔX_mn|<1e-8`
+  *degeneracy* guard for an all-electron cancellation (that cancellation is Scuseria's separate
+  formulation). See §5 and §7.
