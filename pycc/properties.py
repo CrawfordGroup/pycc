@@ -233,6 +233,7 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     ignored for an ``HFwfn`` (no correlation)."""
     from .hfwfn import HFwfn
     from .mpwfn import MPwfn
+    from .ciwfn import CIwfn 
 
     mol = wfn.ref.molecule()
     nuclear = _nuclear_aat(mol, origin)
@@ -242,6 +243,9 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     elif isinstance(wfn, HFwfn):
         reference = np.asarray(wfn.atomic_axial_tensors())
         correlation = np.zeros_like(reference)
+    elif isinstance(wfn, CIwfn):
+        reference = np.asarray(wfn._reference_hf().atomic_axial_tensors())
+        correlation = np.asarray(wfn.atomic_axial_tensors(gauge=orbital_gauge))
     else:
         raise TypeError(f"pycc.aat: unsupported wavefunction type {type(wfn).__name__!r}")
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)

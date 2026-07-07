@@ -49,17 +49,20 @@ class CIwfn(Wavefunction):
         super().__init__(scf_wfn, **kwargs)
         mgr = self.device_manager
 
+        # The MP2 wavefunction supplies the energy denominators and the CISD initial
+        # guess (MP1 doubles), reusing this object's base - the same pattern ccwfn
+        # uses. CI's singles denominator (Dia) is built from the MP2 orbital energies.
         self.mp = MPwfn.from_wavefunction(self)
         self.Dijab = self.mp.Dijab
         self.Dia = self.mp.eps_occ.reshape(-1, 1) - self.mp.eps_vir
 
+        # Initial guess: c1 = 0, c2 = MP1 doubles (CI mutates c2 in place, so copy).
         self.c1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
         self.c2 = clone(self.mp.t2)
 
         print("CIWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
-    def solve_ci(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100,
-                 max_diis: int = 8, start_diis: int = 1) -> "Tensor":
+    def solve_ci(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> "Tensor":
         """Iterate the projected CISD equations to convergence and return E_c.
         """
         ci_tstart = time.time()
@@ -224,28 +227,15 @@ class CIwfn(Wavefunction):
                        - contract('je,abei->ijab', c1, ERI[v, v, v, o]))
             s2 = s2 - (contract('ma,mbij->ijab', c1, ERI[o, v, o, o])
                        - contract('mb,maij->ijab', c1, ERI[o, v, o, o]))
-            # Bare-Fock singles->doubles coupling <Phi_ij^ab|F_N|Phi_k^c> =
-            # P(ij)P(ab) f_jb c1_ia. Zero for a canonical reference (f_ov = 0); in CCSD
-            # it is absorbed by the T1 similarity transformation, but linear CISD needs
-            # it explicitly for a non-canonical (ROHF) reference.
             tmp = contract('ia,jb->ijab', c1, F[o, v])
             s2 = s2 + (tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3)
                        + tmp.swapaxes(0, 1).swapaxes(2, 3))
         return s2
 
-    # ==================================================================
-    # CISD analytic-derivative properties (LG-APT, VG-APT, AAT, Hessian)
-    # ==================================================================
-    # Spatial orbitals, closed-shell RHF only. Ported from the standalone validated implementations (cisd_vcd.py / cisd_apt_lg.py / cisd_analytic_hessian.py; A. Krishnan), validated against them to
-    # ~1e-10 for (P)-H2O2/STO-3G across all four properties (see tests/test_075..078). Mirrors MPwfn's analytic-derivative interface: dipole_derivatives(), velocity_dipole_derivatives(), atomic_axial_tensors(), hessian().
-    #
-    # Unlike MPwfn (which returns correlation-only pieces for the pycc.properties facade to combine), these return the TOTAL tensors - electronic + nuclear terms included - matching the standalone reference implementation's outputs. Spin-orbital and frozen-core paths are not implemented (spatial, all-electron only).
-
-
     def _normalized_amplitudes(self):
         if getattr(self, '_ci_namp', None) is None:
             c = self.contract
-            t1, t2 = self.c1, self.c2    
+            t1, t2 = self.c1, self.c2      # CIwfn's intermediate-normalized amplitudes
             norm2 = (2.0 * c('ia,ia->', t1.conj(), t1)
                      + c('ijab,ijab->', t2.conj(), 2.0 * t2 - t2.swapaxes(2, 3)))
             N = 1.0 / np.sqrt(1.0 + norm2)
@@ -257,6 +247,8 @@ class CIwfn(Wavefunction):
         return self._ci_namp
 
     def _cisd_densities(self):
+        """Cache (D_pq, D_pq_corr, D_pqrs): full 1-PDM, correlation-only
+        1-PDM, and 2-PDM - direct port of cisd_vcd._build_densities."""
         if getattr(self, '_ci_dens', None) is None:
             c = self.contract
             o, v, nmo, no = self.o, self.v, self.nmo, self.no
@@ -297,14 +289,17 @@ class CIwfn(Wavefunction):
         return self._ci_dens
 
     def _cisd_dn0(self, dn1, dn2):
+        """First derivative of the normalization factor n0 along a perturbation. """
         c = self.contract
         t1, t2 = self.c1, self.c2
         tau = 2.0 * t2 - t2.swapaxes(2, 3)
         n0 = self._normalized_amplitudes()[0]
-        return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1)
-                         + c('ijab,ijab->', tau.conj(), dn2))
+        return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1) + c('ijab,ijab->', tau.conj(), dn2))
+
+    # coupled-perturbed CI  (cisd_vcd.py: solve_cpci)
 
     def _psi4_mints(self):
+        """psi4 MintsHelper + C as psi4.core.Matrix"""
         if getattr(self, '_mints_cache', None) is None:
             import psi4
             mints = psi4.core.MintsHelper(self.H.basisset)
@@ -313,8 +308,7 @@ class CIwfn(Wavefunction):
         return self._mints_cache
 
     def _build_magnetic_ints(self, beta):
-        import opt_einsum as oe
-        ct = oe.contract
+        ct = self.contract
         nbf = self.nmo
         o, v = self.o, self.v
         t = slice(0, nbf)
@@ -374,8 +368,7 @@ class CIwfn(Wavefunction):
         return dF, dERI, U_H
 
     def _build_vecpot_ints(self, gamma):
-        import opt_einsum as oe
-        ct = oe.contract
+        ct = self.contract
         nbf = self.nmo
         o, v = self.o, self.v
         t = slice(0, nbf)
@@ -435,6 +428,8 @@ class CIwfn(Wavefunction):
         return dF, dERI, U_A
 
     def _cpci_ints(self, pert):
+        """(dF, dERI, U) for a cphf.Perturbation. Nuclear goes through pycc's
+        CPHF (validated exact by LG-APT/VG-APT)"""
         if getattr(self, '_cpci_ints_cache', None) is None:
             self._cpci_ints_cache = {}
         if pert in self._cpci_ints_cache:
@@ -456,6 +451,20 @@ class CIwfn(Wavefunction):
 
     def _solve_cpci(self, pert, maxiter=100, diis_start=2, diis_max=8,
                      e_convergence=1e-11, d_convergence=1e-11):
+        """Coupled-perturbed CI
+
+            self.t1/self.t2         -> self.c1/self.c2  (CIwfn's intermediate-
+                                        normalized amplitudes -- your "t1/t2")
+            self.E_cisd              -> self.eci
+            self.ERI_mo/self.F_mo    -> self.H.ERI/self.H.F
+            self.ci._build_denominators() -> self.Dia/self.Dijab
+            self._build_perturbed_ints(...) -> self._cpci_ints(pert)
+            self.D_pq/self.D_pqrs    -> self._cisd_densities()
+            your DIIS class          -> pycc.utils.helper_diis
+            self._cpci_paths (opt_einsum path caching) -> dropped (perf only)
+
+        Returns (dc1, dc2, dc0v)
+        """
         if getattr(self, '_cpci_cache', None) is None:
             self._cpci_cache = {}
         if pert in self._cpci_cache:
@@ -476,7 +485,6 @@ class CIwfn(Wavefunction):
         D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
         dE = c('pq,pq->', dF, D_pq) + c('pqrs,pqrs->', dERI, D_pqrs)
 
-        # ---- initial guess ----
         dt1 = -(dE * t1).astype(complex)
         dt1 = dt1 - c('ji,ja->ia', dF[o, o], t1)
         dt1 = dt1 + c('ab,ib->ia', dF[v, v], t1)
@@ -505,7 +513,6 @@ class CIwfn(Wavefunction):
         dt2 = dt2 - c('kajc,ikcb->ijab', dERI[o, v, o, v], t2)
         dt2 = dt2 / Dijab
 
-        # ---- initial dE_proj ----
         dE_proj = (2.0 * c('ia,ia->', t1, dF[o, v])
                    + c('ijab,ijab->', t2, 2.0 * dERI[o, o, v, v] - dERI.swapaxes(2, 3)[o, o, v, v])
                    + 2.0 * c('ia,ia->', dt1, F[o, v])
@@ -618,6 +625,8 @@ class CIwfn(Wavefunction):
     # length-gauge APT  (cisd_apt_lg.py: _CISDAPTEngine)
 
     def _zvector(self):
+        """CISD unperturbed Z-vector: relaxed density Q_relaxed, Lagrangian
+        X, h_mo, and the CPHF orbital-response z-amplitudes."""
         if getattr(self, '_cizvec', None) is None:
             c = self.contract
             o, v, no, nmo = self.o, self.v, self.no, self.nmo
@@ -659,12 +668,57 @@ class CIwfn(Wavefunction):
             self._cizvec = dict(Q=Q, G=G, Q_relaxed=Q_relaxed, X=X, h_mo=h_mo, z_ai=z_ai)
         return self._cizvec
 
+    def _corr_QGX(self):
+        """Correlation-only (Q_corr, G_corr, X_corr): the full Z-vector
+        quantities with the pure-HF density blocks removed (Q minus 2*delta_oo;
+        G minus the closed-shell HF 2-RDM block 2*d_ik*d_jl - d_il*d_jk; X
+        rebuilt linearly from the corr densities). Cached. Used by the
+        correlation-only property assemblies; the FULL quantities in
+        _zvector() stay untouched (the perturbed-Lagrangian z response is a
+        full-density equation and remains as validated)."""
+        if getattr(self, '_ci_corr_qgx', None) is None:
+            ct = self.contract
+            no = self.no
+            zv = self._zvector()
+            ERI = np.asarray(self.H.ERI)
+            Q_corr = zv['Q'].copy()
+            for i in range(no):
+                Q_corr[i, i] -= 2.0
+            G_corr = zv['G'].copy()
+            for i in range(no):
+                for j in range(no):
+                    G_corr[i, j, i, j] -= 2.0
+                    G_corr[i, j, j, i] += 1.0
+            X_corr = (ct('jm,im->ij', Q_corr, zv['h_mo'])
+                      + 2.0 * ct('jmkl,imkl->ij', G_corr, ERI))
+            self._ci_corr_qgx = (Q_corr, G_corr, X_corr)
+        return self._ci_corr_qgx
+
+    def _reference_hf(self):
+        """The all-electron :class:`HFwfn` for the SCF reference (cached),
+        supplying the reference (electronic) contribution to the total CISD
+        properties via the pycc property facade - same pattern as
+        MPwfn._reference_hf."""
+        if getattr(self, '_ref_hf', None) is None:
+            from .hfwfn import HFwfn
+            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
+        return self._ref_hf
+
     def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
+        """CISD CORRELATION-ONLY LG-APT, shape (natom, 3, 3), [A, beta, alpha].
+        Port of _CISDAPTEngine.assemble() with the HF density block removed
+        from T1/T2 and the nuclear charge term dropped - both supplied by the
+        pycc.apt facade (HFwfn reference + _nuclear_apt), matching MPwfn's
+        contract."""
         from .cphf import Perturbation
         c = self.contract
         o, v = self.o, self.v
         zv = self._zvector()
-        Qt = zv['Q_relaxed']
+        # Correlation-only relaxed density: Q_relaxed minus the HF 2*delta_oo.
+        # T3/T3z are already pure correlation (amplitude/Z-vector response).
+        Qt = zv['Q_relaxed'].copy()
+        for i in range(self.no):
+            Qt[i, i] -= 2.0
         natom = self.derivatives.natom
         h_E = [np.asarray(self.H.mu[f]) for f in range(3)]
 
@@ -687,12 +741,6 @@ class CIwfn(Wavefunction):
                     T3 = c('pq,pq->', dD_corr, h_E[alpha])
                     T3z = 2.0 * c('ai,ai->', dz, h_E[alpha][v, o])
                     APT[A, beta, alpha] = (T1 + T2 + T3 + T3z).real
-
-        mol = self.ref.molecule()
-        for A in range(natom):
-            Z = mol.Z(A)
-            for a in range(3):
-                APT[A, a, a] += Z
         return APT
 
     def _perturbed_cisd_corr_opdm(self, dc1, dc2):
@@ -842,7 +890,7 @@ class CIwfn(Wavefunction):
         from .cphf import Perturbation
         c = self.contract
         natom = self.derivatives.natom
-        D_pq, _, _ = self._cisd_densities()
+        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM
         I_pp = np.zeros((3 * natom, 3))
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -870,28 +918,20 @@ class CIwfn(Wavefunction):
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
         return AAT_cphi.real
 
-    def atomic_axial_tensors(self) -> np.ndarray:
-        mol = self.ref.molecule()
-        natom = mol.natom()
+    def atomic_axial_tensors(self, gauge: str = 'canonical') -> np.ndarray:
+        """CISD CORRELATION-ONLY AAT, shape (natom, 3, 3): the four electronic
+        overlap blocks with the correlation 1-PDM in Iphiphi (the 2*delta_oo
+        HF block of Iphiphi is the SCF reference AAT; Icc/Icphi/Iphic are pure
+        correlation, vanishing with the amplitudes). The SCF reference and the
+        nuclear term (Z_A/4) eps_abc R_c are supplied by the pycc.aat facade
+        (HFwfn.atomic_axial_tensors + _nuclear_aat), matching MPwfn's
+        contract."""
+        natom = self.ref.molecule().natom()
         total = (self.compute_Icc_AATs() + self.compute_Iphic_AATs()
                  + self.compute_Iphiphi_AATs() + self.compute_Icphi_AATs())
-
-        # Nuclear AAT: J[3A+a, b] = (Z_A/4) * sum_c eps_{abc} * R_{A,c}
-        eps_lc = np.zeros((3, 3, 3))
-        eps_lc[0, 1, 2] = eps_lc[1, 2, 0] = eps_lc[2, 0, 1] = 1.0
-        eps_lc[0, 2, 1] = eps_lc[2, 1, 0] = eps_lc[1, 0, 2] = -1.0
-        R = mol.geometry().np
-        for A in range(natom):
-            Z = mol.Z(A)
-            for a in range(3):
-                for b in range(3):
-                    total[3 * A + a, b] += 0.25 * Z * sum(
-                        eps_lc[a, b, g] * R[A, g] for g in range(3))
-
         return total.reshape(natom, 3, 3)
-    
-    # velocity-gauge APT  (cisd_vcd.py: compute_Icc/Icphi/Iphic/Iphiphi_VG_APT)
 
+    # velocity-gauge APT  (cisd_vcd.py: compute_Icc/Icphi/Iphic/Iphiphi_VG_APT)
     def compute_Icc_VG_APT(self):
         from .cphf import Perturbation
         c = self.contract
@@ -943,7 +983,7 @@ class CIwfn(Wavefunction):
         from .cphf import Perturbation
         c = self.contract
         natom = self.derivatives.natom
-        D_pq, _, _ = self._cisd_densities()
+        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM
         I_pp = np.zeros((3 * natom, 3), dtype=complex)
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -955,43 +995,52 @@ class CIwfn(Wavefunction):
                 I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
         return I_pp
 
-    def velocity_dipole_derivatives(self) -> np.ndarray:
-        natom = self.derivatives.natom
+    def velocity_dipole_derivatives(self, gauge: str = 'canonical') -> np.ndarray:
+        """CISD CORRELATION-ONLY VG-APT, shape (natom, 3, 3): -2 times the four
+        overlap blocks with the correlation 1-PDM in Iphiphi (the HF block of
+        Iphiphi is the SCF reference; the other three blocks are pure
+        correlation). The SCF reference and the Z_A delta nuclear term are
+        supplied by the pycc.apt(gauge='velocity') facade, matching MPwfn's
+        contract. """
+        natom = self.ref.molecule().natom()
         overlap_total = (self.compute_Icc_VG_APT() + self.compute_Icphi_VG_APT()
                           + self.compute_Iphic_VG_APT() + self.compute_Iphiphi_VG_APT())
-        APT_VG = (-2.0 * overlap_total).real
-        mol = self.ref.molecule()
-        for A in range(natom):
-            Z = mol.Z(A)
-            for a in range(3):
-                APT_VG[3 * A + a, a] += Z
-        return APT_VG.reshape(natom, 3, 3)
+        return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
 
     # Hessian  (cisd_analytic_hessian.py)
 
     def _hess_build_Y(self):
-        c = self.contract
+        """Y_ijkl double-UU tensor, correlation densities only (linear in Q/G,
+        so the HF part belongs to the SCF reference Hessian)."""
+        ct = self.contract
         zv = self._zvector()
-        Q, G, h_mo = zv['Q'], zv['G'], zv['h_mo']
+        Q, G, _ = self._corr_QGX()
+        h_mo = zv['h_mo']
         ERI = np.asarray(self.H.ERI)
-        Y = c('jl,ik->ijkl', Q, h_mo)
-        Y = Y + 2.0 * c('jlmn,ikmn->ijkl', G, ERI)
-        Y = Y + 2.0 * c('jmln,imkn->ijkl', G, ERI)
-        Y = Y + 2.0 * c('jmnl,imnk->ijkl', G, ERI)
+        Y = ct('jl,ik->ijkl', Q, h_mo)
+        Y = Y + 2.0 * ct('jlmn,ikmn->ijkl', G, ERI)
+        Y = Y + 2.0 * ct('jmln,imkn->ijkl', G, ERI)
+        Y = Y + 2.0 * ct('jmnl,imnk->ijkl', G, ERI)
         return Y
 
     def _hess_X_tilde(self):
-        c = self.contract
+        """Correlation-only X_tilde: X_corr (linear in the corr densities) with
+        the Z-vector-corrected vo block. z itself is solved from the FULL
+        Lagrangian in _zvector() (unchanged from the validated code); it is a
+        pure correlation quantity since the HF part of X satisfies Brillouin
+        (X_HF[v,o] - X_HF[o,v].T = 0) and contributes nothing to the rhs."""
+        ct = self.contract
         o, v, no, nv = self.o, self.v, self.no, self.nv
         zv = self._zvector()
+        _, _, X_corr = self._corr_QGX()
         F, ERI = np.asarray(self.H.F), np.asarray(self.H.ERI)
         A = (2.0 * ERI - ERI.swapaxes(2, 3)) + (2.0 * ERI - ERI.swapaxes(2, 3)).swapaxes(1, 3)
         A = A.swapaxes(1, 2)
-        G_mat = (c('ab,ij->aibj', np.eye(nv), np.eye(no))
+        G_mat = (ct('ab,ij->aibj', np.eye(nv), np.eye(no))
                   * (F[v, v].reshape(nv, 1, nv, 1) - F[o, o].reshape(1, no, 1, no))
                   + A[v, o, v, o])
-        X_tilde = zv['X'].copy()
-        X_tilde[v, o] += c('aibj,bj->ai', G_mat, zv['z_ai'])
+        X_tilde = X_corr.copy()
+        X_tilde[v, o] += ct('aibj,bj->ai', G_mat, zv['z_ai'])
         return X_tilde
 
     def build_xi_ab(self, U_a, U_b, S_a, S_b, S_ab):
@@ -1002,13 +1051,15 @@ class CIwfn(Wavefunction):
         return xi
 
     def build_X_deriv(self, h_a_skel, g_a_skel):
-        c = self.contract
-        zv = self._zvector()
-        Xa = c('jm,im->ij', zv['Q'], h_a_skel)
-        Xa = Xa + 2.0 * c('jmkl,imkl->ij', zv['G'], g_a_skel)
+        """Skeleton-derivative Lagrangian, correlation densities only."""
+        ct = self.contract
+        Q, G, _ = self._corr_QGX()
+        Xa = ct('jm,im->ij', Q, h_a_skel)
+        Xa = Xa + 2.0 * ct('jmkl,imkl->ij', G, g_a_skel)
         return Xa
 
     def build_cpci_term(self, dc1_a, dc2_a, dc1_b, dc2_b):
+        """The pure linear CI-Jacobian action on dc1_b/dc2_b."""
         c = self.contract
         o, v = self.o, self.v
         F, ERI = np.asarray(self.H.F), np.asarray(self.H.ERI)
@@ -1040,13 +1091,18 @@ class CIwfn(Wavefunction):
         sig2 = sig2 + c('kbcj,ikac->ijab', 2.0 * ERI[o, v, v, o] - ERI.swapaxes(2, 3)[o, v, v, o], dc2_b)
         sig2 = sig2 - c('kajc,ikcb->ijab', ERI[o, v, o, v], dc2_b)
 
-        return -2.0 * (2.0 * c('ia,ia->', dc1_a, sig1)
-                       + c('ijab,ijab->', 2.0 * dc2_a - dc2_a.swapaxes(2, 3), sig2)).real
+        return -2.0 * (2.0 * c('ia,ia->', dc1_a, sig1) + c('ijab,ijab->', 2.0 * dc2_a - dc2_a.swapaxes(2, 3), sig2)).real
 
-    def hessian(self) -> np.ndarray:
-        import opt_einsum as oe
+    def hessian(self, route: str = 'explicit') -> np.ndarray:
+        """CISD CORRELATION-ONLY nuclear Hessian, shape (3*natom, 3*natom):
+        the T0-T5 assembly with the correlation densities in the density with linear
+        terms (T0, xi-X_tilde, T3, T4, the HF blocks of those terms are the
+        SCF reference Hessian) and the unchanged pure-correlation Z-vector (Bab.z)
+        and CPCI (T5) terms; nuclear-repulsion block dropped. Reference and
+        nuclear are supplied by the pycc.hessian facade, matching MPwfn's
+        contract."""
         from .cphf import Perturbation
-        ct = oe.contract
+        ct = self.contract
         o, v, no = self.o, self.v, self.no
         mints, C_p4 = self._psi4_mints()
         mol = self.ref.molecule()
@@ -1056,7 +1112,7 @@ class CIwfn(Wavefunction):
         eps = np.diag(F)
 
         zv = self._zvector()
-        Q, G = zv['Q'], zv['G']
+        Q, G, _ = self._corr_QGX()   # correlation densities (T0/T3/T4/xi-X)
         X_t = self._hess_X_tilde()
         Y = self._hess_build_Y()
         ERI = np.asarray(self.H.ERI)
@@ -1094,12 +1150,9 @@ class CIwfn(Wavefunction):
         for la in range(ndof):
             g_a_M = to_mulliken(g_skel_1[la])
             Fa = h_skel_1[la].copy()
-            Fa += (ct('ijkk->ij', 2 * g_a_M[:, :, o, o])
-                   - ct('ikjk->ij', g_a_M[:, o, :, o]))
+            Fa += (ct('ijkk->ij', 2 * g_a_M[:, :, o, o]) - ct('ikjk->ij', g_a_M[:, o, :, o]))
             Fa_M[la] = Fa
-            Aa_M[la] = (4 * g_a_M
-                        - g_a_M.transpose(0, 2, 1, 3)
-                        - g_a_M.transpose(0, 3, 2, 1))
+            Aa_M[la] = (4 * g_a_M - g_a_M.transpose(0, 2, 1, 3) - g_a_M.transpose(0, 3, 2, 1))
 
         Hessian = np.zeros((ndof, ndof))
 
@@ -1115,9 +1168,7 @@ class CIwfn(Wavefunction):
             xi = self.build_xi_ab(U_a, U_b, S_skel_1[la], S_skel_1[lb], S_ab_sk)
             t2_xiXt = -ct('ij,ji->', xi, X_t)
             g_ab_sk_M = to_mulliken(g_ab_sk)
-            F_ab_M = (h_ab_sk
-                      + ct('ijkk->ij', 2 * g_ab_sk_M[:, :, o, o])
-                      - ct('ikjk->ij', g_ab_sk_M[:, o, :, o]))
+            F_ab_M = (h_ab_sk + ct('ijkk->ij', 2 * g_ab_sk_M[:, :, o, o]) - ct('ikjk->ij', g_ab_sk_M[:, o, :, o]))
             Bab = F_ab_M.copy()
             Bab -= ct('ij,j->ij', xi, eps)
             Bab -= ct('kl,ijkl->ij', xi[o, o], W_M[:, :, o, o])
@@ -1143,8 +1194,7 @@ class CIwfn(Wavefunction):
             t2_val = t2_xiXt + t2_zvec
 
             # T3+T4: orbital-response Lagrangian + Y tensor
-            t3_val = 2.0 * (ct('ij,ij->', U_b, X_deriv[la])
-                            + ct('ij,ij->', U_a, X_deriv[lb]))
+            t3_val = 2.0 * (ct('ij,ij->', U_b, X_deriv[la])+ ct('ij,ij->', U_a, X_deriv[lb]))
             t4_val = 2.0 * ct('ij,kl,ijkl->', U_a, U_b, Y)
 
             # T5: CPCI amplitude response
@@ -1160,12 +1210,9 @@ class CIwfn(Wavefunction):
                 S_ab = mints.mo_oei_deriv2('OVERLAP', N1, N2, C_p4, C_p4)
                 E_ab = mints.mo_tei_deriv2(N1, N2, C_p4, C_p4, C_p4, C_p4)
 
-                h_ab = {(a, b): T_ab[3 * a + b].np + V_ab[3 * a + b].np
-                        for a in range(3) for b in range(3)}
-                S_ab_np = {(a, b): S_ab[3 * a + b].np
-                           for a in range(3) for b in range(3)}
-                g_ab = {(a, b): E_ab[3 * a + b].np.swapaxes(1, 2)
-                        for a in range(3) for b in range(3)}
+                h_ab = {(a, b): T_ab[3 * a + b].np + V_ab[3 * a + b].np for a in range(3) for b in range(3)}
+                S_ab_np = {(a, b): S_ab[3 * a + b].np for a in range(3) for b in range(3)}
+                g_ab = {(a, b): E_ab[3 * a + b].np.swapaxes(1, 2) for a in range(3) for b in range(3)}
 
                 for a in range(3):
                     for b in range(3):
@@ -1175,33 +1222,5 @@ class CIwfn(Wavefunction):
 
                 del T_ab, V_ab, S_ab, E_ab, h_ab, S_ab_np, g_ab
 
-        # Nuclear repulsion Hessian
-        R = mol.geometry().np
-        H_nuc = np.zeros((ndof, ndof))
-        for A in range(natom):
-            for B in range(natom):
-                if A == B:
-                    continue
-                ZA, ZB = mol.Z(A), mol.Z(B)
-                dR = R[A] - R[B]
-                r = np.sqrt(dR @ dR)
-                r3, r5 = r**3, r**5
-                for a in range(3):
-                    la = 3 * A + a
-                    for b in range(3):
-                        lb = 3 * B + b
-                        H_nuc[la, lb] += ZA * ZB * (
-                            -3.0 * dR[a] * dR[b] / r5
-                            + (1.0 if a == b else 0.0) / r3)
-
-        for A in range(natom):
-            for a in range(3):
-                la = 3 * A + a
-                for b in range(3):
-                    lb = 3 * A + b
-                    H_nuc[la, lb] = -sum(H_nuc[la, 3 * B + b]
-                                         for B in range(natom) if B != A)
-
-        Hessian += H_nuc
         Hessian = 0.5 * (Hessian + Hessian.T)
         return Hessian
