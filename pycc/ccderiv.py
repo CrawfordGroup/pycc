@@ -145,19 +145,20 @@ class CCderiv:
                      + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
         if cc.model.upper() == 'CCSD(T)':
             # (T) breaks the occ-occ / virt-virt rotation invariance, so the canonical perturbed
-            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector.
-            # These are the frozen-core (I'_ij-I'_ji)/(eps_i-eps_j) divide generalized to all oo/vv
-            # pairs (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
-            # Z-vector RHS through the antisymmetrized ERI (the same mechanism as P_co).  For CCSD
-            # both blocks vanish (oo/vv invariance).  Frozen-core CCSD(T) is a later phase.
-            if nfzc:
-                raise NotImplementedError("frozen-core CCSD(T) gradient not yet supported")
+            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector:
+            # (I'_ij-I'_ji)/(eps_i-eps_j) over the active oo pairs and the vv analog
+            # (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
+            # Z-vector RHS through the antisymmetrized ERI.  For CCSD both blocks vanish (oo/vv
+            # invariance).  Frozen core: the core<->active-occupied (T) response is already carried
+            # by P_co above (its I' is the (T)-inclusive Lagrangian); these blocks add the
+            # active<->active oo and the vv pairs, and the ov-occupied index of the coupling runs
+            # over the full occupied space (ofull), reducing to the active space when nfzc=0.
             Poo = self._dependent_pairs(Ip[o, o], eps[o])
             Pvv = self._dependent_pairs(Ip[v, v], eps[v])
             Drel[o, o] += Poo
             Drel[v, v] += Pvv
-            X = X + (c('kl,akil->ia', Poo, L[v, o, o, o])
-                     + c('bc,ibac->ia', Pvv, L[o, v, v, v]))
+            X = X + (c('kl,akil->ia', Poo, L[v, o, ofull, o])
+                     + c('bc,ibac->ia', Pvv, L[ofull, v, v, v]))
         z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (full-occ SCF Hessian)
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
