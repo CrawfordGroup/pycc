@@ -56,11 +56,13 @@ def test_cisd_aat_vs_reference(cisd_h2o2):
     """The facade total reproduces the standalone validated reference, every
     element (STO-3G)."""
     P = np.asarray(pycc.aat(cisd_h2o2()).total).reshape(-1, 3)
-    assert np.max(np.abs(P - AAT_REF)) < 1e-6, np.max(np.abs(P - AAT_REF))
+    print(P)
+    assert np.max(np.abs(P - AAT_REF)) < 1e-8, np.max(np.abs(P - AAT_REF))
 
 
 def test_cisd_aat_ccpvdz_vs_reference(cisd_h2o2):
     """Larger basis (cc-pVDZ): the facade total reproduces the standalone
     validated reference, every element."""
     P = np.asarray(pycc.aat(cisd_h2o2(basis='cc-pVDZ')).total).reshape(-1, 3)
-    assert np.max(np.abs(P - AAT_REF_CCPVDZ)) < 1e-6, np.max(np.abs(P - AAT_REF_CCPVDZ))
+    print(P)
+    assert np.max(np.abs(P - AAT_REF_CCPVDZ)) < 1e-8, np.max(np.abs(P - AAT_REF_CCPVDZ))

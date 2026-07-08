@@ -164,15 +164,15 @@ def datadir(tmpdir, request):
 
 # CISD analytic-derivative tests (test_079-082): shared geometry + builder
 
-# (P)-hydrogen peroxide, CISD-VCD validation geometry (Angstrom); atom order H,H,O,O.
+# (P)-hydrogen peroxide, CISD-VCD validation geometry (Bohr); atom order H,H,O,O.
 CISD_H2O2_GEOM = """
-H   -1.025917944    0.8626019238    0.216196164
-H   1.025917944     -0.8626019238   0.2161961616
-O   -0.7221777851   -0.1253224661   0.2161987519
-O   0.7221777851    0.1253224661    0.2161987448
+H -1.938703940499  1.630081390557  0.408551539155
+H  1.938703940499 -1.630081390557  0.408551534619
+O -1.364718227128 -0.236825138192  0.408556429577
+O  1.364718227128  0.236825138192  0.408556416160
+units bohr
 no_com
 no_reorient
-symmetry c1
 """
 
 

@@ -43,8 +43,8 @@ def test_so_dipole_equals_spatial_rhf(rhf_wfn):
     shell, isolating the spin-orbital density kernel."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    d_spatial = _cc_dipole(wfn, frozen_core=False)
-    d_so = _cc_dipole(wfn, frozen_core=False, orbital_basis="spinorbital")
+    d_spatial = _cc_dipole(wfn)
+    d_so = _cc_dipole(wfn, orbital_basis="spinorbital")
     assert np.max(np.abs(d_so - d_spatial)) < 1e-10
 
 
@@ -52,7 +52,7 @@ def test_uhf_dipole_vs_cfour(uhf_wfn):
     """Open-shell .OH cc-pVDZ: spin-orbital UHF CC dipole vs CFOUR (unrelaxed)."""
     wfn = uhf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    d = _cc_dipole(wfn, frozen_core=False)
+    d = _cc_dipole(wfn)
     assert abs(d[0]) < 1e-10 and abs(d[1]) < 1e-10
     assert abs(d[2] - CFOUR_UHF_DIPOLE_Z) < 1e-8
 
@@ -62,7 +62,7 @@ def test_rohf_dipole_vs_cfour(rohf_wfn):
     semicanonical)."""
     wfn = rohf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
-    d = _cc_dipole(wfn, frozen_core=False)
+    d = _cc_dipole(wfn)
     assert abs(d[0]) < 1e-10 and abs(d[1]) < 1e-10
     assert abs(d[2] - CFOUR_ROHF_DIPOLE_Z) < 1e-8
 

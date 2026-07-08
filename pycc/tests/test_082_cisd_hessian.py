@@ -39,7 +39,7 @@ def test_cisd_hessian_vs_reference(cisd_h2o2):
     """The facade total (nuclear repulsion + HF reference + CISD correlation)
     reproduces the standalone validated reference, every element."""
     H = np.asarray(pycc.hessian(cisd_h2o2()).total)
-    assert np.max(np.abs(H - HESS_REF)) < 1e-6, np.max(np.abs(H - HESS_REF))
+    assert np.max(np.abs(H - HESS_REF)) < 1e-8, np.max(np.abs(H - HESS_REF))
 
 
 def test_cisd_hessian_symmetry_sum_rule(cisd_h2o2):
@@ -48,5 +48,5 @@ def test_cisd_hessian_symmetry_sum_rule(cisd_h2o2):
     correlation block obeys both on its own."""
     comp = pycc.hessian(cisd_h2o2())
     for H in (np.asarray(comp.total), np.asarray(comp.correlation)):
-        assert np.max(np.abs(H - H.T)) < 1e-8
-        assert np.max(np.abs(H.reshape(4, 3, 4, 3).sum(axis=2))) < 1e-6
+        assert np.max(np.abs(H - H.T)) < 1e-9
+        assert np.max(np.abs(H.reshape(4, 3, 4, 3).sum(axis=2))) < 1e-9

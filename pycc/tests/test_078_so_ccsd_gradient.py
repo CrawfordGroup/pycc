@@ -25,7 +25,7 @@ def _so_ccwfn(geom, reference="uhf", freeze_core="false", basis="STO-3G"):
                       'freeze_core': freeze_core, 'e_convergence': 1e-12, 'd_convergence': 1e-12,
                       'r_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital', frozen_core=(freeze_core == "true"))
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
     cc.solve_cc(E_CONV, R_CONV, 300)
     return cc, wfn
 
@@ -128,8 +128,8 @@ def test_so_ccsd_gradient_frozen_core():
     psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'freeze_core': 'true',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
-    cc_sp = pycc.ccwfn(wfn, frozen_core=True); cc_sp.solve_cc(E_CONV, R_CONV, 200)
-    cc_so = pycc.ccwfn(wfn, orbital_basis='spinorbital', frozen_core=True); cc_so.solve_cc(E_CONV, R_CONV, 200)
+    cc_sp = pycc.ccwfn(wfn); cc_sp.solve_cc(E_CONV, R_CONV, 200)
+    cc_so = pycc.ccwfn(wfn, orbital_basis='spinorbital'); cc_so.solve_cc(E_CONV, R_CONV, 200)
     assert cc_so.nfzc > 0
     deriv = pycc.CCderiv(cc_so)
     g_so = deriv.gradient()

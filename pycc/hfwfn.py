@@ -32,11 +32,12 @@ class HFwfn(Wavefunction):
         the most recently computed nuclear gradient, shape (natom, 3)
     """
 
+    # HF properties are all-electron: force nfzc=0 regardless of the reference's
+    # frozen-core designation (see Wavefunction._all_electron).
+    _all_electron = True
+
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
-        # HF properties are all-electron: always use the full MO space, regardless
-        # of any frozen core the reference was run with.
-        kwargs.pop('frozen_core', None)
-        super().__init__(scf_wfn, frozen_core=False, **kwargs)
+        super().__init__(scf_wfn, **kwargs)
         # The derivative-integral provider and the CPHF orbital-response solver now live
         # on the base, built lazily (``self.derivatives`` / ``self.cphf``).
 

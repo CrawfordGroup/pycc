@@ -36,7 +36,7 @@ def test_cisd_h2o(rhf_wfn):
     """All-electron CISD vs Psi4 DETCI (exact CISD)."""
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    eci = pycc.CIwfn(wfn, frozen_core=False).solve_ci(e_conv=1e-11, r_conv=1e-11)
+    eci = pycc.CIwfn(wfn).solve_ci(e_conv=1e-11, r_conv=1e-11)
     assert abs(eci - CISD_REF) < 1e-10
 
 
@@ -52,7 +52,7 @@ def test_cid_h2o(rhf_wfn):
     """All-electron CID (doubles-only model seam) vs CFOUR (cc-pVDZ H2O)."""
     wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    ecid = pycc.CIwfn(wfn, frozen_core=False, model="CID").solve_ci(e_conv=1e-12, r_conv=1e-12)
+    ecid = pycc.CIwfn(wfn, model="CID").solve_ci(e_conv=1e-12, r_conv=1e-12)
     assert abs(ecid - CID_REF) < 1e-11
 
 
@@ -93,9 +93,9 @@ def test_so_cisd_cid_equals_spatial_rhf(rhf_wfn):
     wfn = rhf_wfn(H2O, "6-31G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
     for model in ("CISD", "CID"):
-        e_spatial = pycc.CIwfn(wfn, frozen_core=False, model=model).solve_ci(
+        e_spatial = pycc.CIwfn(wfn, model=model).solve_ci(
             e_conv=1e-11, r_conv=1e-11)
-        so = pycc.CIwfn(wfn, frozen_core=False, model=model, orbital_basis="spinorbital")
+        so = pycc.CIwfn(wfn, model=model, orbital_basis="spinorbital")
         assert so.orbital_basis == "spinorbital"
         e_so = so.solve_ci(e_conv=1e-11, r_conv=1e-11)
         assert abs(e_so - e_spatial) < 1e-10
@@ -105,7 +105,7 @@ def test_uhf_cisd_equals_fci(uhf_wfn):
     """2-electron triplet: UHF-CISD = FCI (exact, orbital-invariant oracle)."""
     wfn = uhf_wfn(H2_TRIPLET, "6-31G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    ecisd = pycc.CIwfn(wfn, frozen_core=False).solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecisd = pycc.CIwfn(wfn).solve_ci(e_conv=1e-11, r_conv=1e-11)
     assert abs((wfn.energy() + ecisd) - FCI_TOTAL_H2T) < 1e-10
 
 
@@ -113,7 +113,7 @@ def test_rohf_cisd_equals_fci(rohf_wfn):
     """2-electron triplet: ROHF-CISD = FCI (exact); validates the ROHF code path."""
     wfn = rohf_wfn(H2_TRIPLET, "6-31G", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
-    ecisd = pycc.CIwfn(wfn, frozen_core=False).solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecisd = pycc.CIwfn(wfn).solve_ci(e_conv=1e-11, r_conv=1e-11)
     assert abs((wfn.energy() + ecisd) - FCI_TOTAL_H2T) < 1e-10
 
 
@@ -138,8 +138,8 @@ def test_uhf_cisd_cid_vs_cfour(uhf_wfn):
     """Multi-electron UHF CISD and CID (.OH cc-pVDZ) vs CFOUR's spin-orbital CISD/CID."""
     wfn = uhf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    ecisd = pycc.CIwfn(wfn, frozen_core=False, model="CISD").solve_ci(e_conv=1e-11, r_conv=1e-11)
-    ecid = pycc.CIwfn(wfn, frozen_core=False, model="CID").solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecisd = pycc.CIwfn(wfn, model="CISD").solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecid = pycc.CIwfn(wfn, model="CID").solve_ci(e_conv=1e-11, r_conv=1e-11)
     assert abs(ecisd - CFOUR_UHF_CISD) < 1e-10
     assert abs(ecid - CFOUR_UHF_CID) < 1e-10
 
@@ -150,7 +150,7 @@ def test_rohf_cisd_cid_vs_cfour(rohf_wfn):
     spin-orbital CISD from the spin-adapted (DETCI) variant."""
     wfn = rohf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
-    ecisd = pycc.CIwfn(wfn, frozen_core=False, model="CISD").solve_ci(e_conv=1e-11, r_conv=1e-11)
-    ecid = pycc.CIwfn(wfn, frozen_core=False, model="CID").solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecisd = pycc.CIwfn(wfn, model="CISD").solve_ci(e_conv=1e-11, r_conv=1e-11)
+    ecid = pycc.CIwfn(wfn, model="CID").solve_ci(e_conv=1e-11, r_conv=1e-11)
     assert abs(ecisd - CFOUR_ROHF_CISD) < 1e-10
     assert abs(ecid - CFOUR_ROHF_CID) < 1e-10

@@ -15,9 +15,10 @@ import pycc
 E_CONV = R_CONV = 1e-11
 
 
-def _so_density(wfn, frozen_core=False):
-    """Converged spin-orbital CCSD wavefunction, Lambda, and ccdensity (with the 2-PDM)."""
-    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital', frozen_core=frozen_core)
+def _so_density(wfn):
+    """Converged spin-orbital CCSD wavefunction, Lambda, and ccdensity (with the 2-PDM).
+    Frozen core (if any) comes from the reference wavefunction (psi4 freeze_core)."""
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
     ecc = cc.solve_cc(E_CONV, R_CONV, 300)
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar)
@@ -55,7 +56,7 @@ def test_so_2pdm_reconstructs_energy_uhf(uhf_wfn):
     """Open-shell UHF references: the SO 2-PDM reconstructs the CCSD correlation energy."""
     for geom in ("0 2\nO\nH 1 0.97",                       # OH doublet
                  "0 2\nN\nH 1 1.02\nH 1 1.02 2 103.0"):    # NH2 doublet
-        wfn = uhf_wfn(geom, "STO-3G", geom_extra="\nsymmetry c1")
+        wfn = uhf_wfn(geom, "STO-3G", geom_extra="\nsymmetry c1", freeze_core="false")
         cc, dens, ecc = _so_density(wfn)
         assert abs(dens.compute_energy() - ecc) < 1e-9, geom
 
@@ -64,11 +65,11 @@ def test_so_2pdm_reconstructs_energy_frozen_core(rhf_wfn):
     """Frozen-core spin-orbital CCSD: the correlation density (active space) reconstructs the
     frozen-core correlation energy, which differs from the all-electron value."""
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="true")
-    cc, dens, ecc = _so_density(wfn, frozen_core=True)
+    cc, dens, ecc = _so_density(wfn)
     assert cc.nfzc > 0
     assert abs(dens.compute_energy() - ecc) < 1e-10
 
-    wfn_ae = rhf_wfn("H2O", "STO-3G")
+    wfn_ae = rhf_wfn("H2O", "STO-3G", freeze_core="false")
     _, _, ecc_ae = _so_density(wfn_ae)
     assert abs(ecc - ecc_ae) > 1e-5                        # freezing the O 1s changes E_corr
 
@@ -87,7 +88,7 @@ def test_so_2pdm_full_assembly(uhf_wfn):
       are antisymmetric by construction; the test still bites on the self-closed
       ``oooo``/``vvvv``/``oovv``/``vvoo`` blocks and on the intrinsic bra/ket antisymmetry of the
       stored representatives (e.g. ``Gamma_ijka = -Gamma_jika``)."""
-    cc, dens, ecc = _so_density(uhf_wfn("0 2\nO\nH 1 0.97", "STO-3G", geom_extra="\nsymmetry c1"))
+    cc, dens, ecc = _so_density(uhf_wfn("0 2\nO\nH 1 0.97", "STO-3G", geom_extra="\nsymmetry c1", freeze_core="false"))
     o, v = cc.o, cc.v
     F = np.asarray(cc.H.F)
     ERI = np.asarray(cc.H.ERI)

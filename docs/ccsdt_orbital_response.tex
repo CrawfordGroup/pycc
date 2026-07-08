@@ -1,0 +1,144 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\newcommand{\bra}[1]{\langle #1|}
+\newcommand{\ket}[1]{|#1\rangle}
+\newcommand{\HF}{\mathrm{HF}}
+\newcommand{\pdx}[1]{\left.\frac{\partial #1}{\partial x}\right|_{p}}
+\title{Why the orbital-rotation terms vanish from the CCSD(T) gradient\\[2pt]
+       \large (all but $\bar\kappa_{pq}F^{(1)}_{pq}$)}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+
+\noindent
+Reference: Hald, Halkier, J\o rgensen, Coriani, H\"attig \& Helgaker,
+\emph{J.\ Chem.\ Phys.}\ \textbf{118}, 2985 (2003). Equation numbers refer to that paper.
+
+\section*{1. The orbital-relaxed CCSD(T) Lagrangian [Eq.~(18)]}
+
+\begin{align}
+L_{\mathrm{CCSD(T)}}
+&= \bra{\HF} e^{-T} e^{\kappa} H(x)\, e^{-\kappa} e^{T}\ket{\HF}
+ + \sum_{\mu=\mu_1,\mu_2}\!\! \bar t_\mu\, \bra{\mu} e^{-T} e^{\kappa} H(x)\, e^{-\kappa} e^{T}\ket{\HF}
+ \notag\\[2pt]
+&\quad + \sum_{\mu=\mu_1,\mu_2}\!\! t^{*}_\mu\, \bra{\mu}\big[\, e^{\kappa}H(x)e^{-\kappa},\ T_3\,\big]\ket{\HF}
+ \notag\\[2pt]
+&\quad + \sum_{\mu_3} \bar t_{\mu_3}\, \bra{\mu_3}\!\Big(\big[\textstyle\sum_p \epsilon_p E_{pp},\ T_3\big]
+        + \big[\, e^{\kappa}H(x)e^{-\kappa},\ T_2\,\big]\Big)\!\ket{\HF}
+ \notag\\[2pt]
+&\quad + \sum_{p\ge q} \bar\kappa_{pq}\,\big(F_{pq} - \delta_{pq}\,\epsilon_p\big).
+\label{eq:L}
+\end{align}
+
+The variational parameters are $p \equiv \{\,t,\ \bar t,\ \kappa,\ \bar\kappa,\ \epsilon\,\}$.
+The orbital-rotation \emph{operator} $\kappa=\sum_{p\ge q}\kappa_{pq}E^-_{pq}$ enters terms~1--4
+through the similarity transform $e^{\kappa}H e^{-\kappa}$; the orbital-rotation \emph{multiplier}
+$\bar\kappa_{pq}$ enters \emph{only} the last (constraint) term, which enforces the canonical
+condition $F_{pq}=\delta_{pq}\epsilon_p$.
+
+\section*{2. Stationarity kills every implicit ($dp/dx$) derivative}
+
+By construction the Lagrangian is stationary in every parameter,
+\begin{equation}
+\frac{\partial L}{\partial p} = 0,\qquad p \in \{t,\ \bar t,\ \kappa,\ \bar\kappa,\ \epsilon\},
+\end{equation}
+these being exactly the equations that determine the amplitudes and the multipliers.
+Writing $L=L\big(x,\,p(x)\big)$ and differentiating with respect to the external perturbation $x$,
+\begin{equation}
+\frac{dL}{dx}
+ = \pdx{L} \;+\; \sum_{p}\frac{\partial L}{\partial p}\,\frac{dp}{dx}
+ = \pdx{L},
+\label{eq:2n1}
+\end{equation}
+because every term of the sum carries a factor $\partial L/\partial p = 0$. This is the
+$2n{+}1$ rule: \textbf{no parameter response $dp/dx$ is ever needed} --- in particular neither the
+orbital response $d\kappa/dx$ nor $d\epsilon/dx$.
+
+Two things are meant by $\big|_{p}$. First, it is the instruction to \emph{hold the parameters
+fixed} while differentiating in $x$ (i.e.\ do not differentiate them) --- this is what makes the
+implicit sum above vanish. Second, when the resulting partial derivative is evaluated at the
+reference geometry $x=0$, the held-fixed parameters take their \emph{reference values},
+\begin{equation}
+T = T^{(0)},\qquad \bar t = \bar t^{(0)},\qquad \epsilon = \epsilon^{(0)},\qquad
+\bar\kappa = \bar\kappa^{(0)},\qquad \kappa = 0 .
+\end{equation}
+Here $\kappa=0$ because $\kappa$ parametrizes rotation \emph{away from} the reference orbitals, so
+expanding about those (canonical) orbitals gives no rotation; the canonical condition
+$F_{pq}=\delta_{pq}\epsilon_p$ is what fixes \emph{which} orbitals those are, and is satisfied at
+$\kappa=0$ with finite $\bar\kappa$. The gradient is thus the \emph{partial} derivative of $L$ in
+the \emph{explicit} $x$-dependence, evaluated at these reference parameter values.
+
+\section*{3. Evaluating $\partial L/\partial x|_{p}$ term by term}
+
+The explicit $x$-dependence sits in $H(x)$ (terms~1--4) and in $F(x)$ (the constraint term).
+At the reference geometry the orbitals are already optimal/canonical, so
+\begin{equation}
+\kappa = 0 \quad\Longrightarrow\quad e^{\pm\kappa} = 1 .
+\end{equation}
+
+\paragraph{Terms 1--4.} Holding $\kappa$ fixed,
+\begin{equation}
+\pdx{}\; e^{\kappa}H(x)e^{-\kappa}
+ \;=\; e^{\kappa} H^{(1)} e^{-\kappa}\Big|_{\kappa=0} \;=\; H^{(1)} .
+\end{equation}
+Every orbital-rotation factor collapses to the identity, and terms~1--4 reduce to their
+\textbf{bare} forms with $H\to H^{(1)}$:
+\begin{align}
+&\bra{\HF} e^{-T} H^{(1)} e^{T}\ket{\HF}
++ \sum_{\mu_1,\mu_2}\bar t_\mu\, \bra{\mu} e^{-T} H^{(1)} e^{T}\ket{\HF}
+\notag\\
+&\qquad + \sum_{\mu_1,\mu_2} t^{*}_\mu\, \bra{\mu}[H^{(1)},T_3]\ket{\HF}
++ \sum_{\mu_3}\bar t_{\mu_3}\,\bra{\mu_3}[H^{(1)},T_2]\ket{\HF}.
+\end{align}
+(The $\big[\sum_p\epsilon_p E_{pp},\,T_3\big]$ piece of term~4 has \emph{no} explicit $x$ at all,
+so it drops by the same $2n{+}1$ argument applied to $\epsilon$.) \textbf{No $\kappa$ survives.}
+
+\paragraph{The constraint term.} This is the only place with explicit $x$ outside $H$, through
+$F(x)$:
+\begin{equation}
+\pdx{}\ \sum_{p\ge q}\bar\kappa_{pq}\big(F_{pq}(x)-\delta_{pq}\epsilon_p\big)
+ \;=\; \sum_{p\ge q}\bar\kappa_{pq}\,F^{(1)}_{pq},
+\end{equation}
+since $\bar\kappa$ and $\epsilon$ are held fixed and $-\delta_{pq}\epsilon_p$ carries no explicit
+$x$. \textbf{This is the sole surviving orbital term.}
+
+\section*{4. Result [Eq.~(20)]}
+
+\begin{align}
+L^{(1)} &= \bra{\HF} e^{-T} H^{(1)} e^{T}\ket{\HF}
++ \sum_{\mu_1,\mu_2}\bar t_\mu\, \bra{\mu} e^{-T} H^{(1)} e^{T}\ket{\HF}
++ \sum_{\mu_1,\mu_2} t^{*}_\mu\, \bra{\mu}[H^{(1)},T_3]\ket{\HF}
+\notag\\
+&\quad + \sum_{\mu_3}\bar t_{\mu_3}\,\bra{\mu_3}[H^{(1)},T_2]\ket{\HF}
++ \sum_{p\ge q}\bar\kappa_{pq}\,F^{(1)}_{pq}.
+\end{align}
+
+\paragraph{Why only the last term.}
+The orbital-rotation content of terms~1--4 is a \emph{parameter} ($\kappa$) dependence.
+Stationarity ($\partial L/\partial\kappa = 0$, enforced by $\bar\kappa$) removes its response
+$d\kappa/dx$ through the $2n{+}1$ rule, and $\kappa=0$ at the reference collapses the similarity
+transforms to unity. The \emph{entire} orbital response is repackaged into
+$\bar\kappa_{pq}F^{(1)}_{pq}$ --- the explicit derivative of the orbital-optimization
+\emph{constraint}. Since $\bar\kappa$ is solved once (the Z-vector / CPHF-like equation), the
+gradient needs a single orbital-response solve rather than $3N$ per-perturbation responses.
+
+\paragraph{Consequence for CCSD(T).}
+The (T) orbital response therefore has exactly one home in the gradient:
+$\bar\kappa_{pq}F^{(1)}_{pq}$, with $\bar\kappa$ picking up the (T) inhomogeneity
+$\eta^{\mathrm{CCSD(T)}}$ [Eq.~(47)]. Crucially $\bar\kappa$ runs over \emph{all} orbital pairs:
+the ov block is the usual CPHF/Z-vector solve, while the oo and vv blocks are the canonical
+dependent-pair rotations
+$\bar\kappa_{ij}=(I'_{ij}-I'_{ji})/(f_{ii}-f_{jj})$,
+$\bar\kappa_{ab}=(I'_{ab}-I'_{ba})/(f_{aa}-f_{bb})$ --- a direct divide (numerator-gated
+$|\Delta I'|<10^{-8}$ for degeneracies), which is \emph{exactly} the machinery pycc already uses
+for the frozen-core core$\leftrightarrow$active-occupied block, simply generalized to all oo/vv
+pairs. Consequently the (T) one-electron \emph{density} carries only
+$\{\,D_{ia},\ \mathrm{diag}(D_{ij}),\ \mathrm{diag}(D_{ab})\,\}$; the off-diagonal
+$D_{ij}/D_{ab}$ built in \texttt{t3\_density} appears in neither the Lee--Rendell nor the
+present construction and is simply \textbf{extraneous} --- it is not a density contribution and
+not the numerator $\Delta I'$ of the dependent-pair rotations (which comes from the Lagrangian
+asymmetry). It must be removed outright.
+
+\end{document}

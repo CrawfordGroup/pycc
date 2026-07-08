@@ -76,7 +76,7 @@ def test_uhf_lambda_vs_cfour(uhf_wfn):
     """Open-shell .OH cc-pVDZ: spin-orbital UHF Lambda pseudoenergy vs CFOUR."""
     wfn = uhf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
-    lcc = _lambda(wfn, frozen_core=False)
+    lcc = _lambda(wfn)
     assert abs(lcc - CFOUR_UHF_LAMBDA) < 1e-10
 
 
@@ -85,5 +85,5 @@ def test_rohf_lambda_vs_cfour(rohf_wfn):
     (semicanonical, as CFOUR uses)."""
     wfn = rohf_wfn(OH_BOHR, "cc-pVDZ", freeze_core="false",
                    e_convergence=1e-12, d_convergence=1e-12)
-    lcc = _lambda(wfn, frozen_core=False)
+    lcc = _lambda(wfn)
     assert abs(lcc - CFOUR_ROHF_LAMBDA) < 1e-10

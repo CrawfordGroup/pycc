@@ -33,7 +33,7 @@ def test_spatial_rhf_polar_vs_psi4(rhf_wfn):
     """Spatial-RHF dynamic CCSD polarizability (isotropic, omega=0.1) vs Psi4."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12, r_convergence=1e-12)
-    iso = np.trace(_polar(wfn, 0.1, frozen_core=False, orbital_basis="spatial")) / 3.0
+    iso = np.trace(_polar(wfn, 0.1, orbital_basis="spatial")) / 3.0
 
     psi4.set_options({'omega': [0.1, 'au'], 'gauge': 'length'})
     psi4.properties('ccsd', properties=['polarizability'])
@@ -46,6 +46,6 @@ def test_spatial_rhf_polar_vs_spinorbital(rhf_wfn):
     """Spatial-RHF full polarizability tensor (omega=0.1) == spin-orbital path."""
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12, r_convergence=1e-12)
-    spatial = _polar(wfn, 0.1, frozen_core=False, orbital_basis="spatial")
-    so = _polar(wfn, 0.1, frozen_core=False, orbital_basis="spinorbital")
+    spatial = _polar(wfn, 0.1, orbital_basis="spatial")
+    so = _polar(wfn, 0.1, orbital_basis="spinorbital")
     assert np.max(np.abs(spatial - so)) < 1e-9

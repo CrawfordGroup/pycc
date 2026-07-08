@@ -77,6 +77,24 @@ class CCderiv:
             return self.ccwfn.mp._so_mp2_lagrangian(D, Gam)
         return self.ccwfn.mp._mp2_lagrangian(D, Gam)
 
+    @staticmethod
+    def _dependent_pairs(Iblock, eps_block, thresh=1e-8):
+        """Canonical dependent-pair rotation ``P_mn = (I'_mn - I'_nm)/(eps_m - eps_n)`` for a
+        square occ-occ or virt-virt Lagrangian block ``Iblock`` and its orbital energies
+        ``eps_block``.  Numerator-gated (``|Delta I'| < thresh`` -> 0), which skips both the
+        diagonal (``m=n``) and near-degenerate pairs (Lee-Rendell's ``|Delta X| < 1e-8``
+        threshold).  ``P`` is symmetric -- numerator and denominator are both antisymmetric.
+
+        This is the frozen-core core<->active-occupied divide (used for the ``P_co`` block in
+        :meth:`gradient`) generalized to an arbitrary square block; CCSD(T) needs it over the
+        full oo and vv blocks because (T) breaks the occ-occ/virt-virt rotation invariance."""
+        num = np.asarray(Iblock) - np.asarray(Iblock).T
+        den = eps_block[:, None] - eps_block[None, :]
+        P = np.zeros_like(num)
+        m = np.abs(num) > thresh
+        P[m] = num[m] / den[m]
+        return P
+
     def gradient(self) -> np.ndarray:
         """CCSD **correlation** contribution to the analytic nuclear energy gradient (a.u.), shape
         ``(natom, 3)``, via the **Z-vector (relaxed-density) route** -- the efficient default
@@ -125,6 +143,22 @@ class CCderiv:
             zjc = -Pco.T
             X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
                      + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
+        if cc.model.upper() == 'CCSD(T)':
+            # (T) breaks the occ-occ / virt-virt rotation invariance, so the canonical perturbed
+            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector:
+            # (I'_ij-I'_ji)/(eps_i-eps_j) over the active oo pairs and the vv analog
+            # (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
+            # Z-vector RHS through the antisymmetrized ERI.  For CCSD both blocks vanish (oo/vv
+            # invariance).  Frozen core: the core<->active-occupied (T) response is already carried
+            # by P_co above (its I' is the (T)-inclusive Lagrangian); these blocks add the
+            # active<->active oo and the vv pairs, and the ov-occupied index of the coupling runs
+            # over the full occupied space (ofull), reducing to the active space when nfzc=0.
+            Poo = self._dependent_pairs(Ip[o, o], eps[o])
+            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+            Drel[o, o] += Poo
+            Drel[v, v] += Pvv
+            X = X + (c('kl,akil->ia', Poo, L[v, o, ofull, o])
+                     + c('bc,ibac->ia', Pvv, L[ofull, v, v, v]))
         z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (full-occ SCF Hessian)
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
@@ -218,7 +252,15 @@ class CCderiv:
         but inefficient" form, analog of :meth:`MPwfn._corr_gradient_explicit`).  Same result as
         :meth:`gradient` (which uses the single Z-vector solve).  Basis-agnostic: the perturbed
         integrals and densities dispatch on the orbital basis, so this cross-checks the spatial and
-        spin-orbital gradients alike."""
+        spin-orbital gradients alike.
+
+        .. note::
+           **CCSD(T) caveat.** This route does not yet carry the (T) occ-occ/virt-virt
+           dependent-pair orbital response (the ``kappa_oo``/``kappa_vv`` divides added to
+           :meth:`gradient`), so for ``model == 'CCSD(T)'`` it is *not* equivalent to
+           :meth:`gradient` and should not be used as a cross-check -- validate the (T) gradient
+           against a finite difference of the CCSD(T) energy instead (``test_083``).  Extending
+           the explicit route to (T) is a later phase."""
         from .cphf import Perturbation
         cc = self.ccwfn
         D, Gam = self._density().gradient_densities()

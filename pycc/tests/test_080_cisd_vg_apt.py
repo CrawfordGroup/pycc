@@ -39,4 +39,4 @@ def test_cisd_vg_apt_vs_reference(cisd_h2o2):
     """The facade total reproduces the standalone validated reference, every
     element."""
     P = np.asarray(pycc.apt(cisd_h2o2(), gauge='velocity').total).reshape(-1, 3)
-    assert np.max(np.abs(P - VG_APT_REF)) < 1e-6, np.max(np.abs(P - VG_APT_REF))
+    assert np.max(np.abs(P - VG_APT_REF)) < 1e-9, np.max(np.abs(P - VG_APT_REF))

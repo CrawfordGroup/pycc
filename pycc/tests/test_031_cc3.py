@@ -60,10 +60,10 @@ def test_so_cc3_equals_spatial_rhf(rhf_wfn):
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
 
-    e_spatial = pycc.CCwfn(wfn, model="CC3", frozen_core=False).solve_cc(
+    e_spatial = pycc.CCwfn(wfn, model="CC3").solve_cc(
         e_conv=1e-11, r_conv=1e-11)
 
-    so = pycc.CCwfn(wfn, model="CC3", frozen_core=False, orbital_basis="spinorbital")
+    so = pycc.CCwfn(wfn, model="CC3", orbital_basis="spinorbital")
     assert so.orbital_basis == "spinorbital"
     e_so = so.solve_cc(e_conv=1e-11, r_conv=1e-11)
 
@@ -78,7 +78,7 @@ def test_so_cc3_lambda_equals_spatial_rhf(rhf_wfn):
                   e_convergence=1e-12, d_convergence=1e-12)
 
     def _lcc(basis):
-        cc = pycc.CCwfn(wfn, model="CC3", frozen_core=False, orbital_basis=basis)
+        cc = pycc.CCwfn(wfn, model="CC3", orbital_basis=basis)
         cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
         hbar = pycc.cchbar(cc)
         lam = pycc.cclambda(cc, hbar)
@@ -130,7 +130,7 @@ def test_ucc3_oh(uhf_wfn):
     wfn = uhf_wfn(OH, "6-31G", freeze_core="false",
                   e_convergence=1e-12, d_convergence=1e-12)
 
-    cc = pycc.CCwfn(wfn, model="CC3", frozen_core=False)
+    cc = pycc.CCwfn(wfn, model="CC3")
     assert cc.orbital_basis == "spinorbital"
     ecc3 = cc.solve_cc(e_conv=1e-11, r_conv=1e-11)
 
