@@ -45,7 +45,7 @@ densities and Λ:
 | Method | spatial (closed-shell RHF) | spin-orbital (UHF) | frozen core |
 |---|---|---|---|
 | CCSD `dE/dX` | ✅ | ✅ | ✅ |
-| CCSD(T) `dE/dX` | ✅ | ⏳ next | ✅ (spatial) |
+| CCSD(T) `dE/dX` | ✅ | ✅ | ✅ |
 
 Validated against a tight finite difference of pycc's own correlation energy (5-point O(h⁴), ~1e-12),
 **not** psi4's analytic gradient (§4). Unlike CCSD — which reuses the −½Sˣ ov-only Z-vector because
@@ -184,13 +184,11 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
 
 ## 6. Roadmap
 
-- **CC gradients — done, extending.** CCSD analytic gradients (spatial RHF, spin-orbital UHF,
-  all-electron + frozen core) and the CCSD(T) gradient (spatial RHF, all-electron + frozen core) are
-  implemented via `CCderiv`, reusing the MP2 Z-vector / relaxed-density assembly with the CCSD/(T)
-  densities and Λ (details + validation in §7). **Next:** spin-orbital CCSD(T) gradient (port the (T)
-  density + oo/vv dependent-pair to the SO path; anchor on the SO==spatial keystone); CCSD(T)
-  Hessian/APT; and extending `_gradient_explicit` to carry the (T) dependent-pair (so the
-  z-vector==explicit cross-check works for (T), as it does for CCSD). `CCderiv` reuses the MP2
+- **CC gradients — done, extending.** CCSD *and* CCSD(T) analytic gradients are implemented for
+  **spatial RHF and spin-orbital UHF, all-electron + frozen core**, via `CCderiv`, reusing the MP2
+  Z-vector / relaxed-density assembly with the CCSD/(T) densities and Λ (details + validation in §7).
+  **Next:** CCSD(T) Hessian/APT; and extending `_gradient_explicit` to carry the (T) dependent-pair
+  (so the z-vector==explicit cross-check works for (T), as it does for CCSD). `CCderiv` reuses the MP2
   Lagrangian/CPHF primitives via delegation; the fuller "shared Lagrangian → Z-vector → density →
   gradient" layer refactor is still deferred (no premature abstraction).
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
@@ -198,11 +196,13 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
   ROHF HF gradient is unaffected.
 - Out of scope: 2n+2 / higher-order (cubic-response) economies.
 
-## 7. CCSD(T) gradient — spatial RHF (design & status)
+## 7. CCSD(T) gradient — spatial RHF + spin-orbital UHF (design & status)
 
-**Status.** Done and FD-validated for **closed-shell RHF, spatial MOs, all-electron *and* frozen
-core** (`pycc.gradient(CCwfn(wfn, model='CCSD(T)'))` through `CCderiv`/`ccdensity`). Spin-orbital and
-the CCSD(T) Hessian/APT are deferred (below).
+**Status.** Done and FD-validated for **closed-shell RHF (spatial MOs) and UHF (spin-orbital),
+all-electron *and* frozen core** (`pycc.gradient(CCwfn(wfn, model='CCSD(T)'))` through
+`CCderiv`/`ccdensity`). The CCSD(T) Hessian/APT are deferred (below). The theory below is written for
+the spatial path; the spin-orbital path is the same construction with `H.L → <pq||rs>` (see
+**Spin-orbital** at the end of this section).
 
 **References.**
 - **Paper A** — T. J. Lee & A. P. Rendell, *J. Chem. Phys.* **94**, 6229 (1991): closed-shell
@@ -242,10 +242,13 @@ the active space when `nfzc=0`. `Pco` from the (T)-inclusive `I'` **fully captur
 response** — FD-confirmed to 1.9e-12, no extra core term needed.
 
 **Implementation.**
-- `CCwfn.t3_density()` (bottom of `ccwfn.py`; called from the energy code so T3 is built once) yields
-  the (T) contributions: the **diagonal** 1-PDM `diag(Doo)`/`diag(Dvv)` (computed directly —
-  `acd,acd->a` / `ikl,ikl->i` — not full blocks then filtered) plus `Dov`; the 2-PDM
-  `Goovv/Gooov/Gvvvo`; and the Λ residuals `S1/S2` (Paper A's η/γ), added into Λ₁/Λ₂.
+- `cctriples.t3_density` (a free function returning `(ET, {intermediates})`; `CCwfn.t3_density` is a
+  thin delegate-and-cache wrapper, called from the energy code so T3 is built once) yields the (T)
+  contributions: the **diagonal** 1-PDM `diag(Doo)`/`diag(Dvv)` (computed directly — `acd,acd->a` /
+  `ikl,ikl->i` — not full blocks then filtered) plus `Dov`; the 2-PDM `Goovv/Gooov/Gvvvo`; and the Λ
+  residuals `S1/S2` (Paper A's η/γ), added into Λ₁/Λ₂. Housing the builder in `cctriples` (not
+  `CCwfn`) keeps the wavefunction from computing density components and avoids a `ccwfn → ccdensity`
+  dependency, while preserving the single T3 build.
 - `CCderiv.gradient` — `_dependent_pairs(I'[block], ε)` builds the κ̄ divides (numerator-gated); the
   `model=='CCSD(T)'` branch adds κ̄_oo/κ̄_vv to `Drel` and couples them into the Z-vector RHS (ov index
   over `ofull`). Model-gated, so the CCSD path is untouched. Then the standard GSB assembly runs,
@@ -271,8 +274,18 @@ the canonical dependent-pair orbital response above. Also superseded: "ε (A 12�
 present — the energy validates it, and adding it explicitly double-counts). Corroborated by the PI's
 own Psi4 `relax_I_RHF` (its `delta_I/delta_f_{IJ,AB}` are the κ̄ divides). See Appendix B.
 
-**Deferred:** spin-orbital CCSD(T) gradient (port the (T) density + oo/vv κ̄ to the SO path;
-SO==spatial keystone); CCSD(T) Hessian/APT; extending `_gradient_explicit` to the (T) dependent-pair.
+**Spin-orbital (UHF).** The SO path is the same construction with the spin-adapted `H.L` replaced by
+the antisymmetrized `<pq||rs>`. `cctriples.so_t3_density` builds the SO (T) density/Λ (its own T3
+kernels `t3{c,d}_{ijk,abc}_so`); `ccdensity`/`cclambda` gate the SO (T) 1-/2-PDM and `S1`/`S2` on
+`model=='CCSD(T)'`; and `CCderiv._so_gradient` gains the same `model=='CCSD(T)'` branch — `κ̄_oo`/`κ̄_vv`
+from `_dependent_pairs` into `Drel`, coupled into the ov Z-vector RHS through the antisymmetrized ERI.
+Frozen core rides the SO `Pco` exactly as the spatial path. **Validation** (§4 oracle): closed-shell
+SO==spatial keystone **2.3e-13** (6-31G — STO-3G leaves `‖Pvv‖=0`, the minimal-basis trap), frozen-core
+keystone **1.4e-13**, and open-shell NH₂ (²B₁, C2v pinned occ / 6-31G) vs a 5-point O(h⁴) FD of pycc's
+own SO CCSD(T) energy **3.7e-12**. Tests in `test_083` (open-shell reference hard-wired). ROHF unsupported
+(guarded, §6).
+
+**Deferred:** CCSD(T) Hessian/APT; extending `_gradient_explicit` to the (T) dependent-pair.
 
 ## Appendix A: condensed changelog (by PR)
 
@@ -302,14 +315,15 @@ Reference layer, then the MP2 derivative effort:
 | #176 | **CCSD gradient** — spatial closed-shell RHF via `CCderiv` (CCSD relaxed density + Z-vector, reusing the MP2 assembly) |
 | #177 | **CCSD gradient** — spin-orbital UHF (SO 2-PDM + gradient; all-electron + frozen core) |
 | #183 | **CCSD(T) gradient** — spatial RHF, all-electron; + frozen core sourced from psi4 only (`frozen_core` pycc override removed) |
-| (current) | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
+| #184 | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
+| #185 | **spin-orbital CCSD(T) gradient** — SO (T) density + oo/vv κ̄ in `_so_gradient` (all-electron + frozen core); (T) density builders moved to `cctriples` (no `ccwfn`→`ccdensity` dependency) |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
 `test_070` (2n+1 polarizability), `test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
 (MP2 velocity APT), `test_074` (property facade). CC gradients: `test_076` (CCSD, spatial),
-`test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), all-electron + frozen
-core), `test_034` (CCSD(T) density/dipole). The 2n+1 APT/Hessian cross-checks live in
+`test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), spatial + spin-orbital,
+all-electron + frozen core), `test_034` (CCSD(T) density/dipole). The 2n+1 APT/Hessian cross-checks live in
 `test_068`/`test_069`.
 
 ## Appendix B: superseded early decisions
