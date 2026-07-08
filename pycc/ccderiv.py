@@ -177,7 +177,7 @@ class CCderiv:
         return grad
 
     def _so_gradient(self) -> np.ndarray:
-        """Spin-orbital (UHF) CCSD **correlation** gradient via the Z-vector route -- the
+        """Spin-orbital (UHF) CCSD / CCSD(T) **correlation** gradient via the Z-vector route -- the
         spin-orbital analog of :meth:`gradient`, mirroring :meth:`MPwfn._so_gradient` /
         :meth:`MPwfn._so_zvector`::
 
@@ -191,11 +191,17 @@ class CCderiv:
         derivative integrals are the spin-orbital ``derivatives.so_*`` (``f^X = h^X + sum_m
         <pm||qm>^X`` over the full occupied space).
 
+        For ``model == 'CCSD(T)'`` the (T) density enters through ``gradient_densities`` and the
+        (T) occ-occ/virt-virt dependent-pair rotations ``kappa_oo``/``kappa_vv`` are added exactly
+        as in the spatial :meth:`gradient` (with the antisymmetrized ERI in place of ``H.L``).
+
         **UHF only** -- ROHF is not supported (the semicanonical response does not reproduce the
         restricted ROHF response).  Frozen-core aware (the core<->active-occupied ``P_co`` divide,
         coupled into the Z-vector RHS, exactly as the spatial path and :meth:`MPwfn._so_zvector`).
         Validated against ``psi4.gradient('ccsd')`` (UHF), the spatial closed-shell gradient (SO ==
-        spatial), and the explicit-derivative route (:meth:`_gradient_explicit`)."""
+        spatial, CCSD and CCSD(T)), a finite difference of pycc's own SO CCSD(T) energy (open-shell
+        UHF), and the explicit-derivative route (:meth:`_gradient_explicit`, CCSD only -- the (T)
+        dependent-pair is not yet carried there)."""
         cc = self.ccwfn
         if cc.mp.cphf.is_rohf:
             raise NotImplementedError(
@@ -222,6 +228,19 @@ class CCderiv:
             zjc = -Pco.T
             X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
                      + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+        if cc.model.upper() == 'CCSD(T)':
+            # (T) breaks the occ-occ / virt-virt rotation invariance, so the canonical perturbed
+            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector:
+            # (I'_ij-I'_ji)/(eps_i-eps_j) over the oo pairs and the vv analog
+            # (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
+            # Z-vector RHS through the antisymmetrized ERI -- the spin-orbital analog of the (T)
+            # branch in :meth:`gradient` (spatial L -> <pq||rs>).  For CCSD both blocks vanish.
+            Poo = self._dependent_pairs(Ip[o, o], eps[o])
+            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+            Drel[o, o] += Poo
+            Drel[v, v] += Pvv
+            X = X + (c('kl,akil->ia', Poo, ERI[v, o, ofull, o])
+                     + c('bc,ibac->ia', Pvv, ERI[ofull, v, v, v]))
         G = (c('ajib->iajb', ERI[v, ofull, ofull, v])    # orbital Hessian, built inline
              + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
         G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)

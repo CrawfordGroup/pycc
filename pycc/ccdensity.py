@@ -154,7 +154,7 @@ class ccdensity(object):
                 + contract('ijab,ijab->', ERI[o,o,v,v], G['ijab'])
                 + contract('abij,abij->', ERI[v,v,o,o], G['abij'])
                 + 2.0 * contract('ijka,ijka->', ERI[o,o,o,v], G['ijka'])
-                + 2.0 * contract('akij,akij->', ERI[v,o,o,o], G['akij'])
+                + 2.0 * contract('kaij,kaij->', ERI[o,v,o,o], G['kaij'])
                 + 2.0 * contract('abci,abci->', ERI[v,v,v,o], G['abci'])
                 + 2.0 * contract('ciab,ciab->', ERI[v,o,v,v], G['ciab'])
                 + 4.0 * contract('ibaj,ibaj->', ERI[o,v,v,o], G['ibaj']))
@@ -326,8 +326,11 @@ class ccdensity(object):
     def build_Doo(self, t1, t2, l1, l2):  # complete
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return (-1.0 * contract('ie,je->ij', t1, l1)
-                    - 0.5 * contract('imef,jmef->ij', t2, l2))
+            Doo = (-1.0 * contract('ie,je->ij', t1, l1)
+                   - 0.5 * contract('imef,jmef->ij', t2, l2))
+            if self.ccwfn.model == 'CCSD(T)':
+                Doo = Doo + self.ccwfn.Doo
+            return Doo
         if self.ccwfn.model == 'CCD':
             Doo = -contract('imef,jmef->ij', t2, l2)
         else:
@@ -343,8 +346,11 @@ class ccdensity(object):
     def build_Dvv(self, t1, t2, l1, l2):  # complete
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return (contract('mb,ma->ab', t1, l1)
-                    + 0.5 * contract('mnbe,mnae->ab', t2, l2))
+            Dvv = (contract('mb,ma->ab', t1, l1)
+                   + 0.5 * contract('mnbe,mnae->ab', t2, l2))
+            if self.ccwfn.model == 'CCSD(T)':
+                Dvv = Dvv + self.ccwfn.Dvv
+            return Dvv
         if self.ccwfn.model == 'CCD':
             Dvv = contract('mnbe,mnae->ab', t2, l2)
         else:
@@ -370,6 +376,8 @@ class ccdensity(object):
             Dov = Dov - 0.5 * contract('ea,ie->ia', tmp, t1)
             tmp = contract('mnef,inef->mi', l2, t2)
             Dov = Dov - 0.5 * contract('mi,ma->ia', tmp, t1)
+            if self.ccwfn.model == 'CCSD(T)':
+                Dov = Dov + self.ccwfn.Dov
             return Dov
         if self.ccwfn.model == 'CCD':
             Dov = zeros_like(t1)
@@ -706,7 +714,7 @@ class ccdensity(object):
                      - Pab(contract('mnce,inae,mb->ciab', l2, t2, t1))
                      + 0.5 * Pab(contract('mnce,mnae,ib->ciab', l2, t2, t1)))
         G['abci'] = contract('miab,mc->abci', l2, t1)
-        G['akij'] = -contract('ijae,ke->akij', l2, t1)
+        G['kaij'] = -contract('ijea,ke->kaij', l2, t1)
         G['ibaj'] = (contract('ia,jb->ibaj', t1, l1)
                      + contract('jmbe,miea->ibaj', l2, t2)
                      - contract('jmbe,ma,ie->ibaj', l2, t1, t1))
@@ -720,6 +728,12 @@ class ccdensity(object):
                      - Pijab(contract('miae,me,jb->ijab', X, l1, t1))
                      + 3.0 * Pijab(contract('me,ia,je,mb->ijab', l1, t1, t1, t1)))
         G['abij'] = contract('ijab->abij', l2)
+        if self.ccwfn.model == 'CCSD(T)':
+            G['ijab'] = G['ijab'] + self.ccwfn.Goovv
+            G['ijka'] = G['ijka'] + self.ccwfn.Gooov
+            G['ciab'] = G['ciab'] + self.ccwfn.Gvovv
+            G['kaij'] = G['kaij'] + self.ccwfn.Govoo
+            G['abci'] = G['abci'] + self.ccwfn.Gvvvo
         return G
 
     def _so_full_twopdm(self):
@@ -734,7 +748,7 @@ class ccdensity(object):
         Gam[v, v, v, v] = G['abcd']
         Gam[o, o, v, v] = G['ijab']; Gam[v, v, o, o] = G['abij']
         Gam[o, o, o, v] = G['ijka']; Gam[o, o, v, o] = -G['ijka'].transpose(0, 1, 3, 2)
-        Gam[v, o, o, o] = G['akij']; Gam[o, v, o, o] = -G['akij'].transpose(1, 0, 2, 3)
+        Gam[o, v, o, o] = G['kaij']; Gam[v, o, o, o] = -G['kaij'].transpose(1, 0, 2, 3)
         Gam[v, v, v, o] = G['abci']; Gam[v, v, o, v] = -G['abci'].transpose(0, 1, 3, 2)
         Gam[v, o, v, v] = G['ciab']; Gam[o, v, v, v] = -G['ciab'].transpose(1, 0, 2, 3)
         ib = G['ibaj']
