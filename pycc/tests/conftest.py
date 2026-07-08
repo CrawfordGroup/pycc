@@ -161,3 +161,34 @@ def datadir(tmpdir, request):
         raise FileNotFoundError("Test folder not found.")
 
     return tmpdir
+
+# CISD analytic-derivative tests (test_079-082): shared geometry + builder
+
+# (P)-hydrogen peroxide, CISD-VCD validation geometry (Bohr); atom order H,H,O,O.
+CISD_H2O2_GEOM = """
+H -1.938703940499  1.630081390557  0.408551539155
+H  1.938703940499 -1.630081390557  0.408551534619
+O -1.364718227128 -0.236825138192  0.408556429577
+O  1.364718227128  0.236825138192  0.408556416160
+units bohr
+no_com
+no_reorient
+"""
+
+
+@pytest.fixture
+def cisd_h2o2(psi4_environment):
+    """A solved spatial all-electron CISD wavefunction for
+    (P)-H2O2 at the CISD-VCD validation geometry, at the requested basis."""
+    def _make(basis='sto-3g'):
+        psi4.core.clean()
+        psi4.core.clean_options()
+        psi4.geometry(CISD_H2O2_GEOM)
+        psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': False,
+                          'e_convergence': 1e-13, 'd_convergence': 1e-13})
+        _, wfn = psi4.energy('scf', return_wfn=True)
+        import pycc
+        ci = pycc.CIwfn(wfn, model='CISD', orbital_basis='spatial')
+        ci.solve_ci(e_conv=1e-13, r_conv=1e-13, maxiter=150)
+        return ci
+    return _make
