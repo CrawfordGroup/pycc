@@ -840,6 +840,8 @@ class cclambda(object):
         spin-orbital HBAR blocks (no Hovov)."""
         contract = self.contract
         r_l1 = clone(Hov)
+        if self.ccwfn.model == 'CCSD(T)':
+            r_l1 = r_l1 + self.ccwfn.S1
         r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
         r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
         r_l1 = r_l1 + 0.5 * contract('imef,efam->ia', l2, Hvvvo)
@@ -855,6 +857,8 @@ class cclambda(object):
         already antisymmetric in i<->j and a<->b (no separate symmetrization)."""
         contract = self.contract
         r_l2 = clone(ERI[o,o,v,v])
+        if self.ccwfn.model == 'CCSD(T)':
+            r_l2 = r_l2 + self.ccwfn.S2
         r_l2 = r_l2 + (contract('ia,jb->ijab', l1, Hov) - contract('ja,ib->ijab', l1, Hov))
         r_l2 = r_l2 + (contract('jb,ia->ijab', l1, Hov) - contract('ib,ja->ijab', l1, Hov))
         r_l2 = r_l2 + (contract('ijae,eb->ijab', l2, Hvv) - contract('ijbe,ea->ijab', l2, Hvv))

@@ -711,6 +711,29 @@ def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDeno
         return t3/denom
     return t3
 
+def t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=True):
+    """Spin-orbital disconnected T3 amplitudes for fixed occupied i, j, k.
+
+    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T) 
+    or the T1-dressed CC3 intermediates for CC3.
+    """
+    Fov = F[o,v]
+    abc = contract('a,bc->abc', t1[i], Woovv[j,k])
+    abc -= contract('a,bc->abc', t1[j], Woovv[i,k])
+    abc -= contract('a,bc->abc', t1[k], Woovv[j,i])
+    abc += contract('a,bc->abc', Fov[i], t2[j,k])
+    abc -= contract('a,bc->abc', Fov[j], t2[i,k])
+    abc -= contract('a,bc->abc', Fov[k], t2[j,i])
+    t3 = abc - abc.swapaxes(0,1) - abc.swapaxes(0,2)
+
+    if WithDenom is True:
+        occ = diag(F)[o]
+        vir = diag(F)[v]
+        denom = (occ[i] + occ[j] + occ[k] + omega
+                 - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir))
+        return t3/denom
+    return t3
+
 
 def l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract, WithDenom=True):
     """Spin-orbital connected lambda-L3 amplitudes for fixed occupied i, j, k.
@@ -769,6 +792,28 @@ def t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDeno
         return t3/denom
     return t3
 
+def t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=True):
+    """Spin-orbital disconnected T3 amplitudes for fixed virtual a, b, c.
+
+    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T) 
+    or the T1-dressed CC3 intermediates for CC3.
+    """
+    Fov = F[o,v]
+    ijk = contract('i,jk->ijk', t1[:,a], Woovv[:,:,b,c])
+    ijk -= contract('i,jk->ijk', t1[:,b], Woovv[:,:,a,c])
+    ijk -= contract('i,jk->ijk', t1[:,c], Woovv[:,:,b,a])
+    ijk += contract('i,jk->ijk', Fov[:,a], t2[:,:,b,c])
+    ijk -= contract('i,jk->ijk', Fov[:,b], t2[:,:,a,c])
+    ijk -= contract('i,jk->ijk', Fov[:,c], t2[:,:,b,a])
+    t3 = ijk - ijk.swapaxes(0,1) - ijk.swapaxes(0,2)
+
+    if WithDenom is True:
+        occ = diag(F)[o]
+        vir = diag(F)[v]
+        denom = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ
+                 - (vir[a] + vir[b] + vir[c]) + omega)
+        return t3/denom
+    return t3
 
 def t_vikings_so(o, v, t1, t2, F, ERI, contract):
     """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
@@ -796,15 +841,176 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
             for k in range(no):
                 t3 = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                 x1[i] += 0.25 * contract('bc,abc->a', Woovv[j,k], t3)
-                # Occ-vir Fock term (cf. the CC3 Fme[k] term): nonzero only for a
-                # non-canonical (semicanonical ROHF) reference, where f_kc != 0.
-                x2[i,j] += contract('c,abc->ab', Fov[k], t3)
-                tmp = 0.5 * contract('dbc,abc->ad', Wvovv[:,k], t3)
-                x2[i,j] += tmp - tmp.swapaxes(0,1)
-                for l in range(no):
-                    tmp = 0.5 * contract('c,abc->ab', Wooov[j,k,l], t3)
-                    x2[i,l] -= tmp
-                    x2[l,i] += tmp
+                # Doubles intermediate, built WITHOUT per-term antisymmetrization -- the
+                # P(ij)P(ab) antisymmetrizer is applied to x2 after the loops.  Every term
+                # carries a 1/4: the antisymmetrizer quadruples an already-antisymmetric
+                # contribution.  The occ-vir Fock term (cf. the CC3 Fme[k] term) is nonzero
+                # only for a non-canonical (semicanonical ROHF) reference, where f_kc != 0.
+                x2[i,j] += (1/4) * contract('c,abc->ab', Fov[k], t3)
+                x2[i,j] += (1/4) * contract('dbc,abc->ad', Wvovv[:,k], t3)
+                x2[i]   -= (1/4) * contract('md,abd->mab', Wooov[j,k], t3)
+
+    # P(ij)P(ab) antisymmetrization of the doubles intermediate (see the loop note)
+    x2 = x2 - x2.swapaxes(0,1) - x2.swapaxes(2,3) + x2.swapaxes(0,1).swapaxes(2,3)
 
     et = contract('ia,ia->', t1, x1) + 0.25 * contract('ijab,ijab->', t2, x2)
     return et
+
+
+# ---- (T) density / Lambda intermediates --------------------------------------
+# These build the same connected+disconnected T3 as the (T) energy, but contract it
+# into the (T) contributions to the one-/two-electron densities and the Lambda-1/2
+# residuals (needed for CCSD(T) gradients and properties).  They also return the (T)
+# energy correction as a byproduct, so the T3 is built only once.  Housed here (rather
+# than on CCwfn) so the wavefunction does not compute density components; solve_cc
+# delegates and caches the returned intermediates on the wfn for cclambda/ccdensity.
+
+def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
+    """(T) density/Lambda intermediates, spatial-orbital spin-adapted closed-shell RHF.
+
+    Returns (ET, intermediates), where ET is the (T) energy correction and
+    intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
+    Gvvvo, S1, S2} that the caller caches on the wavefunction.
+    """
+    dvv = np.zeros(nv)   # diagonal of the (T) vir-vir 1-PDM (see below)
+    doo = np.zeros(no)   # diagonal of the (T) occ-occ 1-PDM
+    Dov = np.zeros((no,nv))
+    Goovv = np.zeros_like(t2)
+    Gooov = np.zeros((no,no,no,nv))
+    Gvvvo = np.zeros((nv,nv,nv,no))
+    S1 = np.zeros_like(t1)
+    S2 = np.zeros_like(t2)
+    X2 = np.zeros_like(t2)
+
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                M3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
+                N3 = t3d_ijk(o, v, i, j, k, t1, t2, ERI[o,o,v,v], F, contract, True)
+                X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
+                Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
+
+                # Doubles contribution (T) correction (Viking's formulation)
+                X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[o,v][k])
+                X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,o,v,v][:,k])
+                X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[o,o,o,v][j,k])
+
+                # (T) contribution to vir-vir block of one-electron density.  Only the
+                # diagonal is a genuine density term (the off-diagonal <0|L3[E_ab,T3]|0> block
+                # appears in neither Lee-Rendell nor Hald et al.; the oo/vv orbital response is
+                # the dependent-pair kappa-bar in CCderiv.gradient), so contract straight to it.
+                dvv += 0.5 * contract('acd,acd->a', M3, (X3 + Y3))
+
+                # (T) contribution to occ-vir block of one-electron density
+                Dov[i] += contract('abc,bc->a', (M3 - M3.swapaxes(0,2)), (4*t2[j,k] - 2*t2[j,k].T))
+
+                # (T) contributions to two-electron density
+                Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3, 2, 0))
+                Goovv[i,j,:,:] += 4*contract('c,abc->ab', t1[k,:], Z3)
+                Gooov[j,i] -= contract('abc,lbc->la', (2*X3 + Y3), t2[:,k])
+                Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
+
+                # (T) contribution to Lambda_1 residual
+                S1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), L[o,o,v,v][j,k])
+                # (T) contribution to Lambda_2 residual
+                S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[o,o,o,v][j,k])
+                S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[o,v,v,v][k])
+
+    S2 = S2 + S2.swapaxes(0,1).swapaxes(2,3)
+
+    # (T) contribution to occ-occ block of one-electron density
+    for a in range(nv):
+        for b in range(nv):
+            for c in range(nv):
+                M3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
+                N3 = t3d_abc(o, v, a, b, c, t1, t2, ERI[o,o,v,v], F, contract, True)
+                X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
+                Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
+                # (T) occ-occ 1-PDM: diagonal only (see the vir-vir note above).
+                doo -= 0.5 * contract('ikl,ikl->i', M3, (X3 + Y3))
+
+    # (T) correction
+    ET = contract('ia,ia->', t1, S1)  # NB: factor of two is already included in S1
+    ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
+
+    return ET, {'Doo': np.diag(doo), 'Dvv': np.diag(dvv), 'Dov': Dov,
+                'Goovv': Goovv, 'Gooov': Gooov, 'Gvvvo': Gvvvo,
+                'S1': S1, 'S2': S2}
+
+
+def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
+    """(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
+
+    Returns (ET, intermediates), where ET is the (T) energy correction and
+    intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
+    Gvovv, Govoo, Gvvvo, S1, S2} that the caller caches on the wavefunction.
+    """
+    x2 = np.zeros_like(t2)
+    dvv = np.zeros(nv)
+    doo = np.zeros(no)
+    Dov = np.zeros((no,nv))
+    Goovv = np.zeros_like(t2)
+    Gooov = np.zeros((no,no,no,nv))
+    Gvovv = np.zeros((nv,no,nv,nv))
+    Govoo = np.zeros((no,nv,no,no))
+    Gvvvo = np.zeros((nv,nv,nv,no))
+    S1 = np.zeros_like(t1)
+    S2 = np.zeros_like(t2)
+
+    Wvvvo = ERI[v,v,v,o]
+    Wovoo = ERI[o,v,o,o]
+    Woovv = ERI[o,o,v,v]
+    Wvovv = ERI[v,o,v,v]
+    Wooov = ERI[o,o,o,v]
+    Fov = F[o,v]
+
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+
+                # Singles and doubles contributions to the (T) energy correction, built
+                # WITHOUT per-term antisymmetrization -- the P(ij)P(ab) antisymmetrizer is
+                # applied to x2 after the loops (same structure as S2).  Every term carries a
+                # 1/4: the antisymmetrizer quadruples an already-antisymmetric contribution.
+                x2[i,j] += (1/4) * contract('c,abc->ab', Fov[k], t3c)
+                x2[i,j] += (1/4) * contract('dbc,abc->ad', Wvovv[:,k], t3c)
+                x2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], t3c)
+
+                # (T) contribution to the vv block of the one-electron density (diagonal)
+                dvv += (1/12) * contract('abc,abc->a', (t3c + t3d), t3c)
+
+                # (T) contribution to the ov block of the one-electron density
+                Dov[i] += contract('ade,de->a', t3c, t2[j,k])
+
+                # (T) contributions to the two-electron density
+                Goovv[i,j] += contract('abc,c->ab', t3c, t1[k])
+                Gooov[i,j] -= (1/2) * contract('kbc,abc->ka', t2[k], t3c)
+                Gvovv[:,i] += (1/2) * contract('ec,abe->cab', t2[j,k], t3c)
+                Govoo[:,:,i,j] -= (1/2) * contract('kbc,abc->ka', t2[k], (t3c + t3d))
+                Gvvvo[:,:,:,i] += (1/2) * contract('abe,ec->abc', (t3c + t3d), t2[j,k])
+
+                # (T) contribution to the L1 residual
+                S1[i] += (1/4) * contract('abc,bc->a', t3c, Woovv[j,k])
+                # (T) contribution to the L2 residual
+                S2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], (2*t3c + t3d))
+                S2[i,j] += (1/4) * contract('ade,bde->ab', (2*t3c+t3d), Wvovv[:,k])
+
+    for a in range(nv):
+        for b in range(nv):
+            for c in range(nv):
+                t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
+                doo -= (1/12) * contract('ijk,ijk->i', t3c, (t3c + t3d))
+
+    # P(ij)P(ab) antisymmetrization of the doubles intermediates (see the loop note)
+    S2 = S2 - S2.swapaxes(0,1) - S2.swapaxes(2,3) + S2.swapaxes(0,1).swapaxes(2,3)
+    x2 = x2 - x2.swapaxes(0,1) - x2.swapaxes(2,3) + x2.swapaxes(0,1).swapaxes(2,3)
+
+    # (T) correction
+    ET = contract('ia,ia->', t1, S1) + (1/4) * contract('ijab,ijab->', t2, x2)
+
+    return ET, {'Doo': np.diag(doo), 'Dvv': np.diag(dvv), 'Dov': Dov,
+                'Goovv': Goovv, 'Gooov': Gooov, 'Gvovv': Gvovv,
+                'Govoo': Govoo, 'Gvvvo': Gvvvo, 'S1': S1, 'S2': S2}

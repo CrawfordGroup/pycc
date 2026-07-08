@@ -23,7 +23,9 @@ from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples
 from .wavefunction import Wavefunction
 from .mpwfn import MPwfn
 from .local import Local
-from .cctriples import t_tjl, t3c_ijk, t3d_ijk, t3c_abc, t3d_abc, t3_pert_ijk, t_vikings_so, t3c_ijk_so
+from . import cctriples
+from .cctriples import t_tjl, t3c_ijk, t3_pert_ijk
+from .cctriples import t_vikings_so, t3c_ijk_so
 from .lccwfn import lccwfn
 from ._typing import Tensor
 from .exceptions import InvalidKeywordError
@@ -280,10 +282,13 @@ class CCwfn(Wavefunction):
                 print("E(REF)  = %20.15f" % self.eref)
                 if (self.model == 'CCSD(T)'):
                     print("E(CCSD) = %20.15f" % ecc)
-                    if self.orbital_basis == 'spinorbital':
+                    if self.make_t3_density is True:
+                        if self.orbital_basis == 'spinorbital':
+                            et = self.so_t3_density()
+                        else:
+                            et = self.t3_density()
+                    elif self.orbital_basis == 'spinorbital':
                         et = t_vikings_so(o, v, self.t1, self.t2, F, self.H.ERI, contract)
-                    elif self.make_t3_density is True:
-                        et = self.t3_density()
                     else:
                         et = t_tjl(self)
                     print("E(T)    = %20.15f" % et)
@@ -1265,97 +1270,28 @@ class CCwfn(Wavefunction):
         return x1, x2
 
     def t3_density(self):
+        """(T) contributions to the Lambda residuals and one-/two-electron densities.
+
+        Delegates the T3 build and contractions to cctriples.t3_density and caches the
+        returned intermediates on the wfn (for cclambda/ccdensity); returns the (T) energy.
         """
-        Computes (T) contributions to Lambda equations and one-/two-electron densities
+        et, dens = cctriples.t3_density(self.o, self.v, self.no, self.nv, self.t1, self.t2,
+                                        self.H.F, self.H.ERI, self.H.L, self.contract)
+        for name, value in dens.items():
+            setattr(self, name, value)
+        return et
+
+    def so_t3_density(self):
+        """Spin-orbital (T) contributions to the Lambda residuals and densities.
+
+        Delegates to cctriples.so_t3_density and caches the returned intermediates on the
+        wfn (for cclambda/ccdensity); returns the (T) energy correction.
         """
-
-        contract = self.contract
-
-        o = self.o
-        v = self.v
-        no = self.no
-        nv = self.nv
-        t1 = self.t1
-        t2 = self.t2
-        F = self.H.F
-        ERI = self.H.ERI
-        L = self.H.L
-
-        dvv = np.zeros(nv)   # diagonal of the (T) vir-vir 1-PDM (see below)
-        doo = np.zeros(no)   # diagonal of the (T) occ-occ 1-PDM
-        Dov = np.zeros((no,nv))
-        Goovv = np.zeros_like(t2)
-        Gooov = np.zeros((no,no,no,nv))
-        Gvvvo = np.zeros((nv,nv,nv,no))
-        S1 = np.zeros_like(t1)
-        S2 = np.zeros_like(t2)
-        Z3 = np.zeros((nv,nv,nv))
-        X1 = np.zeros_like(t1)
-        X2 = np.zeros_like(t2)
-
-        for i in range(no):
-            for j in range(no):
-                for k in range(no):
-                    M3 = t3c_ijk(o, v, i, j, k, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
-                    N3 = t3d_ijk(o, v, i, j, k, t1, t2, ERI[o,o,v,v], F, contract, True)
-                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
-                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
-
-                    # Doubles contribution (T) correction (Viking's formulation)
-                    X2[i,j] += contract('abc,c->ab',(M3 - M3.swapaxes(0,2)), F[o,v][k])
-                    X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,o,v,v][:,k])
-                    X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[o,o,o,v][j,k])
-
-                    # (T) contribution to vir-vir block of one-electron density.  Only the
-                    # diagonal is a genuine density term (the off-diagonal <0|L3[E_ab,T3]|0> block
-                    # appears in neither Lee-Rendell nor Hald et al.; the oo/vv orbital response is
-                    # the dependent-pair kappa-bar in CCderiv.gradient), so contract straight to it.
-                    dvv += 0.5 * contract('acd,acd->a', M3, (X3 + Y3))
-
-                    # (T) contribution to occ-vir block of one-electron density
-                    Dov[i] += contract('abc,bc->a', (M3 - M3.swapaxes(0,2)), (4*t2[j,k] - 2*t2[j,k].T))
-
-                    # (T) contributions to two-electron density
-                    Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3, 2, 0))
-                    Goovv[i,j,:,:] += 4*contract('c,abc->ab', t1[k,:], Z3)
-                    Gooov[j,i] -= contract('abc,lbc->la', (2*X3 + Y3), t2[:,k])
-                    Gvvvo[:,:,:,j] += contract('abc,cd->abd', (2*X3 + Y3), t2[k,i,:,:])
-
-                    # (T) contribution to Lambda_1 residual
-                    S1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), L[o,o,v,v][j,k])
-                    # (T) contribution to Lambda_2 residual
-                    S2[i] -= contract('abc,lc->lab', (2*X3 + Y3), ERI[o,o,o,v][j,k])
-                    S2[i,j] += contract('abc,dcb->ad', (2*X3 + Y3), ERI[o,v,v,v][k])
-
-        S2 = S2 + S2.swapaxes(0,1).swapaxes(2,3)
-
-        # (T) contribution to occ-occ block of one-electron density
-        for a in range(nv):
-            for b in range(nv):
-                for c in range(nv):
-                    M3 = t3c_abc(o, v, a, b, c, t2, ERI[v,v,v,o], ERI[o,v,o,o], F, contract, True)
-                    N3 = t3d_abc(o, v, a, b, c, t1, t2, ERI[o,o,v,v], F, contract, True)
-                    X3 = 8*M3 - 4*M3.swapaxes(0,1) - 4*M3.swapaxes(1,2) - 4*M3.swapaxes(0,2) + 2*np.moveaxis(M3, 0, 2) + 2*np.moveaxis(M3, 2, 0)
-                    Y3 = 8*N3 - 4*N3.swapaxes(0,1) - 4*N3.swapaxes(1,2) - 4*N3.swapaxes(0,2) + 2*np.moveaxis(N3, 0, 2) + 2*np.moveaxis(N3, 2, 0)
-                    # (T) occ-occ 1-PDM: diagonal only (see the vir-vir note above).
-                    doo -= 0.5 * contract('ikl,ikl->i', M3, (X3 + Y3))
-
-        self.Dvv = np.diag(dvv)
-        self.Doo = np.diag(doo)
-        self.Dov = Dov # Needed for properties/gradients
-
-        self.Goovv = Goovv
-        self.Gooov = Gooov
-        self.Gvvvo = Gvvvo
-        self.S1 = S1
-        self.S2 = S2
-
-        # (T) correction
-        ET = contract('ia,ia->', t1, S1) # NB: Factor of two is already included in S1 definition
-        ET += contract('ijab,ijab->', (4.0*t2 - 2.0*t2.swapaxes(2,3)), X2)
-
-        return ET
-
+        et, dens = cctriples.so_t3_density(self.o, self.v, self.no, self.nv, self.t1, self.t2,
+                                           self.H.F, self.H.ERI, self.contract)
+        for name, value in dens.items():
+            setattr(self, name, value)
+        return et
 
 # Backward-compatibility alias: the class was renamed ccwfn -> CCwfn to match the
 # HFwfn/MPwfn/CIwfn method-class convention. Existing code using ``ccwfn`` still works.
