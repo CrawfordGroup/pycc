@@ -95,35 +95,16 @@ class CCderiv:
         P[m] = num[m] / den[m]
         return P
 
-    def gradient(self) -> np.ndarray:
-        """CCSD **correlation** contribution to the analytic nuclear energy gradient (a.u.), shape
-        ``(natom, 3)``, via the **Z-vector (relaxed-density) route** -- the efficient default
-        (one CPHF solve, not ``3*natom``)::
-
-            dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq|rs>^X + sum_pq W_pq S^X_pq
-
-        with the relaxed 1-PDM ``D~`` (the Lambda-response ``D`` plus the orbital-relaxation
-        Z-vector ``z``), the (symmetrized) 2-PDM ``Gamma``, and the energy-weighted density
-        ``W = I'(D~)`` (:meth:`_lagrangian`).  The Z-vector solves ``A z = X`` once, with
-        ``X = I'_ia - I'_ai`` the ov-antisymmetric generalized Fock, using the SCF orbital Hessian
-        (:meth:`HFwfn.cphf`).  ``f^X``/``S^X``/``<pq|rs>^X`` are the skeleton derivative integrals
-        from ``ccwfn.derivatives`` (no per-perturbation CPHF solve).
-
-        The **reference (SCF) gradient is kept separate**: the total CCSD gradient is
-        ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
-
-        Spatial (closed-shell RHF) path; all-electron and frozen-core.  Validated against
-        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
-        explicit-derivative route (:meth:`_gradient_explicit`).  The spin-orbital (UHF) path is
-        dispatched to :meth:`_so_gradient`.
-
-        Frozen core is handled as in the MP2 gradient: the correlation densities live in the active
-        space while the orbital response spans the full occupied space.  The core<->active-occupied
-        rotation is a direct divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` (the SCF energy is
-        invariant to occupied-occupied rotations), coupled into the Z-vector right-hand side."""
+    def _relaxed_density(self):
+        """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
+        closed-shell RHF).  ``Drel`` is the Lambda-response 1-PDM ``D`` plus the orbital-relaxation
+        blocks: the frozen-core core<->active-occupied divide ``P_co``, the CCSD(T) oo/vv
+        dependent-pair ``kappa_oo``/``kappa_vv`` (model-gated), and the ov Z-vector ``-z`` (one CPHF
+        solve, RHS = the ov-antisymmetric generalized Fock ``I'_ia - I'_ai``).  This is the
+        **perturbation-independent** relaxed density shared by :meth:`gradient` (contracted with the
+        skeleton derivative integrals) and :meth:`relaxed_dipole` (contracted with the dipole
+        integrals); the (T) response rides along in ``Drel`` for both."""
         cc = self.ccwfn
-        if cc.orbital_basis == 'spinorbital':
-            return self._so_gradient()
         o, v = cc.o, cc.v
         nfzc = cc.nfzc
         co = slice(0, nfzc)                              # frozen-core occupied
@@ -162,6 +143,92 @@ class CCderiv:
         z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (full-occ SCF Hessian)
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
+        return Drel, Gam
+
+    def _so_relaxed_density(self):
+        """Spin-orbital (UHF) analog of :meth:`_relaxed_density`: the relaxed correlation 1-PDM
+        ``Drel`` and 2-PDM ``Gam``, with the antisymmetrized-ERI Lagrangian and the inline orbital
+        Hessian (``G_ia,jb = <aj||ib> + <ab||ij> + delta (eps_a - eps_i)``) rather than a borrowed
+        all-electron CPHF.  **UHF only** -- raises for ROHF (the semicanonical response does not
+        reproduce the restricted ROHF response)."""
+        cc = self.ccwfn
+        if cc.mp.cphf.is_rohf:
+            raise NotImplementedError(
+                "The spin-orbital CCSD/CCSD(T) gradient and relaxed dipole are not implemented for "
+                "ROHF references (the semicanonical response does not reproduce the restricted ROHF "
+                "response); RHF and UHF are supported.")
+        o, v = cc.o, cc.v
+        nfzc, nv = cc.nfzc, cc.nv
+        co = slice(0, o.start)                            # frozen-core occupied (2*nfzc spin-orbitals)
+        ofull = slice(0, o.stop)                          # full occupied (core + active)
+        nof = o.stop
+        c = self.contract
+        eps = np.diag(np.asarray(cc.H.F))
+        ERI = np.asarray(cc.H.ERI)                        # spin-orbital <pq||rs>
+        D, Gam = self._density().gradient_densities()
+        Ip = self._lagrangian(D, Gam)
+        Drel = D.copy()
+        if nfzc:                                          # core<->active-occupied: direct divide
+            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Drel[co, o] += Pco
+            Drel[o, co] += Pco.T
+        X = Ip[ofull, v] - Ip[v, ofull].T                # ov-antisymmetric generalized Fock
+        if nfzc:                                          # couple P_co into the Z-vector RHS
+            zjc = -Pco.T
+            X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
+                     + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+        if cc.model.upper() == 'CCSD(T)':
+            # (T) breaks the occ-occ / virt-virt rotation invariance: the canonical perturbed
+            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector --
+            # the spin-orbital analog of the (T) branch in :meth:`_relaxed_density` (spatial L ->
+            # <pq||rs>).  For CCSD both blocks vanish.
+            Poo = self._dependent_pairs(Ip[o, o], eps[o])
+            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+            Drel[o, o] += Poo
+            Drel[v, v] += Pvv
+            X = X + (c('kl,akil->ia', Poo, ERI[v, o, ofull, o])
+                     + c('bc,ibac->ia', Pvv, ERI[ofull, v, v, v]))
+        G = (c('ajib->iajb', ERI[v, ofull, ofull, v])    # orbital Hessian, built inline
+             + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
+        G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
+        z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)   # Z-vector A z = X
+        Drel[v, ofull] += -z.T
+        Drel[ofull, v] += -z
+        return Drel, Gam
+
+    def gradient(self) -> np.ndarray:
+        """CCSD **correlation** contribution to the analytic nuclear energy gradient (a.u.), shape
+        ``(natom, 3)``, via the **Z-vector (relaxed-density) route** -- the efficient default
+        (one CPHF solve, not ``3*natom``)::
+
+            dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq|rs>^X + sum_pq W_pq S^X_pq
+
+        with the relaxed 1-PDM ``D~`` (the Lambda-response ``D`` plus the orbital-relaxation
+        Z-vector ``z``), the (symmetrized) 2-PDM ``Gamma``, and the energy-weighted density
+        ``W = I'(D~)`` (:meth:`_lagrangian`).  The Z-vector solves ``A z = X`` once, with
+        ``X = I'_ia - I'_ai`` the ov-antisymmetric generalized Fock, using the SCF orbital Hessian
+        (:meth:`HFwfn.cphf`).  ``f^X``/``S^X``/``<pq|rs>^X`` are the skeleton derivative integrals
+        from ``ccwfn.derivatives`` (no per-perturbation CPHF solve).
+
+        The **reference (SCF) gradient is kept separate**: the total CCSD gradient is
+        ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
+
+        Spatial (closed-shell RHF) path; all-electron and frozen-core.  Validated against
+        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
+        explicit-derivative route (:meth:`_gradient_explicit`).  The spin-orbital (UHF) path is
+        dispatched to :meth:`_so_gradient`.
+
+        Frozen core is handled as in the MP2 gradient: the correlation densities live in the active
+        space while the orbital response spans the full occupied space.  The core<->active-occupied
+        rotation is a direct divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` (the SCF energy is
+        invariant to occupied-occupied rotations), coupled into the Z-vector right-hand side."""
+        cc = self.ccwfn
+        if cc.orbital_basis == 'spinorbital':
+            return self._so_gradient()
+        o = cc.o
+        ofull = slice(0, o.stop)                         # full occupied (core + active)
+        c = self.contract
+        Drel, Gam = self._relaxed_density()             # D + P_co + (T) kappa_oo/vv + ov Z-vector
         W = self._lagrangian(Drel, Gam)                 # energy-weighted density
         d = cc.derivatives
         grad = np.zeros((d.natom, 3))
@@ -203,50 +270,10 @@ class CCderiv:
         UHF), and the explicit-derivative route (:meth:`_gradient_explicit`, CCSD only -- the (T)
         dependent-pair is not yet carried there)."""
         cc = self.ccwfn
-        if cc.mp.cphf.is_rohf:
-            raise NotImplementedError(
-                "The spin-orbital CCSD gradient is not implemented for ROHF references (the "
-                "semicanonical response does not reproduce the restricted ROHF response); RHF and "
-                "UHF are supported.")
-        o, v = cc.o, cc.v
-        nfzc, nv = cc.nfzc, cc.nv
-        co = slice(0, o.start)                            # frozen-core occupied (2*nfzc spin-orbitals)
+        o = cc.o
         ofull = slice(0, o.stop)                          # full occupied (core + active)
-        nof = o.stop
         c = self.contract
-        eps = np.diag(np.asarray(cc.H.F))
-        ERI = np.asarray(cc.H.ERI)                        # spin-orbital <pq||rs>
-        D, Gam = self._density().gradient_densities()
-        Ip = self._lagrangian(D, Gam)
-        Drel = D.copy()
-        if nfzc:                                          # core<->active-occupied: direct divide
-            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-            Drel[co, o] += Pco
-            Drel[o, co] += Pco.T
-        X = Ip[ofull, v] - Ip[v, ofull].T                # ov-antisymmetric generalized Fock
-        if nfzc:                                          # couple P_co into the Z-vector RHS
-            zjc = -Pco.T
-            X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
-                     + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
-        if cc.model.upper() == 'CCSD(T)':
-            # (T) breaks the occ-occ / virt-virt rotation invariance, so the canonical perturbed
-            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector:
-            # (I'_ij-I'_ji)/(eps_i-eps_j) over the oo pairs and the vv analog
-            # (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
-            # Z-vector RHS through the antisymmetrized ERI -- the spin-orbital analog of the (T)
-            # branch in :meth:`gradient` (spatial L -> <pq||rs>).  For CCSD both blocks vanish.
-            Poo = self._dependent_pairs(Ip[o, o], eps[o])
-            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
-            Drel[o, o] += Poo
-            Drel[v, v] += Pvv
-            X = X + (c('kl,akil->ia', Poo, ERI[v, o, ofull, o])
-                     + c('bc,ibac->ia', Pvv, ERI[ofull, v, v, v]))
-        G = (c('ajib->iajb', ERI[v, ofull, ofull, v])    # orbital Hessian, built inline
-             + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
-        G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
-        z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)   # Z-vector A z = X
-        Drel[v, ofull] += -z.T
-        Drel[ofull, v] += -z
+        Drel, Gam = self._so_relaxed_density()           # raises for ROHF; D + P_co + (T) kappa + z
         W = self._lagrangian(Drel, Gam)                  # energy-weighted density
         d = cc.derivatives
         grad = np.zeros((d.natom, 3))
@@ -258,6 +285,25 @@ class CCderiv:
                                     + c('pqrs,pqrs->', Gam, ERIx[cart])
                                     + c('pq,pq->', W, Sx[cart]))
         return grad
+
+    def relaxed_dipole(self) -> np.ndarray:
+        """CCSD / CCSD(T) **correlation** contribution to the relaxed electronic dipole (a.u.),
+        ``Tr(D_rel . mu)`` per Cartesian axis -- the CC analog of :meth:`MPwfn.relaxed_dipole`, and
+        the correlation block that :func:`pycc.dipole` pairs with the reference (HF) and nuclear
+        dipoles.
+
+        A static electric field does not move the AO basis (``S^F = <pq|rs>^F = 0``), so the relaxed
+        dipole is just the perturbation-independent relaxed density (:meth:`_relaxed_density` /
+        :meth:`_so_relaxed_density`) contracted with the dipole integrals -- no energy-weighted
+        density and no 2-PDM term (unlike the gradient).  The (T) density and its oo/vv
+        dependent-pair orbital response ride along inside ``D_rel``, so the (T) contribution needs no
+        separate handling.  Dispatches spatial vs spin-orbital on ``orbital_basis`` (ROHF raises via
+        :meth:`_so_relaxed_density`)."""
+        cc = self.ccwfn
+        Drel, _ = (self._so_relaxed_density() if cc.orbital_basis == 'spinorbital'
+                   else self._relaxed_density())
+        c = self.contract
+        return np.array([c('pq,pq->', Drel, np.asarray(cc.H.mu[a])) for a in range(3)])
 
     def _gradient_explicit(self) -> np.ndarray:
         """CCSD correlation gradient via the **explicit-derivative route** -- an independent

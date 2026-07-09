@@ -120,3 +120,74 @@ def test_ccsd_t_dipole(rhf_wfn):
     assert abs(mu_analytic - T_DIPOLE_Z_REF) < 1e-11, mu_analytic
 
     psi4.core.clean()
+
+
+# Frozen 5-point O(h^4) finite-field oracle for the CCSD(T) RELAXED correlation dipole mu_z
+# (H2O/6-31G, _T_DIPOLE_GEOM).  Unlike the unrelaxed T_DIPOLE_Z_REF above (a fixed-orbital Fock
+# perturbation of the (T) density only), this is the full CCSD(T) relaxed correlation dipole
+# CCderiv.relaxed_dipole = Tr(D_rel . mu), with D_rel the gradient's relaxed density (correlation D +
+# frozen-core P_co + (T) kappa_oo/kappa_vv + ov Z-vector).  Validated (once) against a 5-point finite
+# field of pycc's own CCSD(T) correlation energy (E_CCSD(T) - E_SCF) under a field-relaxed SCF (psi4
+# perturb_h, F=0.0005): 1.4e-12 all-electron, 1.1e-12 frozen core (see _findiff_relaxed_dipole_z).
+RELAXED_DIPOLE_Z_REF = 0.0888679557555765
+RELAXED_DIPOLE_Z_REF_FC = 0.0889835346143946
+
+
+def _findiff_relaxed_dipole_z(freeze_core='false', F=0.0005):
+    """Regeneration recipe for RELAXED_DIPOLE_Z_REF[_FC] (not run in the tests): 5-point O(h^4)
+    finite field of pycc's CCSD(T) correlation energy (E_CCSD(T) - E_SCF) under a field-relaxed SCF
+    (the SCF orbitals relax in the field via psi4 perturb_h), on _T_DIPOLE_GEOM / 6-31G."""
+    def ecorr(Fz):
+        psi4.core.clean(); psi4.core.clean_options()
+        psi4.geometry(_T_DIPOLE_GEOM)
+        opt = {'basis': '6-31G', 'scf_type': 'pk', 'freeze_core': freeze_core,
+               'e_convergence': 1e-13, 'd_convergence': 1e-13}
+        if Fz:
+            opt.update({'perturb_h': True, 'perturb_with': 'dipole', 'perturb_dipole': [0., 0., Fz]})
+        psi4.set_options(opt)
+        _, wfn = psi4.energy('scf', return_wfn=True)
+        return pycc.ccwfn(wfn, model='ccsd(t)').solve_cc(1e-13, 1e-13, 200)
+    e = {s: ecorr(s * F) for s in (-2, -1, 1, 2)}
+    return (-e[2] + 8 * e[1] - 8 * e[-1] + e[-2]) / (12 * F)
+
+
+def test_ccsdt_relaxed_dipole(rhf_wfn):
+    """The analytic CCSD(T) RELAXED correlation dipole mu_z (CCderiv.relaxed_dipole = Tr(D_rel . mu))
+    matches the finite-field-validated frozen reference (H2O/6-31G), and the pycc.dipole facade
+    decomposes exactly.  A static field does not move the AO basis (S^F = <pq|rs>^F = 0), so the
+    relaxed dipole reuses the gradient's relaxed density -- the (T) density and its oo/vv
+    dependent-pair ride along inside D_rel with no separate handling."""
+    wfn = rhf_wfn(_T_DIPOLE_GEOM, "6-31G", freeze_core="false")
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
+    cc.solve_cc(1e-12, 1e-12, 100)
+    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    assert abs(mu[2] - RELAXED_DIPOLE_Z_REF) < 1e-10, mu[2]
+    # facade: total = nuclear + reference + correlation, and correlation == relaxed_dipole
+    r = pycc.dipole(cc)
+    assert np.max(np.abs(np.asarray(r.total) - (np.asarray(r.nuclear)
+                  + np.asarray(r.reference) + np.asarray(r.correlation)))) < 1e-12
+    assert np.max(np.abs(np.asarray(r.correlation) - mu)) < 1e-12
+    psi4.core.clean()
+
+
+def test_ccsdt_relaxed_dipole_spinorbital(rhf_wfn):
+    """SO == spatial: a closed-shell RHF driven through the spin-orbital path reproduces the spatial
+    CCSD(T) relaxed correlation dipole."""
+    wfn = rhf_wfn(_T_DIPOLE_GEOM, "6-31G", freeze_core="false")
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis='spinorbital')
+    cc.solve_cc(1e-12, 1e-12, 100)
+    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    assert abs(mu[2] - RELAXED_DIPOLE_Z_REF) < 1e-9, mu[2]
+    psi4.core.clean()
+
+
+def test_ccsdt_relaxed_dipole_frozen_core(rhf_wfn):
+    """Frozen-core CCSD(T) relaxed correlation dipole (H2O/6-31G, O 1s frozen): the core<->active (T)
+    response rides the P_co divide and the active oo/vv the dependent pair, inside D_rel."""
+    wfn = rhf_wfn(_T_DIPOLE_GEOM, "6-31G", freeze_core="true")
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
+    cc.solve_cc(1e-12, 1e-12, 100)
+    assert cc.nfzc > 0
+    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    assert abs(mu[2] - RELAXED_DIPOLE_Z_REF_FC) < 1e-10, mu[2]
+    psi4.core.clean()

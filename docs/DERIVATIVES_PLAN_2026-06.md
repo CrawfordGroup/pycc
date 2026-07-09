@@ -38,17 +38,24 @@ invariant, with a numerically stable non-canonical default (`gauge=`).
 see Roadmap). These supply the reference contribution to every MP2 total property and anchor the
 SO machinery through the RHF-forced-to-SO == spatial keystone.
 
-**Coupled-cluster gradients.** Analytic nuclear gradients through the `CCderiv` driver, reusing the
-MP2 Z-vector / relaxed-density assembly (`_lagrangian`, the SCF orbital Hessian) with the CCSD/(T)
-densities and Λ:
+**Coupled-cluster gradients and dipoles.** Analytic nuclear gradients and relaxed electronic dipoles
+through the `CCderiv` driver, reusing the MP2 Z-vector / relaxed-density assembly (`_lagrangian`, the
+SCF orbital Hessian) with the CCSD/(T) densities and Λ:
 
 | Method | spatial (closed-shell RHF) | spin-orbital (UHF) | frozen core |
 |---|---|---|---|
-| CCSD `dE/dX` | ✅ | ✅ | ✅ |
-| CCSD(T) `dE/dX` | ✅ | ✅ | ✅ |
+| CCSD `dE/dX` (gradient) | ✅ | ✅ | ✅ |
+| CCSD(T) `dE/dX` (gradient) | ✅ | ✅ | ✅ |
+| CCSD, CCSD(T) `dE/dF` (relaxed dipole) | ✅ | ✅ | ✅ |
 
-Validated against a tight finite difference of pycc's own correlation energy (5-point O(h⁴), ~1e-12),
-**not** psi4's analytic gradient (§4). Unlike CCSD — which reuses the −½Sˣ ov-only Z-vector because
+The relaxed dipole reuses the gradient's relaxed density: a static field leaves the AO basis fixed
+(`S^F = ⟨pq\|rs⟩^F = 0`), so `mu = Tr(D_rel · mu_ints)` — the same `D_rel` (correlation density + `Pco`
++ (T) κ̄ + ov Z-vector), built by the shared `CCderiv._relaxed_density`/`_so_relaxed_density`, that the
+gradient contracts with the skeleton integrals. `pycc.dipole(CCwfn)` returns the usual
+nuclear/reference/correlation `PropertyComponents`. Validated against a tight finite difference of
+pycc's own correlation energy — 5-point O(h⁴), the gradient ~1e-12 and the relaxed dipole a finite
+field of `(E_CC − E_SCF)` ~1e-12 — **not** psi4's analytic derivatives (§4). Unlike CCSD — which reuses
+the −½Sˣ ov-only Z-vector because
 CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) needs canonical perturbed orbitals for
 the oo/vv blocks** (dependent-pair κ̄, even all-electron); see §5 and §7. The efficient Z-vector route
 and the independent explicit-derivative route agree to machine precision for CCSD (the (T) explicit
@@ -107,11 +114,14 @@ One-directional layering: **`Derivatives` ← `CPHF` ← `HFwfn` / `MPwfn`**.
   `_perturbed_densities`, `_(so_)perturbed_relaxed_opdm`, `_(so_)perturbed_lagrangian` — the last
   takes an optional `(D, dD)`: unrelaxed → Z-vector RHS, relaxed → `d_x I`); and the property
   methods with their `route=` options.
-- **`CCderiv`** — the CCSD / CCSD(T) analytic gradient. Reuses `MPwfn._lagrangian` and the SCF orbital
-  Hessian (through a persistent `HFwfn`/`CPHF`); takes the CC relaxed density + Λ from `ccdensity`,
-  and for (T) the densities/Λ from `CCwfn.t3_density`. `_dependent_pairs` builds the canonical oo/vv
-  κ̄ divides for (T) (§7). Spatial `gradient()` + spin-orbital `_so_gradient()`; the independent
-  `_gradient_explicit()` cross-check (CCSD only so far).
+- **`CCderiv`** — the CCSD / CCSD(T) analytic gradient and relaxed dipole. Reuses `MPwfn._lagrangian`
+  and the SCF orbital Hessian (through a persistent `HFwfn`/`CPHF`); takes the CC relaxed density + Λ
+  from `ccdensity`, and for (T) the densities/Λ from `CCwfn.t3_density`. `_dependent_pairs` builds the
+  canonical oo/vv κ̄ divides for (T) (§7). The relaxed density `D_rel` is built once by the shared
+  `_relaxed_density()` / `_so_relaxed_density()` (the (T) κ̄ + `Pco` + ov Z-vector), then consumed by
+  `gradient()` / `_so_gradient()` (skeleton integrals) and `relaxed_dipole()` (dipole integrals);
+  `pycc.dipole(CCwfn)` routes the correlation block to the latter. The independent
+  `_gradient_explicit()` cross-check is CCSD only so far.
 
 Conventions: spatial methods unlabeled, spin-orbital prefixed `_so_`. `MPwfn` holds a persistent
 full-occupied `CPHF` (`_full_occ_cphf`) so the response caches survive across property calls, and
@@ -317,6 +327,7 @@ Reference layer, then the MP2 derivative effort:
 | #183 | **CCSD(T) gradient** — spatial RHF, all-electron; + frozen core sourced from psi4 only (`frozen_core` pycc override removed) |
 | #184 | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
 | #185 | **spin-orbital CCSD(T) gradient** — SO (T) density + oo/vv κ̄ in `_so_gradient` (all-electron + frozen core); (T) density builders moved to `cctriples` (no `ccwfn`→`ccdensity` dependency) |
+| #186 | **CCSD/CCSD(T) relaxed dipole** — `CCderiv.relaxed_dipole` = `Tr(D_rel·μ)`; shared `_relaxed_density`/`_so_relaxed_density` factored out of the gradients; wires `pycc.dipole(CCwfn)` (both spins, all-electron + frozen core) |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
