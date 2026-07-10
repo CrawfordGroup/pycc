@@ -28,9 +28,10 @@ include:
     and atomic axial tensors (AATs) -- the building blocks for IR and VCD spectra. Both spin
     paths (spin-adapted closed-shell RHF and spin-orbital), all-electron and frozen-core; the
     MP2 second derivatives come via two independent routes (explicit-derivative and 2n+1)
-  - Analytic nuclear energy gradients and relaxed electronic dipoles for CCSD and CCSD(T) (both
-    spin-adapted closed-shell RHF and spin-orbital UHF), all-electron and frozen-core, built on the
-    same relaxed-density / Z-vector machinery as the MP2 gradient
+  - Analytic nuclear energy gradients and relaxed electronic dipoles for CCSD and CCSD(T), and the
+    static dipole polarizability for CCSD (both spin-adapted closed-shell RHF and spin-orbital UHF),
+    all-electron and frozen-core, built on the same relaxed-density / Z-vector machinery as the MP2
+    gradient
   - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
     `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that dispatches on wavefunction type and returns
     each property's nuclear/reference/correlation decomposition as a `PropertyComponents`
@@ -41,7 +42,7 @@ include:
 Future plans:
   - Quadratic response functions (in development)
   - CC2 and CC3 excited states
-  - Analytic CC second derivatives (Hessians, APTs)
+  - Analytic CC Hessians and APTs, and the CCSD(T) polarizability
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 

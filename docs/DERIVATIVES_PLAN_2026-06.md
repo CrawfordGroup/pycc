@@ -47,6 +47,7 @@ SCF orbital Hessian) with the CCSD/(T) densities and Λ:
 | CCSD `dE/dX` (gradient) | ✅ | ✅ | ✅ |
 | CCSD(T) `dE/dX` (gradient) | ✅ | ✅ | ✅ |
 | CCSD, CCSD(T) `dE/dF` (relaxed dipole) | ✅ | ✅ | ✅ |
+| CCSD `d²E/dF²` (dipole polarizability) | ✅ | ✅ | ✅ |
 
 The relaxed dipole reuses the gradient's relaxed density: a static field leaves the AO basis fixed
 (`S^F = ⟨pq\|rs⟩^F = 0`), so `mu = Tr(D_rel · mu_ints)` — the same `D_rel` (correlation density + `Pco`
@@ -60,6 +61,16 @@ CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) needs canonic
 the oo/vv blocks** (dependent-pair κ̄, even all-electron); see §5 and §7. The efficient Z-vector route
 and the independent explicit-derivative route agree to machine precision for CCSD (the (T) explicit
 route is pending — §6).
+
+**Coupled-cluster polarizability.** The CCSD static dipole polarizability `α = −d²E/dF²`
+(`CCderiv.polarizability`, `pycc.polarizability`) — the first CC *second*-derivative property — via
+the asymmetric (2n+1) route: differentiate the relaxed-density gradient a second time in a field
+(`α_ab = Tr(dD_rel·μ_a) + Tr(D_rel·rot(U^b,μ_a))`). Done for **CCSD, spatial RHF and spin-orbital UHF,
+all-electron and frozen core**; only (T) is pending. It adds the perturbed amplitudes `dt/dF`,
+perturbed Λ `dΛ/dF` (staying in `cclambda`'s `r_L`, no `Y1/Y2`), the perturbed HBAR (exact 5-point
+stencil), and the perturbed Z-vector — all first-order responses, no second-order CPHF. FD-validated
+(spatial `1.8e-12`; SO==spatial keystone `~1e-13`; open-shell UHF vs an energy finite field `~3e-10`);
+see §8.
 
 ## 2. Formulation
 
@@ -162,8 +173,15 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
   but the validated *dipole* never exercised the `[v,o]` block.
 - **Full-Fock `termA` in the perturbed Lagrangian.** The GSB Lagrangian's one-electron term is
   `Σ_q f_uq(D_vq + D_qv)`; its derivative is the full matrix product `∂_x f @ (D + Dᵀ)`, not just
-  the diagonal `∂_x ε`. Neutral for the unrelaxed `D` (no ov block) but required for the relaxed
-  `D`'s ov/core-active blocks (the 2n+1 APT's `d_F W`).
+  the diagonal `∂_x ε`. Neutral for MP2's unrelaxed `D` (no ov block) but required for the relaxed
+  `D`'s ov/core-active blocks (the 2n+1 APT's `d_F W`). **CC extension (2026-07-09, §8.2):** the CC
+  *unrelaxed* `D` **does** have ov/vo blocks (Λ≠T†), so the full-Fock `termA` is required even for the
+  unrelaxed-density Lagrangian — i.e. for the perturbed *Z-vector RHS* `dX = ∂(I'_ov − I'_voᵀ)`, not
+  only for `d_F W`. Building `dX` by a finite-stencil of the diagonal-ε `_mp2_lagrangian` silently
+  drops `df_offdiag @ (D+Dᵀ)` and puts a ~9 % error into the CC polarizability. **Always build the
+  perturbed Lagrangian via `MPwfn._perturbed_lagrangian` (full `df`), never a stencil.** Insidious:
+  fixed-basis/frozen-MO checks route through the same diagonal-ε Lagrangian and are blind to it; only
+  the field-relaxed `perturb_h` oracle (canonical field basis ⇒ `F` diagonal) exposes it.
 - **The `rot4` transpose (2n+1 Hessian efficiency).** Hoisting the `U^Y` skeleton rotations off the
   `O(N²)` pair loop onto the densities uses `Σ A·rot(U,B) = Σ rot(Uᵀ,A)·B`. The four-index case
   needs the **transpose** (`rot4(Uᵀ, Γ)`), since `rot4` contracts B's index via U's *first* index;
@@ -296,6 +314,190 @@ own SO CCSD(T) energy **3.7e-12**. Tests in `test_083` (open-shell reference har
 (guarded, §6).
 
 **Deferred:** CCSD(T) Hessian/APT; extending `_gradient_explicit` to the (T) dependent-pair.
+
+## 8. CC static dipole polarizability — design & status
+
+**Status.** **DONE for CCSD** (2026-07-09) in `CCderiv.polarizability()` — **spatial RHF and
+spin-orbital UHF, both all-electron and frozen core** — FD-validated (§8.4); only **(T)** remains
+(Phase 4). First CC *second*-derivative property; built before the `CorrelatedDerivs` refactor because
+it exercises the perturbed-relaxed-density machinery the shared base will own, without the
+nuclear-skeleton complexity of Hessians/APTs. The asymmetric route (below) stays entirely within
+`cclambda`'s `r_L` (no `Y1/Y2` response apparatus), with the perturbed HBAR obtained for free by an
+exact stencil (below).
+
+**Route: the ASYMMETRIC approach** — differentiate the (already-2n+1) relaxed-density gradient a second
+time; exactly the `docs/mp2_2n1_perturbed.tex` formulation, extended to CC by a density swap. Chosen
+because Stanton & Gauss (*Recent Advances in Coupled-Cluster Methods*, ch. on CCSD/CCSD(T) second
+derivatives, pp. 54–64) show the asymmetric route is the **preferred, unambiguous** choice for
+**CCSD(T)**: the (T) correction has no eigenvalue / similarity-transform structure (its `JI` operator
+is intrinsically the interchange construction), so the *symmetric* form — which would drop perturbed Λ
+— does not apply cleanly. For pure-CCSD same-class properties (polarizability, force constants) the
+symmetric form would be ~2× cheaper (it solves perturbed T only, for all perturbations), but a single
+(T)-capable formulation uses asymmetric.
+
+### 8.1 Formalism (worked through with the PI, 2026-07-09)
+
+The relaxed (Z-vector) first derivative of the CC energy for a general real perturbation `x` is, with
+all perturbation-dependent factors the **bare skeleton** integral derivatives (no CPHF / orbital
+response — that is folded into `D_rel` and `W`):
+
+    ∂_x E = Σ_pq D_rel_pq f^x_pq  +  Σ_pqrs Γ_pqrs V^x_pqrs  +  Σ_pq W_pq S^x_pq
+
+`D_rel` = relaxed 1-PDM (Λ-response `D` + orbital-relaxation blocks); `Γ` = 2-PDM; `W = I'(D_rel)` =
+energy-weighted density (the generalized-Fock Lagrangian `I'` evaluated at the *relaxed* density).
+
+**All orbital relaxation lives in specific blocks.** The Z-vector `z` (`−z_ai`) enters only
+`D_rel,ai`/`D_rel,ia` (density) and `W_ai`/`W_ia`/`W_ij` (energy-weighted density), and **not**
+`D_rel,ij`/`D_rel,ab`/`W_ab`/`Γ`. (From `I'_pq = −½[ε_p(D_pq+D_qp) + δ_{q∈occ}Σ_rs D_rs(⟨rp|sq⟩_L+…) +
+4Σ⟨pr|st⟩Γ_qrst]`: the ε-term routes `z` into the ov/vo output blocks, the `δ_{q∈occ}` two-electron
+term into the vo/oo blocks, and the Γ-term carries none.)
+
+**For an electric field** the AO basis is fixed: `f^{F_a} = −μ_a`, `V^{F_a} = 0`, `S^{F_a} = 0`. Hence
+`∂_{F_a} E = −D_rel·μ_a` (the relaxed dipole is `D_rel·μ_a`), and the second derivative is a plain
+product rule — no `W·S` term (`S^F=0`), no second skeleton derivatives (`μ` is field-independent):
+
+    α[a,b] = −∂²E/∂F_a∂F_b = (∂_{F_b}D_rel)·μ_a  +  D_rel·(∂_{F_b}μ_a),   ∂_{F_b}μ_a = U^bᵀμ_a + μ_a U^b
+
+with `D_rel` the unperturbed relaxed density (`CCderiv._relaxed_density`), `∂_{F_b}D_rel` its field
+response, and `U^b` the first-order CPHF orbital response (`CPHF._full_U`). Only *first-order* responses
+appear — no second-order CPHF `U^{xy}` (`perturbed_fock2`/`_full_U2`/`_xi` untouched).
+
+Note the CC unrelaxed density is non-Hermitian (`D_ai ≠ D_ia`, since Λ≠T†), so
+`D_rel,ai = D_ai − z_ai` and `D_rel,ia = D_ia − z_ai` differ (MP2 has `D_ai=D_ia=0`, so both are just
+`−z_ai`). This asymmetry is real but **washes out of α** — both terms contract against symmetric
+quantities (`μ`, and `rot = U^bᵀμ+μU^b`), so only the symmetric part of `D_rel`/`∂D_rel` survives
+(verified: symmetrizing changes α by 5.6e-17). It *would* matter for a nuclear perturbation (`S^x≠0`).
+
+### 8.2 The diagonal-ε gotcha (the Phase-1 bug — READ THIS BEFORE PORTING)
+
+`MPwfn._mp2_lagrangian` builds its Fock term as `termA = eps[:,None]*(D+D.T)` — **diagonal orbital
+energies only** (`eps = diag(H.F)`), the canonical simplification valid at `F=0`. This is correct for
+the unperturbed Lagrangian and for `W`. **But its field derivative is *not* obtained by finite-stencil
+of `_mp2_lagrangian`**: a stencil only captures `∂ε = diag(df)`, whereas the true perturbed Lagrangian
+needs the **full Fock matrix product** `df @ (D+D.T)` (MP2's analytic `_perturbed_lagrangian` has
+exactly this). The omitted piece is `df_offdiag @ (D+D.T)`:
+
+- for **MP2** it vanishes — the unrelaxed `D` fed to the Z-vector RHS has **no ov block**, so the
+  off-diagonal `df` has nothing to couple to (this is why MP2 gets away with `_perturbed_lagrangian`'s
+  comment "diagonal `d_x eps` suffices for the unrelaxed `D`");
+- for **CC** it is nonzero — the unrelaxed `D` **has** `D_ov`/`D_vo`, and the orbital-relaxation
+  off-diagonal `df` couples to them. Dropping it put a **~9 %** error into the perturbed Z-vector RHS
+  `dX`, hence into `∂D_rel,ov`, hence into α.
+
+Insidious because it survived every self-consistent check: a fixed-basis FD of `dX`, and the frozen-MO
+oracle, both route through the same diagonal-ε `_mp2_lagrangian`, so they agree with the (wrong)
+stencil — circular. Only the `perturb_h` energy/dipole oracle exposes it, because at a *field-relaxed
+canonical* reference the Fock **is** diagonal, so `_mp2_lagrangian` is correct there.
+
+**Rule for the port:** build the perturbed Lagrangian via the analytic full-`df` formula — reuse
+`MPwfn._perturbed_lagrangian` (`dA = df @ (D+D.T) + ε[:,None](dD+dD.T)`), density-generic, with the CC
+`D`/`dD`/`Γ`/`dΓ` swapped in — **never** a stencil of `_mp2_lagrangian`. This is the natural
+`CorrelatedDerivs` shared primitive and is correct for both MP2 (no ov) and CC (ov present) with no
+special-casing.
+
+### 8.3 Machinery & mechanics (validated)
+
+**`dD_rel(F_b)` is the unperturbed relaxed-density build (§7 / `_relaxed_density`) differentiated
+term by term** — the MP2 `_perturbed_relaxed_opdm` structure ported to CC, **but** with the full-`df`
+perturbed Lagrangian of §8.2 and the CC-specific ov/vo unrelaxed blocks retained:
+- oo/vv correlation blocks ← perturbed correlation 1-/2-PDM `dD, dΓ` (product rule of `ccdensity`'s
+  density builders in the perturbed amplitudes `dt` **and** perturbed multipliers `dΛ`);
+- ov/vo ← the **unrelaxed** `dD_ov`/`dD_vo` (CC-only; zero for MP2 — do **not** overwrite them, cf. the
+  MP2 template which assigns ov = `−zx`) **plus** the perturbed Z-vector `dz` (solve the SAME orbital
+  Hessian `G` with RHS `dX − (dG)·z`; `dX = ∂(I'_ov − I'_voᵀ)` from the full-`df` perturbed Lagrangian);
+- frozen core co/oc ← perturbed Sylvester `dP_co = (dI'_co − dI'_ocᵀ − df[co,co]P_co + P_co df[o,o])/Δε`
+  (verbatim from MP2; the field's active–active `df[o,o]` makes this non-trivial);
+- (T) oo/vv ← perturbed dependent-pair `dκ_oo`/`dκ_vv` (Sylvester-style, from the field-perturbed
+  (T)-inclusive Lagrangian).
+
+**New CC machinery (the parts MP2 got for free — its amplitudes are closed-form and Λ=t), all
+prototyped and FD-validated:**
+1. **Perturbed-T solve** `dt/dF` — iterative (the CCSD Jacobian / linearized residual applied to `dt`,
+   RHS from the CPHF-folded perturbed integrals `df`/`deri`, so orbital relaxation is carried; reuse
+   `helper_diis` + `r/Dia` denominators). Distinct from `ccresponse.solve_right`, whose X vectors are
+   this WITHOUT the orbital-response terms.
+2. **Perturbed-Λ solve** `dΛ/dF` — iterative, *linear*, staying in `cclambda` (no `Y1/Y2`): the
+   Λ-Jacobian action is `r_L(dΛ) − r_L(0)` (since `r_L` is affine in Λ), and the inhomogeneity is
+   `r_L` evaluated with the **perturbed HBAR** + `dL` (unperturbed `G`) plus the explicit `dG·H`/`dG·L`
+   product-rule halves for the terms bilinear in `G`. Iterate `dΛ += (B_Λ + Jacobian)/D` like
+   `solve_lambda`. **Required by the asymmetric route**; MP2 avoided it only because Λ=t.
+3. **Perturbed HBAR** `dHBAR` — needed only to build the perturbed-Λ inhomogeneity. Obtained for **free
+   and exact** by a 5-point central stencil of `cchbar` at `(F±hδf, ERI±hδe, L±hδL, t±hδt)`: every CCSD
+   HBAR block is a polynomial of degree ≤4 in the step, so the stencil is algebraically exact (confirmed
+   to roundoff, `h` vs `h/2`) — no hand-differentiation. (An analytic `dHBAR` could replace it later for
+   efficiency, validated against this stencil; not needed for correctness.)
+4. **Perturbed correlation densities** `dD, dΓ` — product rule of `ccdensity`'s density builders in
+   `dt` and `dΛ`; also exact via the same degree-≤4 stencil of `gradient_densities`.
+5. **(T):** field-perturbed `cctriples.t3_density` outputs (`S1/S2`, `Doo/Dvv/Dov`, 2-PDM) from
+   `dt1, dt2, df, deri`, and the perturbed (T) dependent-pair.
+
+The perturbed Z-vector `dz/dF` and (for CC) the perturbed Λ are **intrinsic to the asymmetric route,
+not removable overhead** — they are all *first-order* responses (no `U^{xy}`). A direct test confirmed
+this: zeroing `zx` in `MPwfn._perturbed_relaxed_opdm` shifts the MP2 polarizability by ~0.66 (it is
+load-bearing). An earlier draft of this section pursued the *symmetric* "no perturbed Λ/Z" economy;
+that is valid for pure CCSD but not for the (T)-capable path, and the Stanton–Gauss argument settled it
+in favor of asymmetric. **No detour into / rewrite of the MP2 code is needed** — CC extends the existing
+(asymmetric) MP2 machinery by a density swap plus the perturbed-Λ solve.
+
+Reused verbatim: `MPwfn._perturbed_lagrangian` (density-generic — the orbital-response part), the
+perturbed-Z-vector and `dP_co` Sylvester logic, and the first-order `CPHF.perturbed_fock/perturbed_eri`
+/`_full_U`. Lives on `CCderiv` for now (`_perturbed_relaxed_density(field)` + `polarizability`),
+destined for `CorrelatedDerivs`.
+
+**Implementation mechanics (worked out + partly validated 2026-07-09).**
+- **Perturbed-amplitude RHS via the residual, no hand-derivation.** `⟨μ|e^{-T}He^{T}|0⟩` is *linear in
+  H*, so the field-derivative of the CC residual at fixed `t` is just the residual evaluated with the
+  perturbed integrals: `B = CCwfn.residuals(df, t1, t2)` with `H.ERI→deri`, `H.L→dL` swapped in
+  (`df=CPHF.perturbed_fock`, `deri=CPHF.perturbed_eri`, `dL=2·deri−deri.swap(2,3)`). **Validated:** with
+  the *bare* dipole (`df=μ`, `deri=0`) this reproduces `ccresponse`'s independently-built `pertbar`
+  (`Avo`, `Avvoo`) to 1.7e-16 — so the orbital-relaxed RHS is `df/deri` from CPHF instead of bare `μ`.
+- **Perturbed-T LHS = the CCSD Jacobian = HBAR·(dt), built from `cchbar`** (the `ccresponse.r_X1/r_X2`
+  contraction pattern — method-agnostic, *not* ccresponse-specific; copied into the derivative code so
+  it stays self-contained). Solve `dt += (B + HBAR·dt)/D` with `helper_diis`, exactly like
+  `solve_right` but with the orbital-relaxed `B`. Same structure for `dΛ` (the linear `r_L1/r_L2`
+  operator + a field-perturbed inhomogeneity).
+### 8.4 Validation (CCSD complete — spatial + spin-orbital, all-electron + frozen core)
+
+Prototype checkpoint ladder, all cleared for CCSD/H2O/STO-3G (spatial, all-electron):
+
+| piece | check | residual |
+|---|---|---|
+| perturbed-T RHS | == `ccresponse` `pertbar` (bare dipole) | 1.7e-16 |
+| perturbed-T LHS | == `solve_right` X (bare RHS) | 1.1e-13 |
+| `dt/dF` | fixed-basis FD (integrals along `df`/`deri`) | 2e-9 |
+| `dHBAR` | 5-pt stencil exact (`h` vs `h/2`) | ~roundoff |
+| `B_Λ` inhomogeneity | FD of `r_L` | 2e-12 |
+| `dΛ/dF` | FD (re-solve CC+Λ at perturbed integrals) | 3e-9 |
+| **α (all 9 elements)** | **5-pt finite field of the relaxed dipole (Λ→1e-14, F=5e-4)** | **1.8e-12** |
+
+The `1.8e-12` is the FD floor (it scales as `O(F⁴)` between F=5e-4 → 1e-3; an earlier `1.3e-9` was purely
+the loose `1e-10` Λ convergence inside `CCderiv.relaxed_dipole`, not a residual error). Two independent
+oracles — a 5-point finite field of the relaxed dipole and a 5-point second derivative of `E_corr`
+(both via `psi4 perturb_h`) — agree to machine precision, so the oracle is unimpeachable. **The
+fixed-basis / frozen-MO checks are necessary but not sufficient** for the orbital-response half: they
+route through the diagonal-ε `_mp2_lagrangian` and so are blind to the §8.2 gotcha; the field-relaxed
+`perturb_h` oracle is the one that catches it.
+
+**Production validation** (`CCderiv.polarizability()`, `test_084`), all clear:
+
+| path | check | residual |
+|---|---|---|
+| spatial, all-electron | tight finite field of the relaxed dipole | 1.8e-12 |
+| spatial, frozen core | tight finite field | 1.0e-11 |
+| off-diagonal (planar HOF/cc-pVDZ) | finite field; `α_xy` large, `α_xz=α_yz=0`, total positive-definite | 2.6e-10 |
+| spin-orbital == spatial (AE / FC) | RHF-forced-to-SO keystone | 8.8e-14 / 3.1e-14 |
+| open-shell UHF (2-B1 NH2) | energy 2nd-derivative FD (`α_zz`); symmetric, positive | 2.7e-10 |
+
+**Phasing:** (1) CCSD spatial all-electron **[done]**; (2) + frozen core **[done]**; (3) + spin-orbital
+**[done]**; (4) + (T) — next.
+
+**Validation (production).** Primary oracle = **finite difference of `CCderiv.relaxed_dipole`** in a
+field (`÷h`, ~1e-12; Λ tight) — the only oracle that covers **CCSD(T)** and frozen core; plus the
+**SO==spatial keystone**.
+Debugging oracles (CCSD only, phase 1–3): `ccresponse.solve_right(ω=0)` X-vectors cross-check the
+*unrelaxed* `dt/dF`, and `ccresponse.linresp/polarizability(0.0)` the *unrelaxed* CCSD polarizability —
+they isolate the amplitude response from the orbital-relaxation delta. **`ccresponse` is never a code
+dependency** (it omits orbital response and cannot do (T)); oracle only.
 
 ## Appendix A: condensed changelog (by PR)
 

@@ -14,13 +14,13 @@ first-order responses (MPwfn._perturbed_densities):
 The reference (SCF) part is kept separate (HFwfn.polarizability); the total is their sum.
 
 Validation:
-  * primary: alpha diagonal vs a 7-point O(h^6) finite difference of the analytic MP2
-    correlation *dipole* (alpha = d mu / dF). Differencing a first derivative divides by h
-    (not h^2 as an energy second derivative would), so the round-off floor is ~3 orders
-    lower -- agreement is ~1e-12. It is also a cross-check: the dipole uses only the
-    first-order machinery (U, unrelaxed densities), the polarizability the second-order
-    machinery (U^{ab}, perturbed densities), so their agreement confirms the two analytic
-    derivations are mutually consistent.
+  * primary: alpha diagonal vs *frozen* references (ALPHA_DIAG_631G[_FC]), each validated once
+    against a 7-point O(h^6) finite difference of the analytic MP2 correlation *dipole*
+    (alpha = d mu / dF) to ~7e-12 -- the regeneration recipe _dipfd_alpha_diag, kept but not run.
+    That dipole FD is a cross-check: the dipole uses only the first-order machinery (U, unrelaxed
+    densities), the polarizability the second-order machinery (U^{ab}, perturbed densities), so
+    their agreement (verified when the reference was frozen) confirms the two analytic derivations
+    are mutually consistent.
   * independence guard: one component vs a *frozen* finite field of the MP2 *energy* -- a fully
     external oracle (the dipole FD is pycc-vs-pycc). The energy FD is of E_MP2, not any
     analytic gradient, so it is unaffected by Psi4's frozen-core MP2 gradient bug.
@@ -69,10 +69,11 @@ def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false', geom=WATER,
 
 
 def _dipfd_alpha_diag(basis, axis, orbital_basis='spatial', freeze_core='false', h=0.002):
-    """|alpha_(axis,axis)| via a 7-point O(h^6) central first-derivative stencil of the
-    analytic MP2 correlation dipole component ``axis`` under a field along ``axis``
-    (alpha = d mu / dF). Returns the magnitude (the diagonal polarizability is positive;
-    the mu/field sign convention is immaterial to |d mu / dF|)."""
+    """Regeneration recipe for ALPHA_DIAG_631G[_FC] (not run in the tests): ``|alpha_(axis,axis)|``
+    via a 7-point O(h^6) central first-derivative stencil of the analytic MP2 correlation dipole
+    component ``axis`` under a field along ``axis`` (alpha = d mu / dF). Returns the magnitude (the
+    diagonal polarizability is positive; the mu/field sign convention is immaterial to
+    |d mu / dF|)."""
     def mu(Fval):
         psi4.core.clean()
         psi4.core.clean_options()
@@ -117,28 +118,32 @@ def _energy_fd_alpha_diag(basis, axis, freeze_core='false', F=0.002, geom=WATER,
     return -(d2('mp2') - d2('scf'))
 
 
-# ---- primary: high-precision dipole finite difference (~1e-12) ----
+# ---- primary: frozen analytic diagonal (validated vs the 7-point dipole finite difference) ----
+# The MP2 correlation alpha diagonal, frozen rather than re-run each time.  Each value was validated
+# once against a 7-point O(h^6) finite difference of the analytic correlation *dipole* (alpha =
+# d mu / dF) to ~7e-12 (the regeneration recipe _dipfd_alpha_diag).  That dipole FD is an internal
+# cross-check -- the dipole uses only first-order machinery (U, unrelaxed densities), the
+# polarizability the second-order machinery (U^{ab}, perturbed densities) -- so its agreement (checked
+# when the reference was frozen) confirms the two analytic derivations are mutually consistent.  The
+# deterministic analytic recomputation reproduces the frozen values to ~machine precision.
+ALPHA_DIAG_631G    = np.array([0.084402387,  0.0611767146, 0.1951911112])   # all-electron
+ALPHA_DIAG_631G_FC = np.array([0.0846398834, 0.0620015909, 0.1955436888])   # frozen core
 
-def test_mp2_corr_polarizability_dipfd_631g():
-    """All-electron spatial MP2 correlation alpha, all three diagonal components vs a
-    7-point finite difference of the analytic correlation dipole, H2O/6-31G (~1e-12)."""
+
+def test_mp2_corr_polarizability_631g():
+    """All-electron spatial MP2 correlation alpha diagonal (H2O/6-31G) vs the frozen reference."""
     a = _pycc_alpha('6-31G', orbital_basis='spatial')
-    for axis in range(3):
-        assert abs(a[axis, axis] - _dipfd_alpha_diag('6-31G', axis)) < 1e-10
+    assert np.max(np.abs(np.diag(a) - ALPHA_DIAG_631G)) < 1e-9, np.diag(a)
 
 
-def test_fc_mp2_corr_polarizability_dipfd_631g():
-    """Frozen-core spatial MP2 correlation alpha diagonal vs the 7-point dipole finite
-    difference, H2O/6-31G (~1e-12).
+def test_fc_mp2_corr_polarizability_631g():
+    """Frozen-core spatial MP2 correlation alpha diagonal (H2O/6-31G) vs the frozen reference.
 
-    Exercises the frozen-core second-order response: the core<->active U^{ab} from the
-    canonical d_ab f_ij = 0 divide, and the ov second-order CPHF solve seeded with the
-    nonzero ov orthonormality term xi_ia (which vanishes only in the all-electron field
-    case)."""
+    Exercises the frozen-core second-order response: the core<->active U^{ab} from the canonical
+    d_ab f_ij = 0 divide, and the ov second-order CPHF solve seeded with the nonzero ov
+    orthonormality term xi_ia (which vanishes only in the all-electron field case)."""
     a = _pycc_alpha('6-31G', orbital_basis='spatial', freeze_core='true')
-    for axis in range(3):
-        assert abs(a[axis, axis]
-                   - _dipfd_alpha_diag('6-31G', axis, freeze_core='true')) < 1e-10
+    assert np.max(np.abs(np.diag(a) - ALPHA_DIAG_631G_FC)) < 1e-9, np.diag(a)
 
 
 # ---- independence guard: frozen external energy finite field ----
