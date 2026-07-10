@@ -368,8 +368,8 @@ class CCderiv:
         The reference (SCF) polarizability is kept separate (:meth:`HFwfn.polarizability`); the
         :func:`pycc.polarizability` facade sums nuclear (zero) + reference + this correlation part.
 
-        Spatial closed-shell RHF, all-electron only for now (frozen core, spin-orbital and (T) to
-        follow).  Validated against a tight finite field of :meth:`relaxed_dipole`."""
+        Spatial closed-shell RHF (all-electron or frozen core); spin-orbital and (T) to follow.
+        Validated against a tight finite field of :meth:`relaxed_dipole`."""
         if route != '2n+1':
             raise ValueError(f"CC polarizability supports only the asymmetric '2n+1' route, not {route!r}.")
         cc = self.ccwfn
@@ -377,16 +377,17 @@ class CCderiv:
             raise NotImplementedError(f"CC polarizability: only CCSD is implemented (not {cc.model}).")
         if cc.orbital_basis == 'spinorbital':
             raise NotImplementedError("CC polarizability: spin-orbital path not yet implemented.")
-        if cc.nfzc:
-            raise NotImplementedError("CC polarizability: frozen core not yet implemented.")
         from .cchbar import cchbar
         from .cclambda import cclambda
         from .ccdensity import ccdensity
         from .cphf import Perturbation
         o, v = cc.o, cc.v
-        ofull = slice(0, o.stop)
+        co = slice(0, cc.nfzc)                            # frozen-core occupied
+        ofull = slice(0, o.stop)                         # full occupied (core + active)
         c = self.contract
         ncore = o.stop - cc.no
+        eps = np.diag(np.asarray(cc.H.F))
+        L = np.asarray(cc.H.L)
 
         # Tight Lambda (the second derivative wants Lambda well past the 1e-10 the gradient uses).
         hbar = cchbar(cc)
@@ -396,8 +397,17 @@ class CCderiv:
         D0, Gam0 = (np.asarray(x) for x in dens.gradient_densities())
         Ip0 = np.asarray(self._lagrangian(D0, Gam0))
         hf = self._reference_hf()
-        z = np.asarray(hf.cphf.solve(Ip0[ofull, v] - Ip0[v, ofull].T))
         Drel = D0.copy()
+        Pco = None
+        if cc.nfzc:                                      # core<->active-occupied divide (as in _relaxed_density)
+            Pco = (Ip0[co, o] - Ip0[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Drel[co, o] += Pco
+            Drel[o, co] += Pco.T
+        X0 = Ip0[ofull, v] - Ip0[v, ofull].T
+        if cc.nfzc:                                      # couple P_co into the Z-vector RHS
+            zjc = -Pco.T
+            X0 = X0 - (c('jc,ajic->ia', zjc, L[v, o, ofull, co]) + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
+        z = np.asarray(hf.cphf.solve(X0))
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
 
@@ -406,23 +416,28 @@ class CCderiv:
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z)
+            dDrel = self._perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, Pco)
             Ub = np.asarray(cphf._full_U(pert, ncore))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def _perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z) -> np.ndarray:
-        """Field response ``dD_rel`` of the CC relaxed 1-PDM (spatial, all-electron).  Mirrors
-        :meth:`MPwfn._perturbed_relaxed_opdm` with the CC densities, but (i) keeps the CC *unrelaxed*
-        ov/vo blocks (``D_ai != D_ia`` for CC; MP2 has none) and (ii) builds the perturbed Lagrangian
-        with the FULL-df Fock term (see :meth:`_cc_perturbed_lagrangian`)."""
+    def _perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, Pco=None) -> np.ndarray:
+        """Field response ``dD_rel`` of the CC relaxed 1-PDM (spatial; all-electron or frozen core).
+        Mirrors :meth:`MPwfn._perturbed_relaxed_opdm` with the CC densities, but (i) keeps the CC
+        *unrelaxed* ov/vo blocks (``D_ai != D_ia`` for CC; MP2 has none) and (ii) builds the perturbed
+        Lagrangian with the FULL-df Fock term (see :meth:`_cc_perturbed_lagrangian`).  For frozen core
+        the perturbed core<->active Sylvester divide ``dP_co`` is added and coupled into the perturbed
+        Z-vector RHS, exactly as in the MP2 template / the unperturbed :meth:`_relaxed_density`."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
+        co = slice(0, cc.nfzc)
         ofull = slice(0, o.stop)
         c = self.contract
         ncore = o.stop - cc.no
+        L = np.asarray(cc.H.L)
+        eps = np.diag(np.asarray(cc.H.F))
         cphf = cc.mp._full_occ_cphf()
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
         deri = np.asarray(cphf.perturbed_eri(pert, ncore))
@@ -434,11 +449,21 @@ class CCderiv:
         dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
         dIp = self._cc_perturbed_lagrangian(df, deri, dL, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
+        dPco = None
+        if cc.nfzc:                                     # perturbed core<->active divide (Sylvester derivative)
+            gap = eps[co][:, None] - eps[o][None, :]
+            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
+            zjc, dzjc = -Pco.T, -dPco.T
+            dX = dX - (c('jc,ajic->ia', dzjc, L[v, o, ofull, co]) + c('jc,acij->ia', dzjc, L[v, co, ofull, o])
+                       + c('jc,ajic->ia', zjc, dL[v, o, ofull, co]) + c('jc,acij->ia', zjc, dL[v, co, ofull, o]))
         # perturbed orbital-Hessian response (A^x z); reference-only, as in MP2
         Axz = (c('ajib,jb->ia', dL[v, ofull, ofull, v], z) + c('abij,jb->ia', dL[v, v, ofull, ofull], z)
                + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
         zx = np.asarray(hf.cphf.solve(dX - Axz))
         dDrel = dDg.copy()                              # keep unrelaxed dD_ov/dD_vo (CC-only)
+        if cc.nfzc:
+            dDrel[co, o] += dPco
+            dDrel[o, co] += dPco.T
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
         return dDrel

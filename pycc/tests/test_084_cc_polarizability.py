@@ -52,27 +52,39 @@ WATER_ALPHA_REF = np.array([[0.071555631886, 0.0, 0.0],
 HOF_ALPHA_REF = np.array([[-1.879732823995, -0.599507379935, 0.0],
                           [-0.599507379947, 0.104671076326, 0.0],
                           [0.0, 0.0, 0.099333851054]])
+# Frozen-core H2O/6-31G keystone (validated to 1.0e-11).
+WATER_ALPHA_REF_FC = np.array([[0.071841599990, 0.0, 0.0],
+                               [0.0, 0.061126138693, 0.0],
+                               [0.0, 0.0, 0.174203460940]])
 
 
-def _findiff_alpha(geom, basis, F=5e-4):
+def _findiff_alpha(geom, basis, F=5e-4, freeze_core='false'):
     """Regeneration recipe for the *_ALPHA_REF tensors (not run in the tests): a 5-point O(h^4)
     finite field of pycc's CCSD relaxed correlation dipole (alpha = d mu / dF), with Lambda
-    converged to 1e-13 at each field (tighter than CCderiv.relaxed_dipole's default)."""
+    converged to 1e-13 at each field (tighter than CCderiv.relaxed_dipole's default).  Rebuilds the
+    relaxed density with the frozen-core core<->active divide P_co coupled into the Z-vector RHS,
+    mirroring CCderiv._relaxed_density (a no-op for freeze_core='false')."""
     def rd(bax, Fv):
         d = [0.0, 0.0, 0.0]; d[bax] = Fv
         psi4.core.clean(); psi4.core.clean_options()
         psi4.geometry(geom)
-        psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'false',
+        psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                           'e_convergence': 1e-13, 'd_convergence': 1e-13,
                           'perturb_h': True, 'perturb_with': 'dipole', 'perturb_dipole': d})
         _, wfn = psi4.energy('scf', return_wfn=True)
         cx = pycc.ccwfn(wfn); cx.solve_cc(1e-13, 1e-13, 300)
         hb = pycc.cchbar(cx); lm = pycc.cclambda(cx, hb); lm.solve_lambda(1e-13, 1e-13, 300)
         D, G = (np.asarray(x) for x in pycc.ccdensity(cx, lm).gradient_densities())
-        o, v = cx.o, cx.v; of = slice(0, o.stop)
+        o, v = cx.o, cx.v; co = slice(0, cx.nfzc); of = slice(0, o.stop)
+        c = cx.contract; eps = np.diag(np.asarray(cx.H.F)); L = np.asarray(cx.H.L)
         Ip = np.asarray(cx.mp._mp2_lagrangian(D, G))
-        z = np.asarray(pycc.CCderiv(cx)._reference_hf().cphf.solve(Ip[of, v] - Ip[v, of].T))
-        Dr = D.copy(); Dr[v, of] += -z.T; Dr[of, v] += -z
+        Dr = D.copy(); X = Ip[of, v] - Ip[v, of].T
+        if cx.nfzc:
+            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Dr[co, o] += Pco; Dr[o, co] += Pco.T; zjc = -Pco.T
+            X = X - (c('jc,ajic->ia', zjc, L[v, o, of, co]) + c('jc,acij->ia', zjc, L[v, co, of, o]))
+        z = np.asarray(pycc.CCderiv(cx)._reference_hf().cphf.solve(X))
+        Dr[v, of] += -z.T; Dr[of, v] += -z
         return np.array([np.sum(Dr * np.asarray(cx.H.mu[a])) for a in range(3)])
     alpha = np.zeros((3, 3))
     for b in range(3):
@@ -97,6 +109,19 @@ def test_ccsd_polarizability_water_631g(rhf_wfn):
     assert np.max(np.abs(np.asarray(r.correlation) - alpha)) < 1e-12
     assert np.max(np.abs(np.asarray(r.total) - (np.asarray(r.nuclear)
                   + np.asarray(r.reference) + np.asarray(r.correlation)))) < 1e-12
+    psi4.core.clean()
+
+
+def test_fc_ccsd_polarizability_water_631g(rhf_wfn):
+    """Frozen-core CCSD correlation polarizability for H2O/6-31G vs the frozen reference.  Exercises
+    the perturbed core<->active Sylvester divide dP_co and its coupling into the perturbed Z-vector
+    RHS (the frozen-core additions to _perturbed_relaxed_density)."""
+    wfn = rhf_wfn(WATER, "6-31G", freeze_core="true")
+    cc = pycc.ccwfn(wfn)
+    cc.solve_cc(1e-12, 1e-12, 100)
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    assert np.max(np.abs(alpha - WATER_ALPHA_REF_FC)) < 1e-9, alpha
+    assert np.max(np.abs(alpha - alpha.T)) < 1e-9
     psi4.core.clean()
 
 
