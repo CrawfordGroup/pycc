@@ -47,6 +47,7 @@ SCF orbital Hessian) with the CCSD/(T) densities and Λ:
 | CCSD `dE/dX` (gradient) | ✅ | ✅ | ✅ |
 | CCSD(T) `dE/dX` (gradient) | ✅ | ✅ | ✅ |
 | CCSD, CCSD(T) `dE/dF` (relaxed dipole) | ✅ | ✅ | ✅ |
+| CCSD `d²E/dF²` (dipole polarizability) | ✅ | ✅ | ✅ |
 
 The relaxed dipole reuses the gradient's relaxed density: a static field leaves the AO basis fixed
 (`S^F = ⟨pq\|rs⟩^F = 0`), so `mu = Tr(D_rel · mu_ints)` — the same `D_rel` (correlation density + `Pco`
@@ -60,6 +61,16 @@ CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) needs canonic
 the oo/vv blocks** (dependent-pair κ̄, even all-electron); see §5 and §7. The efficient Z-vector route
 and the independent explicit-derivative route agree to machine precision for CCSD (the (T) explicit
 route is pending — §6).
+
+**Coupled-cluster polarizability.** The CCSD static dipole polarizability `α = −d²E/dF²`
+(`CCderiv.polarizability`, `pycc.polarizability`) — the first CC *second*-derivative property — via
+the asymmetric (2n+1) route: differentiate the relaxed-density gradient a second time in a field
+(`α_ab = Tr(dD_rel·μ_a) + Tr(D_rel·rot(U^b,μ_a))`). Done for **CCSD, spatial RHF and spin-orbital UHF,
+all-electron and frozen core**; only (T) is pending. It adds the perturbed amplitudes `dt/dF`,
+perturbed Λ `dΛ/dF` (staying in `cclambda`'s `r_L`, no `Y1/Y2`), the perturbed HBAR (exact 5-point
+stencil), and the perturbed Z-vector — all first-order responses, no second-order CPHF. FD-validated
+(spatial `1.8e-12`; SO==spatial keystone `~1e-13`; open-shell UHF vs an energy finite field `~3e-10`);
+see §8.
 
 ## 2. Formulation
 
@@ -306,13 +317,13 @@ own SO CCSD(T) energy **3.7e-12**. Tests in `test_083` (open-shell reference har
 
 ## 8. CC static dipole polarizability — design & status
 
-**Status.** Phase 1 (**CCSD, spatial, all-electron**) **DONE and FD-validated end-to-end** in a scratch
-prototype (2026-07-09); ready to port into `CCderiv`. Phases 2–4 (frozen core, spin-orbital, (T)) next,
-then the `CorrelatedDerivs` refactor. First CC *second*-derivative property; built before the refactor
-because it exercises the perturbed-relaxed-density machinery the shared base will own, without the
-nuclear-skeleton complexity of Hessians/APTs. The asymmetric route (below) is confirmed correct, staying
-entirely within `cclambda`'s `r_L` (no `Y1/Y2` response apparatus), with the perturbed HBAR obtained for
-free by an exact stencil (below).
+**Status.** **DONE for CCSD** (2026-07-09) in `CCderiv.polarizability()` — **spatial RHF and
+spin-orbital UHF, both all-electron and frozen core** — FD-validated (§8.4); only **(T)** remains
+(Phase 4). First CC *second*-derivative property; built before the `CorrelatedDerivs` refactor because
+it exercises the perturbed-relaxed-density machinery the shared base will own, without the
+nuclear-skeleton complexity of Hessians/APTs. The asymmetric route (below) stays entirely within
+`cclambda`'s `r_L` (no `Y1/Y2` response apparatus), with the perturbed HBAR obtained for free by an
+exact stencil (below).
 
 **Route: the ASYMMETRIC approach** — differentiate the (already-2n+1) relaxed-density gradient a second
 time; exactly the `docs/mp2_2n1_perturbed.tex` formulation, extended to CC by a density swap. Chosen
@@ -445,9 +456,9 @@ destined for `CorrelatedDerivs`.
   it stays self-contained). Solve `dt += (B + HBAR·dt)/D` with `helper_diis`, exactly like
   `solve_right` but with the orbital-relaxed `B`. Same structure for `dΛ` (the linear `r_L1/r_L2`
   operator + a field-perturbed inhomogeneity).
-### 8.4 Validation (Phase 1 complete)
+### 8.4 Validation (CCSD complete — spatial + spin-orbital, all-electron + frozen core)
 
-Checkpoint ladder, all cleared for CCSD/H2O/STO-3G:
+Prototype checkpoint ladder, all cleared for CCSD/H2O/STO-3G (spatial, all-electron):
 
 | piece | check | residual |
 |---|---|---|
@@ -467,7 +478,18 @@ fixed-basis / frozen-MO checks are necessary but not sufficient** for the orbita
 route through the diagonal-ε `_mp2_lagrangian` and so are blind to the §8.2 gotcha; the field-relaxed
 `perturb_h` oracle is the one that catches it.
 
-**Phasing:** (1) CCSD spatial all-electron **[done]**; (2) + frozen core; (3) + spin-orbital; (4) + (T).
+**Production validation** (`CCderiv.polarizability()`, `test_084`), all clear:
+
+| path | check | residual |
+|---|---|---|
+| spatial, all-electron | tight finite field of the relaxed dipole | 1.8e-12 |
+| spatial, frozen core | tight finite field | 1.0e-11 |
+| off-diagonal (planar HOF/cc-pVDZ) | finite field; `α_xy` large, `α_xz=α_yz=0`, total positive-definite | 2.6e-10 |
+| spin-orbital == spatial (AE / FC) | RHF-forced-to-SO keystone | 8.8e-14 / 3.1e-14 |
+| open-shell UHF (2-B1 NH2) | energy 2nd-derivative FD (`α_zz`); symmetric, positive | 2.7e-10 |
+
+**Phasing:** (1) CCSD spatial all-electron **[done]**; (2) + frozen core **[done]**; (3) + spin-orbital
+**[done]**; (4) + (T) — next.
 
 **Validation (production).** Primary oracle = **finite difference of `CCderiv.relaxed_dipole`** in a
 field (`÷h`, ~1e-12; Λ tight) — the only oracle that covers **CCSD(T)** and frozen core; plus the
