@@ -8,7 +8,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import zeros_like, diag, clone
+from pycc.utils import zeros_like, diag, clone, permute_triples
 
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
@@ -855,6 +855,75 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
 
     et = contract('ia,ia->', t1, x1) + 0.25 * contract('ijab,ijab->', t2, x2)
     return et
+
+
+def _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract):
+    """Spin-orbital (T) energy from a pre-built connected T3, via the "viking"
+    contraction of :func:`t_vikings_so` written in full-array form (no per-(i,j,k)
+    batching).  ``E(T) = <t1|x1> + 1/4 <t2|x2>`` with the disconnected (x1) and
+    connected (x2) intermediates built from the whole T3.  Factored out so both the
+    canonical check and the invariant driver share one energy expression."""
+    Fov = F[o,v]
+    x1 = 0.25 * contract('ijkabc,jkbc->ia', t3, ERI[o,o,v,v])
+    x2 = 0.25 * contract('ijkabc,kc->ijab', t3, Fov)                 # f_kc (non-Brillouin only)
+    x2 = x2 + 0.25 * contract('ijkabc,dkbc->ijad', t3, ERI[v,o,v,v])
+    x2 = x2 - 0.25 * contract('ijkabd,jkmd->imab', t3, ERI[o,o,o,v])
+    x2 = x2 - x2.swapaxes(0, 1) - x2.swapaxes(2, 3) + x2.swapaxes(0, 1).swapaxes(2, 3)
+    return contract('ia,ia->', t1, x1) + 0.25 * contract('ijab,ijab->', t2, x2)
+
+
+def t_invariant_so(o, v, t1, t2, F, ERI, contract, e_conv=1e-11, maxiter=100):
+    """Spin-orbital rotation-INVARIANT (T) energy via an explicitly-stored, iterated T3.
+
+    Solves ``<nu3|([F,T3] + [V,T2])|0> = 0`` for the full connected T3, splitting the
+    Fock as ``F = diag(F)`` (the energy denominator) ``+ F_offdiag`` (the iterative
+    ``[F,T3]`` commutator).  Because the off-diagonal Fock is carried explicitly rather
+    than assumed zero, the resulting (T) energy is invariant to occupied-occupied and
+    virtual-virtual MO rotations -- exactly like the HF and CCSD energies -- unlike the
+    canonical batched driver (:func:`t_vikings_so`), whose diagonal-denominator T3
+    changes under such a rotation.  At a canonical (diagonal-Fock) reference the
+    off-diagonal Fock vanishes, the iteration terminates in one step, and this reduces
+    to the standard (T) energy.
+
+    Reference/testing instrument only: it stores the full ``O(o^3 v^3)`` T3 and iterates,
+    far more costly than the batched canonical drivers.  Its purpose is to (a) exhibit
+    the canonical-vs-non-canonical distinction and (b) serve, via a fixed-basis finite
+    field of this energy, as an independent oracle for the (T) polarizability.  The
+    ``[F,T3]`` coupling mirrors the CC3 store_triples field path
+    (:meth:`CCwfn._so_cc3_t_residual_full`), with the field ``V`` replaced by the
+    off-diagonal Fock and bare (non-T1-dressed) integrals."""
+    Wvvvo = ERI[v, v, v, o]     # <ab||ci>
+    Wovoo = ERI[o, v, o, o]     # <ia||jk>
+
+    # source: <nu3|[V,T2]|0> connected (bare integrals), full-array + antisymmetrized
+    tmp = contract('ijad,bcdk->ijkabc', t2, Wvvvo)
+    source = permute_triples(tmp, 'k/ij', 'a/bc')
+    tmp = -contract('ilab,lcjk->ijkabc', t2, Wovoo)
+    source = source + permute_triples(tmp, 'i/jk', 'c/ab')
+
+    # F = diag (-> denominator) + off-diagonal oo/vv (-> [F,T3] coupling)
+    fo = diag(F)[o]
+    fv = diag(F)[v]
+    denom = (fo.reshape(-1, 1, 1, 1, 1, 1) + fo.reshape(-1, 1, 1, 1, 1) + fo.reshape(-1, 1, 1, 1)
+             - fv.reshape(-1, 1, 1) - fv.reshape(-1, 1) - fv)
+    Foo = F[o, o] - diag(fo)    # off-diagonal occupied Fock
+    Fvv = F[v, v] - diag(fv)    # off-diagonal virtual Fock
+
+    t3 = source / denom
+    eold = _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract)
+    for _ in range(maxiter):
+        # <nu3|[F_offdiag,T3]|0>: virtual (c->d via Fvv) + occupied (k->l via Foo)
+        tmp = contract('ijkabc,dc->ijkabd', t3, Fvv)
+        comm = tmp - tmp.swapaxes(3, 5) - tmp.swapaxes(4, 5)
+        tmp = -contract('ijkabc,kl->ijlabc', t3, Foo)
+        comm = comm + (tmp - tmp.swapaxes(0, 2) - tmp.swapaxes(1, 2))
+        t3 = (source + comm) / denom
+        et = _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract)
+        if abs(et - eold) < e_conv:
+            return et
+        eold = et
+    raise RuntimeError("t_invariant_so: T3 iteration did not converge in %d cycles "
+                       "(off-diagonal Fock too large for the Jacobi solve?)" % maxiter)
 
 
 # ---- (T) density / Lambda intermediates --------------------------------------
