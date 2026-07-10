@@ -57,6 +57,21 @@ WATER_ALPHA_REF_FC = np.array([[0.071841599990, 0.0, 0.0],
                                [0.0, 0.061126138693, 0.0],
                                [0.0, 0.0, 0.174203460940]])
 
+# Open-shell UHF NH2 (2-B1, bent), run in C2v with the 2-B1 occupation pinned (NH2_OCC) so a poor
+# SCF guess cannot fall into the ~0.074 Eh higher 2-A1 solution (making the value freezeable).  SO
+# CCSD correlation polarizability; alpha_zz validated against a 5-point energy 2nd-derivative finite
+# field (field along the C2 axis, C2v-preserving) to 2.7e-10; the full tensor is symmetric to 4e-16.
+NH2 = """
+0 2
+N
+H 1 1.02
+H 1 1.02 2 103.0
+"""
+NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}
+NH2_ALPHA_REF = np.array([[0.155624577600, 0.0, 0.0],
+                          [0.0, 0.059976118900, 0.0],
+                          [0.0, 0.0, 0.194543333700]])
+
 
 def _findiff_alpha(geom, basis, F=5e-4, freeze_core='false'):
     """Regeneration recipe for the *_ALPHA_REF tensors (not run in the tests): a 5-point O(h^4)
@@ -143,6 +158,35 @@ def test_ccsd_polarizability_hof_offdiagonal(rhf_wfn):
     r = pycc.polarizability(cc)
     total = np.asarray(r.total)
     assert np.all(np.linalg.eigvalsh(0.5 * (total + total.T)) > 0.0), np.linalg.eigvalsh(total)
+    psi4.core.clean()
+
+
+def test_so_ccsd_polarizability_keystone(rhf_wfn):
+    """SO == spatial keystone: the spin-orbital CCSD polarizability of an RHF reference forced into
+    the spin-orbital basis reproduces the FD-validated spatial references (all-electron and frozen
+    core).  This carries the high-precision spatial validation onto the SO machinery (SO Jacobian,
+    SO HBAR, SO r_L, inline orbital Hessian)."""
+    for fc, ref in (("false", WATER_ALPHA_REF), ("true", WATER_ALPHA_REF_FC)):
+        wfn = rhf_wfn(WATER, "6-31G", freeze_core=fc)
+        cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
+        cc.solve_cc(1e-12, 1e-12, 100)
+        alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+        assert np.max(np.abs(alpha - ref)) < 1e-9, (fc, alpha)
+        psi4.core.clean()
+
+
+def test_uhf_ccsd_polarizability_nh2(rhf_wfn):
+    """Open-shell UHF spin-orbital CCSD polarizability (2-B1 NH2, pinned occupation) vs the frozen
+    reference -- the genuinely spin-polarized SO path (beyond the RHF-forced-to-SO keystone).
+    alpha_zz was validated against an external energy finite field; the tensor is symmetric and its
+    diagonal positive."""
+    wfn = rhf_wfn(NH2, "6-31G", reference='uhf', freeze_core='false', **NH2_OCC)
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
+    cc.solve_cc(1e-12, 1e-12, 100)
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    assert np.max(np.abs(alpha - NH2_ALPHA_REF)) < 1e-9, alpha
+    assert np.max(np.abs(alpha - alpha.T)) < 1e-9
+    assert np.all(np.diag(alpha) > 0.0)
     psi4.core.clean()
 
 

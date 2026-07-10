@@ -368,15 +368,16 @@ class CCderiv:
         The reference (SCF) polarizability is kept separate (:meth:`HFwfn.polarizability`); the
         :func:`pycc.polarizability` facade sums nuclear (zero) + reference + this correlation part.
 
-        Spatial closed-shell RHF (all-electron or frozen core); spin-orbital and (T) to follow.
-        Validated against a tight finite field of :meth:`relaxed_dipole`."""
+        Spatial closed-shell RHF and spin-orbital UHF (both all-electron and frozen core); (T) to
+        follow.  Validated against a tight finite field of :meth:`relaxed_dipole` and the SO ==
+        spatial keystone."""
         if route != '2n+1':
             raise ValueError(f"CC polarizability supports only the asymmetric '2n+1' route, not {route!r}.")
         cc = self.ccwfn
         if cc.model.upper() != 'CCSD':
             raise NotImplementedError(f"CC polarizability: only CCSD is implemented (not {cc.model}).")
         if cc.orbital_basis == 'spinorbital':
-            raise NotImplementedError("CC polarizability: spin-orbital path not yet implemented.")
+            return self._so_polarizability()
         from .cchbar import cchbar
         from .cclambda import cclambda
         from .ccdensity import ccdensity
@@ -659,5 +660,258 @@ class CCderiv:
         dB = np.zeros((nmo, nmo))
         dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull]) + c('rs,rpsq->pq', D, dL[:, :, :, ofull])
                         + c('rs,rqsp->pq', dD, L[:, ofull, :, :]) + c('rs,rqsp->pq', D, dL[:, ofull, :, :]))
+        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
+        return -0.5 * (dA + dB + dC)
+
+    # ---- spin-orbital (UHF) polarizability ------------------------------
+    # Mirror of the spatial path with antisymmetrized <pq||rs> (no L), the spin-orbital HBAR (no
+    # Hovov; Hvvvo/Hovoo use a Zovov intermediate), the spin-orbital Jacobian / r_L, and the inline
+    # orbital Hessian G (as in _so_relaxed_density) rather than a borrowed all-electron CPHF.
+    # Validated by the RHF-forced-to-SO == spatial keystone.
+
+    _SO_HBAR_BLOCKS = ('Hov', 'Hvv', 'Hoo', 'Hoooo', 'Hvvvv', 'Hvovv', 'Hooov',
+                       'Hovvo', 'Hvvvo', 'Hovoo')
+
+    def _so_polarizability(self) -> np.ndarray:
+        """Spin-orbital (UHF) CCSD correlation polarizability -- the SO analog of
+        :meth:`polarizability` (all-electron or frozen core).  Raises for ROHF."""
+        from .cchbar import cchbar
+        from .cclambda import cclambda
+        from .ccdensity import ccdensity
+        from .cphf import Perturbation
+        cc = self.ccwfn
+        if cc.mp.cphf.is_rohf:
+            raise NotImplementedError("CC polarizability: ROHF is not supported (RHF/UHF only).")
+        o, v, nv = cc.o, cc.v, cc.nv
+        co = slice(0, o.start)                            # frozen core (2*nfzc spin-orbitals)
+        ofull = slice(0, o.stop)
+        nof = o.stop
+        c = self.contract
+        ncore = o.stop - cc.no
+        eps = np.diag(np.asarray(cc.H.F))
+        ERI = np.asarray(cc.H.ERI)
+
+        hbar = cchbar(cc)
+        lam = cclambda(cc, hbar)
+        lam.solve_lambda(1e-13, 1e-13)
+        D0, Gam0 = (np.asarray(x) for x in ccdensity(cc, lam).gradient_densities())
+        Ip0 = np.asarray(self._lagrangian(D0, Gam0))
+        Drel = D0.copy()
+        Pco = None
+        if cc.nfzc:
+            Pco = (Ip0[co, o] - Ip0[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Drel[co, o] += Pco
+            Drel[o, co] += Pco.T
+        X0 = Ip0[ofull, v] - Ip0[v, ofull].T
+        if cc.nfzc:
+            zjc = -Pco.T
+            X0 = X0 - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+        G = (c('ajib->iajb', ERI[v, ofull, ofull, v]) + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof*nv, nof*nv)
+        G[np.diag_indices(nof*nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
+        z = np.linalg.solve(G, X0.reshape(-1)).reshape(nof, nv)
+        Drel[v, ofull] += -z.T
+        Drel[ofull, v] += -z
+
+        cphf = cc.mp._full_occ_cphf()
+        mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
+        alpha = np.zeros((3, 3))
+        for b in range(3):
+            pert = Perturbation('field', b)
+            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco)
+            Ub = np.asarray(cphf._full_U(pert, ncore))
+            for a in range(3):
+                rot = Ub.T @ mu[a] + mu[a] @ Ub
+                alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
+        return alpha
+
+    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco):
+        """Spin-orbital field response ``dD_rel``; the SO analog of
+        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI)."""
+        cc = self.ccwfn
+        o, v, nv = cc.o, cc.v, cc.nv
+        co = slice(0, o.start)
+        ofull = slice(0, o.stop)
+        nof = o.stop
+        c = self.contract
+        ncore = o.stop - cc.no
+        ERI = np.asarray(cc.H.ERI)
+        eps = np.diag(np.asarray(cc.H.F))
+        cphf = cc.mp._full_occ_cphf()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+
+        dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
+        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam)
+        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        dIp = self._so_cc_perturbed_lagrangian(df, deri, D0, dDg, Gam0, dGam)
+        dX = dIp[ofull, v] - dIp[v, ofull].T
+        dPco = None
+        if cc.nfzc:
+            gap = eps[co][:, None] - eps[o][None, :]
+            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
+            zjc, dzjc = -Pco.T, -dPco.T
+            dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
+                       + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
+        Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], z) + c('abij,jb->ia', deri[v, v, ofull, ofull], z)
+               + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
+        zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
+        dDrel = dDg.copy()
+        if cc.nfzc:
+            dDrel[co, o] += dPco
+            dDrel[o, co] += dPco.T
+        dDrel[v, ofull] += -zx.T
+        dDrel[ofull, v] += -zx
+        return dDrel
+
+    def _so_ccsd_jacobian(self, X1, X2, hbar):
+        """Spin-orbital CCSD Jacobian ``(HBAR . X)`` -- the SO ``ccresponse.r_X1/r_X2`` contraction
+        pattern (antisymmetrized; the P(ij)P(ab) is built in, so no final symmetrization)."""
+        c = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        ERI = self.ccwfn.H.ERI
+        r1 = c('ie,ae->ia', X1, hbar.Hvv) - c('ma,mi->ia', X1, hbar.Hoo)
+        r1 += c('me,maei->ia', X1, hbar.Hovvo)
+        r1 += c('me,imae->ia', hbar.Hov, X2)
+        r1 += 0.5 * c('imef,amef->ia', X2, hbar.Hvovv)
+        r1 -= 0.5 * c('mnae,mnie->ia', X2, hbar.Hooov)
+        Zvv = c('amef,me->af', hbar.Hvovv, X1)
+        Zoo = c('mnie,me->ni', hbar.Hooov, X1)
+        Yoo = 0.5 * c('mnef,mjef->nj', ERI[o, o, v, v], X2)
+        Yvv = 0.5 * c('mnef,mneb->fb', ERI[o, o, v, v], X2)
+        r2 = c('ie,abej->ijab', X1, hbar.Hvvvo) - c('je,abei->ijab', X1, hbar.Hvvvo)
+        r2 -= c('ma,mbij->ijab', X1, hbar.Hovoo) - c('mb,maij->ijab', X1, hbar.Hovoo)
+        r2 += c('ni,njab->ijab', Zoo, t2) - c('nj,niab->ijab', Zoo, t2)
+        r2 -= c('af,ijfb->ijab', Zvv, t2) - c('bf,ijfa->ijab', Zvv, t2)
+        r2 -= c('nj,inab->ijab', Yoo, t2) - c('ni,jnab->ijab', Yoo, t2)
+        r2 -= c('fb,ijaf->ijab', Yvv, t2) - c('fa,ijbf->ijab', Yvv, t2)
+        r2 += c('ijae,be->ijab', X2, hbar.Hvv) - c('ijbe,ae->ijab', X2, hbar.Hvv)
+        r2 -= c('imab,mj->ijab', X2, hbar.Hoo) - c('jmab,mi->ijab', X2, hbar.Hoo)
+        r2 += 0.5 * c('mnab,mnij->ijab', X2, hbar.Hoooo)
+        r2 += 0.5 * c('ijef,abef->ijab', X2, hbar.Hvvvv)
+        tmp = c('imae,mbej->ijab', X2, hbar.Hovvo)
+        r2 += tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3) + tmp.swapaxes(0, 1).swapaxes(2, 3)
+        return r1, r2
+
+    def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=200, rconv=1e-13):
+        """Spin-orbital perturbed CCSD amplitudes ``dt/dF`` (SO Jacobian; SO residual has no 0.5 /
+        no final symmetrization, matching ``ccresponse.solve_right``)."""
+        from .utils import helper_diis
+        cc = self.ccwfn
+        Dia, Dijab = cc.Dia, cc.Dijab
+        saveERI = cc.H.ERI
+        cc.H.ERI = deri
+        try:
+            B1, B2 = cc.residuals(df, cc.t1, cc.t2)
+        finally:
+            cc.H.ERI = saveERI
+        B1, B2 = np.asarray(B1), np.asarray(B2)
+        X1, X2 = B1 / Dia, B2 / Dijab
+        diis = helper_diis(X1, X2, 8)
+        for _ in range(maxiter):
+            j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
+            r1, r2 = B1 + j1, B2 + j2
+            X1 = X1 + r1 / Dia
+            X2 = X2 + r2 / Dijab
+            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+                break
+            diis.add_error_vector(X1, X2)
+            X1, X2 = diis.extrapolate(X1, X2)
+        return X1, X2
+
+    def _so_hbar_blocks(self, hbar, F, ERI, t1, t2):
+        """Spin-orbital HBAR blocks from explicit integrals/amplitudes (the ``cchbar._so_build``
+        sequence -- no Hovov; Hvvvo/Hovoo via the Zovov intermediate)."""
+        o, v = self.ccwfn.o, self.ccwfn.v
+        Hov = hbar._so_build_Hov(o, v, F, ERI, t1)
+        Hvv = hbar._so_build_Hvv(o, v, F, ERI, Hov, t1, t2)
+        Hoo = hbar._so_build_Hoo(o, v, F, ERI, Hov, t1, t2)
+        Hoooo = hbar._so_build_Hoooo(o, v, ERI, t1, t2)
+        Hvvvv = hbar._so_build_Hvvvv(o, v, ERI, t1, t2)
+        Hvovv = hbar._so_build_Hvovv(o, v, ERI, t1)
+        Hooov = hbar._so_build_Hooov(o, v, ERI, t1)
+        Hovvo = hbar._so_build_Hovvo(o, v, ERI, t1, t2)
+        Zovov = hbar._so_build_Zovov(o, v, ERI, t2)
+        Hvvvo = hbar._so_build_Hvvvo(o, v, ERI, Hov, Hvvvv, Zovov, t1, t2)
+        Hovoo = hbar._so_build_Hovoo(o, v, ERI, Hov, Hoooo, Zovov, t1, t2)
+        return {'Hov': Hov, 'Hvv': Hvv, 'Hoo': Hoo, 'Hoooo': Hoooo, 'Hvvvv': Hvvvv,
+                'Hvovv': Hvovv, 'Hooov': Hooov, 'Hovvo': Hovvo, 'Hvvvo': Hvvvo, 'Hovoo': Hovoo}
+
+    def _so_perturbed_hbar(self, df, deri, dt1, dt2, hbar):
+        """Spin-orbital perturbed HBAR via the exact 5-point stencil (degree-<=4 blocks)."""
+        cc = self.ccwfn
+        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
+        t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
+        h = 1e-2
+        def at(s):
+            return self._so_hbar_blocks(hbar, F0 + s*h*df, ERI0 + s*h*deri, t01 + s*h*dt1, t02 + s*h*dt2)
+        m2, m1, p1, p2 = at(-2), at(-1), at(1), at(2)
+        return {k: (np.asarray(m2[k]) - 8.0*np.asarray(m1[k]) + 8.0*np.asarray(p1[k])
+                    - np.asarray(p2[k])) / (12.0*h) for k in m2}
+
+    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, maxiter=200, rconv=1e-13):
+        """Spin-orbital perturbed Lambda ``dLambda/dF`` (SO r_L; inhomogeneity = r_L with perturbed
+        HBAR + perturbed ERI, unperturbed G, plus the dG.H / dG.<pq||rs> product-rule halves)."""
+        from .utils import helper_diis
+        cc = self.ccwfn
+        o, v = cc.o, cc.v
+        c = self.contract
+        Dia, Dijab = cc.Dia, cc.Dijab
+        l1, l2 = np.asarray(lam.l1), np.asarray(lam.l2)
+        t2 = np.asarray(cc.t2)
+        ERI0 = np.asarray(cc.H.ERI)
+
+        def rL1(La, Lb, H, Gvv, Goo):
+            return np.asarray(lam._so_r_L1(o, v, La, Lb, H['Hov'], H['Hvv'], H['Hoo'], H['Hovvo'],
+                                           H['Hvvvo'], H['Hovoo'], H['Hvovv'], H['Hooov'], Gvv, Goo))
+        def rL2(La, Lb, E, H, Gvv, Goo):
+            return np.asarray(lam._so_r_L2(o, v, La, Lb, E, H['Hov'], H['Hvv'], H['Hoo'], H['Hoooo'],
+                                           H['Hvvvv'], H['Hovvo'], H['Hvvvo'], H['Hovoo'], H['Hvovv'],
+                                           H['Hooov'], Gvv, Goo))
+
+        dH = self._so_perturbed_hbar(df, deri, dt1, dt2, hbar)
+        H0 = {b: np.asarray(getattr(hbar, b)) for b in self._SO_HBAR_BLOCKS}
+        Goo0 = np.asarray(lam.build_Goo(t2, l2)); Gvv0 = np.asarray(lam.build_Gvv(t2, l2))
+        dGoo = np.asarray(lam.build_Goo(dt2, l2)); dGvv = np.asarray(lam.build_Gvv(dt2, l2))  # l2 fixed
+        B1 = rL1(l1, l2, dH, Gvv0, Goo0)
+        B2 = rL2(l1, l2, deri, dH, Gvv0, Goo0)
+        Hvovv0, Hooov0 = H0['Hvovv'], H0['Hooov']
+        B1 = B1 - c('ef,eifa->ia', dGvv, Hvovv0) - c('mn,mina->ia', dGoo, Hooov0)
+        oovv = ERI0[o, o, v, v]
+        B2 = B2 + (c('be,ijae->ijab', dGvv, oovv) - c('ae,ijbe->ijab', dGvv, oovv)) \
+                - (c('mj,imab->ijab', dGoo, oovv) - c('mi,jmab->ijab', dGoo, oovv))
+        zl1 = np.zeros_like(l1); zl2 = np.zeros_like(l2)
+        zGvv = np.zeros_like(Gvv0); zGoo = np.zeros_like(Goo0)
+        rL1_0 = rL1(zl1, zl2, H0, zGvv, zGoo)
+        rL2_0 = rL2(zl1, zl2, ERI0, H0, zGvv, zGoo)
+        dl1, dl2 = B1 / Dia, B2 / Dijab
+        diis = helper_diis(dl1, dl2, 8)
+        for _ in range(maxiter):
+            Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
+            j1 = rL1(dl1, dl2, H0, Gvv_d, Goo_d) - rL1_0
+            j2 = rL2(dl1, dl2, ERI0, H0, Gvv_d, Goo_d) - rL2_0
+            r1, r2 = B1 + j1, B2 + j2
+            dl1 = dl1 + r1 / Dia
+            dl2 = dl2 + r2 / Dijab
+            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+                break
+            diis.add_error_vector(dl1, dl2)
+            dl1, dl2 = diis.extrapolate(dl1, dl2)
+        return dl1, dl2
+
+    def _so_cc_perturbed_lagrangian(self, df, deri, D, dD, Gam, dGam):
+        """Spin-orbital field response ``dI'`` of the GSB Lagrangian (full-df Fock term, as in
+        :meth:`MPwfn._so_perturbed_lagrangian`), density-generic with the CC densities."""
+        cc = self.ccwfn
+        o = cc.o
+        ofull = slice(0, o.stop)
+        c = self.contract
+        ERI = np.asarray(cc.H.ERI)
+        eps = np.diag(np.asarray(cc.H.F))
+        nmo = cc.nmo
+        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
+        dB = np.zeros((nmo, nmo))
+        dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull]) + c('rs,rpsq->pq', D, deri[:, :, :, ofull])
+                        + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :]) + c('rs,rqsp->pq', D, deri[:, ofull, :, :]))
         dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
         return -0.5 * (dA + dB + dC)
