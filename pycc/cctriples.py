@@ -973,8 +973,14 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 x2[i,j] += (1/4) * contract('dbc,abc->ad', Wvovv[:,k], t3c)
                 x2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], t3c)
 
-                # (T) contribution to the vv block of the one-electron density (diagonal)
+                # (T) diagonal one-electron density (vv and oo).  Only the diagonal is a
+                # genuine density term; the oo/vv orbital response is the dependent-pair
+                # kappa-bar in CCderiv (canonical perturbed MOs).  doo and dvv are the same
+                # t3c*(t3c+t3d) contraction over the ijk-built T3, differing only in which
+                # index is left free, so the occ diagonal needs no separate abc loop
+                # (Lee-Rendell, J. Chem. Phys. 94, 6229 (1991)).
                 dvv += (1/12) * contract('abc,abc->a', (t3c + t3d), t3c)
+                doo[i] -= (1/12) * contract('abc,abc->', t3c, (t3c + t3d))
 
                 # (T) contribution to the ov block of the one-electron density
                 Dov[i] += contract('ade,de->a', t3c, t2[j,k])
@@ -991,13 +997,6 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 # (T) contribution to the L2 residual
                 S2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], (2*t3c + t3d))
                 S2[i,j] += (1/4) * contract('ade,bde->ab', (2*t3c+t3d), Wvovv[:,k])
-
-    for a in range(nv):
-        for b in range(nv):
-            for c in range(nv):
-                t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
-                t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
-                doo -= (1/12) * contract('ijk,ijk->i', t3c, (t3c + t3d))
 
     # P(ij)P(ab) antisymmetrization of the doubles intermediates (see the loop note)
     S2 = S2 - S2.swapaxes(0,1) - S2.swapaxes(2,3) + S2.swapaxes(0,1).swapaxes(2,3)
