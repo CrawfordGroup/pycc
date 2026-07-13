@@ -982,8 +982,14 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 dvv += (1/12) * contract('abc,abc->a', (t3c + t3d), t3c)
                 doo[i] -= (1/12) * contract('abc,abc->', t3c, (t3c + t3d))
 
-                # (T) contribution to the ov block of the one-electron density
-                Dov[i] += contract('ade,de->a', t3c, t2[j,k])
+                # (T) contribution to the ov block of the one-electron density.  The 1/4 is the
+                # T2^dagger normalization (D_ia = 1/4 sum_{lm,ef} t3c^{aef}_{ilm} t^{ef}_{lm}); the
+                # free (j,k)/(d,e) loop sums carry no combinatorial cancellation here.  This block
+                # is invisible to any relaxed first-order property -- the Z-vector/orbital response
+                # absorbs the ov 1-PDM exactly (Handy-Schaefer stationarity), so the CCSD(T) gradient
+                # is blind to this factor -- but it enters unrelaxed one-electron properties and the
+                # perturbed density of second derivatives (e.g. the (T) polarizability) directly.
+                Dov[i] += (1/4) * contract('ade,de->a', t3c, t2[j,k])
 
                 # (T) contributions to the two-electron density
                 Goovv[i,j] += contract('abc,c->ab', t3c, t1[k])
