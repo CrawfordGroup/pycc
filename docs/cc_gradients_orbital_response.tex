@@ -1,0 +1,665 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fullpage}
+\usepackage{overcite}
+\renewcommand{\familydefault}{\sfdefault}
+
+% separate paragraphs with vertical space rather than indentation
+\setlength{\parskip}{8pt plus 2pt minus 1pt}
+\setlength{\parindent}{0pt}
+
+% antisymmetrized two-electron integral <pq||rs>
+\newcommand{\adb}[2]{\langle #1 \| #2 \rangle}
+\newcommand{\so}{\text{all}}
+\newcommand{\occ}{\text{occ}}
+\newcommand{\vir}{\text{vir}}
+
+\begin{document}
+
+\begin{center}
+{\bf \large Correlated Derivatives with Orbital Response} \\[2pt]
+T.~Daniel Crawford \\
+{\em Virginia Tech, Blacksburg, Virginia} \\
+\end{center}
+
+Derivatives of electronic energies with respect to external perturbations can
+be elegantly formulated in terms of electron densities regardless of method or
+level of theory.\cite{Yamaguchi94}  In these notes we will explore derivatives
+of correlation energies with respect to {\em real} perturbations, especially the
+handling of the response of the underlying molecular orbitals (MOs).  While we
+will compare many of the expressions we derive here to literature references,
+especially for coupled cluster theory, the results are sufficiently general so
+as to apply to any correlated method.
+
+\section{First Derivatives}
+
+The first derivative of the correlation energy with respect to a {\em real}
+perturbation (e.g., a nuclear-coordinate displacement or a static external electric
+field) may be written as:\cite{Gauss91:UHF}
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} D_{pq}\,\frac{\partial f_{pq}}{\partial x}
++ \sum_{pqrs} \Gamma_{pqrs}\,\frac{\partial \adb{pq}{rs}}{\partial x},
+\label{eq:dE}
+\end{equation}
+where $D_{pq}$ and $\Gamma_{pqrs}$ are the (unrelaxed) one- and two-particle
+density matrices in the spin-orbital basis and $\Gamma_{pqrs}$ is antisymmetric.
+
+\noindent
+The antisymmetrized two-electron integrals recur in the pair combination
+$A_{pqrs}\equiv\adb{pq}{rs}+\adb{ps}{rq}$.  The derivatives of the Fock matrix
+elements and of the two-electron integrals are
+\begin{align}
+\frac{\partial f_{pq}}{\partial x}
+&= f^{(x)}_{pq} + U^x_{qp} f_{qq} + U^x_{pq} f_{pp}
++ \sum_{t}^{\so}\sum_{m}^{\occ} U^x_{tm}A_{ptqm},
+\label{eq:dfpq}\\[4pt]
+\frac{\partial \adb{pq}{rs}}{\partial x}
+&= \adb{pq}{rs}^{(x)}
++ \sum_{t}^{\so}\left(U^x_{tp}\adb{tq}{rs} + U^x_{tq}\adb{pt}{rs}
++ U^x_{tr}\adb{pq}{ts} + U^x_{ts}\adb{pq}{rt}\right),
+\label{eq:deri}
+\end{align}
+where $f^{(x)}_{pq}$ and $\adb{pq}{rs}^{(x)}$ are the ``skeleton'' derivative
+integrals (AO-basis derivatives transformed into the unperturbed MO basis) and
+the $U^x_{pq}$ are the coupled-perturbed Hartree--Fock (CPHF) coefficients.
+
+\noindent
+Inserting \eqref{eq:dfpq} and \eqref{eq:deri} into \eqref{eq:dE} and collecting
+the terms with and without $U^{x}$,
+\begin{align}
+\frac{\partial E}{\partial x}
+&= \sum_{pq} D_{pq} f^{(x)}_{pq} + \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
++ \sum_{pq} D_{pq}\left[U^x_{qp} f_{qq} + U^x_{pq} f_{pp}\right]
+\nonumber\\
+&\quad
++ \sum_{pq}\sum_{t}^{\so}\sum_{m}^{\occ} D_{pq}\,U^x_{tm}A_{ptqm}
+\nonumber\\
+&\quad
++ \sum_{pqrs}\sum_{t}^{\so}\Gamma_{pqrs}\left(U^x_{tp}\adb{tq}{rs}
++ U^x_{tq}\adb{pt}{rs} + U^x_{tr}\adb{pq}{ts} + U^x_{ts}\adb{pq}{rt}\right).
+\label{eq:collect}
+\end{align}
+
+\noindent
+Re-indexing every $U^{x}$-dependent term so that the CPHF coefficient carries
+the labels $pq$ (dummies relabeled $r,s,t$) gives
+\begin{align}
+\frac{\partial E}{\partial x}
+&= \sum_{pq} D_{pq} f^{(x)}_{pq} + \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
++ \sum_{pq} U^x_{pq} f_{pp}\left(D_{pq}+D_{qp}\right)
+\nonumber\\
+&\quad
++ \sum_{p}^{\so}\sum_{q} U^x_{pq}\,\delta_{q,\occ}\sum_{rs}
+D_{rs}A_{rpsq}
+\nonumber\\
+&\quad
++ \sum_{pq} U^x_{pq}\sum_{rst}\left(
+\adb{pr}{st}\,\Gamma_{qrst}
++ \adb{rp}{st}\,\Gamma_{rqst}
++ \adb{rs}{pt}\,\Gamma_{rsqt}
++ \adb{rs}{tp}\,\Gamma_{rstq}\right).
+\label{eq:reindex}
+\end{align}
+
+\noindent
+The four integral-rotation terms are pairwise equal through the antisymmetry of
+$\Gamma$ (terms 1--2, since $\adb{rp}{st}=-\adb{pr}{st}$ and
+$\Gamma_{rqst}=-\Gamma_{qrst}$; terms 3--4 likewise), and equal to one another
+once $\Gamma$ carries the two-particle bra--ket symmetry
+$\Gamma_{pqrs}=\Gamma_{rspq}$; they therefore combine to
+$4\sum_{rst}\adb{pr}{st}\Gamma_{qrst}$.  Finally,
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} D_{pq} f^{(x)}_{pq}
++ \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
+- 2\sum_{pq} U^x_{pq}\, I'_{pq},
+\label{eq:dE-Iprime}
+\end{equation}
+where
+\begin{equation}
+I'_{pq} = -\tfrac{1}{2}\left[
+f_{pp}\left(D_{pq}+D_{qp}\right)
++ \delta_{q,\occ}\sum_{rs} D_{rs}A_{rpsq}
++ 4\sum_{rst}\adb{pr}{st}\Gamma_{qrst}
+\right].
+\label{eq:Iprime}
+\end{equation}
+The expression for $I'_{pq}$ assumes $\Gamma_{pqrs}$ is antisymmetric but
+$D_{pq}$ is not necessarily symmetric.  The prefactor of $-\tfrac{1}{2}$ is
+standard for most CC/CI gradient papers and leads to simpler later expressions.
+Equations \eqref{eq:dE-Iprime} and \eqref{eq:Iprime} match Eqs.~42 and 43 of
+Ref.~\citenum{Gauss91:UHF}.
+
+\section{Simplifying the Orbital-Gradient Term}
+
+Separate the orbital-gradient term into MO subspaces:
+\begin{equation}
+-2\sum_{pq} U^x_{pq} I'_{pq}
+= -2\sum_{ij} U^x_{ij} I'_{ij}
+- 2\sum_{ab} U^x_{ab} I'_{ab}
+- 2\sum_{ai} U^x_{ai} I'_{ai}
+- 2\sum_{ia} U^x_{ia} I'_{ia}.
+\end{equation}
+The derivative of the MO orthonormality conditions gives
+\begin{equation}
+U^x_{pq} + U^x_{qp} + S^{(x)}_{pq} = 0,
+\label{eq:ortho}
+\end{equation}
+so the last term may be rewritten as
+$-2\sum_{ia}U^x_{ia}I'_{ia} = +2\sum_{ia}\left(U^x_{ai}+S^{(x)}_{ai}\right)I'_{ia}$,
+and the orbital-gradient term becomes
+\begin{equation}
+-2\sum_{pq} U^x_{pq} I'_{pq}
+= -2\sum_{ij} U^x_{ij} I'_{ij}
+- 2\sum_{ab} U^x_{ab} I'_{ab}
++ 2\sum_{ai} U^x_{ai}\left(I'_{ia}-I'_{ai}\right)
++ 2\sum_{ai} S^{(x)}_{ai} I'_{ia}.
+\label{eq:orbgrad}
+\end{equation}
+
+\noindent
+Using the {\em non-canonical perturbed-orbital
+conditions}\cite{Handy85:MP2Hessians}
+\begin{equation}
+U^x_{ij} = -\tfrac{1}{2}S^{(x)}_{ij}, \qquad U^x_{ab} = -\tfrac{1}{2}S^{(x)}_{ab},
+\label{eq:noncanon}
+\end{equation}
+yields
+\begin{equation}
+-2\sum_{pq} U^x_{pq} I'_{pq}
+= \sum_{ij} S^{(x)}_{ij} I'_{ij}
++ \sum_{ab} S^{(x)}_{ab} I'_{ab}
++ 2\sum_{ai} U^x_{ai}\left(I'_{ia}-I'_{ai}\right)
++ 2\sum_{ai} S^{(x)}_{ai} I'_{ia}.
+\end{equation}
+All terms involving overlap derivatives may be collected together after
+splitting the last one, $2\sum_{ai}S^{(x)}_{ai}I'_{ia} = \sum_{ai}S^{(x)}_{ai}I'_{ia}
++ \sum_{ia}S^{(x)}_{ia}I'_{ia}$:
+\begin{equation}
+\sum_{ij} S^{(x)}_{ij} I'_{ij}
++ \sum_{ab} S^{(x)}_{ab} I'_{ab}
++ \sum_{ia} S^{(x)}_{ia} I'_{ia}
++ \sum_{ai} S^{(x)}_{ai} I'_{ia}
+= \sum_{pq} S^{(x)}_{pq} I''_{pq},
+\end{equation}
+where
+\begin{equation}
+I''_{pq} =
+\begin{cases}
+I'_{qp}, & (p,q)=(a,i),\\
+I'_{pq}, & \text{otherwise.}
+\end{cases}
+\label{eq:Idouble}
+\end{equation}
+
+\noindent
+The total gradient may therefore be written as
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} D_{pq} f^{(x)}_{pq}
++ \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
++ 2\sum_{a}^{\vir}\sum_{i}^{\occ} U^x_{ai} X_{ai}
++ \sum_{pq} S^{(x)}_{pq} I''_{pq},
+\qquad X_{ai} \equiv I'_{ia} - I'_{ai}
+\label{eq:grad-U}
+\end{equation}
+(Compare to Eq.~47 of Ref.~\citenum{Gauss91:UHF}.)
+
+\section{CPHF Equations and the Z-Vector}
+
+The first-order CPHF equations for $U^x_{ai}$ are
+\begin{equation}
+-f^{(x)}_{ai} + S^{(x)}_{ai}\varepsilon_i
++ \tfrac{1}{2}\sum_{jk} S^{(x)}_{jk}A_{ajik}
+= \sum_{b}^{\vir}\sum_{j}^{\occ} U^x_{bj}
+\left[(\varepsilon_a-\varepsilon_i)\delta_{ab}\delta_{ij} + A_{abij}\right].
+\end{equation}
+Defining
+\begin{align}
+G_{ai,bj} &\equiv (\varepsilon_a-\varepsilon_i)\delta_{ab}\delta_{ij} + A_{abij},\\
+B^x_{ai} &\equiv -f^{(x)}_{ai} + S^{(x)}_{ai}\varepsilon_i
++ \tfrac{1}{2}\sum_{jk} S^{(x)}_{jk}A_{ajik},
+\end{align}
+the CPHF equations read $\sum_{bj} G_{ai,bj} U^x_{bj} = B^x_{ai}$, or
+$\mathbf{G}\,\mathbf{U}^{x} = \mathbf{B}^{x}$.
+
+\noindent
+The orbital contribution to the gradient is
+$\dfrac{\partial E}{\partial x} \leftarrow 2\sum_{ai} U^x_{ai} X_{ai}
+= 2\,\mathbf{X}^{T}\mathbf{U}^{x}$.
+Following Handy and Schaefer,\cite{Handy84}
+$\mathbf{U}^{x} = \mathbf{G}^{-1}\mathbf{B}^{x}$ so that
+$\dfrac{\partial E}{\partial x} \leftarrow 2\,\mathbf{X}^{T}\mathbf{G}^{-1}\mathbf{B}^{x}$
+(cf.\ Eq.~51 of Ref.~\citenum{Gauss91:UHF}, same except for sign).  Defining
+\begin{equation}
+\mathbf{Z}^{T} \equiv \mathbf{X}^{T}\mathbf{G}^{-1}
+\;\Longrightarrow\;
+\mathbf{G}^{T}\mathbf{Z} = \mathbf{X}, \quad\text{i.e.}\quad
+\sum_{bj} G_{ai,bj}^{T} Z_{bj} = X_{ai},
+\end{equation}
+gives the interchanged (Z-vector) form
+\begin{equation}
+\frac{\partial E}{\partial x} \leftarrow 2\,\mathbf{Z}^{T}\mathbf{B}^{x}
+= 2\sum_{ai} Z_{ai} B^x_{ai}.
+\end{equation}
+Expanding $B^x_{ai}$,
+\begin{equation}
+\frac{\partial E}{\partial x} \leftarrow
+-2\sum_{ai} Z_{ai} f^{(x)}_{ai}
++ 2\sum_{ai} Z_{ai} S^{(x)}_{ai}\varepsilon_i
++ \sum_{ai} Z_{ai}\sum_{jk} S^{(x)}_{jk}A_{ajik},
+\end{equation}
+and, re-indexing the third term and splitting the first two,
+\begin{align}
+\frac{\partial E}{\partial x} \leftarrow
+&-\sum_{ai} Z_{ai} f^{(x)}_{ai} - \sum_{ia} Z_{ai} f^{(x)}_{ia}
++ \sum_{ai} Z_{ai} S^{(x)}_{ai}\varepsilon_i + \sum_{ai} Z_{ai} S^{(x)}_{ai}\varepsilon_i
+\nonumber\\
+&+ \sum_{ij} S^{(x)}_{ij}\sum_{ak} Z_{ak}A_{aikj}.
+\end{align}
+
+\section{Total Gradient}
+
+Collecting everything, the total gradient becomes
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} \tilde{D}_{pq} f^{(x)}_{pq}
++ \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
++ \sum_{pq} I_{pq} S^{(x)}_{pq},
+\label{eq:grad-final}
+\end{equation}
+where
+\begin{align}
+\tilde{D}_{ai} &= D_{ai} - Z_{ai}, & \tilde{D}_{ia} &= D_{ia} - Z_{ai}, \\
+\tilde{D}_{ij} &= D_{ij}, & \tilde{D}_{ab} &= D_{ab}, \\
+I_{ai} &= I''_{ai} + Z_{ai}\varepsilon_i, & I_{ia} &= I''_{ia} + Z_{ai}\varepsilon_i, \\
+I_{ij} &= I''_{ij} + \sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj}, & I_{ab} &= I''_{ab}.
+\end{align}
+
+\noindent
+{\em Note:} To compare the above to Eqs.~52--56 of Ref.~\citenum{Gauss91:UHF},
+be aware that the orbital Z-vector equations used here differ by a sign from
+those in Eq.~51 of that paper.  Hence the signs on the Z-vector contributions
+are reversed; otherwise everything matches.
+
+\section{Canonical Perturbed Orbitals}
+
+The reference derivation of \S2 uses the non-canonical perturbed-orbital
+conditions \eqref{eq:noncanon}, $U^x_{ij}=-\tfrac12 S^{(x)}_{ij}$ and
+$U^x_{ab}=-\tfrac12 S^{(x)}_{ab}$.  These are permissible only when the correlation
+energy is invariant to rotations within the occupied space and within the
+virtual space.  Equation~\eqref{eq:Iprime} is {\em not} manifestly symmetric in
+$(i,j)$ or $(a,b)$, since neither the $f_{pp}$ prefactor ($f_{ii}$ vs.\ $f_{jj}$) nor
+the three-index contraction ($\adb{ir}{st}\Gamma_{jrst}$ vs.\
+$\adb{jr}{st}\Gamma_{irst}$) is symmetric under the swap.  What matters instead is
+its {\em antisymmetric} part, which enters in exactly the way
+$X_{ai}=I'_{ia}-I'_{ai}$ did for the occ-vir block in \S2.  Applying the
+orthonormality condition \eqref{eq:ortho} to the occupied--occupied and
+virtual--virtual blocks of the subspace split of $-2\sum_{pq}U^x_{pq}I'_{pq}$
+(relabeling $i\leftrightarrow j$, resp.\ $a\leftrightarrow b$, in half of each
+sum and eliminating $U^x_{ji}=-S^{(x)}_{ij}-U^x_{ij}$) gives
+\begin{align}
+-2\sum_{ij}U^x_{ij}I'_{ij}
+&= -\sum_{ij}U^x_{ij}\left(I'_{ij}-I'_{ji}\right) + \sum_{ij}S^{(x)}_{ij}I'_{ij},
+\label{eq:orbgrad-oo}\\
+-2\sum_{ab}U^x_{ab}I'_{ab}
+&= -\sum_{ab}U^x_{ab}\left(I'_{ab}-I'_{ba}\right) + \sum_{ab}S^{(x)}_{ab}I'_{ab},
+\label{eq:orbgrad-vv}
+\end{align}
+so the antisymmetric orbital-rotation gradients $I'_{ij}-I'_{ji}$ and
+$I'_{ab}-I'_{ba}$ now appear explicitly.  Combining these with the occ-vir block
+already reduced in Eq.~\eqref{eq:orbgrad}, and collapsing every overlap-derivative
+term into the single sum $\sum_{pq}S^{(x)}_{pq}I''_{pq}$ (with $I''$ as defined in
+Eq.~\eqref{eq:Idouble}, since the occ-occ, vir-vir, and occ-vir overlap terms are identical to
+those of \S2), the orbital-gradient term becomes
+\begin{equation}
+-2\sum_{pq}U^x_{pq}I'_{pq}
+= -\sum_{ij}U^x_{ij} X_{ij}
+- \sum_{ab}U^x_{ab} X_{ab}
++ 2\sum_{ai}U^x_{ai} X_{ai} 
++ \sum_{pq}S^{(x)}_{pq}I''_{pq},
+\label{eq:orbgrad-canon-full}
+\end{equation}
+where $X_{ij}\equiv I'_{ij}-I'_{ji}$ and $X_{ab}\equiv I'_{ab}-I'_{ba}$ are the
+occupied--occupied and virtual--virtual analogs of $X_{ai}=I'_{ia}-I'_{ai}$ in
+Eq.~\eqref{eq:grad-U}.  For quantum chemical methods for which the energy is invariant to occ--occ and
+virt--virt rotations (most methods), $X_{ij}=X_{ab}=0$ (a property of the 
+densities $D,\Gamma$, not a manifest symmetry of \eqref{eq:Iprime}).  The
+$U^x_{ij}X_{ij}$ and $U^x_{ab}X_{ab}$ terms then vanish for any choice of the
+occupied and virtual rotations, so those rotations may be set to their
+orthonormality values $-\tfrac12 S^{(x)}$ and Eq.~\eqref{eq:grad-U} is recovered.
+For a method whose energy is not invariant to occupied--occupied or
+virtual--virtual rotations (so that $X_{ij}\neq0$ and $X_{ab}\neq0$, as for the
+canonical-MO (T) estimate\cite{Lee91,Hald03:gradients}), or if core orbitals are
+frozen (because the correlated energy is not invariant to rotations between core
+MOs and active occupied MOs), then $U^x_{ij}$ and $U^x_{ab}$ must be explicitly
+computed using the {\em canonical} perturbed-orbital conditions
+\begin{equation}
+\frac{\partial f_{ij}}{\partial x}=0 \quad(i\neq j),\qquad
+\frac{\partial f_{ab}}{\partial x}=0 \quad(a\neq b),
+\label{eq:canon}
+\end{equation}
+i.e.\ the perturbed occupied (virtual) orbitals are kept canonical, diagonalizing
+the occupied (virtual) block of the perturbed Fock matrix.
+
+\noindent
+The first of Eqs.~\eqref{eq:canon} along with $f_{pp}=\varepsilon_p$
+for canonical-MOs and orthonormality $U^x_{ji}=-S^{(x)}_{ij}-U^x_{ij}$,
+determines $U^x_{ij}$ ($i\neq j$) fully:
+\begin{equation}
+U^x_{ij}
+= \frac{1}{\varepsilon_i-\varepsilon_j}\left[
+-f^{(x)}_{ij} + S^{(x)}_{ij}\varepsilon_j
++ \tfrac12\sum_{nm}^{\occ} S^{(x)}_{nm}\,A_{injm}
+- \sum_{c}^{\vir}\sum_{m}^{\occ} U^x_{cm}\,A_{icjm}
+\right], \qquad i\neq j,
+\label{eq:canon-oo}
+\end{equation}
+and, analogously, the virtual block
+\begin{equation}
+U^x_{ab}
+= \frac{1}{\varepsilon_a-\varepsilon_b}\left[
+-f^{(x)}_{ab} + S^{(x)}_{ab}\varepsilon_b
++ \tfrac12\sum_{nm}^{\occ} S^{(x)}_{nm}\,A_{anbm}
+- \sum_{c}^{\vir}\sum_{m}^{\occ} U^x_{cm}\,A_{acbm}
+\right], \qquad a\neq b.
+\label{eq:canon-vv}
+\end{equation}
+The diagonal elements remain $U^x_{ii}=-\tfrac12 S^{(x)}_{ii}$,
+$U^x_{aa}=-\tfrac12 S^{(x)}_{aa}$ from orthonormality.  
+
+While equations \eqref{eq:canon-oo}--\eqref{eq:canon-vv} provide an alternative
+route to accounting for the response of the MOs to the external (real)
+perturbation, they also introduce a numerical sensitivity in the case of
+(near-)degenerate occupied or virtual orbitals
+through the energy-denominators
+$\varepsilon_i-\varepsilon_j$ and
+$\varepsilon_a-\varepsilon_b$.\cite{Handy85:MP2Hessians}
+
+\noindent
+Assembling, the total gradient in the canonical-orbital formulation is the analog
+of Eq.~\eqref{eq:grad-U} with the occupied--occupied and virtual--virtual
+orbital-response terms retained,
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} D_{pq} f^{(x)}_{pq}
++ \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
+- \sum_{ij} U^x_{ij} X_{ij}
+- \sum_{ab} U^x_{ab} X_{ab}
++ 2\sum_{ai} U^x_{ai} X_{ai}
++ \sum_{pq} S^{(x)}_{pq} I''_{pq},
+\label{eq:grad-canon}
+\end{equation}
+with $U^x_{ai}$ obtained from the CPHF/Z-vector of \S3 and $U^x_{ij}$, $U^x_{ab}$
+from Eqs.~\eqref{eq:canon-oo} and \eqref{eq:canon-vv}.  If the correlation
+method is invariant to occ-occ and vir-vir MO rotations, the two new terms
+vanish ($X_{ij}=X_{ab}=0$) and Eq.~\eqref{eq:grad-U} is recovered.  Note that $D_{pq}$ is still the unrelaxed
+one-electron density in this expression, comparable to Eq.~\eqref{eq:grad-U} where we used the non-canonical perturbed orbital
+approach.
+
+\section{CPHF and Z-Vector for Canonical-Perturbed MOs}
+
+In Eq.~\eqref{eq:grad-canon} the occ-vir orbital-response term $2\sum_{ai}U^x_{ai}X_{ai}$
+is handled exactly as in \S3: the occ-vir coefficients solve
+$\mathbf{G}\,\mathbf{U}^{x}=\mathbf{B}^{x}$, and the interchange
+$\mathbf{G}^{T}\mathbf{Z}=\mathbf{X}$ trades the per-perturbation solve for a single
+Z-vector.  What is new for the canonical perturbed MO case is the occupied--occupied and
+virtual--virtual terms $-\sum_{ij}U^x_{ij}X_{ij}$ and $-\sum_{ab}U^x_{ab}X_{ab}$,
+whose rotations are given {\em explicitly} by Eqs.~\eqref{eq:canon-oo} and
+\eqref{eq:canon-vv} rather than by an iterative solve.
+
+\noindent
+Substituting Eq.~\eqref{eq:canon-oo} and introducing the occupied--occupied
+{\em dependent-pair}
+\begin{equation}
+P_{ij} \equiv \frac{X_{ij}}{\varepsilon_i-\varepsilon_j}
+= \frac{I'_{ij}-I'_{ji}}{\varepsilon_i-\varepsilon_j},
+\label{eq:Poo}
+\end{equation}
+the occupied block becomes
+\begin{equation}
+-\sum_{ij}U^x_{ij}X_{ij}
+= \sum_{ij}P_{ij}f^{(x)}_{ij}
+- \sum_{ij}P_{ij}S^{(x)}_{ij}\varepsilon_j
+- \tfrac12\sum_{ij}\sum_{nm}^{\occ}P_{ij}S^{(x)}_{nm}A_{injm}
++ \sum_{ij}\sum_{c}^{\vir}\sum_{m}^{\occ}P_{ij}U^x_{cm}A_{icjm}.
+\label{eq:oo-sub}
+\end{equation}
+The four terms have distinct
+destinations: the first adds $P_{ij}$ to the effective
+one-particle density that contracts the skeleton Fock derivative; the second and
+third are overlap-derivative contributions that join the energy-weighted density
+$I''$; and the fourth couples the occ-vir response $U^x_{cm}$, so it augments the
+Z-vector right-hand side.
+
+\noindent
+The virtual block follows identically, with
+$P_{ab}\equiv X_{ab}/(\varepsilon_a-\varepsilon_b)$,
+\begin{equation}
+-\sum_{ab}U^x_{ab}X_{ab}
+= \sum_{ab}P_{ab}f^{(x)}_{ab}
+- \sum_{ab}P_{ab}S^{(x)}_{ab}\varepsilon_b
+- \tfrac12\sum_{ab}\sum_{nm}^{\occ}P_{ab}S^{(x)}_{nm}A_{anbm}
++ \sum_{ab}\sum_{c}^{\vir}\sum_{m}^{\occ}P_{ab}U^x_{cm}A_{acbm}.
+\label{eq:vv-sub}
+\end{equation}
+
+Collecting the terms of Eqs.~\eqref{eq:oo-sub} and \eqref{eq:vv-sub} sends each
+of them to one of the three density-like structures already present in the
+gradient, Eq.~\eqref{eq:grad-canon}.
+
+The leading terms, $P_{ij}f^{(x)}_{ij}$ and $P_{ab}f^{(x)}_{ab}$, have the same
+shape as the skeleton Fock term $\sum_{pq}D_{pq}f^{(x)}_{pq}$, so the
+dependent-pairs are absorbed by augmenting the one-particle density,
+\begin{equation}
+\tilde{D}_{ij} = D_{ij} + P_{ij}, \qquad \tilde{D}_{ab} = D_{ab} + P_{ab}.
+\label{eq:Dtilde}
+\end{equation}
+
+The terms carrying an overlap derivative $S^{(x)}$ match the energy-weighted density
+term $\sum_{pq}S^{(x)}_{pq}I''_{pq}$, so they are absorbed into $I''$,
+\begin{equation}
+\tilde{I}''_{ij} = I''_{ij} - P_{ij}\varepsilon_j
+- \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kilj}
+- \tfrac12\sum_{cd}^{\vir}P_{cd}A_{cidj},
+\qquad
+\tilde{I}''_{ab} = I''_{ab} - P_{ab}\varepsilon_b
+\label{eq:Idouble-tilde}
+\end{equation}
+(both $A$ sums in the occupied--occupied block come from the third terms of
+Eqs.~\eqref{eq:oo-sub} and \eqref{eq:vv-sub}, which multiply an
+occupied--occupied overlap $S^{(x)}_{nm}$).
+
+The final terms carry an occ-vir rotation coefficient $U^x_{cm}$ ($c$ virtual, $m$
+occupied).  Unlike the occ-occ and vir-vir rotations, which the canonical conditions fix
+in closed form through Eqs.~\eqref{eq:canon-oo} and \eqref{eq:canon-vv}, the
+occ-vir
+rotations remain the unknowns of the CPHF problem, so these terms cannot be
+evaluated directly and must instead be carried through the Z-vector.  Because
+$U^x_{cm}$ sits in the same occ-vir block as the orbital term
+$2\sum_{ai}U^x_{ai}X_{ai}$, renaming the dummy label $(c,m)\to(a,i)$ lets the two
+be added under a single sum $\sum_{ai}U^x_{ai}(\cdots)$; factoring the common $2$
+then augments the Z-vector right-hand side $X_{ai}$ of \S3 to
+\begin{equation}
+\tilde{X}_{ai} = X_{ai}
++ \tfrac12\sum_{kl}^{\occ}P_{kl}\,A_{kali}
++ \tfrac12\sum_{de}^{\vir}P_{de}\,A_{daei}.
+\label{eq:Xtilde}
+\end{equation}
+The interchange $\mathbf{G}^{T}\mathbf{Z}=\tilde{\mathbf{X}}$ and the expansion of
+$B^x_{ai}$ then proceed exactly as in \S3, now with $\tilde{D}$, $\tilde{I}''$,
+and $\tilde{X}$ in place of $D$, $I''$, and $X$.
+
+\section{Computational Summary}
+
+Both perturbed-orbital choices lead to the same compact gradient,
+Eq.~\eqref{eq:grad-final}, repeated here,
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq} \tilde{D}_{pq} f^{(x)}_{pq}
++ \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
++ \sum_{pq} I_{pq} S^{(x)}_{pq},
+\tag{\ref{eq:grad-final}}
+\end{equation}
+and differ only in how the relaxed one-particle density $\tilde{D}$ and the
+energy-weighted density $I$ are assembled from the unrelaxed densities $D$ and
+$\Gamma$.
+
+\subsection*{Non-Canonical Orbitals}
+\begin{enumerate}
+\item Build $I'_{pq}$ from Eq.~\eqref{eq:Iprime} and $I''_{pq}$ from
+Eq.~\eqref{eq:Idouble}.
+\item Solve the single Z-vector equation $\mathbf{G}^{T}\mathbf{Z}=\mathbf{X}$
+with $X_{ai}=I'_{ia}-I'_{ai}$.
+\item Assemble the densities,
+\begin{equation*}
+\tilde{D}_{ai}=D_{ai}-Z_{ai},\quad \tilde{D}_{ia}=D_{ia}-Z_{ai},\qquad
+\tilde{D}_{ij}=D_{ij},\quad \tilde{D}_{ab}=D_{ab},
+\end{equation*}
+\begin{equation*}
+I_{ai}=I''_{ai}+Z_{ai}\varepsilon_i,\quad
+I_{ia}=I''_{ia}+Z_{ai}\varepsilon_i,\quad
+I_{ij}=I''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj},\quad
+I_{ab}=I''_{ab}.
+\end{equation*}
+\end{enumerate}
+
+\subsection*{Canonical Orbitals}
+\begin{enumerate}
+\item Build $I'_{pq}$ and $I''_{pq}$ as above.
+\item Form the occupied--occupied and virtual--virtual dependent-pairs
+(Eq.~\eqref{eq:Poo}),
+\begin{equation*}
+P_{ij}=\frac{I'_{ij}-I'_{ji}}{\varepsilon_i-\varepsilon_j},\qquad
+P_{ab}=\frac{I'_{ab}-I'_{ba}}{\varepsilon_a-\varepsilon_b}.
+\end{equation*}
+\item Fold the dependent-pairs into the intermediates {\em before} the Z-vector
+solve.  Augment the one-particle density,
+\begin{equation*}
+\tilde{D}_{ij}=D_{ij}+P_{ij},\qquad \tilde{D}_{ab}=D_{ab}+P_{ab};
+\end{equation*}
+the energy-weighted density,
+\begin{equation*}
+\tilde{I}''_{ij} = I''_{ij} - P_{ij}\varepsilon_j
+- \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kilj}
+- \tfrac12\sum_{cd}^{\vir}P_{cd}A_{cidj},
+\qquad
+\tilde{I}''_{ab} = I''_{ab} - P_{ab}\varepsilon_b;
+\end{equation*}
+and the Z-vector right-hand side,
+\begin{equation*}
+\tilde{X}_{ai} = X_{ai}
++ \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kali}
++ \tfrac12\sum_{de}^{\vir}P_{de}A_{daei}.
+\end{equation*}
+\item Solve the single Z-vector equation
+$\mathbf{G}^{T}\mathbf{Z}=\tilde{\mathbf{X}}$.
+\item Complete the assembly as in the non-canonical case, using the $\tilde{D}$
+blocks from step~3 and $\tilde{I}''$ in place of $I''$,
+\begin{equation*}
+\tilde{D}_{ai}=D_{ai}-Z_{ai},\quad \tilde{D}_{ia}=D_{ia}-Z_{ai},
+\end{equation*}
+\begin{equation*}
+I_{ai}=\tilde{I}''_{ai}+Z_{ai}\varepsilon_i,\quad
+I_{ia}=\tilde{I}''_{ia}+Z_{ai}\varepsilon_i,\quad
+I_{ij}=\tilde{I}''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj},\quad
+I_{ab}=\tilde{I}''_{ab}.
+\end{equation*}
+\end{enumerate}
+
+For methods for which the energy is invariant to occupied--occupied and virtual--virtual
+rotations, the dependent-pairs vanish ($X_{ij}=X_{ab}=0$, hence
+$P_{ij}=P_{ab}=0$), $\tilde{I}''=I''$, and $\tilde{X}=X$; the canonical recipe
+then reduces term by term to the non-canonical one.  The two routes diverge only
+when we choose to use canonical perturbed MOs (as is typically the choice for
+CCSD(T)).
+
+\appendix
+
+\section{Frozen Core}
+
+The frozen-core approximation removes a set of low-lying (core) orbitals from
+the correlation treatment, splitting the occupied space into core
+($c,c',\dots$) and active ($i,j,\dots$) blocks.  The correlation energy remains
+invariant to active$\leftrightarrow$active and virtual$\leftrightarrow$virtual
+rotations, and to core$\leftrightarrow$core rotations.  It is {\em not}
+invariant to core$\leftrightarrow$active-occupied rotations, however, since
+mixing a frozen core orbital into the active space changes the set of
+correlated excitations.  That block of the MO response therefore requires the
+canonical perturbed-MO treatment of \S5 and \S6.
+
+If one chooses to use canonical perturbed MOs (\S5 and \S6), then the extension
+of the gradient expressions above to incorporate the MO response remains unchanged.
+However, if one is using the non-canonical perturbed MO choice of 
+$U^x=-\tfrac12 S^{(x)}$ for the active occ-occ and vir-vir blocks, then one must 
+apply the canonical condition \eqref{eq:canon} to the
+core$\leftrightarrow$active-occupied block using the corresponding
+dependent-pair expression from \S6,
+\begin{equation}
+P_{ci} = \frac{X_{ci}}{\varepsilon_c-\varepsilon_i}
+= \frac{I'_{ci}-I'_{ic}}{\varepsilon_c-\varepsilon_i}
+\qquad(c\ \text{core},\ i\ \text{active-occupied}),
+\label{eq:Pco}
+\end{equation}
+the restriction of Eq.~\eqref{eq:canon-oo} to $(c,i)$ pairs.  It enters the
+relaxed density as the occupied dependent-pair of \S6 does,
+\begin{equation}
+\tilde{D}_{ci}=\tilde{D}_{ic}=P_{ci},
+\end{equation}
+with the overlap-derivative terms folded into $\tilde{I}''$ and the occ-vir-response
+coupling into $\tilde{X}$ through Eqs.~\eqref{eq:Idouble-tilde} and
+\eqref{eq:Xtilde}, the pair-sum now running over $(c,i)$.  Two further
+adjustments distinguish the frozen-core case: (1) 
+either the canonical or non-canonical perturbed MO conditions must be applied
+to the core-core block; and (2) the occupied$\leftrightarrow$virtual orbital
+response (the Z-vector) now spans the {\em full} occupied space, core plus active,
+because the core orbitals relax against the virtuals.
+
+Nothing in \S5--\S6 is specific to a particular method or to the all-electron
+case.  The occupied dependent-pair is defined over the entire occupied space and
+the virtual dependent-pair over the entire virtual space, and each block is
+populated only where the energy fails to be invariant, its antisymmetric
+numerator $X_{pq}=I'_{pq}-I'_{qp}$ vanishing elsewhere.  
+
+\begin{thebibliography}{1}
+
+\bibitem{Yamaguchi94}
+Y. Yamaguchi, Y. Osamura, J.~D. Goddard, and H.~F. Schaefer, \textit{A New
+  Dimension to Quantum Chemistry: Analytic Derivative Methods in {\em Ab
+  Initio} Molecular Electronic Structure Theory}, No.~29 in
+  \textit{International Series of Monographs on Chemistry}, Oxford Univ. Press,
+  New York, 1994.
+
+\bibitem{Gauss91:UHF}
+J. Gauss, J.~F. Stanton, and R.~J. Bartlett, \textit{J. Chem. Phys.}, {\bf 95},
+   2623-2638  (1991).
+Coupled-cluster open-shell analytic gradients: Implementation of the direct
+  product decomposition approach in energy gradient calculations.
+
+\bibitem{Handy85:MP2Hessians}
+N.~C. Handy, R.~D. Amos, J.~F. Gaw, J.~E. Rice, and E.~D. Simandiras,
+  \textit{Chem. Phys. Lett.}, {\bf 120},  151  (1985).
+The elimination of singularities in derivative calculations.
+
+\bibitem{Handy84}
+N.~C. Handy and H.~F. Schaefer, \textit{J. Chem. Phys.}, {\bf 81},  5031-5033
+  (1984).
+On the evaluation of analytic energy derivatives for correlated wave functions.
+
+\bibitem{Lee91}
+T.~J. Lee and A.~P. Rendell, \textit{J. Chem. Phys.}, {\bf 94},  6229-6236
+  (1991).
+Analytic gradients for coupled-cluster energies that include noniterative
+  connected triple excitations: Application to {\em cis-} and {\em trans-}HONO.
+
+\bibitem{Hald03:gradients}
+K. Hald, A. Halkier, P. J{\o}rgensen, S. Coriani, and T. Helgaker, \textit{J.
+  Chem. Phys.}, {\bf 118},  2985-2998  (2003).
+A Lagrangian, integral-density direct formulation and implementation of the
+  analytic CCSD and CCSD(T) gradients.
+
+\end{thebibliography}
+
+\end{document}

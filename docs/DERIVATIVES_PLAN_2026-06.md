@@ -57,8 +57,10 @@ nuclear/reference/correlation `PropertyComponents`. Validated against a tight fi
 pycc's own correlation energy — 5-point O(h⁴), the gradient ~1e-12 and the relaxed dipole a finite
 field of `(E_CC − E_SCF)` ~1e-12 — **not** psi4's analytic derivatives (§4). Unlike CCSD — which reuses
 the −½Sˣ ov-only Z-vector because
-CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) needs canonical perturbed orbitals for
-the oo/vv blocks** (dependent-pair κ̄, even all-electron); see §5 and §7. The efficient Z-vector route
+CCSD is invariant to occ–occ/virt–virt rotations — **CCSD(T) uses canonical perturbed orbitals for
+the oo/vv blocks** (dependent-pair κ̄, even all-electron) — not from necessity but for cost: this is
+Lee–Rendell's route (diagonal (T) density only), ~2/3 the work of Scuseria's equally-correct
+non-canonical route (off-diagonal density, one extra N^7 set); see §5 and §7. The efficient Z-vector route
 and the independent explicit-derivative route agree to machine precision for CCSD (the (T) explicit
 route is pending — §6).
 
@@ -195,20 +197,27 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
   core included in the MO list) exposed a latent assumption in the (T)/CC3 triples kernels that the
   active occupied began at index 0 (e.g. `ERI[j,k,v,v]`, `pert[k,v]`). Made relative to the `o`/`v`
   slices (behavior-preserving for `nfzc=0`).
-- **(T) needs canonical perturbed orbitals — even all-electron.** Unlike CCSD (invariant to occ–occ /
-  virt–virt rotations, so the −½Sˣ ov-only Z-vector suffices), the (T) energy is *not* oo/vv-invariant.
-  The canonical perturbed orbitals then acquire dependent-pair rotations `κ̄_ij=(I'_ij−I'_ji)/(ε_i−ε_j)`,
-  `κ̄_ab=(I'_ab−I'_ba)/(ε_a−ε_b)` — exactly the frozen-core core↔active `Pco` divide (§ above) generalized
-  to *all* oo/vv pairs (added to the relaxed density, coupled into the ov Z-vector RHS via the
-  antisymmetrized ERI). An early reading — "all-electron ⇒ ΔX=0 ⇒ −½Sˣ suffices" — was wrong: it
-  conflated Lee–Rendell's *degeneracy* threshold with Scuseria's separate formulation. The correct
-  picture is a single orbital term `κ̄_pq F^(1)_pq` with κ̄ over *all* pairs (ov = CPHF/Z-vector solve;
-  oo/vv = the divides). FD-validated to 1.8e-12 (all-electron) / 1.9e-12 (frozen core). Full derivation:
-  `docs/ccsdt_orbital_response.tex`; §7.
-- **The off-diagonal (T) `Doo`/`Dvv` is not a density term.** `t3_density` had built `⟨0|L₃[E_ij,T₃]|0⟩`
-  oo/vv off-diagonals present in neither Lee–Rendell nor Hald et al.; they corrupt `Tr(D·μ)` yet are
-  invisible to the energy reconstruction (canonical F ⇒ only `diag(D)` enters `eone`). The (T) 1-PDM
-  carries only `{Dov, diag(Doo), diag(Dvv)}`; the oo/vv orbital response is the κ̄ above, not a density.
+- **(T) uses canonical perturbed orbitals — a cost choice, not a requirement.** The (T) energy is
+  invariant to oo/vv rotations through the *full* second-order T₃, so the perturbed-MO gauge is free
+  (as for CCSD). pycc follows **Lee–Rendell**: hold the perturbed orbitals canonical, so the oo/vv
+  blocks carry dependent-pair rotations `κ̄_ij=(I'_ij−I'_ji)/(ε_i−ε_j)`, `κ̄_ab=(I'_ab−I'_ba)/(ε_a−ε_b)` —
+  exactly the frozen-core core↔active `Pco` divide (§ above) generalized to *all* oo/vv pairs (added to
+  the relaxed density, coupled into the ov Z-vector RHS via the antisymmetrized ERI) — and the (T)
+  density is then needed only on the diagonal. **Scuseria's** non-canonical (−½Sˣ) route is equally
+  correct but instead carries the *off-diagonal* (T) density against the off-diagonal perturbed Fock, at
+  one extra N^7 set. An early reading — "all-electron ⇒ ΔX=0 ⇒ −½Sˣ suffices with the standard t₃" — was
+  wrong: it conflated Lee–Rendell's *degeneracy* threshold with Scuseria's separate formulation. The
+  correct picture is a single orbital term `κ̄_pq F^(1)_pq` with κ̄ over *all* pairs (ov = CPHF/Z-vector
+  solve; oo/vv = the divides). FD-validated to 1.8e-12 (all-electron) / 1.9e-12 (frozen core). Full
+  derivation: `docs/ccsdt_orbital_response.tex`; §7.
+- **The off-diagonal (T) `Doo`/`Dvv` is not needed in the canonical gauge.** The `⟨0|L₃[E_ij,T₃]|0⟩`
+  oo/vv off-diagonals `t3_density` once built are real density-matrix elements, but they belong to
+  Scuseria's *non-canonical* route (contracted there with the off-diagonal perturbed Fock), not to
+  Lee–Rendell / Hald et al. In pycc's canonical gauge they are not needed; leaving them in `D_rel`
+  corrupts `Tr(D·μ)` while staying invisible to the energy reconstruction (canonical F ⇒ only `diag(D)`
+  enters `eone`). So pycc's (T) 1-PDM carries only `{Dov, diag(Doo), diag(Dvv)}`; the oo/vv orbital
+  response is the κ̄ above. `diag(Doo)` and `diag(Dvv)` are built together in the ijk loop — the old
+  separate abc loop was Lee–Rendell's avoidable extra N^7 set (branch `perf/t3-density-diagonal-doo`).
 
 ## 6. Roadmap
 
@@ -239,11 +248,13 @@ the spatial path; the spin-orbital path is the same construction with `H.L → <
 - **Paper B** — Hald, Halkier, Jørgensen, Coriani, Hättig & Helgaker, *J. Chem. Phys.* **118**,
   2985 (2003): variational Lagrangian, canonical orbitals — the frozen-core / canonical-orbital guide.
 
-**Why (T) needs canonical MOs.** The triples solve `⟨μ₃|[F,T₃]+[H,T₂]|HF⟩=0` (B-15) is non-iterative
-*only because F is diagonal*, so `[F,T₃]` collapses to `D^abc = f_ii+f_jj+f_kk−f_aa−f_bb−f_cc` (A-5).
-Non-canonical F ⇒ triples couple ⇒ iterative. The gradient consequence: the perturbed orbitals must
-stay canonical in the oo/vv blocks, so those blocks carry an explicit **dependent-pair** rotation
-instead of pycc's −½Sˣ non-canonical gauge.
+**Why pycc keeps the perturbed MOs canonical.** The triples solve `⟨μ₃|[F,T₃]+[H,T₂]|HF⟩=0` (B-15) is
+non-iterative *only because F is diagonal*, so `[F,T₃]` collapses to `D^abc = f_ii+f_jj+f_kk−f_aa−f_bb−f_cc`
+(A-5). Non-canonical F ⇒ triples couple ⇒ iterative. So to keep the cheap non-iterative `t₃ = W/D` build,
+pycc holds the perturbed orbitals canonical in the oo/vv blocks and carries an explicit **dependent-pair**
+rotation there instead of the −½Sˣ gauge. This is a cost choice (Lee–Rendell), not a necessity: Scuseria
+keeps the −½Sˣ gauge and instead pays the off-diagonal (T) density plus one extra N^7 set; because the
+(T) energy is oo/vv-invariant through the full T₃, both routes yield the same gradient.
 
 **The orbital response (the crux).** CCSD is invariant to occ–occ / virt–virt rotations, so its
 gradient uses the −½Sˣ, ov-only Z-vector. **(T) breaks that invariance**, so the canonical perturbed
@@ -257,11 +268,14 @@ density and coupled into the ov Z-vector RHS through the antisymmetrized ERI. Eq
 pairs (ov = the CPHF/Z-vector solve; oo/vv = these divides). `I'` is the (T)-inclusive Lagrangian, so
 (T) enters κ̄ only through `I'`.
 
-**The (T) one-particle density** carries only `{Dov, diag(Doo), diag(Dvv)}` (Paper A Eqs 17–19,
-Paper B Eq 65). The off-diagonal `Doo`/`Dvv` that `t3_density` originally built (`⟨0|L₃[E_ij,T₃]|0⟩`)
-appears in **neither** paper and is removed: it corrupts `Tr(D·μ)` (spurious in the density) yet is
-invisible to the energy reconstruction (canonical F ⇒ only `diag(D)` enters). The oo/vv orbital
-response is the κ̄ above, **not** a density block.
+**The (T) one-particle density** carries only `{Dov, diag(Doo), diag(Dvv)}` in the canonical gauge
+(Paper A Eqs 17–19, Paper B Eq 65). The off-diagonal `Doo`/`Dvv` that `t3_density` originally built
+(`⟨0|L₃[E_ij,T₃]|0⟩`) are real density elements but belong to **Scuseria's** non-canonical route, not
+Lee–Rendell / Paper B; in pycc's canonical gauge they are not used, and leaving them in `D_rel` corrupts
+`Tr(D·μ)` while staying invisible to the energy (canonical F ⇒ only `diag(D)` enters). The oo/vv orbital
+response is the κ̄ above. Both diagonals are built together in the ijk loop (branch
+`perf/t3-density-diagonal-doo`, `t3_density` + `so_t3_density`); the old separate abc loop was the
+extra N^7 set Lee–Rendell avoid (~3.3x spatial / ~2.6x SO speedup on the density build).
 
 **Frozen core — no new machinery.** The occupied dependent pairs split into core↔active (carried by
 the existing `Pco`, whose `I'` is (T)-inclusive) and active↔active (the generalized oo κ̄), plus the vv
@@ -530,6 +544,7 @@ Reference layer, then the MP2 derivative effort:
 | #184 | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
 | #185 | **spin-orbital CCSD(T) gradient** — SO (T) density + oo/vv κ̄ in `_so_gradient` (all-electron + frozen core); (T) density builders moved to `cctriples` (no `ccwfn`→`ccdensity` dependency) |
 | #186 | **CCSD/CCSD(T) relaxed dipole** — `CCderiv.relaxed_dipole` = `Tr(D_rel·μ)`; shared `_relaxed_density`/`_so_relaxed_density` factored out of the gradients; wires `pycc.dipole(CCwfn)` (both spins, all-electron + frozen core) |
+| perf | **(T) density speedup** — `diag(Doo)` built in the ijk loop alongside `diag(Dvv)` in `t3_density` + `so_t3_density`; the separate abc loop (Lee–Rendell's avoidable extra N^7 set — the 2/3-vs-Scuseria saving) removed. Bit-identical E(T)/density/gradient; ~3.3x (spatial) / ~2.6x (SO). Branch `perf/t3-density-diagonal-doo` |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
@@ -553,8 +568,9 @@ the record stays coherent (rationale is in git history):
 - **"MP2-specific, no abstraction"** → still largely MP2-specific; `CCderiv` reuses the MP2
   Lagrangian/CPHF primitives by delegation, but the fuller shared-layer refactor remains deferred
   (see Roadmap).
-- **"(T) all-electron reuses −½Sˣ, dependent-pair terms deferred to frozen core"** → **(T) needs
+- **"(T) all-electron reuses −½Sˣ, dependent-pair terms deferred to frozen core"** → **(T) uses
   canonical perturbed orbitals for the oo/vv blocks even all-electron** — the dependent-pair κ̄
-  generalized from the frozen-core `Pco`. The early reading mistook Lee–Rendell's `|ΔX_mn|<1e-8`
-  *degeneracy* guard for an all-electron cancellation (that cancellation is Scuseria's separate
-  formulation). See §5 and §7.
+  generalized from the frozen-core `Pco`. (Canonical is Lee–Rendell's cost choice, not a hard
+  requirement: Scuseria's non-canonical route is equally correct at one extra N^7 set — see §5/§7.)
+  The early reading mistook Lee–Rendell's `|ΔX_mn|<1e-8` *degeneracy* guard for an all-electron
+  cancellation (that cancellation is Scuseria's separate formulation). See §5 and §7.
