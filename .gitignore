@@ -142,5 +142,8 @@ o.dat
 *.toc
 *.synctex.gz
 
+# Built PDFs (compiled from the .tex sources on demand; source-only, cf. 8652e2e)
+docs/*.pdf
+
 # PR summary scratch (written to repo root for easy copy; not tracked)
 PR_SUMMARY.md
