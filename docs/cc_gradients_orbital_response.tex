@@ -2,6 +2,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{float}   % [H] float specifier: pin tables exactly where they are written
+\usepackage{longtable}   % multi-page tables (derivative-density 2-PDM)
 \usepackage{fullpage}
 \usepackage{overcite}
 \renewcommand{\familydefault}{\sfdefault}
@@ -419,7 +420,7 @@ whose rotations are given {\em explicitly} by Eqs.~\eqref{eq:canon-oo} and
 
 \noindent
 Substituting Eq.~\eqref{eq:canon-oo} and introducing the occupied--occupied
-{\em dependent-pair}
+{\em dependent pair}
 \begin{equation}
 P_{ij} \equiv \frac{X_{ij}}{\varepsilon_i-\varepsilon_j}
 = \frac{I'_{ij}-I'_{ji}}{\varepsilon_i-\varepsilon_j},
@@ -457,16 +458,16 @@ Collecting the terms of Eqs.~\eqref{eq:oo-sub} and \eqref{eq:vv-sub} sends each
 of them to one of the three density-like structures already present in the
 gradient, Eq.~\eqref{eq:grad-canon}.
 
-The leading terms, $P_{ij}f^{(x)}_{ij}$ and $P_{ab}f^{(x)}_{ab}$, have the same
-shape as the skeleton Fock term $\sum_{pq}D_{pq}f^{(x)}_{pq}$, so the
-dependent-pairs are absorbed by augmenting the one-particle density,
+The leading terms $P_{ij}f^{(x)}_{ij}$ and $P_{ab}f^{(x)}_{ab}$ have the shape
+of the skeleton Fock term $\sum_{pq}D_{pq}f^{(x)}_{pq}$, so the dependent pairs
+augment the one-particle density,
 \begin{equation}
 \tilde{D}_{ij} = D_{ij} + P_{ij}, \qquad \tilde{D}_{ab} = D_{ab} + P_{ab}.
 \label{eq:Dtilde}
 \end{equation}
 
-The terms carrying an overlap derivative $S^{(x)}$ match the energy-weighted density
-term $\sum_{pq}S^{(x)}_{pq}I''_{pq}$, so they are absorbed into $I''$,
+The terms carrying an overlap derivative $S^{(x)}$ match the energy-weighted
+density $\sum_{pq}S^{(x)}_{pq}I''_{pq}$, so they join $I''$,
 \begin{equation}
 \tilde{I}''_{ij} = I''_{ij} - P_{ij}\varepsilon_j
 - \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kilj}
@@ -537,13 +538,13 @@ I_{ab}=I''_{ab}.
 \subsubsection{Canonical Perturbed Orbitals}
 \begin{enumerate}
 \item Build $I'_{pq}$ and $I''_{pq}$ as above.
-\item Form the occupied--occupied and virtual--virtual dependent-pairs
+\item Form the occupied--occupied and virtual--virtual dependent pairs
 (Eq.~\eqref{eq:Poo}),
 \begin{equation*}
 P_{ij}=\frac{I'_{ij}-I'_{ji}}{\varepsilon_i-\varepsilon_j},\qquad
 P_{ab}=\frac{I'_{ab}-I'_{ba}}{\varepsilon_a-\varepsilon_b}.
 \end{equation*}
-\item Fold the dependent-pairs into the intermediates {\em before} the Z-vector
+\item Fold the dependent pairs into the intermediates {\em before} the Z-vector
 solve.  Augment the one-particle density,
 \begin{equation*}
 \tilde{D}_{ij}=D_{ij}+P_{ij},\qquad \tilde{D}_{ab}=D_{ab}+P_{ab};
@@ -578,7 +579,7 @@ I_{ab}=\tilde{I}''_{ab}.
 \end{enumerate}
 
 For methods for which the energy is invariant to occupied--occupied and virtual--virtual
-rotations, the dependent-pairs vanish ($X_{ij}=X_{ab}=0$, hence
+rotations, the dependent pairs vanish ($X_{ij}=X_{ab}=0$, hence
 $P_{ij}=P_{ab}=0$), $\tilde{I}''=I''$, and $\tilde{X}=X$; the canonical recipe
 then reduces term by term to the non-canonical one.  The two routes diverge only
 when we choose to use canonical perturbed MOs (as is typically the choice for
@@ -590,12 +591,12 @@ CCSD(T)).
 Up to this point, we have made no assumptions about the perturbation $x$
 beyond its being real.  The two most common cases of such a perturbation are a
 {\em nuclear-coordinate displacement} and a {\em static, spatially-uniform
-electric field}, and, depending on the type of AO basis set used, they use the
-total gradient in Eq.~\eqref{eq:grad-final} very differently.
+electric field}, and, depending on the type of AO basis set used, they populate
+the three terms of Eq.~\eqref{eq:grad-final} very differently.
 
 In the vast majority of quantum chemical calculations on molecules, the AO
 basis functions are centered at the nuclei and thus depend on the
-nuclear-coordinates. This means that all three components of
+nuclear coordinates. This means that all three components of
 Eq.~\eqref{eq:grad-final} contribute to the corresponding derivative: the
 relaxed one-particle density against the skeleton Fock derivative $f^{(x)}$,
 the two-particle density against the skeleton two-electron derivative
@@ -657,7 +658,7 @@ rule to Eq.~\eqref{eq:grad-final},
 \label{eq:d2E}
 \end{align}
 
-In the first three terms, the {\em unperturbed} densities $\tilde D$,
+In the first three terms, the {\em undifferentiated} densities $\tilde D$,
 $\Gamma$, and $I$ contract the $y$-derivative of the skeleton first-derivative
 integrals; each such derivative carries both the doubly-skeleton integral (the
 second AO derivative transformed into the unperturbed MO basis) and the
@@ -880,6 +881,96 @@ with $\tilde X^{(x)}$ and $\tilde I''^{(x)}$ the second-derivative counterparts 
 Eqs.~\eqref{eq:Xtilde} and \eqref{eq:Idouble-tilde} ($P\to P^{(x)}$, and the
 overlap/rotation coefficients those of $y$).
 
+\subsection{Response of the Relaxed Densities}
+\label{sec:2nd-density-response}
+
+The reductions of \S\ref{sec:2nd-noncanon} and \S\ref{sec:2nd-canon} dispose of
+the first three terms of Eq.~\eqref{eq:d2E}.  The last three,
+\begin{equation*}
+\sum_{pq}\frac{\partial\tilde D_{pq}}{\partial y}\,f^{(x)}_{pq}
++ \sum_{pqrs}\frac{\partial\Gamma_{pqrs}}{\partial y}\,\adb{pq}{rs}^{(x)}
++ \sum_{pq}\frac{\partial I_{pq}}{\partial y}\,S^{(x)}_{pq},
+\end{equation*}
+contract the first-order responses of the relaxed one-particle density $\tilde
+D$, the two-particle density $\Gamma$, and the energy-weighted density $I$ with
+the ordinary skeleton first-derivative integrals of \S\ref{sec:first-derivs}.
+
+The two-particle response $\partial\Gamma/\partial y$ is {\em unrelaxed}: the
+orbital relaxation resides entirely in the one-particle density (through the
+Z-vector), so $\partial\Gamma/\partial y$ is the perturbed unrelaxed
+two-particle density of Appendix~\ref{sec:deriv-densities}, built from the
+once-perturbed amplitudes and multipliers.
+
+The one-particle response $\partial\tilde D/\partial y$ combines the unrelaxed
+response $\partial D/\partial y$ (also Appendix~\ref{sec:deriv-densities}) with
+the response of the orbital relaxation that \S\ref{sec:total-grad} folded into
+$\tilde D$.  Differentiating those assignments, the occupied--virtual block
+carries the perturbed Z-vector,
+\begin{equation}
+\frac{\partial\tilde D_{ai}}{\partial y} = \frac{\partial D_{ai}}{\partial y} - \frac{\partial Z_{ai}}{\partial y},
+\qquad
+\frac{\partial\tilde D_{ia}}{\partial y} = \frac{\partial D_{ia}}{\partial y} - \frac{\partial Z_{ai}}{\partial y},
+\label{eq:dDtilde-ov}
+\end{equation}
+while the occupied--occupied and virtual--virtual blocks are unchanged for
+non-canonical perturbed orbitals and acquire the perturbed dependent pairs
+$\partial P_{ij}/\partial y$, $\partial P_{ab}/\partial y$ for canonical ones
+(the response of Eq.~\eqref{eq:Dtilde}).
+
+The perturbed Z-vector $\partial Z/\partial y$ follows by differentiating the
+Z-vector equation $\mathbf{G}^{T}\mathbf{Z}=\mathbf{X}$ of \S\ref{sec:cphf-z},
+\begin{equation}
+\mathbf{G}^{T}\frac{\partial\mathbf{Z}}{\partial y}
+= \frac{\partial\mathbf{X}}{\partial y} - \frac{\partial\mathbf{G}^{T}}{\partial y}\,\mathbf{Z},
+\label{eq:perturbed-zvector}
+\end{equation}
+a single linear solve per perturbation $y$ with the {\em unperturbed} orbital
+Hessian $\mathbf{G}$.  Its right-hand side needs the source response $\partial
+X_{ai}/\partial y = \partial I'_{ia}/\partial y - \partial I'_{ai}/\partial y$,
+hence the perturbed generalized Fock $\partial I'/\partial y$, and the response
+$\partial\mathbf{G}/\partial y$ of the orbital Hessian.  The perturbed
+generalized Fock is the product-rule derivative of Eq.~\eqref{eq:Iprime},
+\begin{align}
+\frac{\partial I'_{pq}}{\partial y} = -\tfrac12\Big[
+&\sum_r\frac{\partial f_{pr}}{\partial y}\big(D_{rq}+D_{qr}\big)
++ \varepsilon_p\Big(\frac{\partial D_{pq}}{\partial y}+\frac{\partial D_{qp}}{\partial y}\Big)
+\nonumber\\
+&+ \delta_{q,\occ}\sum_{rs}\Big(\frac{\partial D_{rs}}{\partial y}\,A_{rpsq}
+   + D_{rs}\,\frac{\partial A_{rpsq}}{\partial y}\Big)
+\nonumber\\
+&+ 4\sum_{rst}\Big(\frac{\partial\adb{pr}{st}}{\partial y}\,\Gamma_{qrst}
+   + \adb{pr}{st}\,\frac{\partial\Gamma_{qrst}}{\partial y}\Big)\Big],
+\label{eq:dIprime}
+\end{align}
+where the density responses $\partial D/\partial y$, $\partial\Gamma/\partial y$
+are the unrelaxed derivative densities of Appendix~\ref{sec:deriv-densities}, and
+the full MO integral derivatives $\partial f/\partial y$,
+$\partial\adb{}{}/\partial y$ (hence $\partial A/\partial y$) together with the
+orbital-Hessian response $\partial\mathbf{G}/\partial y$ follow from the skeleton
+derivatives and the CPHF coefficients $U^y$ through
+Eqs.~\eqref{eq:dfpq}--\eqref{eq:deri}.  The Fock term keeps the {\em full}
+$\partial f/\partial y$ summed over $r$: Eq.~\eqref{eq:Iprime} wrote it in the
+canonical, diagonal-$f$ form $f_{pp}(D_{pq}+D_{qp})$, but the derivative
+reactivates the off-diagonal $\partial f_{pr}/\partial y$ ($r\neq p$), nonzero
+because the one-particle density carries occupied--virtual blocks.
+
+Finally, the energy-weighted density response $\partial I/\partial y$ is the
+product-rule derivative of the $I$ blocks assembled after
+Eq.~\eqref{eq:grad-final}: it combines $\partial I''/\partial y$ (the
+$(a,i)$-swap of $\partial I'/\partial y$, Eq.~\eqref{eq:Idouble}; in the canonical
+route $\tilde I''$ of Eq.~\eqref{eq:Idouble-tilde} replaces $I''$, its response
+carrying the perturbed dependent pairs) with the responses of the Z-vector
+terms, e.g.
+\begin{equation*}
+\frac{\partial I_{ai}}{\partial y} = \frac{\partial I''_{ai}}{\partial y}
++ \frac{\partial Z_{ai}}{\partial y}\,\varepsilon_i
++ Z_{ai}\,\frac{\partial\varepsilon_i}{\partial y},
+\end{equation*}
+the perturbed orbital energy $\partial\varepsilon_i/\partial y$ being the
+diagonal of the perturbed Fock.  With $\partial\tilde D/\partial y$,
+$\partial\Gamma/\partial y$, and $\partial I/\partial y$ in hand, the last three
+terms of Eq.~\eqref{eq:d2E} are evaluated directly.
+
 \subsection{Computational Summary}
 \label{sec:comp-summary-2}
 
@@ -905,21 +996,25 @@ density-response contributions,
 \end{align*}
 and differ only in the orbital-response term.
 
-The doubly-skeleton and density-response contributions use the following
-ingredients, common to both choices.  The unperturbed relaxed densities
-$\tilde D_{pq}$, $\Gamma_{pqrs}$, and $I_{pq}$ are assembled exactly as in the
-first-derivative summary (\S\ref{sec:comp-summary-1}); they carry the first perturbation $x$ implicitly.
-The skeleton first-derivative integrals of both perturbations
+The following ingredients are common to both perturbed-orbital choices:
+\begin{enumerate}
+\item The {\em undifferentiated} relaxed densities $\tilde D_{pq}$,
+$\Gamma_{pqrs}$, and $I_{pq}$, assembled exactly as in the first-derivative
+summary (\S\ref{sec:comp-summary-1}); they carry the first perturbation $x$
+implicitly.
+\item The skeleton first-derivative integrals of both perturbations
 ($f^{(x)}$, $\adb{pq}{rs}^{(x)}$, $S^{(x)}$ and $f^{(y)}$, $S^{(y)}$) and the
 doubly-skeleton integrals $f^{(xy)}_{pq}$, $\adb{pq}{rs}^{(xy)}$, $S^{(xy)}_{pq}$
-(the last nonzero only when the perturbations move the atomic-orbital basis)
-are computed directly.  The occupied--virtual response $U^y_{ai}$ is obtained
-from a CPHF solve for the second perturbation $y$; there is no Z-vector shortcut
-at second order.  The first-order density responses
-$\partial\tilde D_{pq}/\partial y$, $\partial\Gamma_{pqrs}/\partial y$,
-$\partial I_{pq}/\partial y$ follow from the once-perturbed wave-function and
-Z-vector equations (the $(2n+1)$ rule; no second-order wave-function response is
-needed).  The perturbed generalized Fock is
+(the last nonzero only when the perturbations move the atomic-orbital basis).
+\item The occupied--virtual response $U^y_{ai}$, from a CPHF solve for the second
+perturbation $y$; there is no Z-vector shortcut at second order.
+\item The first-order density responses $\partial\tilde D_{pq}/\partial y$,
+$\partial\Gamma_{pqrs}/\partial y$, $\partial I_{pq}/\partial y$, assembled as in
+\S\ref{sec:2nd-density-response} from the once-perturbed wave-function parameters
+and the perturbed Z-vector (the $(2n+1)$ rule; no second-order wave-function
+response is needed).
+\end{enumerate}
+The perturbed generalized Fock is
 \begin{align*}
 I'^{(x)}_{pq} = -\tfrac12\Big[
 &\sum_r\big(\tilde D_{qr}f^{(x)}_{pr}+\tilde D_{rq}f^{(x)}_{rp}\big)
@@ -1076,7 +1171,8 @@ correlation method.
 
 \appendix
 
-\section{Densities for Specific Quantum Chemical Methods}
+\section{Densities for Specific Methods}
+\label{sec:densities}
 
 The presentation given in \S\ref{sec:first-derivs} and \S\ref{sec:second-derivs}
 is general for any correlated method,
@@ -1099,7 +1195,7 @@ two-electron energy).  The one-particle density $D_{pq}$ needs no such factor.
 \subsection{Coupled Cluster Singles and Doubles (CCSD)}
 \label{sec:ccsd_pdms}
 
-This appendix collects the spin-orbital CCSD expressions in terms of the
+This subsection collects the spin-orbital CCSD expressions in terms of the
 cluster amplitudes $t_i^a$, $t_{ij}^{ab}$ and the de-excitation
 (Lagrange-multiplier) amplitudes $\lambda^i_a$, $\lambda^{ij}_{ab}$.  The
 effective double-excitation operator is
@@ -1110,7 +1206,7 @@ effective double-excitation operator is
 with the antisymmetrizer defined as $P(pq)Y_{pq} = Y_{pq} - Y_{qp}$.
 Tables~\ref{Table:ccsd_1pdm} and \ref{Table:ccsd_2pdm} give the expressions
 for the one- and two-electron densities, respectively.  For $\Gamma_{pqrs}$,
-table~\ref{Table:ccsd_2pdm} list one representative block of each occupation
+Table~\ref{Table:ccsd_2pdm} lists one representative block of each occupation
 block, and the remaining blocks follow from antisymmetry.
 
 \begin{table}[H]
@@ -1289,6 +1385,186 @@ with $D_{ia}=D_{ai}=0$ and all other $\Gamma$ blocks vanishing.  As in the CCSD
 case, the $\Gamma$ expressions are diagrammatic blocks and must be multiplied by
 an overall $\frac14$ for use in Eq.~\eqref{eq:dE}; $D$ enters with no prefactor.
 
+\section{Derivative Densities for Specific Methods}
+\label{sec:deriv-densities}
+
+The second derivatives of \S\ref{sec:second-derivs} require the first-order
+responses $\partial_x D_{pq}$ and $\partial_x\Gamma_{pqrs}$ of the unrelaxed
+densities of Appendix~\ref{sec:densities}.  Every density block there is
+multilinear in the cluster amplitudes and their de-excitation
+(Lagrange-multiplier) counterparts, so its response follows by the product rule:
+the derivative of a block is the sum, over the amplitude factors of each of its
+terms, of that term with the one factor replaced by its first-order response.  We
+write the first-order responses of the amplitudes as
+\begin{equation*}
+t^{a,x}_i\equiv\partial_x t^a_i,\quad
+t^{ab,x}_{ij}\equiv\partial_x t^{ab}_{ij},\quad
+\lambda^{i,x}_a\equiv\partial_x\lambda^i_a,\quad
+\lambda^{ij,x}_{ab}\equiv\partial_x\lambda^{ij}_{ab},
+\end{equation*}
+and the response of the effective double-excitation operator \eqref{eq:tau} as
+\begin{equation}
+\tau^{ab,x}_{ij} \equiv \partial_x\tau^{ab}_{ij}
+= t^{ab,x}_{ij} + \tfrac12 P(ij)P(ab)\big(t^{a,x}_i t^b_j + t^a_i t^{b,x}_j\big).
+\label{eq:tau-x}
+\end{equation}
+Each two-particle response carries the same overall $\frac14$ as its parent block
+(Appendix~\ref{sec:densities}).  The construction of the perturbed amplitudes
+themselves, and the evaluation of the several quantities that enter in terms of
+the skeleton derivative integrals, are taken up separately; here we give only the
+product-rule expansions of the densities.
+
+\subsection{Coupled Cluster Singles and Doubles (CCSD)}
+\label{sec:ccsd_deriv_pdms}
+
+The product-rule responses of Tables~\ref{Table:ccsd_1pdm} and
+\ref{Table:ccsd_2pdm} are collected in Tables~\ref{Table:ccsd_deriv_1pdm} and
+\ref{Table:ccsd_deriv_2pdm}; each two-particle response inherits the overall
+$\frac14$ of its parent, and $\tau^{ab,x}_{ij}$ is given by Eq.~\eqref{eq:tau-x}.
+
+\begin{table}[H]
+\caption{Spin-orbital CCSD one-electron derivative density $\partial_x D_{pq}$,
+the product-rule response of Table~\ref{Table:ccsd_1pdm}.}
+\label{Table:ccsd_deriv_1pdm}
+\renewcommand{\arraystretch}{1.6}
+\begin{center}
+\begin{tabular}{ll}
+\hline\hline
+Block & Algebraic expression \\
+\hline
+$\partial_x D_{ij}$ & $\displaystyle -\sum_e\big(\lambda^{j,x}_e t^e_i + \lambda^j_e t^{e,x}_i\big) - \frac12\sum_{mef}\big(\lambda^{jm,x}_{ef} t^{ef}_{im} + \lambda^{jm}_{ef} t^{ef,x}_{im}\big)$ \\
+$\partial_x D_{ab}$ & $\displaystyle \sum_m\big(\lambda^{m,x}_a t^b_m + \lambda^m_a t^{b,x}_m\big) + \frac12\sum_{mne}\big(\lambda^{mn,x}_{ae} t^{be}_{mn} + \lambda^{mn}_{ae} t^{be,x}_{mn}\big)$ \\
+$\partial_x D_{ia}$ & $\displaystyle t^{a,x}_i + \sum_{me}\big(\lambda^{m,x}_e t^{ae}_{im} + \lambda^m_e t^{ae,x}_{im}\big) - \sum_{me}\big(\lambda^{m,x}_e t^e_i t^a_m + \lambda^m_e t^{e,x}_i t^a_m + \lambda^m_e t^e_i t^{a,x}_m\big)$ \\
+ & $\displaystyle - \frac12\sum_{mnef}\lambda^{mn,x}_{ef}\big(t^e_i t^{af}_{mn} + t^a_m t^{ef}_{in}\big) - \frac12\sum_{mnef}\lambda^{mn}_{ef}\big(t^{e,x}_i t^{af}_{mn} + t^e_i t^{af,x}_{mn} + t^{a,x}_m t^{ef}_{in} + t^a_m t^{ef,x}_{in}\big)$ \\
+$\partial_x D_{ai}$ & $\displaystyle \lambda^{i,x}_a$ \\
+\hline\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+{\renewcommand{\arraystretch}{1.5}\setlength{\LTcapwidth}{\textwidth}
+\begin{longtable}{ll}
+\caption{Spin-orbital CCSD two-electron derivative density
+$\partial_x\Gamma_{pqrs}$, the product-rule response of
+Table~\ref{Table:ccsd_2pdm} (each block to be multiplied by the overall
+$\frac14$).  Long blocks are broken by parent term, one continuation row each.}
+\label{Table:ccsd_deriv_2pdm}\\
+\hline\hline
+Block & Algebraic expression \\
+\hline
+\endfirsthead
+\multicolumn{2}{c}{\small\emph{Table~\ref{Table:ccsd_deriv_2pdm}, continued}}\\
+\hline\hline
+Block & Algebraic expression \\
+\hline
+\endhead
+\hline
+\multicolumn{2}{r}{\small\emph{continued on next page}}\\
+\endfoot
+\hline\hline
+\endlastfoot
+$\partial_x\Gamma_{ijkl}$ & $\displaystyle \frac12\sum_{ef}\big(\lambda^{kl,x}_{ef}\tau^{ef}_{ij} + \lambda^{kl}_{ef}\tau^{ef,x}_{ij}\big)$ \\
+$\partial_x\Gamma_{abcd}$ & $\displaystyle \frac12\sum_{mn}\big(\lambda^{mn,x}_{ab}\tau^{cd}_{mn} + \lambda^{mn}_{ab}\tau^{cd,x}_{mn}\big)$ \\
+$\partial_x\Gamma_{ijka}$ & $\displaystyle -\sum_e\big(\lambda^{k,x}_e\tau^{ea}_{ij} + \lambda^k_e\tau^{ea,x}_{ij}\big)$ \\
+ & $\displaystyle + \frac12\sum_{mef}\big(\lambda^{km,x}_{ef}\tau^{ef}_{ij}t^a_m + \lambda^{km}_{ef}\tau^{ef,x}_{ij}t^a_m + \lambda^{km}_{ef}\tau^{ef}_{ij}t^{a,x}_m\big)$ \\
+ & $\displaystyle + P(ij)\sum_{mef}\big(\lambda^{mk,x}_{ef}t^{ae}_{im}t^f_j + \lambda^{mk}_{ef}t^{ae,x}_{im}t^f_j + \lambda^{mk}_{ef}t^{ae}_{im}t^{f,x}_j\big)$ \\
+ & $\displaystyle - \frac12 P(ij)\sum_{mef}\big(\lambda^{km,x}_{ef}t^{ef}_{im}t^a_j + \lambda^{km}_{ef}t^{ef,x}_{im}t^a_j + \lambda^{km}_{ef}t^{ef}_{im}t^{a,x}_j\big)$ \\
+$\partial_x\Gamma_{ciab}$ & $\displaystyle \sum_m\big(\lambda^{m,x}_c\tau^{ab}_{mi} + \lambda^m_c\tau^{ab,x}_{mi}\big)$ \\
+ & $\displaystyle - \frac12\sum_{mne}\big(\lambda^{mn,x}_{ce}\tau^{ab}_{mn}t^e_i + \lambda^{mn}_{ce}\tau^{ab,x}_{mn}t^e_i + \lambda^{mn}_{ce}\tau^{ab}_{mn}t^{e,x}_i\big)$ \\
+ & $\displaystyle - P(ab)\sum_{mne}\big(\lambda^{mn,x}_{ce}t^{ae}_{in}t^b_m + \lambda^{mn}_{ce}t^{ae,x}_{in}t^b_m + \lambda^{mn}_{ce}t^{ae}_{in}t^{b,x}_m\big)$ \\
+ & $\displaystyle + \frac12 P(ab)\sum_{mne}\big(\lambda^{mn,x}_{ce}t^{ae}_{mn}t^b_i + \lambda^{mn}_{ce}t^{ae,x}_{mn}t^b_i + \lambda^{mn}_{ce}t^{ae}_{mn}t^{b,x}_i\big)$ \\
+$\partial_x\Gamma_{abci}$ & $\displaystyle \sum_m\big(\lambda^{mi,x}_{ab}t^c_m + \lambda^{mi}_{ab}t^{c,x}_m\big)$ \\
+$\partial_x\Gamma_{kaij}$ & $\displaystyle -\sum_e\big(\lambda^{ij,x}_{ea}t^e_k + \lambda^{ij}_{ea}t^{e,x}_k\big)$ \\
+$\partial_x\Gamma_{ibaj}$ & $\displaystyle t^{a,x}_i\lambda^j_b + t^a_i\lambda^{j,x}_b$ \\
+ & $\displaystyle + \sum_{me}\Big[\lambda^{jm,x}_{be}\big(t^{ea}_{mi} - t^a_m t^e_i\big) + \lambda^{jm}_{be}\big(t^{ea,x}_{mi} - t^{a,x}_m t^e_i - t^a_m t^{e,x}_i\big)\Big]$ \\
+$\partial_x\Gamma_{ijab}$ & $\displaystyle \tau^{ab,x}_{ij} + \frac14\sum_{mnef}\big(\lambda^{mn,x}_{ef}\tau^{ef}_{ij}\tau^{ab}_{mn} + \lambda^{mn}_{ef}\tau^{ef,x}_{ij}\tau^{ab}_{mn} + \lambda^{mn}_{ef}\tau^{ef}_{ij}\tau^{ab,x}_{mn}\big)$ \\
+ & $\displaystyle - \frac12 P(ij)\sum_{mnef}\big(\lambda^{mn,x}_{ef}t^{ef}_{in}\tau^{ab}_{mj} + \lambda^{mn}_{ef}t^{ef,x}_{in}\tau^{ab}_{mj} + \lambda^{mn}_{ef}t^{ef}_{in}\tau^{ab,x}_{mj}\big)$ \\
+ & $\displaystyle - P(ij)\sum_{me}\big(\lambda^{m,x}_e\tau^{ab}_{mj}t^e_i + \lambda^m_e\tau^{ab,x}_{mj}t^e_i + \lambda^m_e\tau^{ab}_{mj}t^{e,x}_i\big)$ \\
+ & $\displaystyle - \frac12 P(ab)\sum_{mnef}\big(\lambda^{mn,x}_{ef}t^{af}_{mn}\tau^{eb}_{ij} + \lambda^{mn}_{ef}t^{af,x}_{mn}\tau^{eb}_{ij} + \lambda^{mn}_{ef}t^{af}_{mn}\tau^{eb,x}_{ij}\big)$ \\
+ & $\displaystyle - P(ab)\sum_{me}\big(\lambda^{m,x}_e\tau^{eb}_{ij}t^a_m + \lambda^m_e\tau^{eb,x}_{ij}t^a_m + \lambda^m_e\tau^{eb}_{ij}t^{a,x}_m\big)$ \\
+ & $\displaystyle - \frac12 P(ij)P(ab)\sum_{mnef}\big(t^{ae,x}_{mi} + 2t^{e,x}_i t^a_m + 2t^e_i t^{a,x}_m\big)\lambda^{mn}_{ef}t^{bf}_{jn}$ \\
+ & $\displaystyle - \frac12 P(ij)P(ab)\sum_{mnef}\big(t^{ae}_{mi} + 2t^e_i t^a_m\big)\big(\lambda^{mn,x}_{ef}t^{bf}_{jn} + \lambda^{mn}_{ef}t^{bf,x}_{jn}\big)$ \\
+ & $\displaystyle - P(ij)P(ab)\sum_{me}\big(t^{ae,x}_{mi} + 2t^{e,x}_i t^a_m + 2t^e_i t^{a,x}_m\big)\lambda^m_e t^b_j$ \\
+ & $\displaystyle - P(ij)P(ab)\sum_{me}\big(t^{ae}_{mi} + 2t^e_i t^a_m\big)\big(\lambda^{m,x}_e t^b_j + \lambda^m_e t^{b,x}_j\big)$ \\
+ & $\displaystyle + 3P(ij)P(ab)\sum_{me}\big(\lambda^{m,x}_e t^a_i t^e_j t^b_m + \lambda^m_e t^{a,x}_i t^e_j t^b_m + \lambda^m_e t^a_i t^{e,x}_j t^b_m + \lambda^m_e t^a_i t^e_j t^{b,x}_m\big)$ \\
+$\partial_x\Gamma_{abij}$ & $\displaystyle \lambda^{ij,x}_{ab}$ \\
+\end{longtable}
+}
+
+\subsection{Perturbative Triples [CCSD(T)]}
+\label{sec:ccsdt_deriv_pdms}
+
+For CCSD(T) the derivative density is the sum of the CCSD-block responses of
+Tables~\ref{Table:ccsd_deriv_1pdm} and \ref{Table:ccsd_deriv_2pdm} (now evaluated
+with the (T)-relaxed multipliers $\lambda$ and their responses $\lambda^x$) and
+the responses of the (T) increments below.  Writing the first-order responses of
+the connected and disconnected triples as
+$t^{(c)\,abc,x}_{ijk}\equiv\partial_x t^{(c)\,abc}_{ijk}$ and
+$t^{(d)\,abc,x}_{ijk}\equiv\partial_x t^{(d)\,abc}_{ijk}$, with the shorthand
+$(t^{(c)}+t^{(d)})^{abc,x}_{ijk}\equiv t^{(c)\,abc,x}_{ijk}+t^{(d)\,abc,x}_{ijk}$,
+the product rule applied to the increments of Tables~\ref{Table:ccsdt_1pdm} and
+\ref{Table:ccsdt_2pdm} gives Tables~\ref{Table:ccsdt_deriv_1pdm} and
+\ref{Table:ccsdt_deriv_2pdm}.  Only the diagonal of the $oo$/$vv$ one-electron
+responses is retained, as for the parent increments.
+
+\begin{table}[H]
+\caption{Spin-orbital (T) increments to the one-electron derivative density
+$\partial_x D^{(T)}_{pq}$, the product-rule response of
+Table~\ref{Table:ccsdt_1pdm}.}
+\label{Table:ccsdt_deriv_1pdm}
+\renewcommand{\arraystretch}{1.6}
+\begin{center}
+\begin{tabular}{ll}
+\hline\hline
+Block & Algebraic expression \\
+\hline
+$\partial_x D^{(T)}_{ia}$ & $\displaystyle \frac14 \sum_{lm,ef}\big(t^{(c)\,aef,x}_{ilm} t^{ef}_{lm} + t^{(c)\,aef}_{ilm} t^{ef,x}_{lm}\big)$ \\
+$\partial_x D^{(T)}_{ij}$ (diag) & $\displaystyle -\frac{1}{12} \sum_{lm,efg}\big[t^{(c)\,efg,x}_{lmi}(t^{(c)}+t^{(d)})^{efg}_{lmj} + t^{(c)\,efg}_{lmi}(t^{(c)}+t^{(d)})^{efg,x}_{lmj}\big]$ \\
+$\partial_x D^{(T)}_{ab}$ (diag) & $\displaystyle +\frac{1}{12} \sum_{lmn,ef}\big[t^{(c)\,efb,x}_{lmn}(t^{(c)}+t^{(d)})^{efa}_{lmn} + t^{(c)\,efb}_{lmn}(t^{(c)}+t^{(d)})^{efa,x}_{lmn}\big]$ \\
+\hline\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\begin{table}[H]
+\caption{Spin-orbital (T) increments to the two-electron derivative density
+$\partial_x\Gamma^{(T)}_{pqrs}$, the product-rule response of
+Table~\ref{Table:ccsdt_2pdm} (each block to be multiplied by the overall
+$\frac14$).}
+\label{Table:ccsdt_deriv_2pdm}
+\renewcommand{\arraystretch}{1.6}
+\begin{center}
+\begin{tabular}{ll}
+\hline\hline
+Block & Algebraic expression \\
+\hline
+$\partial_x\Gamma^{(T)}_{ijab}$ & $\displaystyle \sum_{me}\big(t^{(c)\,eab,x}_{mij} t^e_m + t^{(c)\,eab}_{mij} t^{e,x}_m\big)$ \\
+$\partial_x\Gamma^{(T)}_{ijka}$ & $\displaystyle -\frac12 \sum_{mef}\big(t^{(c)\,efa,x}_{mij} t^{ef}_{mk} + t^{(c)\,efa}_{mij} t^{ef,x}_{mk}\big)$ \\
+$\partial_x\Gamma^{(T)}_{ciab}$ & $\displaystyle +\frac12 \sum_{mne}\big(t^{(c)\,eab,x}_{mni} t^{ec}_{mn} + t^{(c)\,eab}_{mni} t^{ec,x}_{mn}\big)$ \\
+$\partial_x\Gamma^{(T)}_{kaij}$ & $\displaystyle -\frac12 \sum_{mef}\big[(t^{(c)}+t^{(d)})^{efa,x}_{mij} t^{ef}_{mk} + (t^{(c)}+t^{(d)})^{efa}_{mij} t^{ef,x}_{mk}\big]$ \\
+$\partial_x\Gamma^{(T)}_{abci}$ & $\displaystyle +\frac12 \sum_{mne}\big[(t^{(c)}+t^{(d)})^{eab,x}_{mni} t^{ec}_{mn} + (t^{(c)}+t^{(d)})^{eab}_{mni} t^{ec,x}_{mn}\big]$ \\
+\hline\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\subsection{Second-Order M{\o}ller-Plesset Perturbation Theory (MP2)}
+
+The MP2 derivative densities are the first-order limit of the CCSD responses
+($t_i^a\to0$, $\lambda^{ij}_{ab}\to t^{ab}_{ij}$, so $\lambda^{ij,x}_{ab}\to
+t^{ab,x}_{ij}$); only the surviving blocks contribute,
+\begin{align*}
+\partial_x D_{ij} &= -\tfrac12\sum_{mef}\big(t^{ef,x}_{im} t^{ef}_{jm} + t^{ef}_{im} t^{ef,x}_{jm}\big),
+&
+\partial_x D_{ab} &= \tfrac12\sum_{mne}\big(t^{be,x}_{mn} t^{ae}_{mn} + t^{be}_{mn} t^{ae,x}_{mn}\big),
+\\
+\partial_x\Gamma_{ijab} &= t^{ab,x}_{ij}, &
+\partial_x\Gamma_{abij} &= t^{ab,x}_{ij},
+\end{align*}
+with $\partial_x D_{ia}=\partial_x D_{ai}=0$ and all other $\partial_x\Gamma$
+blocks vanishing.  As in the CCSD case the $\Gamma$ responses carry the overall
+$\frac14$; $\partial_x D$ needs no prefactor.
+
 \section{Frozen Core}
 
 The frozen-core approximation removes a set of low-lying (core) orbitals from
@@ -1315,7 +1591,7 @@ P_{ci} = \frac{X_{ci}}{\varepsilon_c-\varepsilon_i}
 \label{eq:Pco}
 \end{equation}
 the restriction of Eq.~\eqref{eq:canon-oo} to $(c,i)$ pairs.  It enters the
-relaxed density as the occupied dependent-pair of \S\ref{sec:cphf-z-canon} does,
+relaxed density as the occupied dependent pair of \S\ref{sec:cphf-z-canon} does,
 \begin{equation}
 \tilde{D}_{ci}=\tilde{D}_{ic}=P_{ci},
 \end{equation}
@@ -1329,8 +1605,8 @@ response (the Z-vector) now spans the {\em full} occupied space, core plus activ
 because the core orbitals relax against the virtuals.
 
 Nothing in \S\ref{sec:canon-mo}--\S\ref{sec:cphf-z-canon} is specific to a particular method or to the all-electron
-case.  The occupied dependent-pair is defined over the entire occupied space and
-the virtual dependent-pair over the entire virtual space, and each block is
+case.  The occupied dependent pair is defined over the entire occupied space and
+the virtual dependent pair over the entire virtual space, and each block is
 populated only where the energy fails to be invariant, its antisymmetric
 numerator $X_{pq}=I'_{pq}-I'_{qp}$ vanishing elsewhere.  
 
@@ -1375,7 +1651,7 @@ A Lagrangian, integral-density direct formulation and implementation of the
 J. F. Stanton and J. Gauss in
 \textit{Recent Advances in Coupled-Cluster Methods}, R. J. Bartlett, ed. World Scientific Publishing, Singapore,
 1997, pp. 49-79.
-Analytic evaluation of second derivatives of the energy: Computational strategies for the CCSD and CCSD(T) approximations
+Analytic evaluation of second derivatives of the energy: Computational strategies for the CCSD and CCSD(T) approximations.
 
 \end{thebibliography}
 
