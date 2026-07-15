@@ -941,12 +941,12 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
     intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
     Gvvvo, S1, S2} that the caller caches on the wavefunction.
     """
-    dvv = np.zeros(nv)   # diagonal of the (T) vir-vir 1-PDM (see below)
-    doo = np.zeros(no)   # diagonal of the (T) occ-occ 1-PDM
-    Dov = np.zeros((no,nv))
+    dvv = np.zeros(nv, dtype=t2.dtype)   # diagonal of the (T) vir-vir 1-PDM (see below)
+    doo = np.zeros(no, dtype=t2.dtype)   # diagonal of the (T) occ-occ 1-PDM; dtype-propagating for complex-step
+    Dov = np.zeros((no,nv), dtype=t2.dtype)
     Goovv = np.zeros_like(t2)
-    Gooov = np.zeros((no,no,no,nv))
-    Gvvvo = np.zeros((nv,nv,nv,no))
+    Gooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
+    Gvvvo = np.zeros((nv,nv,nv,no), dtype=t2.dtype)
     S1 = np.zeros_like(t1)
     S2 = np.zeros_like(t2)
     X2 = np.zeros_like(t2)
@@ -1002,6 +1002,68 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
                 'S1': S1, 'S2': S2}
 
 
+def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract):
+    """Analytic field response of the spatial (closed-shell RHF) (T) intermediates -- the
+    product-rule derivative of :func:`t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``
+    with **canonical** perturbed orbitals.  Returns ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}``
+    (the spatial route has no ``Gvovv``/``Govoo``).  Verified to ~1e-16 against a complex-step
+    derivative of :func:`t3_density`."""
+    ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
+    dDov = np.zeros((no,nv), dtype=t2.dtype)
+    dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
+    dGvvvo = np.zeros((nv,nv,nv,no), dtype=t2.dtype); dS1 = np.zeros_like(t1); dS2 = np.zeros_like(t2)
+
+    Wvvvo, Wovoo, Woovv, Fov = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v], F[o,v]
+    dWvvvo, dWovoo, dWoovv, dFov = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v], df[o,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    docc, dvir = diag(df)[o], diag(df)[v]
+
+    def dNc(i, j, k):   # product rule of the spatial t3c_ijk numerator (12 terms)
+        def T(W, t): return (contract('bae,ce->abc', W[:,:,:,i], t[k,j]) + contract('cae,be->abc', W[:,:,:,i], t[j,k])
+                             + contract('ace,be->abc', W[:,:,:,k], t[j,i]) + contract('bce,ae->abc', W[:,:,:,k], t[i,j])
+                             + contract('cbe,ae->abc', W[:,:,:,j], t[i,k]) + contract('abe,ce->abc', W[:,:,:,j], t[k,i]))
+        def U(W, t): return (contract('mc,mab->abc', W[:,:,j,k], t[i]) + contract('mb,mac->abc', W[:,:,k,j], t[i])
+                             + contract('mb,mca->abc', W[:,:,i,j], t[k]) + contract('ma,mcb->abc', W[:,:,j,i], t[k])
+                             + contract('ma,mbc->abc', W[:,:,k,i], t[j]) + contract('mc,mba->abc', W[:,:,i,k], t[j]))
+        return (T(dWvvvo, t2) + T(Wvvvo, dt2)) - (U(dWovoo, t2) + U(Wovoo, dt2))
+
+    def dNd(i, j, k):   # product rule of the spatial t3d_ijk numerator (6 terms)
+        return (contract('ab,c->abc', dWoovv[i,j], t1[k]) + contract('ac,b->abc', dWoovv[i,k], t1[j]) + contract('bc,a->abc', dWoovv[j,k], t1[i])
+                + contract('ab,c->abc', Woovv[i,j], dt1[k]) + contract('ac,b->abc', Woovv[i,k], dt1[j]) + contract('bc,a->abc', Woovv[j,k], dt1[i])
+                + contract('ab,c->abc', dt2[i,j], Fov[k]) + contract('ac,b->abc', dt2[i,k], Fov[j]) + contract('bc,a->abc', dt2[j,k], Fov[i])
+                + contract('ab,c->abc', t2[i,j], dFov[k]) + contract('ac,b->abc', t2[i,k], dFov[j]) + contract('bc,a->abc', t2[j,k], dFov[i]))
+
+    def sym(A): return 8*A - 4*A.swapaxes(0,1) - 4*A.swapaxes(1,2) - 4*A.swapaxes(0,2) + 2*np.moveaxis(A,0,2) + 2*np.moveaxis(A,2,0)
+
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                M3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, True)
+                N3 = t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, True)
+                denom = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
+                ddenom = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
+                dM3 = (dNc(i,j,k) - M3*ddenom) / denom
+                dN3 = (dNd(i,j,k) - N3*ddenom) / denom
+                X3, Y3 = sym(M3), sym(N3); dX3, dY3 = sym(dM3), sym(dN3)
+                ddvv += 0.5 * (contract('acd,acd->a', dM3, (X3+Y3)) + contract('acd,acd->a', M3, (dX3+dY3)))
+                ddoo[i] -= 0.5 * (contract('abc,abc->', dM3, (X3+Y3)) + contract('abc,abc->', M3, (dX3+dY3)))
+                dDov[i] += (contract('abc,bc->a', (dM3 - dM3.swapaxes(0,2)), (4*t2[j,k] - 2*t2[j,k].T))
+                            + contract('abc,bc->a', (M3 - M3.swapaxes(0,2)), (4*dt2[j,k] - 2*dt2[j,k].T)))
+                Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3,2,0))
+                dZ3 = 2*(dM3 - dM3.swapaxes(1,2)) - (dM3.swapaxes(0,1) - np.moveaxis(dM3,2,0))
+                dGoovv[i,j] += 4*(contract('c,abc->ab', dt1[k], Z3) + contract('c,abc->ab', t1[k], dZ3))
+                dGooov[j,i] -= contract('abc,lbc->la', (2*dX3+dY3), t2[:,k]) + contract('abc,lbc->la', (2*X3+Y3), dt2[:,k])
+                dGvvvo[:,:,:,j] += contract('abc,cd->abd', (2*dX3+dY3), t2[k,i]) + contract('abc,cd->abd', (2*X3+Y3), dt2[k,i])
+                dS1[i] += (contract('abc,bc->a', 2*(dM3 - dM3.swapaxes(0,1)), L[o,o,v,v][j,k])
+                           + contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), dL[o,o,v,v][j,k]))
+                dS2[i] -= contract('abc,lc->lab', (2*dX3+dY3), ERI[o,o,o,v][j,k]) + contract('abc,lc->lab', (2*X3+Y3), deri[o,o,o,v][j,k])
+                dS2[i,j] += contract('abc,dcb->ad', (2*dX3+dY3), ERI[o,v,v,v][k]) + contract('abc,dcb->ad', (2*X3+Y3), deri[o,v,v,v][k])
+
+    dS2 = dS2 + dS2.swapaxes(0,1).swapaxes(2,3)
+    return {'Doo': np.diag(ddoo), 'Dvv': np.diag(ddvv), 'Dov': dDov,
+            'Goovv': dGoovv, 'Gooov': dGooov, 'Gvvvo': dGvvvo, 'S1': dS1, 'S2': dS2}
+
+
 def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
     """(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
 
@@ -1010,14 +1072,14 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
     Gvovv, Govoo, Gvvvo, S1, S2} that the caller caches on the wavefunction.
     """
     x2 = np.zeros_like(t2)
-    dvv = np.zeros(nv)
-    doo = np.zeros(no)
-    Dov = np.zeros((no,nv))
+    dvv = np.zeros(nv, dtype=t2.dtype)          # dtype-propagating so complex-step works
+    doo = np.zeros(no, dtype=t2.dtype)
+    Dov = np.zeros((no,nv), dtype=t2.dtype)
     Goovv = np.zeros_like(t2)
-    Gooov = np.zeros((no,no,no,nv))
-    Gvovv = np.zeros((nv,no,nv,nv))
-    Govoo = np.zeros((no,nv,no,no))
-    Gvvvo = np.zeros((nv,nv,nv,no))
+    Gooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
+    Gvovv = np.zeros((nv,no,nv,nv), dtype=t2.dtype)
+    Govoo = np.zeros((no,nv,no,no), dtype=t2.dtype)
+    Gvvvo = np.zeros((nv,nv,nv,no), dtype=t2.dtype)
     S1 = np.zeros_like(t1)
     S2 = np.zeros_like(t2)
 
@@ -1077,3 +1139,69 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
     return ET, {'Doo': np.diag(doo), 'Dvv': np.diag(dvv), 'Dov': Dov,
                 'Goovv': Goovv, 'Gooov': Gooov, 'Gvovv': Gvovv,
                 'Govoo': Govoo, 'Gvvvo': Gvvvo, 'S1': S1, 'S2': S2}
+
+
+def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    """Analytic field response of the spin-orbital (T) intermediates -- the product-rule
+    derivative of :func:`so_t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri)`` with **canonical**
+    perturbed orbitals (so the batched diagonal denominator's response is ``diag(df)``).  Returns
+    ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvovv,Govoo,Gvvvo,S1,S2}``.  Each per-ijk triple response is
+    ``dt3 = (dN - t3 dD)/D``; every intermediate is then the product rule of its contraction.
+    Verified to ~1e-16 against a complex-step derivative of :func:`so_t3_density`."""
+    ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
+    dDov = np.zeros((no,nv), dtype=t2.dtype)
+    dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
+    dGvovv = np.zeros((nv,no,nv,nv), dtype=t2.dtype); dGovoo = np.zeros((no,nv,no,no), dtype=t2.dtype)
+    dGvvvo = np.zeros((nv,nv,nv,no), dtype=t2.dtype); dS1 = np.zeros_like(t1); dS2 = np.zeros_like(t2)
+
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    Wvovv, Wooov, Fov = ERI[v,o,v,v], ERI[o,o,o,v], F[o,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    dWvovv, dWooov, dFov = deri[v,o,v,v], deri[o,o,o,v], df[o,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    docc, dvir = diag(df)[o], diag(df)[v]
+
+    def dNc(i, j, k):   # product-rule derivative of the t3c numerator
+        a = (contract('ad,bcd->abc', dt2[i,j], Wvvvo[:,:,:,k]) + contract('ad,bcd->abc', t2[i,j], dWvvvo[:,:,:,k])
+             - contract('ad,bcd->abc', dt2[k,j], Wvvvo[:,:,:,i]) - contract('ad,bcd->abc', t2[k,j], dWvvvo[:,:,:,i])
+             - contract('ad,bcd->abc', dt2[i,k], Wvvvo[:,:,:,j]) - contract('ad,bcd->abc', t2[i,k], dWvvvo[:,:,:,j]))
+        t3 = a - a.swapaxes(0,1) - a.swapaxes(0,2)
+        a = (contract('lab,lc->abc', dt2[i], Wovoo[:,:,j,k]) + contract('lab,lc->abc', t2[i], dWovoo[:,:,j,k])
+             - contract('lab,lc->abc', dt2[j], Wovoo[:,:,i,k]) - contract('lab,lc->abc', t2[j], dWovoo[:,:,i,k])
+             - contract('lab,lc->abc', dt2[k], Wovoo[:,:,j,i]) - contract('lab,lc->abc', t2[k], dWovoo[:,:,j,i]))
+        return t3 - (a - a.swapaxes(0,2) - a.swapaxes(1,2))
+
+    def dNd(i, j, k):   # product-rule derivative of the t3d numerator
+        a = (contract('a,bc->abc', dt1[i], Woovv[j,k]) + contract('a,bc->abc', t1[i], dWoovv[j,k])
+             - contract('a,bc->abc', dt1[j], Woovv[i,k]) - contract('a,bc->abc', t1[j], dWoovv[i,k])
+             - contract('a,bc->abc', dt1[k], Woovv[j,i]) - contract('a,bc->abc', t1[k], dWoovv[j,i])
+             + contract('a,bc->abc', dFov[i], t2[j,k]) + contract('a,bc->abc', Fov[i], dt2[j,k])
+             - contract('a,bc->abc', dFov[j], t2[i,k]) - contract('a,bc->abc', Fov[j], dt2[i,k])
+             - contract('a,bc->abc', dFov[k], t2[j,i]) - contract('a,bc->abc', Fov[k], dt2[j,i]))
+        return a - a.swapaxes(0,1) - a.swapaxes(0,2)
+
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                denom = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
+                ddenom = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
+                dt3c = (dNc(i,j,k) - t3c*ddenom) / denom
+                dt3d = (dNd(i,j,k) - t3d*ddenom) / denom
+                ddvv += (1/12) * (contract('abc,abc->a', (dt3c+dt3d), t3c) + contract('abc,abc->a', (t3c+t3d), dt3c))
+                ddoo[i] -= (1/12) * (contract('abc,abc->', dt3c, (t3c+t3d)) + contract('abc,abc->', t3c, (dt3c+dt3d)))
+                dDov[i] += (1/4) * (contract('ade,de->a', dt3c, t2[j,k]) + contract('ade,de->a', t3c, dt2[j,k]))
+                dGoovv[i,j] += contract('abc,c->ab', dt3c, t1[k]) + contract('abc,c->ab', t3c, dt1[k])
+                dGooov[i,j] -= (1/2) * (contract('kbc,abc->ka', dt2[k], t3c) + contract('kbc,abc->ka', t2[k], dt3c))
+                dGvovv[:,i] += (1/2) * (contract('ec,abe->cab', dt2[j,k], t3c) + contract('ec,abe->cab', t2[j,k], dt3c))
+                dGovoo[:,:,i,j] -= (1/2) * (contract('kbc,abc->ka', dt2[k], (t3c+t3d)) + contract('kbc,abc->ka', t2[k], (dt3c+dt3d)))
+                dGvvvo[:,:,:,i] += (1/2) * (contract('abe,ec->abc', (dt3c+dt3d), t2[j,k]) + contract('abe,ec->abc', (t3c+t3d), dt2[j,k]))
+                dS1[i] += (1/4) * (contract('abc,bc->a', dt3c, Woovv[j,k]) + contract('abc,bc->a', t3c, dWoovv[j,k]))
+                dS2[i] -= (1/4) * (contract('md,abd->mab', dWooov[j,k], (2*t3c+t3d)) + contract('md,abd->mab', Wooov[j,k], (2*dt3c+dt3d)))
+                dS2[i,j] += (1/4) * (contract('ade,bde->ab', (2*dt3c+dt3d), Wvovv[:,k]) + contract('ade,bde->ab', (2*t3c+t3d), dWvovv[:,k]))
+
+    dS2 = dS2 - dS2.swapaxes(0,1) - dS2.swapaxes(2,3) + dS2.swapaxes(0,1).swapaxes(2,3)
+    return {'Doo': np.diag(ddoo), 'Dvv': np.diag(ddvv), 'Dov': dDov,
+            'Goovv': dGoovv, 'Gooov': dGooov, 'Gvovv': dGvovv,
+            'Govoo': dGovoo, 'Gvvvo': dGvvvo, 'S1': dS1, 'S2': dS2}
