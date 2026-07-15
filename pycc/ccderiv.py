@@ -717,10 +717,18 @@ class CCderiv:
                 'Hvovv': Hvovv, 'Hooov': Hooov, 'Hovvo': Hovvo, 'Hvvvo': Hvvvo, 'Hovoo': Hovoo}
 
     def _perturbed_hbar(self, df, deri, dL, dt1, dt2, hbar):
-        """Perturbed HBAR ``dHBAR`` via a 5-point central stencil of the block builders in the
-        step, evaluated at ``(F +- h df, ERI +- h deri, L +- h dL, t +- h dt)``.  Every spatial
-        CCSD HBAR block is a polynomial of degree <= 4 in the step, so the stencil is algebraically
-        exact (confirmed to roundoff).  Needed only for the perturbed-Lambda inhomogeneity."""
+        """Spatial perturbed HBAR ``dHBAR``.  Analytic (product rule of the ``build_H*`` blocks,
+        :meth:`_perturbed_hbar_analytic`) by default; the exact 5-point stencil is kept behind
+        ``_DBG_FORCE_STENCIL_HBAR`` as an oracle.  Both are exact for CCSD (the analytic form was
+        verified to ~1e-15 against a complex-step derivative of :meth:`_hbar_blocks`).  Needed only
+        for the perturbed-Lambda inhomogeneity."""
+        if getattr(self, '_DBG_FORCE_STENCIL_HBAR', False):
+            return self._perturbed_hbar_stencil(df, deri, dL, dt1, dt2, hbar)
+        return self._perturbed_hbar_analytic(df, deri, dL, dt1, dt2, hbar)
+
+    def _perturbed_hbar_stencil(self, df, deri, dL, dt1, dt2, hbar):
+        """Spatial perturbed HBAR via the exact 5-point central stencil of the block builders at
+        ``(F +- h df, ERI +- h deri, L +- h dL, t +- h dt)`` (degree-<=4 blocks)."""
         cc = self.ccwfn
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
@@ -732,7 +740,90 @@ class CCderiv:
         return {k: (np.asarray(m2[k]) - 8.0*np.asarray(m1[k]) + 8.0*np.asarray(p1[k])
                     - np.asarray(p2[k])) / (12.0*h) for k in m2}
 
+    def _perturbed_hbar_analytic(self, df, deri, dL, dt1, dt2, hbar):
+        """Analytic spatial (closed-shell RHF) perturbed HBAR ``dHBAR``: the term-by-term
+        product-rule derivative of the :meth:`cchbar.build_H*` builders along
+        ``(F+df, ERI+deri, L+dL, t1+dt1, t2+dt2)``.  Computed in dependency order (``Hov``,
+        ``Hvvvv``, ``Hoooo`` feed ``Hvvvo``/``Hovoo``).  Verified to ~1e-15 against a complex-step
+        derivative of :meth:`_hbar_blocks`."""
+        cc = self.ccwfn
+        o, v = cc.o, cc.v
+        c = self.contract
+        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
+        t1 = np.asarray(cc.t1); t2 = np.asarray(cc.t2)
+        def p2(sub, A, dA, B, dB): return c(sub, dA, B) + c(sub, A, dB)
+        tau = t2 + c('ia,jb->ijab', t1, t1)
+        dtau = dt2 + c('ia,jb->ijab', dt1, t1) + c('ia,jb->ijab', t1, dt1)
+        Hov0 = np.asarray(hbar.build_Hov(o, v, F0, L0, t1))
+        Hvvvv0 = np.asarray(hbar.build_Hvvvv(o, v, ERI0, t1, t2))
+        Hoooo0 = np.asarray(hbar.build_Hoooo(o, v, ERI0, t1, t2))
+        d = {}
+        d['Hov'] = df[o, v] + p2('nf,mnef->me', t1, dt1, L0[o, o, v, v], dL[o, o, v, v])
+        d['Hvv'] = (df[v, v] - p2('me,ma->ae', F0[o, v], df[o, v], t1, dt1)
+                    + p2('mf,amef->ae', t1, dt1, L0[v, o, v, v], dL[v, o, v, v])
+                    - p2('mnfa,mnfe->ae', tau, dtau, L0[o, o, v, v], dL[o, o, v, v]))
+        d['Hoo'] = (df[o, o] + p2('ie,me->mi', t1, dt1, F0[o, v], df[o, v])
+                    + p2('ne,mnie->mi', t1, dt1, L0[o, o, o, v], dL[o, o, o, v])
+                    + p2('inef,mnef->mi', tau, dtau, L0[o, o, v, v], dL[o, o, v, v]))
+        tmp = p2('je,mnie->mnij', t1, dt1, ERI0[o, o, o, v], deri[o, o, o, v])
+        d['Hoooo'] = (deri[o, o, o, o] + (tmp + tmp.swapaxes(0, 1).swapaxes(2, 3))
+                      + p2('ijef,mnef->mnij', tau, dtau, ERI0[o, o, v, v], deri[o, o, v, v]))
+        tmp = p2('mb,amef->abef', t1, dt1, ERI0[v, o, v, v], deri[v, o, v, v])
+        d['Hvvvv'] = (deri[v, v, v, v] - (tmp + tmp.swapaxes(0, 1).swapaxes(2, 3))
+                      + p2('mnab,mnef->abef', tau, dtau, ERI0[o, o, v, v], deri[o, o, v, v]))
+        d['Hvovv'] = deri[v, o, v, v] - p2('na,nmef->amef', t1, dt1, ERI0[o, o, v, v], deri[o, o, v, v])
+        d['Hooov'] = deri[o, o, o, v] + p2('if,nmef->mnie', t1, dt1, ERI0[o, o, v, v], deri[o, o, v, v])
+        d['Hovvo'] = (deri[o, v, v, o] + p2('jf,mbef->mbej', t1, dt1, ERI0[o, v, v, v], deri[o, v, v, v])
+                      - p2('nb,mnej->mbej', t1, dt1, ERI0[o, o, v, o], deri[o, o, v, o])
+                      - p2('jnfb,mnef->mbej', tau, dtau, ERI0[o, o, v, v], deri[o, o, v, v])
+                      + p2('njfb,mnef->mbej', t2, dt2, L0[o, o, v, v], dL[o, o, v, v]))
+        d['Hovov'] = (deri[o, v, o, v] + p2('jf,bmef->mbje', t1, dt1, ERI0[v, o, v, v], deri[v, o, v, v])
+                      - p2('nb,mnje->mbje', t1, dt1, ERI0[o, o, o, v], deri[o, o, o, v])
+                      - p2('jnfb,nmef->mbje', tau, dtau, ERI0[o, o, v, v], deri[o, o, v, v]))
+        # Hvvvo (reuses Hov, Hvvvv and two tmp intermediates)
+        w1 = ERI0[v, o, v, o] - c('infa,mnfe->amei', t2, ERI0[o, o, v, v])
+        dw1 = deri[v, o, v, o] - p2('infa,mnfe->amei', t2, dt2, ERI0[o, o, v, v], deri[o, o, v, v])
+        w2 = (ERI0[v, o, o, v] - c('infb,mnef->bmie', t2, ERI0[o, o, v, v])
+              + c('nifb,mnef->bmie', t2, L0[o, o, v, v]))
+        dw2 = (deri[v, o, o, v] - p2('infb,mnef->bmie', t2, dt2, ERI0[o, o, v, v], deri[o, o, v, v])
+               + p2('nifb,mnef->bmie', t2, dt2, L0[o, o, v, v], dL[o, o, v, v]))
+        d['Hvvvo'] = (deri[v, v, v, o]
+            - p2('me,miab->abei', Hov0, d['Hov'], t2, dt2)
+            + p2('if,abef->abei', t1, dt1, Hvvvv0, d['Hvvvv'])
+            + p2('mnab,mnei->abei', tau, dtau, ERI0[o, o, v, o], deri[o, o, v, o])
+            - p2('imfa,bmfe->abei', t2, dt2, ERI0[v, o, v, v], deri[v, o, v, v])
+            - p2('imfb,amef->abei', t2, dt2, ERI0[v, o, v, v], deri[v, o, v, v])
+            + p2('mifb,amef->abei', t2, dt2, L0[v, o, v, v], dL[v, o, v, v])
+            - (c('mb,amei->abei', dt1, w1) + c('mb,amei->abei', t1, dw1))
+            - (c('ma,bmie->abei', dt1, w2) + c('ma,bmie->abei', t1, dw2)))
+        # Hovoo (reuses Hov, Hoooo and two tmp intermediates)
+        u1 = ERI0[o, v, o, v] - c('infb,mnfe->mbie', t2, ERI0[o, o, v, v])
+        du1 = deri[o, v, o, v] - p2('infb,mnfe->mbie', t2, dt2, ERI0[o, o, v, v], deri[o, o, v, v])
+        u2 = (ERI0[v, o, o, v] - c('jnfb,mnef->bmje', t2, ERI0[o, o, v, v])
+              + c('njfb,mnef->bmje', t2, L0[o, o, v, v]))
+        du2 = (deri[v, o, o, v] - p2('jnfb,mnef->bmje', t2, dt2, ERI0[o, o, v, v], deri[o, o, v, v])
+               + p2('njfb,mnef->bmje', t2, dt2, L0[o, o, v, v], dL[o, o, v, v]))
+        d['Hovoo'] = (deri[o, v, o, o]
+            + p2('me,ijeb->mbij', Hov0, d['Hov'], t2, dt2)
+            - p2('nb,mnij->mbij', t1, dt1, Hoooo0, d['Hoooo'])
+            + p2('ijef,mbef->mbij', tau, dtau, ERI0[o, v, v, v], deri[o, v, v, v])
+            - p2('ineb,nmje->mbij', t2, dt2, ERI0[o, o, o, v], deri[o, o, o, v])
+            - p2('jneb,mnie->mbij', t2, dt2, ERI0[o, o, o, v], deri[o, o, o, v])
+            + p2('njeb,mnie->mbij', t2, dt2, L0[o, o, o, v], dL[o, o, o, v])
+            + (c('je,mbie->mbij', dt1, u1) + c('je,mbie->mbij', t1, du1))
+            + (c('ie,bmje->mbij', dt1, u2) + c('ie,bmje->mbij', t1, du2)))
+        return d
+
     def _so_perturbed_hbar(self, df, deri, dt1, dt2, hbar):
+        """Spin-orbital perturbed HBAR ``dHBAR``.  Analytic (product rule of the ``_so_build_*``
+        blocks, :meth:`_so_perturbed_hbar_analytic`) by default; the exact 5-point stencil is kept
+        behind ``_DBG_FORCE_STENCIL_HBAR`` as an oracle.  Both are exact for CCSD (the analytic form
+        was verified to ~1e-15 against a complex-step derivative of :meth:`_so_hbar_blocks`)."""
+        if getattr(self, '_DBG_FORCE_STENCIL_HBAR', False):
+            return self._so_perturbed_hbar_stencil(df, deri, dt1, dt2, hbar)
+        return self._so_perturbed_hbar_analytic(df, deri, dt1, dt2, hbar)
+
+    def _so_perturbed_hbar_stencil(self, df, deri, dt1, dt2, hbar):
         """Spin-orbital perturbed HBAR via the exact 5-point stencil (degree-<=4 blocks)."""
         cc = self.ccwfn
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
@@ -743,6 +834,81 @@ class CCderiv:
         m2, m1, p1, p2 = at(-2), at(-1), at(1), at(2)
         return {k: (np.asarray(m2[k]) - 8.0*np.asarray(m1[k]) + 8.0*np.asarray(p1[k])
                     - np.asarray(p2[k])) / (12.0*h) for k in m2}
+
+    def _so_perturbed_hbar_analytic(self, df, deri, dt1, dt2, hbar):
+        """Analytic spin-orbital perturbed HBAR ``dHBAR``: the term-by-term product-rule derivative
+        of the :meth:`cchbar._so_build_*` block builders along ``(F+df, ERI+deri, t1+dt1, t2+dt2)``.
+        Blocks are computed in dependency order (``Hov`` first; ``Hvvvo``/``Hovoo`` last, reusing the
+        unperturbed ``Hov``/``Hvvvv``/``Hoooo``/``Zovov`` intermediates).  Verified to ~1e-15 against
+        a complex-step derivative of :meth:`_so_hbar_blocks`."""
+        cc = self.ccwfn
+        o, v = cc.o, cc.v
+        c = self.contract
+        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
+        t1 = np.asarray(cc.t1); t2 = np.asarray(cc.t2)
+        # tau (fact1*t2 + fact2*antisym(t1 t1)) and its response
+        def so_tau(f1, f2):
+            return f1*t2 + f2*(c('ia,jb->ijab', t1, t1) - c('ib,ja->ijab', t1, t1))
+        def d_tau(f1, f2):
+            return (f1*dt2 + f2*(c('ia,jb->ijab', dt1, t1) + c('ia,jb->ijab', t1, dt1)
+                                 - c('ib,ja->ijab', dt1, t1) - c('ib,ja->ijab', t1, dt1)))
+        tau, dtau = so_tau(1.0, 1.0), d_tau(1.0, 1.0)
+        taut, dtaut = so_tau(1.0, 0.5), d_tau(1.0, 0.5)
+        # unperturbed intermediates that appear as factors
+        Hov0 = np.asarray(hbar._so_build_Hov(o, v, F0, ERI0, t1))
+        Hvvvv0 = np.asarray(hbar._so_build_Hvvvv(o, v, ERI0, t1, t2))
+        Hoooo0 = np.asarray(hbar._so_build_Hoooo(o, v, ERI0, t1, t2))
+        Zovov0 = np.asarray(hbar._so_build_Zovov(o, v, ERI0, t2))
+        d = {}
+        d['Hov'] = (df[o, v] + c('nf,mnef->me', dt1, ERI0[o, o, v, v])
+                    + c('nf,mnef->me', t1, deri[o, o, v, v]))
+        d['Hvv'] = (df[v, v]
+            - 0.5*(c('me,ma->ae', df[o, v], t1) + c('me,ma->ae', F0[o, v], dt1))
+            - 0.5*(c('me,ma->ae', d['Hov'], t1) + c('me,ma->ae', Hov0, dt1))
+            + c('mf,amef->ae', dt1, ERI0[v, o, v, v]) + c('mf,amef->ae', t1, deri[v, o, v, v])
+            - 0.5*(c('mnaf,mnef->ae', dtaut, ERI0[o, o, v, v]) + c('mnaf,mnef->ae', taut, deri[o, o, v, v])))
+        d['Hoo'] = (df[o, o]
+            + 0.5*(c('ie,me->mi', dt1, F0[o, v]) + c('ie,me->mi', t1, df[o, v]))
+            + 0.5*(c('ie,me->mi', dt1, Hov0) + c('ie,me->mi', t1, d['Hov']))
+            + c('ne,mnie->mi', dt1, ERI0[o, o, o, v]) + c('ne,mnie->mi', t1, deri[o, o, o, v])
+            + 0.5*(c('inef,mnef->mi', dtaut, ERI0[o, o, v, v]) + c('inef,mnef->mi', taut, deri[o, o, v, v])))
+        d['Hoooo'] = (deri[o, o, o, o]
+            + (c('je,mnie->mnij', dt1, ERI0[o, o, o, v]) + c('je,mnie->mnij', t1, deri[o, o, o, v])
+               - c('ie,mnje->mnij', dt1, ERI0[o, o, o, v]) - c('ie,mnje->mnij', t1, deri[o, o, o, v]))
+            + 0.5*(c('ijef,mnef->mnij', dtau, ERI0[o, o, v, v]) + c('ijef,mnef->mnij', tau, deri[o, o, v, v])))
+        d['Hvvvv'] = (deri[v, v, v, v]
+            - (c('mb,amef->abef', dt1, ERI0[v, o, v, v]) + c('mb,amef->abef', t1, deri[v, o, v, v])
+               - c('ma,bmef->abef', dt1, ERI0[v, o, v, v]) - c('ma,bmef->abef', t1, deri[v, o, v, v]))
+            + 0.5*(c('mnab,mnef->abef', dtau, ERI0[o, o, v, v]) + c('mnab,mnef->abef', tau, deri[o, o, v, v])))
+        d['Hvovv'] = (deri[v, o, v, v]
+            - (c('na,nmef->amef', dt1, ERI0[o, o, v, v]) + c('na,nmef->amef', t1, deri[o, o, v, v])))
+        d['Hooov'] = (deri[o, o, o, v]
+            + (c('if,mnfe->mnie', dt1, ERI0[o, o, v, v]) + c('if,mnfe->mnie', t1, deri[o, o, v, v])))
+        taul = t2 + c('ia,jb->ijab', t1, t1)                # local (non-antisym) tau in Hovvo
+        dtaul = dt2 + c('ia,jb->ijab', dt1, t1) + c('ia,jb->ijab', t1, dt1)
+        d['Hovvo'] = (deri[o, v, v, o]
+            + c('jf,mbef->mbej', dt1, ERI0[o, v, v, v]) + c('jf,mbef->mbej', t1, deri[o, v, v, v])
+            - c('nb,mnej->mbej', dt1, ERI0[o, o, v, o]) - c('nb,mnej->mbej', t1, deri[o, o, v, o])
+            - c('jnfb,mnef->mbej', dtaul, ERI0[o, o, v, v]) - c('jnfb,mnef->mbej', taul, deri[o, o, v, v]))
+        dZovov = (deri[o, v, o, v]
+            + c('nibf,mnef->mbie', dt2, ERI0[o, o, v, v]) + c('nibf,mnef->mbie', t2, deri[o, o, v, v]))
+        d['Hvvvo'] = (deri[v, v, v, o]
+            - (c('me,miab->abei', d['Hov'], t2) + c('me,miab->abei', Hov0, dt2))
+            + (c('if,abef->abei', dt1, Hvvvv0) + c('if,abef->abei', t1, d['Hvvvv']))
+            + 0.5*(c('mnab,mnei->abei', dtau, ERI0[o, o, v, o]) + c('mnab,mnei->abei', tau, deri[o, o, v, o]))
+            - (c('miaf,mbef->abei', dt2, ERI0[o, v, v, v]) + c('miaf,mbef->abei', t2, deri[o, v, v, v])
+               - c('mibf,maef->abei', dt2, ERI0[o, v, v, v]) - c('mibf,maef->abei', t2, deri[o, v, v, v]))
+            + (c('ma,mbie->abei', dt1, Zovov0) + c('ma,mbie->abei', t1, dZovov)
+               - c('mb,maie->abei', dt1, Zovov0) - c('mb,maie->abei', t1, dZovov)))
+        d['Hovoo'] = (deri[o, v, o, o]
+            - (c('me,ijbe->mbij', d['Hov'], t2) + c('me,ijbe->mbij', Hov0, dt2))
+            - (c('nb,mnij->mbij', dt1, Hoooo0) + c('nb,mnij->mbij', t1, d['Hoooo']))
+            + 0.5*(c('ijef,mbef->mbij', dtau, ERI0[o, v, v, v]) + c('ijef,mbef->mbij', tau, deri[o, v, v, v]))
+            + (c('jnbe,mnie->mbij', dt2, ERI0[o, o, o, v]) + c('jnbe,mnie->mbij', t2, deri[o, o, o, v])
+               - c('inbe,mnje->mbij', dt2, ERI0[o, o, o, v]) - c('inbe,mnje->mbij', t2, deri[o, o, o, v]))
+            - (c('ie,mbje->mbij', dt1, Zovov0) + c('ie,mbje->mbij', t1, dZovov)
+               - c('je,mbie->mbij', dt1, Zovov0) - c('je,mbie->mbij', t1, dZovov)))
+        return d
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, maxiter=200, rconv=1e-13):
         """Perturbed Lambda ``dLambda/dF`` (iterative, linear), staying in ``cclambda`` (no
@@ -853,9 +1019,17 @@ class CCderiv:
         """Field response ``(dD, dGamma)`` of the unrelaxed CC correlation densities via a 5-point
         stencil of :meth:`ccdensity.gradient_densities` in the amplitudes/multipliers (the densities
         are pure polynomials in ``t``/``lambda`` -- exact).  Temporarily sets ``cc.t1/t2`` and
-        ``lam.l1/l2`` to the stepped values (restored)."""
-        from .ccdensity import ccdensity
+        ``lam.l1/l2`` to the stepped values (restored).
+
+        Analytic by default (:meth:`_so_perturbed_correlation_densities` /
+        :meth:`_spatial_perturbed_correlation_densities`, the product-rule derivative of the density
+        builders); the stencil is kept behind ``_DBG_FORCE_STENCIL_DENS`` as an oracle."""
         cc = self.ccwfn
+        if not getattr(self, '_DBG_FORCE_STENCIL_DENS', False):   # analytic CCSD; no stencil
+            if cc.orbital_basis == 'spinorbital':
+                return self._so_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+            return self._spatial_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        from .ccdensity import ccdensity
         t01, t02 = np.asarray(cc.t1).copy(), np.asarray(cc.t2).copy()
         l01, l02 = np.asarray(lam.l1).copy(), np.asarray(lam.l2).copy()
         h = 1e-2
@@ -872,6 +1046,247 @@ class CCderiv:
         dDg = (m2[0] - 8.0*m1[0] + 8.0*p1[0] - p2[0]) / (12.0*h)
         dGam = (m2[1] - 8.0*m1[1] + 8.0*p1[1] - p2[1]) / (12.0*h)
         return dDg, dGam
+
+    def _so_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam):
+        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
+        correlation densities: the product-rule derivative of the raw density builders
+        (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and :meth:`ccdensity.build_so_twopdm`),
+        i.e. Appendix C of ``docs/cc_gradients_orbital_response.tex``.  Replaces the 5-point stencil
+        for this path; verified to ~1e-15 against a complex-step derivative of those builders.
+
+        The nine two-particle block derivatives are placed into the full ``nmo^4`` array and bra-ket
+        symmetrized exactly as :meth:`ccdensity.gradient_densities` / :meth:`ccdensity._so_full_twopdm`
+        do (overall ``1/4``, ``1/2 (Gamma + Gamma_rspq)``), so the result matches the stenciled
+        convention block for block.  Frozen-core rows/columns stay zero (active ``o``/``v`` slices)."""
+        cc = self.ccwfn
+        o, v, nmo = cc.o, cc.v, cc.nmo
+        c = self.contract
+        t1 = np.asarray(cc.t1); t2 = np.asarray(cc.t2)
+        l1 = np.asarray(lam.l1); l2 = np.asarray(lam.l2)
+        # recurring intermediates and their responses (product rule)
+        tau = t2 + c('ia,jb->ijab', t1, t1) - c('ja,ib->ijab', t1, t1)
+        dtau = (dt2 + c('ia,jb->ijab', dt1, t1) + c('ia,jb->ijab', t1, dt1)
+                - c('ja,ib->ijab', dt1, t1) - c('ja,ib->ijab', t1, dt1))
+        X = t2 + 2.0*c('ie,ma->miae', t1, t1)
+        dX = dt2 + 2.0*(c('ie,ma->miae', dt1, t1) + c('ie,ma->miae', t1, dt1))
+        # ---- one-particle derivative blocks ----
+        dDoo = (-(c('ie,je->ij', dt1, l1) + c('ie,je->ij', t1, dl1))
+                - 0.5*(c('imef,jmef->ij', dt2, l2) + c('imef,jmef->ij', t2, dl2)))
+        dDvv = ((c('mb,ma->ab', dt1, l1) + c('mb,ma->ab', t1, dl1))
+                + 0.5*(c('mnbe,mnae->ab', dt2, l2) + c('mnbe,mnae->ab', t2, dl2)))
+        dDvo = dl1.T
+        dDov = (dt1
+                + c('me,imae->ia', dl1, t2) + c('me,imae->ia', l1, dt2)
+                - c('me,ie,ma->ia', dl1, t1, t1) - c('me,ie,ma->ia', l1, dt1, t1) - c('me,ie,ma->ia', l1, t1, dt1)
+                - 0.5*(c('mnef,ie,mnaf->ia', dl2, t1, t2) + c('mnef,ma,inef->ia', dl2, t1, t2))
+                - 0.5*(c('mnef,ie,mnaf->ia', l2, dt1, t2) + c('mnef,ie,mnaf->ia', l2, t1, dt2)
+                       + c('mnef,ma,inef->ia', l2, dt1, t2) + c('mnef,ma,inef->ia', l2, t1, dt2)))
+        # ---- two-particle derivative blocks (product rule of build_so_twopdm) ----
+        Pij = lambda Y: Y - Y.swapaxes(0, 1)
+        Pab = lambda Y: Y - Y.swapaxes(2, 3)
+        Pijab = lambda Y: Pij(Pab(Y))
+        dG = {}
+        dG['ijkl'] = 0.5*(c('ijef,klef->ijkl', dtau, l2) + c('ijef,klef->ijkl', tau, dl2))
+        dG['abcd'] = 0.5*(c('mncd,mnab->abcd', dtau, l2) + c('mncd,mnab->abcd', tau, dl2))
+        dG['ijka'] = (
+            -(c('ke,ijea->ijka', dl1, tau) + c('ke,ijea->ijka', l1, dtau))
+            + 0.5*(c('kmef,ijef,ma->ijka', dl2, tau, t1) + c('kmef,ijef,ma->ijka', l2, dtau, t1)
+                   + c('kmef,ijef,ma->ijka', l2, tau, dt1))
+            + Pij(c('mkef,imae,jf->ijka', dl2, t2, t1) + c('mkef,imae,jf->ijka', l2, dt2, t1)
+                  + c('mkef,imae,jf->ijka', l2, t2, dt1))
+            - 0.5*Pij(c('kmef,imef,ja->ijka', dl2, t2, t1) + c('kmef,imef,ja->ijka', l2, dt2, t1)
+                      + c('kmef,imef,ja->ijka', l2, t2, dt1)))
+        dG['ciab'] = (
+            c('mc,miab->ciab', dl1, tau) + c('mc,miab->ciab', l1, dtau)
+            - 0.5*(c('mnce,mnab,ie->ciab', dl2, tau, t1) + c('mnce,mnab,ie->ciab', l2, dtau, t1)
+                   + c('mnce,mnab,ie->ciab', l2, tau, dt1))
+            - Pab(c('mnce,inae,mb->ciab', dl2, t2, t1) + c('mnce,inae,mb->ciab', l2, dt2, t1)
+                  + c('mnce,inae,mb->ciab', l2, t2, dt1))
+            + 0.5*Pab(c('mnce,mnae,ib->ciab', dl2, t2, t1) + c('mnce,mnae,ib->ciab', l2, dt2, t1)
+                      + c('mnce,mnae,ib->ciab', l2, t2, dt1)))
+        dG['abci'] = c('miab,mc->abci', dl2, t1) + c('miab,mc->abci', l2, dt1)
+        dG['kaij'] = -(c('ijea,ke->kaij', dl2, t1) + c('ijea,ke->kaij', l2, dt1))
+        dG['ibaj'] = (
+            c('ia,jb->ibaj', dt1, l1) + c('ia,jb->ibaj', t1, dl1)
+            + c('jmbe,miea->ibaj', dl2, t2) + c('jmbe,miea->ibaj', l2, dt2)
+            - c('jmbe,ma,ie->ibaj', dl2, t1, t1) - c('jmbe,ma,ie->ibaj', l2, dt1, t1)
+            - c('jmbe,ma,ie->ibaj', l2, t1, dt1))
+        dG['ijab'] = (
+            dtau
+            + 0.25*(c('mnef,ijef,mnab->ijab', dl2, tau, tau) + c('mnef,ijef,mnab->ijab', l2, dtau, tau)
+                    + c('mnef,ijef,mnab->ijab', l2, tau, dtau))
+            - 0.5*Pij(c('mnef,inef,mjab->ijab', dl2, t2, tau) + c('mnef,inef,mjab->ijab', l2, dt2, tau)
+                      + c('mnef,inef,mjab->ijab', l2, t2, dtau))
+            - Pij(c('me,mjab,ie->ijab', dl1, tau, t1) + c('me,mjab,ie->ijab', l1, dtau, t1)
+                  + c('me,mjab,ie->ijab', l1, tau, dt1))
+            - 0.5*Pab(c('mnef,mnaf,ijeb->ijab', dl2, t2, tau) + c('mnef,mnaf,ijeb->ijab', l2, dt2, tau)
+                      + c('mnef,mnaf,ijeb->ijab', l2, t2, dtau))
+            - Pab(c('me,ijeb,ma->ijab', dl1, tau, t1) + c('me,ijeb,ma->ijab', l1, dtau, t1)
+                  + c('me,ijeb,ma->ijab', l1, tau, dt1))
+            - 0.5*Pijab(c('miae,mnef,jnbf->ijab', dX, l2, t2) + c('miae,mnef,jnbf->ijab', X, dl2, t2)
+                        + c('miae,mnef,jnbf->ijab', X, l2, dt2))
+            - Pijab(c('miae,me,jb->ijab', dX, l1, t1) + c('miae,me,jb->ijab', X, dl1, t1)
+                    + c('miae,me,jb->ijab', X, l1, dt1))
+            + 3.0*Pijab(c('me,ia,je,mb->ijab', dl1, t1, t1, t1) + c('me,ia,je,mb->ijab', l1, dt1, t1, t1)
+                        + c('me,ia,je,mb->ijab', l1, t1, dt1, t1) + c('me,ia,je,mb->ijab', l1, t1, t1, dt1)))
+        dG['abij'] = dl2.transpose(2, 3, 0, 1)
+        # ---- placement + symmetrization (mirrors ccdensity._so_full_twopdm + gradient_densities) ----
+        dGam = np.zeros((nmo, nmo, nmo, nmo))
+        dGam[o, o, o, o] = dG['ijkl']
+        dGam[v, v, v, v] = dG['abcd']
+        dGam[o, o, v, v] = dG['ijab']; dGam[v, v, o, o] = dG['abij']
+        dGam[o, o, o, v] = dG['ijka']; dGam[o, o, v, o] = -dG['ijka'].transpose(0, 1, 3, 2)
+        dGam[o, v, o, o] = dG['kaij']; dGam[v, o, o, o] = -dG['kaij'].transpose(1, 0, 2, 3)
+        dGam[v, v, v, o] = dG['abci']; dGam[v, v, o, v] = -dG['abci'].transpose(0, 1, 3, 2)
+        dGam[v, o, v, v] = dG['ciab']; dGam[o, v, v, v] = -dG['ciab'].transpose(1, 0, 2, 3)
+        ib = dG['ibaj']
+        dGam[o, v, v, o] = ib
+        dGam[v, o, v, o] = -ib.transpose(1, 0, 2, 3)
+        dGam[o, v, o, v] = -ib.transpose(0, 1, 3, 2)
+        dGam[v, o, o, v] = ib.transpose(1, 0, 3, 2)
+        dGam = 0.5 * (dGam + dGam.transpose(2, 3, 0, 1))
+        dD = np.zeros((nmo, nmo))
+        dD[o, o] = dDoo; dD[v, v] = dDvv; dD[o, v] = dDov; dD[v, o] = dDvo
+        return dD, 0.25 * dGam
+
+    def _spatial_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam):
+        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
+        CCSD** correlation densities: the product-rule derivative of the ccdensity builders
+        (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and ``Doooo``/``Dvvvv``/``Dooov``/
+        ``Dvvvo``/``Dovov``/``Doovv``), placed and symmetrized exactly as
+        :meth:`ccdensity.gradient_densities` (blocks with the same per-block factors, then the
+        four-fold ``1/4(G + G_qpsr + G_rspq + G_srqp)``).  Replaces the 5-point stencil for this
+        path; verified to ~1e-15 against a complex-step derivative of the builders.  Frozen-core
+        rows/columns stay zero (active ``o``/``v`` slices)."""
+        cc = self.ccwfn
+        o, v, nmo = cc.o, cc.v, cc.nmo
+        c = self.contract
+        t1 = np.asarray(cc.t1); t2 = np.asarray(cc.t2)
+        l1 = np.asarray(lam.l1); l2 = np.asarray(lam.l2)
+        def p2(sub, A, dA, B, dB):           # product rule for a two-factor contraction
+            return c(sub, dA, B) + c(sub, A, dB)
+        # shared intermediates and their responses
+        tau = t2 + c('ia,jb->ijab', t1, t1)
+        dtau = dt2 + c('ia,jb->ijab', dt1, t1) + c('ia,jb->ijab', t1, dt1)
+        Goo, dGoo = c('mjab,ijab->mi', t2, l2), p2('mjab,ijab->mi', t2, dt2, l2, dl2)
+        Gvv, dGvv = -c('ijeb,ijab->ae', t2, l2), -p2('ijeb,ijab->ae', t2, dt2, l2, dl2)
+        tsp, dtsp = 2.0*tau - tau.swapaxes(2, 3), 2.0*dtau - dtau.swapaxes(2, 3)   # tau_spinad
+        # ---- one-particle blocks ----
+        dDoo = -(p2('ie,je->ij', t1, dt1, l1, dl1)) - (p2('imef,jmef->ij', t2, dt2, l2, dl2))
+        dDvv = (p2('mb,ma->ab', t1, dt1, l1, dl1)) + (p2('mnbe,mnae->ab', t2, dt2, l2, dl2))
+        dDvo = dl1.T
+        G1, dG1 = c('mnef,inef->mi', l2, t2), p2('mnef,inef->mi', l2, dl2, t2, dt2)
+        G2, dG2 = c('mnef,mnaf->ea', l2, t2), p2('mnef,mnaf->ea', l2, dl2, t2, dt2)
+        dDov = (2.0*dt1
+                + 2.0*p2('me,imae->ia', l1, dl1, t2, dt2)
+                - p2('me,miae->ia', l1, dl1, tau, dtau)
+                - p2('mi,ma->ia', G1, dG1, t1, dt1)
+                - p2('ea,ie->ia', G2, dG2, t1, dt1))
+        # ---- two-particle blocks ----
+        dDoooo = p2('ijef,klef->ijkl', tau, dtau, l2, dl2)
+        dDvvvv = p2('mnab,mncd->abcd', tau, dtau, l2, dl2)
+        dDovov = (-p2('ia,jb->iajb', t1, dt1, l1, dl1)
+                  - p2('mibe,jmea->iajb', tau, dtau, l2, dl2)
+                  - p2('imbe,mjea->iajb', t2, dt2, l2, dl2))
+        # Dooov
+        tmpB, dtmpB = c('jmaf,kmef->jake', t2, l2), p2('jmaf,kmef->jake', t2, dt2, l2, dl2)
+        tmpC, dtmpC = c('ijef,kmef->ijkm', t2, l2), p2('ijef,kmef->ijkm', t2, dt2, l2, dl2)
+        tmpD, dtmpD = c('mjaf,kmef->jake', t2, l2), p2('mjaf,kmef->jake', t2, dt2, l2, dl2)
+        tmpE, dtmpE = c('imea,kmef->iakf', t2, l2), p2('imea,kmef->iakf', t2, dt2, l2, dl2)
+        F1, dF1 = c('kmef,jf->kmej', l2, t1), p2('kmef,jf->kmej', l2, dl2, t1, dt1)
+        F2, dF2 = c('kmej,ie->kmij', F1, t1), p2('kmej,ie->kmij', F1, dF1, t1, dt1)
+        dDooov = (-p2('ke,ijea->ijka', l1, dl1, tsp, dtsp)
+                  - p2('ie,jkae->ijka', t1, dt1, l2, dl2)
+                  - 2.0*p2('ik,ja->ijka', Goo, dGoo, t1, dt1)
+                  + p2('jk,ia->ijka', Goo, dGoo, t1, dt1)
+                  - 2.0*p2('jake,ie->ijka', tmpB, dtmpB, t1, dt1)
+                  + p2('iake,je->ijka', tmpB, dtmpB, t1, dt1)
+                  + p2('ijkm,ma->ijka', tmpC, dtmpC, t1, dt1)
+                  + p2('jake,ie->ijka', tmpD, dtmpD, t1, dt1)
+                  + p2('iakf,jf->ijka', tmpE, dtmpE, t1, dt1)
+                  + p2('kmij,ma->ijka', F2, dF2, t1, dt1))
+        # Dvvvo
+        vB, dvB = c('imbe,nmce->ibnc', t2, l2), p2('imbe,nmce->ibnc', t2, dt2, l2, dl2)
+        vC, dvC = c('nmab,nmce->abce', t2, l2), p2('nmab,nmce->abce', t2, dt2, l2, dl2)
+        vD, dvD = c('niae,nmce->iamc', t2, l2), p2('niae,nmce->iamc', t2, dt2, l2, dl2)
+        vE, dvE = c('mibe,nmce->ibnc', t2, l2), p2('mibe,nmce->ibnc', t2, dt2, l2, dl2)
+        vF1, dvF1 = c('nmce,ie->nmci', l2, t1), p2('nmce,ie->nmci', l2, dl2, t1, dt1)
+        vF2, dvF2 = c('nmci,na->amci', vF1, t1), p2('nmci,na->amci', vF1, dvF1, t1, dt1)
+        dDvvvo = (p2('mc,miab->abci', l1, dl1, tsp, dtsp)
+                  + p2('ma,imbc->abci', t1, dt1, l2, dl2)
+                  - 2.0*p2('ca,ib->abci', Gvv, dGvv, t1, dt1)
+                  + p2('cb,ia->abci', Gvv, dGvv, t1, dt1)
+                  + 2.0*p2('ibnc,na->abci', vB, dvB, t1, dt1)
+                  - p2('ianc,nb->abci', vB, dvB, t1, dt1)
+                  - p2('abce,ie->abci', vC, dvC, t1, dt1)
+                  - p2('iamc,mb->abci', vD, dvD, t1, dt1)
+                  - p2('ibnc,na->abci', vE, dvE, t1, dt1)
+                  - p2('amci,mb->abci', vF2, dvF2, t1, dt1))
+        # Doovv
+        T, dT = 2.0*t2 - t2.swapaxes(2, 3), 2.0*dt2 - dt2.swapaxes(2, 3)
+        P, dP = 2.0*c('me,jmbe->jb', l1, T), 2.0*p2('me,jmbe->jb', l1, dl1, T, dT)
+        Q, dQ = 2.0*c('ijeb,me->ijmb', T, l1), 2.0*p2('ijeb,me->ijmb', T, dT, l1, dl1)
+        R, dR = 2.0*c('jmba,me->jeba', tsp, l1), 2.0*p2('jmba,me->jeba', tsp, dtsp, l1, dl1)
+        Ooo, dOoo = c('ijef,mnef->ijmn', t2, l2), p2('ijef,mnef->ijmn', t2, dt2, l2, dl2)
+        b1, db1 = c('njbf,mnef->jbme', t2, l2), p2('njbf,mnef->jbme', t2, dt2, l2, dl2)
+        c1, dc1 = c('imfb,mnef->ibne', t2, l2), p2('imfb,mnef->ibne', t2, dt2, l2, dl2)
+        d1, dd1 = c('inaf,mnef->iame', t2, l2), p2('inaf,mnef->iame', t2, dt2, l2, dl2)
+        dDoovv = (4.0*p2('ia,jb->ijab', t1, dt1, l1, dl1)
+                  + 2.0*dtsp + dl2
+                  + 2.0*p2('jb,ia->ijab', P, dP, t1, dt1)
+                  - p2('ja,ib->ijab', P, dP, t1, dt1)
+                  - p2('ijmb,ma->ijab', Q, dQ, t1, dt1)
+                  - p2('jeba,ie->ijab', R, dR, t1, dt1)
+                  + 4.0*p2('imae,mjeb->ijab', t2, dt2, l2, dl2)
+                  - 2.0*p2('mjbe,imae->ijab', tau, dtau, l2, dl2)
+                  + p2('ijmn,mnab->ijab', Ooo, dOoo, t2, dt2)
+                  + p2('jbme,miae->ijab', b1, db1, t2, dt2)
+                  + p2('ibne,njae->ijab', c1, dc1, t2, dt2)
+                  + 4.0*p2('eb,ijae->ijab', Gvv, dGvv, tau, dtau)
+                  - 2.0*p2('ea,ijbe->ijab', Gvv, dGvv, tau, dtau)
+                  - 4.0*p2('jm,imab->ijab', Goo, dGoo, tau, dtau)
+                  + 2.0*p2('jm,imba->ijab', Goo, dGoo, tau, dtau)
+                  - 4.0*p2('iame,mjbe->ijab', d1, dd1, tau, dtau)
+                  + 2.0*p2('ibme,mjae->ijab', d1, dd1, tau, dtau)
+                  + 4.0*p2('jbme,imae->ijab', d1, dd1, t2, dt2)
+                  - 2.0*p2('jame,imbe->ijab', d1, dd1, t2, dt2))
+        # six triple-nested t1 blocks + the final all-t1 block
+        n1, dn1 = c('nb,ijmn->ijmb', t1, Ooo), p2('nb,ijmn->ijmb', t1, dt1, Ooo, dOoo)
+        dDoovv = dDoovv + p2('ma,ijmb->ijab', t1, dt1, n1, dn1)
+        m2a, dm2a = c('ie,mnef->mnif', t1, l2), p2('ie,mnef->mnif', t1, dt1, l2, dl2)
+        m2b, dm2b = c('jf,mnif->mnij', t1, m2a), p2('jf,mnif->mnij', t1, dt1, m2a, dm2a)
+        dDoovv = dDoovv + p2('mnij,mnab->ijab', m2b, dm2b, t2, dt2)
+        m3a, dm3a = c('ie,mnef->mnif', t1, l2), p2('ie,mnef->mnif', t1, dt1, l2, dl2)
+        m3b, dm3b = c('mnif,njbf->mijb', m3a, t2), p2('mnif,njbf->mijb', m3a, dm3a, t2, dt2)
+        dDoovv = dDoovv + p2('ma,mijb->ijab', t1, dt1, m3b, dm3b)
+        m4a, dm4a = c('jf,mnef->mnej', t1, l2), p2('jf,mnef->mnej', t1, dt1, l2, dl2)
+        m4b, dm4b = c('mnej,miae->njia', m4a, t2), p2('mnej,miae->njia', m4a, dm4a, t2, dt2)
+        dDoovv = dDoovv + p2('nb,njia->ijab', t1, dt1, m4b, dm4b)
+        m5a, dm5a = c('je,mnef->mnjf', t1, l2), p2('je,mnef->mnjf', t1, dt1, l2, dl2)
+        m5b, dm5b = c('mnjf,imfb->njib', m5a, t2), p2('mnjf,imfb->njib', m5a, dm5a, t2, dt2)
+        dDoovv = dDoovv + p2('na,njib->ijab', t1, dt1, m5b, dm5b)
+        m6a, dm6a = c('if,mnef->mnei', t1, l2), p2('if,mnef->mnei', t1, dt1, l2, dl2)
+        m6b, dm6b = c('mnei,njae->mija', m6a, t2), p2('mnei,njae->mija', m6a, dm6a, t2, dt2)
+        dDoovv = dDoovv + p2('mb,mija->ijab', t1, dt1, m6b, dm6b)
+        g1, dg1 = c('jf,mnef->mnej', t1, l2), p2('jf,mnef->mnej', t1, dt1, l2, dl2)
+        g2, dg2 = c('ie,mnej->mnij', t1, g1), p2('ie,mnej->mnij', t1, dt1, g1, dg1)
+        g3, dg3 = c('nb,mnij->mbij', t1, g2), p2('nb,mnij->mbij', t1, dt1, g2, dg2)
+        dDoovv = dDoovv + p2('ma,mbij->ijab', t1, dt1, g3, dg3)
+        # ---- placement + four-fold symmetrization (mirrors gradient_densities spatial path) ----
+        dD = np.zeros((nmo, nmo))
+        dD[o, o] = dDoo; dD[v, v] = dDvv; dD[o, v] = dDov; dD[v, o] = dDvo
+        dG = np.zeros((nmo, nmo, nmo, nmo))
+        dG[o, o, o, o] = 0.5 * dDoooo
+        dG[v, v, v, v] = 0.5 * dDvvvv
+        dG[o, v, o, v] = dDovov
+        dG[o, o, v, v] = 0.25 * dDoovv
+        dG[v, v, o, o] = 0.25 * dDoovv.transpose(2, 3, 0, 1)
+        dG[o, o, o, v] = 0.5 * dDooov
+        dG[o, v, o, o] = 0.5 * dDooov.transpose(2, 3, 0, 1)
+        dG[v, v, v, o] = 0.5 * dDvvvo
+        dG[v, o, v, v] = 0.5 * dDvvvo.transpose(2, 3, 0, 1)
+        dG = 0.25 * (dG + dG.transpose(1, 0, 3, 2) + dG.transpose(2, 3, 0, 1) + dG.transpose(3, 2, 1, 0))
+        return dD, dG
 
     def _cc_perturbed_lagrangian(self, df, deri, dL, D, dD, Gam, dGam):
         """Field response ``dI'`` of the generalized-Fock (GSB) Lagrangian, density-generic.  The
