@@ -391,9 +391,10 @@ class CCderiv:
         The reference (SCF) polarizability is kept separate (:meth:`HFwfn.polarizability`); the
         :func:`pycc.polarizability` facade sums nuclear (zero) + reference + this correlation part.
 
-        Spatial closed-shell RHF and spin-orbital UHF (both all-electron and frozen core); (T) to
-        follow.  Validated against a tight finite field of :meth:`relaxed_dipole` and the SO ==
-        spatial keystone."""
+        Spatial closed-shell RHF and spin-orbital UHF CCSD (all-electron and frozen core), and
+        spin-orbital CCSD(T) (all-electron and frozen core); spatial CCSD(T) to follow.  CCSD is
+        validated against a tight finite field of :meth:`relaxed_dipole` and the SO == spatial
+        keystone; CCSD(T) against the energy second-derivative finite field."""
         if route != '2n+1':
             raise ValueError(f"CC polarizability supports only the asymmetric '2n+1' route, not {route!r}.")
         cc = self.ccwfn
@@ -401,7 +402,14 @@ class CCderiv:
             raise NotImplementedError(f"CC polarizability: only CCSD and CCSD(T) are implemented (not {cc.model}).")
         is_t = cc.model.upper() == 'CCSD(T)'
         if cc.orbital_basis == 'spinorbital':
+            if is_t and not hasattr(cc, 'S1'):
+                raise ValueError("CCSD(T) polarizability requires the (T) density intermediates; "
+                                 "build the wavefunction with make_t3_density=True.")
             return self._so_polarizability()
+        if is_t:
+            raise NotImplementedError("Spatial CCSD(T) polarizability is not yet available "
+                                      "(the spatial (T) perturbed response is under development); "
+                                      "use orbital_basis='spinorbital'.")
         from .cchbar import cchbar
         from .cclambda import cclambda
         from .ccdensity import ccdensity
@@ -507,8 +515,8 @@ class CCderiv:
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco)
-            Ub = np.asarray(cphf._full_U(pert, ncore))
+            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco, Poo0, Pvv0)
+            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=(cc.model.upper() == 'CCSD(T)')))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
@@ -604,9 +612,17 @@ class CCderiv:
         dDrel[ofull, v] += -zx
         return dDrel
 
-    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco):
+    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco,
+                                      Poo0=None, Pvv0=None):
         """Spin-orbital field response ``dD_rel``; the SO analog of
-        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI)."""
+        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI).
+
+        CCSD(T): uses the **canonical** perturbed orbitals (``df``/``deri`` with ``canonical=True``,
+        so ``df`` is diagonal in oo/vv -- the non-invariant (T) kernels require it), threads the
+        perturbed (T) intermediates ``dt3`` into the density and the Lambda source, and adds the
+        perturbed active-oo/vv dependent-pairs ``dPoo``/``dPvv`` (the field derivative of the
+        unperturbed ``Poo0``/``Pvv0``, including the ``d(eps_i-eps_j) = df_ii - df_jj`` denominator
+        term) to ``dD_rel`` and the perturbed Z-vector RHS -- mirroring the spatial template."""
         cc = self.ccwfn
         o, v, nv = cc.o, cc.v, cc.nv
         co = slice(0, o.start)
@@ -616,13 +632,18 @@ class CCderiv:
         ncore = o.stop - cc.no
         ERI = np.asarray(cc.H.ERI)
         eps = np.diag(np.asarray(cc.H.F))
+        is_t = cc.model.upper() == 'CCSD(T)'
+        canon = is_t or getattr(self, '_DBG_FORCE_CANON', False)
         cphf = cc.mp._full_occ_cphf()
-        df = np.asarray(cphf.perturbed_fock(pert, ncore))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
 
         dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
-        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam)
-        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        dt3 = self._so_perturbed_t3_intermediates(df, deri, dt1, dt2) if is_t else None
+        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam,
+                                             dS1=(dt3['S1'] if is_t else None),
+                                             dS2=(dt3['S2'] if is_t else None))
+        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
         dIp = self._so_cc_perturbed_lagrangian(df, deri, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
         dPco = None
@@ -632,6 +653,17 @@ class CCderiv:
             zjc, dzjc = -Pco.T, -dPco.T
             dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
                        + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
+        dPoo = dPvv = None
+        if is_t:                                        # perturbed (T) oo/vv dependent-pairs
+            dfd = np.zeros(cc.nmo) if getattr(self, '_DBG_NO_DGAP', False) else np.diag(df)
+            thr = getattr(self, '_DBG_GAP_THRESH', 1e-8)
+            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o], thr)
+            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v], thr)
+            if getattr(self, '_DBG_NO_DEPPAIR', False):  # DEBUG isolation
+                dPoo = np.zeros_like(dPoo); dPvv = np.zeros_like(dPvv)
+            else:
+                dX = dX + (c('kl,akil->ia', dPoo, ERI[v, o, ofull, o]) + c('kl,akil->ia', Poo0, deri[v, o, ofull, o])
+                           + c('bc,ibac->ia', dPvv, ERI[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, deri[ofull, v, v, v]))
         Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], z) + c('abij,jb->ia', deri[v, v, ofull, ofull], z)
                + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
         zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
@@ -639,6 +671,9 @@ class CCderiv:
         if cc.nfzc:
             dDrel[co, o] += dPco
             dDrel[o, co] += dPco.T
+        if is_t:
+            dDrel[o, o] += dPoo
+            dDrel[v, v] += dPvv
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
         return dDrel

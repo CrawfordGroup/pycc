@@ -190,15 +190,83 @@ def test_uhf_ccsd_polarizability_nh2(rhf_wfn):
     psi4.core.clean()
 
 
+# ---- CCSD(T): spin-orbital, energy-second-derivative-FD anchored ----
+# The spin-orbital CCSD(T) correlation alpha (H2O/6-31G, WATER), frozen rather than re-run.  Unlike
+# CCSD above, the relaxed-dipole FD is NOT a reliable oracle for (T): the Lee-Rendell dependent-pair
+# numerator gate makes the relaxed dipole non-smooth under an out-of-plane (sigma_h-breaking) field,
+# which poisons the finite difference (the energy is untouched -- it never uses the dependent pairs).
+# So each (T) value was validated once against the ENERGY second-derivative finite field
+# (alpha_aa = -d^2 E_corr/dF_a^2, density-independent) -- diagonals to 2.4e-8 (see _energy_fd_alpha).
+# The deterministic analytic recomputation reproduces the frozen tensor to ~machine precision, so
+# 1e-9 is a tight regression guard.  Spatial CCSD(T) is not yet available.
+WATER_ALPHA_T_DIAG    = np.array([0.0749401988258554, 0.0992910106442475, 0.20111257930800613])   # SO, AE
+WATER_ALPHA_T_DIAG_FC = np.array([0.0752394685506570, 0.1001122215200233, 0.20165562805738180])   # SO, FC
+# frozen external anchor: alpha diagonal from the 5-point energy 2nd-derivative FD (validated once).
+ALPHA_T_ENERGY_FD    = np.array([0.0749401992206078, 0.0992910218359603, 0.20111260312954962])    # AE
+ALPHA_T_ENERGY_FD_FC = np.array([0.0752394689422971, 0.1001122328817920, 0.20165565204760540])    # FC
+
+
+def _energy_fd_alpha(freeze_core='false', F=5e-3):
+    """Regeneration recipe for ALPHA_T_ENERGY_FD[_FC] (not run in the tests): the SO CCSD(T)
+    correlation alpha diagonal from a 5-point O(h^4) finite field of pycc's own correlation energy,
+    alpha_aa = -d^2(E_CCSD(T) - E_SCF)/dF_a^2 -- density-independent, the reliable (T) oracle."""
+    def e(Fvec):
+        psi4.core.clean(); psi4.core.clean_options(); psi4.geometry(WATER)
+        opt = {'basis': '6-31G', 'scf_type': 'pk', 'freeze_core': freeze_core,
+               'e_convergence': 1e-14, 'd_convergence': 1e-14}
+        if Fvec is not None:
+            opt.update({'perturb_h': True, 'perturb_with': 'dipole', 'perturb_dipole': Fvec})
+        psi4.set_options(opt)
+        _, wfn = psi4.energy('scf', return_wfn=True)
+        return pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital').solve_cc(1e-13, 1e-13, 300)
+    E0 = e(None); diag = np.zeros(3)
+    for a in range(3):
+        d = lambda s: e([s * F if i == a else 0.0 for i in range(3)])
+        diag[a] = -(-d(2) + 16 * d(1) - 30 * E0 + 16 * d(-1) - d(-2)) / (12 * F * F)
+    return diag
+
+
+def test_so_ccsdt_polarizability_water_631g(rhf_wfn):
+    """All-electron spin-orbital CCSD(T) correlation alpha (H2O/6-31G) vs the frozen reference and the
+    frozen energy-second-derivative finite field; the tensor is diagonal by symmetry."""
+    wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    assert np.max(np.abs(np.diag(a) - WATER_ALPHA_T_DIAG)) < 1e-9, np.diag(a)
+    assert np.max(np.abs(a - np.diag(np.diag(a)))) < 1e-10, a          # diagonal by symmetry
+    assert np.max(np.abs(np.diag(a) - ALPHA_T_ENERGY_FD)) < 1e-7, np.diag(a)
+    psi4.core.clean()
+
+
+def test_fc_so_ccsdt_polarizability_water_631g(rhf_wfn):
+    """Frozen-core spin-orbital CCSD(T) correlation alpha (H2O/6-31G, O 1s frozen) vs the frozen
+    reference and the frozen energy-FD diagonal -- exercises the (T) core<->active and active oo/vv
+    dependent-pair response inside the perturbed relaxed density."""
+    wfn = rhf_wfn(WATER, "6-31G", freeze_core="true")
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    assert cc.nfzc > 0
+    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    assert np.max(np.abs(np.diag(a) - WATER_ALPHA_T_DIAG_FC)) < 1e-9, np.diag(a)
+    assert np.max(np.abs(np.diag(a) - ALPHA_T_ENERGY_FD_FC)) < 1e-7, np.diag(a)
+    psi4.core.clean()
+
+
 def test_ccsd_polarizability_guards(rhf_wfn):
-    """The unimplemented paths raise rather than silently returning a wrong tensor: CCSD(T)
-    (needs the perturbed (T) response), an unknown route, and the spin-orbital basis."""
+    """The unimplemented / misused paths raise rather than silently returning a wrong tensor: spatial
+    CCSD(T) (the spatial (T) perturbed response is not yet available), spin-orbital CCSD(T) built
+    without the (T) density intermediates, and an unknown route."""
     import pytest
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
-    cc = pycc.ccwfn(wfn, model='ccsd(t)')
+    cc = pycc.ccwfn(wfn, model='ccsd(t)')                              # spatial CCSD(T)
     cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(NotImplementedError):                          # spatial (T) not yet available
         pycc.CCderiv(cc).polarizability()
     with pytest.raises(ValueError):
         pycc.CCderiv(cc).polarizability(route='explicit')
+    cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
+    cc_so.solve_cc(1e-12, 1e-12, 100)
+    with pytest.raises(ValueError):                                   # SO (T) needs make_t3_density
+        pycc.CCderiv(cc_so).polarizability()
     psi4.core.clean()
