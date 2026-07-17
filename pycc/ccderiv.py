@@ -14,11 +14,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .correlatedderivs import CorrelatedDerivs
+
 if TYPE_CHECKING:
     from .ccwfn import CCwfn
 
 
-class CCderiv:
+class CCderiv(CorrelatedDerivs):
     """Analytic derivative properties of a converged CCSD wavefunction.
 
     Parameters
@@ -35,10 +37,9 @@ class CCderiv:
     """
 
     def __init__(self, ccwfn: "CCwfn") -> None:
-        self.ccwfn = ccwfn
-        self.contract = ccwfn.contract
+        super().__init__(ccwfn)
+        self.ccwfn = ccwfn                              # alias: this class uses .ccwfn, the base .wfn
         self._dens = None
-        self._ref_hf = None
 
     def _density(self):
         """Converged Lambda amplitudes and the (Lambda-response) reduced densities, cached.
@@ -52,15 +53,6 @@ class CCderiv:
             lam.solve_lambda(e_conv=1e-10, r_conv=1e-10)
             self._dens = ccdensity(self.ccwfn, lam)
         return self._dens
-
-    def _reference_hf(self):
-        """The all-electron :class:`~pycc.hfwfn.HFwfn` for the SCF reference (cached), supplying
-        the reference gradient for the total CCSD property (the :func:`pycc.gradient` facade pairs
-        it with this correlation gradient and the nuclear term)."""
-        if self._ref_hf is None:
-            from .hfwfn import HFwfn
-            self._ref_hf = HFwfn(self.ccwfn.ref, orbital_basis=self.ccwfn.orbital_basis)
-        return self._ref_hf
 
     def _lagrangian(self, D, Gam):
         """The generalized-Fock (orbital-gradient) Lagrangian ``I'_pq`` from a full-MO 1-PDM ``D``
@@ -76,41 +68,6 @@ class CCderiv:
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self.ccwfn.mp._so_mp2_lagrangian(D, Gam)
         return self.ccwfn.mp._mp2_lagrangian(D, Gam)
-
-    @staticmethod
-    def _dependent_pairs(Iblock, eps_block, thresh=1e-8):
-        """Canonical dependent-pair rotation ``P_mn = (I'_mn - I'_nm)/(eps_m - eps_n)`` for a
-        square occ-occ or virt-virt Lagrangian block ``Iblock`` and its orbital energies
-        ``eps_block``.  Numerator-gated (``|Delta I'| < thresh`` -> 0), which skips both the
-        diagonal (``m=n``) and near-degenerate pairs (Lee-Rendell's ``|Delta X| < 1e-8``
-        threshold).  ``P`` is symmetric -- numerator and denominator are both antisymmetric.
-
-        This is the frozen-core core<->active-occupied divide (used for the ``P_co`` block in
-        :meth:`gradient`) generalized to an arbitrary square block; CCSD(T) needs it over the
-        full oo and vv blocks because (T) breaks the occ-occ/virt-virt rotation invariance."""
-        num = np.asarray(Iblock) - np.asarray(Iblock).T
-        den = eps_block[:, None] - eps_block[None, :]
-        P = np.zeros_like(num)
-        m = np.abs(num) > thresh
-        P[m] = num[m] / den[m]
-        return P
-
-    @staticmethod
-    def _perturbed_dependent_pairs(dIblock, Pblock0, eps_block, dfdiag_block, thresh=1e-8):
-        """Field derivative ``dP`` of the canonical dependent-pair rotation
-        ``P = (I'_mn - I'_nm)/(eps_m - eps_n)`` for an occ-occ or virt-virt block.  Quotient rule,
-        ``dP_mn = (dI'_mn - dI'_nm)/(eps_m - eps_n) - P0_mn (df_mm - df_nn)/(eps_m - eps_n)`` -- the
-        second term is the denominator derivative ``d(eps_m - eps_n) = df_mm - df_nn`` (the canonical
-        ``df`` diagonal), using the unperturbed ``Pblock0``.  Gated on ``|eps_m - eps_n| > thresh``
-        (diagonal + near-degenerate pairs -> 0, matching :meth:`_dependent_pairs` for a non-degenerate
-        spectrum; near-degeneracy is the standard caveat of the canonical route)."""
-        dnum = np.asarray(dIblock) - np.asarray(dIblock).T
-        gap = eps_block[:, None] - eps_block[None, :]
-        dgap = dfdiag_block[:, None] - dfdiag_block[None, :]
-        dP = np.zeros_like(dnum)
-        m = np.abs(gap) > thresh
-        dP[m] = (dnum[m] - np.asarray(Pblock0)[m] * dgap[m]) / gap[m]
-        return dP
 
     def _relaxed_density(self):
         """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
