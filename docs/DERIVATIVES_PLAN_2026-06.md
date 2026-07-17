@@ -230,10 +230,10 @@ so frozen core runs the response over the full occupied space in `MPwfn`'s own M
 - **CC gradients — done, extending.** CCSD *and* CCSD(T) analytic gradients are implemented for
   **spatial RHF and spin-orbital UHF, all-electron + frozen core**, via `CCderiv`, reusing the MP2
   Z-vector / relaxed-density assembly with the CCSD/(T) densities and Λ (details + validation in §7).
-  **Next:** CCSD(T) Hessian/APT; and extending `_gradient_explicit` to carry the (T) dependent-pair
-  (so the z-vector==explicit cross-check works for (T), as it does for CCSD). `CCderiv` reuses the MP2
-  Lagrangian/CPHF primitives via delegation; the fuller "shared Lagrangian → Z-vector → density →
-  gradient" layer refactor is still deferred (no premature abstraction).
+  **Next:** the `CorrelatedDerivs` shared-layer refactor (§9) — now underway, the CC polarizability
+  having proven the shared machinery — then CCSD(T) Hessian/APT built on the unified base, and
+  extending `_gradient_explicit` to carry the (T) dependent-pair (so the z-vector==explicit
+  cross-check works for (T), as it does for CCSD).
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
   and does not reproduce the restricted ROHF response; `CPHF.solve` raises for ROHF. The CPHF-free
   ROHF HF gradient is unaffected.
@@ -527,6 +527,45 @@ Debugging oracles (CCSD only, phase 1–3): `ccresponse.solve_right(ω=0)` X-vec
 they isolate the amplitude response from the orbital-relaxation delta. **`ccresponse` is never a code
 dependency** (it omits orbital response and cannot do (T)); oracle only.
 
+## 9. CorrelatedDerivs refactor — design & phasing
+
+**Motivation.** MP2, CC, and CI each carry a *parallel* copy of the same orbital-response machinery
+(Lagrangian, dependent-pair rotations, Z-vector, relaxed-density assembly, gradient and 2n+1
+second-derivative orchestration), differing only in the correlated densities. `CCderiv` already
+delegates the Lagrangian and CPHF to `MPwfn`; this factors out the rest.
+
+**Scope (now): MP2 and CC only.** CI (`CIwfn`, an existing CISD implementation with its own
+derivative stack) is *not* folded in here — it gets a documented `CIderiv` stub as a template for the
+student who owns it to complete (its active- vs full-occupied CPHF choice, and frozen core, are hers).
+
+**Hierarchy.**
+
+    CorrelatedDerivs        # base: orbital response + assembly (method-agnostic)
+    |-- MPderiv             # extracted from MPwfn
+    |-- CCderiv             # refactored to inherit
+    (|-- CIderiv: stub only, phase 4)
+
+**Base owns** (depends only on the densities + reference, not on how they were obtained): the
+Lagrangian `I'(D, Gamma)`; the dependent-pair rotations `P`/`dP` (one canonical copy, gated by a
+per-method flag); the Z-vector setup + solve; relaxed-density assembly (`D + Pco + P + (-z)`);
+`relaxed_dipole`; the gradient assembly; the perturbed Lagrangian; and the 2n+1 orchestration shells
+for polarizability/APT/Hessian/AAT. Spatial and spin-orbital.
+
+**Leaves (method-specific), supplied by each subclass:** the unrelaxed densities `(D, Gamma)`; the
+first-order response `(dD, dGamma)` — each subclass fully owns its amplitude/multiplier solve (MP2
+closed-form; CC iterative T + Lambda; CI CP-CI) and hands back only densities, so the base never sees
+a Jacobian; and capability flags (`needs_dependent_pairs`, `needs_lambda`, ...).
+
+**Phasing** (one PR per phase; full MP2 + CC suite green at each):
+
+1. `CorrelatedDerivs` + extract `MPderiv`; move the already-shared, low-risk pieces (`_reference_hf`,
+   Lagrangian delegation, dependent-pair helpers, CPHF accessor). MP2 and CC behavior unchanged.
+2. Hoist relaxed-density assembly, Z-vector setup, gradient assembly, `relaxed_dipole`, and the
+   perturbed Lagrangian into the base.
+3. Hoist the 2n+1 second-derivative orchestration.
+4. `CIderiv` scaffold: a template inheriting `CorrelatedDerivs` with the leaf hooks stubbed
+   (`NotImplementedError` + brief interface docstrings) for the student to fill in.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
@@ -558,15 +597,21 @@ Reference layer, then the MP2 derivative effort:
 | #184 | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
 | #185 | **spin-orbital CCSD(T) gradient** — SO (T) density + oo/vv κ̄ in `_so_gradient` (all-electron + frozen core); (T) density builders moved to `cctriples` (no `ccwfn`→`ccdensity` dependency) |
 | #186 | **CCSD/CCSD(T) relaxed dipole** — `CCderiv.relaxed_dipole` = `Tr(D_rel·μ)`; shared `_relaxed_density`/`_so_relaxed_density` factored out of the gradients; wires `pycc.dipole(CCwfn)` (both spins, all-electron + frozen core) |
-| perf | **(T) density speedup** — `diag(Doo)` built in the ijk loop alongside `diag(Dvv)` in `t3_density` + `so_t3_density`; the separate abc loop (Lee–Rendell's avoidable extra N^7 set — the 2/3-vs-Scuseria saving) removed. Bit-identical E(T)/density/gradient; ~3.3x (spatial) / ~2.6x (SO). Branch `perf/t3-density-diagonal-doo` |
+| #187 | **CCSD dipole polarizability** — spatial RHF + spin-orbital UHF, all-electron + frozen core, via `CCderiv` (2n+1); the first CC second-derivative property; analytic perturbed HBAR (finite-difference stencil dropped) |
+| #188 | **(T) density speedup** — `diag(Doo)` built in the ijk loop alongside `diag(Dvv)` in `t3_density`/`so_t3_density`; the separate abc loop (Lee–Rendell's avoidable extra N^7 set) removed. Bit-identical E(T)/density/gradient; ~3.3x (spatial) / ~2.6x (SO) |
+| #189 | **(T) ov 1-PDM fix** — restored the missing `1/4` in `so_t3_density`'s occ-virt (T) density `Dov` (T2† normalization); regression `test_086` (unrelaxed field-FD dipole — the gradient is blind to the ov density, Handy–Schaefer) |
+| #190 | **spin-orbital CCSD(T) polarizability** — SO (T), 2n+1, all-electron + frozen core; canonical perturbed orbitals, perturbed (T) intermediates + oo/vv dependent-pairs; energy-second-derivative-FD anchored (`test_084`/`test_085`) |
+| #191 | **spatial CCSD(T) polarizability** — closed-shell RHF, all-electron + frozen core; the perturbed (T) Λ source threaded through `r_L1`/`r_L2` (`s1`/`s2`) with matched P_ij^ab symmetrization; CFOUR-anchored tests (`POLAR − POLARSCF`, matched GENBAS 6-31G); all `_DBG_*` scaffolding stripped |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
 `test_070` (2n+1 polarizability), `test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
 (MP2 velocity APT), `test_074` (property facade). CC gradients: `test_076` (CCSD, spatial),
 `test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), spatial + spin-orbital,
-all-electron + frozen core), `test_034` (CCSD(T) density/dipole). The 2n+1 APT/Hessian cross-checks live in
-`test_068`/`test_069`.
+all-electron + frozen core), `test_034` (CCSD(T) density/dipole). CC polarizability: `test_084`
+(CCSD + CCSD(T), spatial + spin-orbital, all-electron + frozen core, incl. the CFOUR-anchored (T)
+cases), `test_085` (invariant [F,T3] (T) energy), `test_086` (SO (T) unrelaxed dipole). The 2n+1
+APT/Hessian cross-checks live in `test_068`/`test_069`.
 
 ## Appendix B: superseded early decisions
 
