@@ -63,11 +63,12 @@ class CCderiv(CorrelatedDerivs):
         2-PDM permutational symmetry (:meth:`ccdensity.gradient_densities` symmetrizes it), since
         the three-index ``termC`` is sensitive to it.  Dispatches on the orbital basis: the
         spin-orbital path uses the antisymmetrized ``_so_mp2_lagrangian`` (``<pq||rs>``), the spatial
-        path the spin-adapted ``_mp2_lagrangian`` (``H.L``).  (When an MPderiv is split out this
-        shared primitive will move with it.)"""
+        path the spin-adapted ``_mp2_lagrangian`` (``H.L``).  The shared primitive lives on the MP2
+        derivative driver (``cc.mp.deriv``, an :class:`~pycc.mpderiv.MPderiv`); Phase 2 hoists it
+        into :class:`~pycc.correlatedderivs.CorrelatedDerivs`."""
         if self.ccwfn.orbital_basis == 'spinorbital':
-            return self.ccwfn.mp._so_mp2_lagrangian(D, Gam)
-        return self.ccwfn.mp._mp2_lagrangian(D, Gam)
+            return self.ccwfn.mp.deriv._so_mp2_lagrangian(D, Gam)
+        return self.ccwfn.mp.deriv._mp2_lagrangian(D, Gam)
 
     def _relaxed_density(self):
         """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
@@ -303,7 +304,7 @@ class CCderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         cc = self.ccwfn
         D, Gam = self._density().gradient_densities()
-        cphf = cc.mp._full_occ_cphf()
+        cphf = cc.mp.deriv._full_occ_cphf()
         ncore = cc.o.stop - cc.no
         c = self.contract
         natom = cc.derivatives.natom
@@ -404,7 +405,7 @@ class CCderiv(CorrelatedDerivs):
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
 
-        cphf = cc.mp._full_occ_cphf()
+        cphf = cc.mp.deriv._full_occ_cphf()
         mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
@@ -463,7 +464,7 @@ class CCderiv(CorrelatedDerivs):
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
 
-        cphf = cc.mp._full_occ_cphf()
+        cphf = cc.mp.deriv._full_occ_cphf()
         mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
@@ -500,7 +501,7 @@ class CCderiv(CorrelatedDerivs):
         eps = np.diag(np.asarray(cc.H.F))
         is_t = cc.model.upper() == 'CCSD(T)'
         canon = is_t                                    # (T) needs canonical perturbed orbitals
-        cphf = cc.mp._full_occ_cphf()
+        cphf = cc.mp.deriv._full_occ_cphf()
         df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
         deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
         dL = 2.0 * deri - deri.swapaxes(2, 3)
@@ -565,7 +566,7 @@ class CCderiv(CorrelatedDerivs):
         eps = np.diag(np.asarray(cc.H.F))
         is_t = cc.model.upper() == 'CCSD(T)'
         canon = is_t                                    # (T) needs canonical perturbed orbitals
-        cphf = cc.mp._full_occ_cphf()
+        cphf = cc.mp.deriv._full_occ_cphf()
         df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
         deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
 
