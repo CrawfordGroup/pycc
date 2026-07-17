@@ -93,7 +93,7 @@ def _findiff_alpha(geom, basis, F=5e-4, freeze_core='false'):
         D, G = (np.asarray(x) for x in pycc.ccdensity(cx, lm).gradient_densities())
         o, v = cx.o, cx.v; co = slice(0, cx.nfzc); of = slice(0, o.stop)
         c = cx.contract; eps = np.diag(np.asarray(cx.H.F)); L = np.asarray(cx.H.L)
-        Ip = np.asarray(cx.mp._mp2_lagrangian(D, G))
+        Ip = np.asarray(pycc.CCderiv(cx)._lagrangian(D, G))
         Dr = D.copy(); X = Ip[of, v] - Ip[v, of].T
         if cx.nfzc:
             Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])

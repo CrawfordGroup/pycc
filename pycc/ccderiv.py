@@ -54,22 +54,6 @@ class CCderiv(CorrelatedDerivs):
             self._dens = ccdensity(self.ccwfn, lam)
         return self._dens
 
-    def _lagrangian(self, D, Gam):
-        """The generalized-Fock (orbital-gradient) Lagrangian ``I'_pq`` from a full-MO 1-PDM ``D``
-        and 2-PDM ``Gam`` -- reused verbatim from the MP2 gradient machinery (it is generic in the
-        densities: ``-1/2 [ eps_p(D_pq+D_qp) + delta_{q,occ} sum_rs D_rs(<rp|sq>_L + <rq|sp>_L)
-        + 4 sum_rst <pr|st> Gam_qrst ]``).  Its ov-antisymmetric part is the Z-vector RHS; evaluated
-        at the relaxed density it is the energy-weighted density.  ``Gam`` must carry the proper
-        2-PDM permutational symmetry (:meth:`ccdensity.gradient_densities` symmetrizes it), since
-        the three-index ``termC`` is sensitive to it.  Dispatches on the orbital basis: the
-        spin-orbital path uses the antisymmetrized ``_so_mp2_lagrangian`` (``<pq||rs>``), the spatial
-        path the spin-adapted ``_mp2_lagrangian`` (``H.L``).  The shared primitive lives on the MP2
-        derivative driver (``cc.mp.deriv``, an :class:`~pycc.mpderiv.MPderiv`); Phase 2 hoists it
-        into :class:`~pycc.correlatedderivs.CorrelatedDerivs`."""
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self.ccwfn.mp.deriv._so_mp2_lagrangian(D, Gam)
-        return self.ccwfn.mp.deriv._mp2_lagrangian(D, Gam)
-
     def _relaxed_density(self):
         """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
         closed-shell RHF).  ``Drel`` is the Lambda-response 1-PDM ``D`` plus the orbital-relaxation
@@ -244,7 +228,7 @@ class CCderiv(CorrelatedDerivs):
             dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X + sum_pq W_pq S^X_pq
 
         Differences from the spatial path: the generalized-Fock Lagrangian is the antisymmetrized
-        ``_so_mp2_lagrangian`` (:meth:`_lagrangian` dispatches); the orbital Hessian is built
+        ``_so_lagrangian`` (:meth:`_lagrangian` dispatches); the orbital Hessian is built
         **inline** (``G_ia,jb = <aj||ib> + <ab||ij> + delta (eps_a - eps_i)``) rather than borrowed
         from an all-electron ``HFwfn`` CPHF -- the all-electron spin-orbital ``HFwfn`` orders the
         spins differently from the densities, so there is no CPHF to reuse; and the skeleton
@@ -1245,11 +1229,11 @@ class CCderiv(CorrelatedDerivs):
     def _cc_perturbed_lagrangian(self, df, deri, dL, D, dD, Gam, dGam):
         """Field response ``dI'`` of the generalized-Fock (GSB) Lagrangian, density-generic.  The
         Fock term is the **full matrix product** ``df @ (D + D.T)`` -- NOT the diagonal ``diag(df)``
-        a stencil of :meth:`MPwfn._mp2_lagrangian` (which uses ``eps[:,None]*(D+D.T)``, valid only
-        at the canonical F=0) would give.  The omitted ``df_offdiag @ (D+D.T)`` vanishes for MP2
-        (unrelaxed ``D`` has no ov block) but is nonzero for CC (couples to ``Dov``/``Dvo``); see
-        DERIVATIVES_PLAN sec 8.2.  (Same formula as :meth:`MPwfn._perturbed_lagrangian`; destined to
-        merge with it under ``CorrelatedDerivs``.)"""
+        a stencil of :meth:`CorrelatedDerivs._spatial_lagrangian` (which uses ``eps[:,None]*(D+D.T)``,
+        valid only at the canonical F=0) would give.  The omitted ``df_offdiag @ (D+D.T)`` vanishes
+        for MP2 (unrelaxed ``D`` has no ov block) but is nonzero for CC (couples to ``Dov``/``Dvo``);
+        see DERIVATIVES_PLAN sec 8.2.  (Same formula as :meth:`MPderiv._perturbed_lagrangian`;
+        destined to merge with it under ``CorrelatedDerivs`` in Phase 3.)"""
         cc = self.ccwfn
         o = cc.o
         ofull = slice(0, o.stop)

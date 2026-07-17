@@ -281,7 +281,7 @@ class ccdensity(object):
         no-extra-prefactor convention (``contract(D, F) + contract(Gamma, ERI) = E_corr``) the ``1/4``
         is absorbed into the returned ``Gamma`` -- matching :meth:`MPwfn._so_mp2_tpdm` (whose oovv
         block is ``1/4 t2``) and the ``termC = 4 sum <pr||st> Gamma_qrst`` in
-        :meth:`MPwfn._so_mp2_lagrangian`.  (MP2's ``Gamma`` is already bra-ket symmetric --
+        :meth:`CorrelatedDerivs._so_lagrangian`.  (MP2's ``Gamma`` is already bra-ket symmetric --
         ``oovv = t2``, ``vvoo = t2.T`` -- so it needs no symmetrization.)"""
         if self.onlyone:
             raise RuntimeError("gradient_densities needs the two-particle density "

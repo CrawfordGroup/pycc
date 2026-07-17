@@ -40,29 +40,6 @@ class MPderiv(CorrelatedDerivs):
     # The spin-orbital (_so_) and spin-adapted (closed-shell, unlabeled) paths are paired.
     # W = I'(D_relaxed) is the energy-weighted density.
 
-    def _so_mp2_lagrangian(self, D, Gam) -> np.ndarray:
-        """Spin-orbital generalized-Fock Lagrangian ``I'_pq`` (``nmo x nmo``) from a full-MO
-        1-PDM ``D`` and cumulant 2-PDM ``Gamma``
-
-            I'_pq = -1/2 [ f_pp (D_pq + D_qp)
-                           + delta_{q in ofull} sum_rs D_rs (<rp||sq> + <rq||sp>)
-                           + 4 sum_rst <pr||st> Gamma_qrst ]
-
-        The 1-PDM term's column index runs over the full occupied space ``ofull`` (= core +
-        active), so the frozen-core rows/columns are built (for ``nfzc=0`` this is the whole
-        occupied space). Its occupied-virtual antisymmetric part ``X_ai = I'_ia - I'_ai`` is
-        the Z-vector RHS; evaluated at the relaxed ``D`` it is the energy-weighted density."""
-        nmo = self.mp.nmo
-        ofull = slice(0, self.mp.o.stop)
-        ERI = np.asarray(self.mp.H.ERI)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        termA = eps[:, None] * (D + D.T)                       # f_pp (D_pq + D_qp)
-        termB = np.zeros((nmo, nmo))
-        termB[:, ofull] = (self.contract('rs,rpsq->pq', D, ERI[:, :, :, ofull])
-                           + self.contract('rs,rqsp->pq', D, ERI[:, ofull, :, :]))
-        termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
-        return -0.5 * (termA + termB + termC)
-
     def _so_mp2_relaxed_densities(self):
         """Spin-orbital MP2 relaxed 1-PDM ``D_r`` (``nmo x nmo``), cumulant ``Gamma``, and
         energy-weighted density ``W``, with the orbital response over the full occupied space
@@ -90,29 +67,8 @@ class MPderiv(CorrelatedDerivs):
                 "(the semicanonical response does not reproduce the restricted ROHF "
                 "response). RHF and UHF are supported.")
         D, Gam, _, _, _, _ = self._so_zvector()
-        W = self._so_mp2_lagrangian(D, Gam)
+        W = self._so_lagrangian(D, Gam)
         return D, Gam, W
-
-    def _mp2_lagrangian(self, D, Gam) -> np.ndarray:
-        """Spin-adapted generalized-Fock Lagrangian ``I'_pq`` (``nmo x nmo``) from a
-        full-MO 1-PDM ``D`` and cumulant 2-PDM ``Gamma`` -- the closed-shell analogue of
-        :meth:`_so_mp2_lagrangian`, with the spin-adapted ``L`` (= H.L) in the two-electron
-        1-PDM term and ``<pr|st>`` (= H.ERI) with ``Gamma`` in the 2-PDM term. The 1-PDM
-        term's column index runs over the full occupied space ``ofull`` (= core + active),
-        so the frozen-core rows/columns are built (for ``nfzc=0`` this is the whole occupied
-        space). Used both for the orbital-gradient Lagrangian (from the unrelaxed ``D``) and
-        for the energy-weighted density ``W = I'(D_relaxed)``."""
-        nmo = self.mp.nmo
-        ofull = slice(0, self.mp.nfzc + self.mp.no)
-        ERI = np.asarray(self.mp.H.ERI)
-        L = np.asarray(self.mp.H.L)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        termA = eps[:, None] * (D + D.T)
-        termB = np.zeros((nmo, nmo))
-        termB[:, ofull] = (self.contract('rs,rpsq->pq', D, L[:, :, :, ofull])
-                           + self.contract('rs,rqsp->pq', D, L[:, ofull, :, :]))
-        termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
-        return -0.5 * (termA + termB + termC)
 
     def _mp2_relaxed_densities(self):
         """Spatial MP2 relaxed 1-PDM ``D_r`` (``nmo x nmo``), cumulant ``Gamma``, and
@@ -136,7 +92,7 @@ class MPderiv(CorrelatedDerivs):
         contribution reproduces the ``z_kc`` energy-weighted-density term. For ``nfzc=0`` the
         core blocks are empty and this reduces to the all-electron relaxed density."""
         D, Gam, _, _, hf, _ = self._zvector()
-        W = self._mp2_lagrangian(D, Gam)
+        W = self._spatial_lagrangian(D, Gam)
         return D, Gam, W, hf
 
     def mp2_relaxed_opdm(self) -> np.ndarray:
@@ -318,7 +274,7 @@ class MPderiv(CorrelatedDerivs):
             Du = np.zeros((nmo, nmo))
             Du[o, o] = np.asarray(Doo)
             Du[v, v] = np.asarray(Dvv)
-            Ip = self._so_mp2_lagrangian(Du, Gam)
+            Ip = self._so_lagrangian(Du, Gam)
             Drel = Du.copy()
             Pco = None
             if nfzc:
@@ -341,7 +297,7 @@ class MPderiv(CorrelatedDerivs):
 
     def _so_perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """First-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
-        spin-orbital. Differentiates :meth:`_so_mp2_lagrangian` term by term with the perturbed
+        spin-orbital. Differentiates :meth:`_so_lagrangian` term by term with the perturbed
         integrals (:meth:`CPHF.perturbed_fock`/`perturbed_eri`) and the density response.
 
         With ``D``/``dD`` omitted this uses the **unrelaxed** 1-PDM and its response
@@ -445,7 +401,7 @@ class MPderiv(CorrelatedDerivs):
             Du = np.zeros((nmo, nmo))
             Du[o, o] = np.asarray(Doo)
             Du[v, v] = np.asarray(Dvv)
-            Ip = self._mp2_lagrangian(Du, Gam)
+            Ip = self._spatial_lagrangian(Du, Gam)
             Drel = Du.copy()
             Pco = None
             if nfzc:
@@ -669,7 +625,7 @@ class MPderiv(CorrelatedDerivs):
         # route == '2n+1-field'
         lagr = self._so_perturbed_lagrangian if so else self._perturbed_lagrangian
         Gam = np.asarray(self.mp._so_mp2_tpdm() if so else self.mp._mp2_tpdm())
-        W = (self._so_mp2_lagrangian if so else self._mp2_lagrangian)(Drel, Gam)
+        W = self._lagrangian(Drel, Gam)
         field = [Perturbation('field', a) for a in range(3)]
         dDrel = [popdm(field[a]) for a in range(3)]
         dGamF = [np.asarray(self._perturbed_densities(field[a])[1]) for a in range(3)]
@@ -760,7 +716,7 @@ class MPderiv(CorrelatedDerivs):
         nc = 3 * natom
         Drel = (self._so_zvector() if so else self._zvector())[0]
         Gam = np.asarray(self.mp._so_mp2_tpdm() if so else self.mp._mp2_tpdm())
-        W = (self._so_mp2_lagrangian if so else self._mp2_lagrangian)(Drel, Gam)
+        W = self._lagrangian(Drel, Gam)
         popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
         lagr = self._so_perturbed_lagrangian if so else self._perturbed_lagrangian
         pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
