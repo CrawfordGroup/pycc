@@ -191,3 +191,57 @@ def test_ccsdt_relaxed_dipole_frozen_core(rhf_wfn):
     mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
     assert abs(mu[2] - RELAXED_DIPOLE_Z_REF_FC) < 1e-10, mu[2]
     psi4.core.clean()
+
+
+# Off-axis relaxed CCSD(T) dipole.  The mu_z checks above only probe the totally-symmetric (z)
+# direction of yz-plane water, so the non-totally-symmetric (off-axis) blocks of the (T) relaxed
+# density went untested (mu_x = mu_y = 0 there by symmetry).  Here the molecule is tilted into a
+# general C1 orientation (a fixed rotation of _T_DIPOLE_GEOM) so mu has all three Cartesian
+# components nonzero.  Each reference component was validated (once) against mu_a = -dE_corr/dF_a --
+# a 5-point O(h^4) field-relaxed energy gradient of pycc's own CCSD(T) correlation energy -- to
+# 3.6e-11, all-electron and frozen core.
+_T_DIPOLE_TILTED_GEOM = """
+O  0.074487494137924 -0.055774775873582  0.108878068289408
+H -0.951260432480889 -1.066139182313485 -1.390453518773079
+H -0.230910151065614  1.951325348189316 -0.337520431951801
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+RELAXED_DIPOLE_OFFAXIS_REF = np.array([0.0462175718, -0.0346068120, 0.0675560373])      # 6-31G, AE
+RELAXED_DIPOLE_OFFAXIS_REF_FC = np.array([0.0462776809, -0.0346518205, 0.0676438986])   # 6-31G, FC
+
+
+def test_ccsdt_relaxed_dipole_offaxis(rhf_wfn):
+    """The full CCSD(T) relaxed correlation dipole vector (all three Cartesian components) matches its
+    field-gradient-validated reference for a general (tilted) orientation, in BOTH the spin-orbital
+    and spatial bases (SO == spatial keystone).  Unlike the yz-plane mu_z checks above, this probes
+    the off-axis (non-totally-symmetric) blocks of the (T) relaxed density."""
+    wfn = rhf_wfn(_T_DIPOLE_TILTED_GEOM, "6-31G", freeze_core="false")
+    mu = {}
+    for basis in ('spinorbital', 'spatial'):
+        cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis=basis)
+        cc.solve_cc(1e-12, 1e-12, 100)
+        mu[basis] = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    assert np.max(np.abs(mu['spatial'] - RELAXED_DIPOLE_OFFAXIS_REF)) < 1e-8, mu['spatial']
+    assert np.max(np.abs(mu['spinorbital'] - RELAXED_DIPOLE_OFFAXIS_REF)) < 1e-8, mu['spinorbital']
+    assert np.max(np.abs(mu['spinorbital'] - mu['spatial'])) < 1e-9, (mu['spinorbital'], mu['spatial'])
+    psi4.core.clean()
+
+
+def test_ccsdt_relaxed_dipole_offaxis_frozen_core(rhf_wfn):
+    """Frozen-core analog of :func:`test_ccsdt_relaxed_dipole_offaxis` (O 1s frozen): the off-axis (T)
+    relaxed dipole with the core<->active P_co divide and the active oo/vv dependent pairs inside
+    D_rel, again in both bases."""
+    wfn = rhf_wfn(_T_DIPOLE_TILTED_GEOM, "6-31G", freeze_core="true")
+    mu = {}
+    for basis in ('spinorbital', 'spatial'):
+        cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis=basis)
+        cc.solve_cc(1e-12, 1e-12, 100)
+        assert cc.nfzc > 0
+        mu[basis] = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    assert np.max(np.abs(mu['spatial'] - RELAXED_DIPOLE_OFFAXIS_REF_FC)) < 1e-8, mu['spatial']
+    assert np.max(np.abs(mu['spinorbital'] - RELAXED_DIPOLE_OFFAXIS_REF_FC)) < 1e-8, mu['spinorbital']
+    assert np.max(np.abs(mu['spinorbital'] - mu['spatial'])) < 1e-9, (mu['spinorbital'], mu['spatial'])
+    psi4.core.clean()

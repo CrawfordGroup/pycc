@@ -95,6 +95,23 @@ class CCderiv:
         P[m] = num[m] / den[m]
         return P
 
+    @staticmethod
+    def _perturbed_dependent_pairs(dIblock, Pblock0, eps_block, dfdiag_block, thresh=1e-8):
+        """Field derivative ``dP`` of the canonical dependent-pair rotation
+        ``P = (I'_mn - I'_nm)/(eps_m - eps_n)`` for an occ-occ or virt-virt block.  Quotient rule,
+        ``dP_mn = (dI'_mn - dI'_nm)/(eps_m - eps_n) - P0_mn (df_mm - df_nn)/(eps_m - eps_n)`` -- the
+        second term is the denominator derivative ``d(eps_m - eps_n) = df_mm - df_nn`` (the canonical
+        ``df`` diagonal), using the unperturbed ``Pblock0``.  Gated on ``|eps_m - eps_n| > thresh``
+        (diagonal + near-degenerate pairs -> 0, matching :meth:`_dependent_pairs` for a non-degenerate
+        spectrum; near-degeneracy is the standard caveat of the canonical route)."""
+        dnum = np.asarray(dIblock) - np.asarray(dIblock).T
+        gap = eps_block[:, None] - eps_block[None, :]
+        dgap = dfdiag_block[:, None] - dfdiag_block[None, :]
+        dP = np.zeros_like(dnum)
+        m = np.abs(gap) > thresh
+        dP[m] = (dnum[m] - np.asarray(Pblock0)[m] * dgap[m]) / gap[m]
+        return dP
+
     def _relaxed_density(self):
         """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
         closed-shell RHF).  ``Drel`` is the Lambda-response 1-PDM ``D`` plus the orbital-relaxation
@@ -374,14 +391,19 @@ class CCderiv:
         The reference (SCF) polarizability is kept separate (:meth:`HFwfn.polarizability`); the
         :func:`pycc.polarizability` facade sums nuclear (zero) + reference + this correlation part.
 
-        Spatial closed-shell RHF and spin-orbital UHF (both all-electron and frozen core); (T) to
-        follow.  Validated against a tight finite field of :meth:`relaxed_dipole` and the SO ==
-        spatial keystone."""
+        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
+        core.  CCSD is validated against a tight finite field of :meth:`relaxed_dipole` and the
+        SO == spatial keystone; CCSD(T) against the energy second-derivative finite field and the
+        SO == spatial keystone (SO CCSD(T) itself matched to CFOUR)."""
         if route != '2n+1':
             raise ValueError(f"CC polarizability supports only the asymmetric '2n+1' route, not {route!r}.")
         cc = self.ccwfn
-        if cc.model.upper() != 'CCSD':
-            raise NotImplementedError(f"CC polarizability: only CCSD is implemented (not {cc.model}).")
+        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
+            raise NotImplementedError(f"CC polarizability: only CCSD and CCSD(T) are implemented (not {cc.model}).")
+        is_t = cc.model.upper() == 'CCSD(T)'
+        if is_t and not hasattr(cc, 'S1'):
+            raise ValueError("CCSD(T) polarizability requires the (T) density intermediates; "
+                             "build the wavefunction with make_t3_density=True.")
         if cc.orbital_basis == 'spinorbital':
             return self._so_polarizability()
         from .cchbar import cchbar
@@ -414,6 +436,13 @@ class CCderiv:
         if cc.nfzc:                                      # couple P_co into the Z-vector RHS
             zjc = -Pco.T
             X0 = X0 - (c('jc,ajic->ia', zjc, L[v, o, ofull, co]) + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
+        Poo0 = Pvv0 = None
+        if cc.model.upper() == 'CCSD(T)':                # (T) oo/vv dependent-pairs (as in _relaxed_density)
+            Poo0 = self._dependent_pairs(Ip0[o, o], eps[o])
+            Pvv0 = self._dependent_pairs(Ip0[v, v], eps[v])
+            Drel[o, o] += Poo0
+            Drel[v, v] += Pvv0
+            X0 = X0 + (c('kl,akil->ia', Poo0, L[v, o, ofull, o]) + c('bc,ibac->ia', Pvv0, L[ofull, v, v, v]))
         z = np.asarray(hf.cphf.solve(X0))
         Drel[v, ofull] += -z.T
         Drel[ofull, v] += -z
@@ -423,8 +452,8 @@ class CCderiv:
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, Pco)
-            Ub = np.asarray(cphf._full_U(pert, ncore))
+            dDrel = self._perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, Pco, Poo0, Pvv0)
+            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=is_t))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
@@ -464,6 +493,13 @@ class CCderiv:
         if cc.nfzc:
             zjc = -Pco.T
             X0 = X0 - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+        Poo0 = Pvv0 = None
+        if cc.model.upper() == 'CCSD(T)':                 # (T) oo/vv dependent-pairs (as in _so_relaxed_density)
+            Poo0 = self._dependent_pairs(Ip0[o, o], eps[o])
+            Pvv0 = self._dependent_pairs(Ip0[v, v], eps[v])
+            Drel[o, o] += Poo0
+            Drel[v, v] += Pvv0
+            X0 = X0 + (c('kl,akil->ia', Poo0, ERI[v, o, ofull, o]) + c('bc,ibac->ia', Pvv0, ERI[ofull, v, v, v]))
         G = (c('ajib->iajb', ERI[v, ofull, ofull, v]) + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof*nv, nof*nv)
         G[np.diag_indices(nof*nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
         z = np.linalg.solve(G, X0.reshape(-1)).reshape(nof, nv)
@@ -475,20 +511,28 @@ class CCderiv:
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco)
-            Ub = np.asarray(cphf._full_U(pert, ncore))
+            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco, Poo0, Pvv0)
+            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=(cc.model.upper() == 'CCSD(T)')))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def _perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, Pco=None) -> np.ndarray:
+    def _perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, Pco=None,
+                                   Poo0=None, Pvv0=None) -> np.ndarray:
         """Field response ``dD_rel`` of the CC relaxed 1-PDM (spatial; all-electron or frozen core).
         Mirrors :meth:`MPwfn._perturbed_relaxed_opdm` with the CC densities, but (i) keeps the CC
         *unrelaxed* ov/vo blocks (``D_ai != D_ia`` for CC; MP2 has none) and (ii) builds the perturbed
         Lagrangian with the FULL-df Fock term (see :meth:`_cc_perturbed_lagrangian`).  For frozen core
         the perturbed core<->active Sylvester divide ``dP_co`` is added and coupled into the perturbed
-        Z-vector RHS, exactly as in the MP2 template / the unperturbed :meth:`_relaxed_density`."""
+        Z-vector RHS, exactly as in the MP2 template / the unperturbed :meth:`_relaxed_density`.
+
+        CCSD(T): uses the **canonical** perturbed orbitals (``df``/``deri`` with ``canonical=True``, so
+        ``df`` is diagonal in oo/vv -- the non-invariant (T) kernels require it), threads the perturbed
+        (T) intermediates ``dt3`` into the density and the Lambda source, and adds the perturbed
+        active-oo/vv dependent-pairs ``dPoo``/``dPvv`` (the field-derivative of the unperturbed
+        ``Poo0``/``Pvv0``, including the ``d(eps_i-eps_j) = df_ii - df_jj`` denominator term) to
+        ``dD_rel`` + the perturbed Z-vector RHS."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
         co = slice(0, cc.nfzc)
@@ -497,15 +541,20 @@ class CCderiv:
         ncore = o.stop - cc.no
         L = np.asarray(cc.H.L)
         eps = np.diag(np.asarray(cc.H.F))
+        is_t = cc.model.upper() == 'CCSD(T)'
+        canon = is_t                                    # (T) needs canonical perturbed orbitals
         cphf = cc.mp._full_occ_cphf()
-        df = np.asarray(cphf.perturbed_fock(pert, ncore))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
         dL = 2.0 * deri - deri.swapaxes(2, 3)
         hf = self._reference_hf()
 
         dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar)
-        dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam)
-        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        dt3 = self._perturbed_t3_intermediates(df, deri, dL, dt1, dt2) if is_t else None
+        dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam,
+                                          dS1=(dt3['S1'] if is_t else None),
+                                          dS2=(dt3['S2'] if is_t else None))
+        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
         dIp = self._cc_perturbed_lagrangian(df, deri, dL, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
         dPco = None
@@ -515,6 +564,13 @@ class CCderiv:
             zjc, dzjc = -Pco.T, -dPco.T
             dX = dX - (c('jc,ajic->ia', dzjc, L[v, o, ofull, co]) + c('jc,acij->ia', dzjc, L[v, co, ofull, o])
                        + c('jc,ajic->ia', zjc, dL[v, o, ofull, co]) + c('jc,acij->ia', zjc, dL[v, co, ofull, o]))
+        dPoo = dPvv = None
+        if is_t:                                        # perturbed (T) oo/vv dependent-pairs
+            dfd = np.diag(df)                           # canonical df diagonal = the perturbed gaps
+            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
+            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
+            dX = dX + (c('kl,akil->ia', dPoo, L[v, o, ofull, o]) + c('kl,akil->ia', Poo0, dL[v, o, ofull, o])
+                       + c('bc,ibac->ia', dPvv, L[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, dL[ofull, v, v, v]))
         # perturbed orbital-Hessian response (A^x z); reference-only, as in MP2
         Axz = (c('ajib,jb->ia', dL[v, ofull, ofull, v], z) + c('abij,jb->ia', dL[v, v, ofull, ofull], z)
                + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
@@ -523,13 +579,24 @@ class CCderiv:
         if cc.nfzc:
             dDrel[co, o] += dPco
             dDrel[o, co] += dPco.T
+        if is_t:
+            dDrel[o, o] += dPoo
+            dDrel[v, v] += dPvv
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
         return dDrel
 
-    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco):
+    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco,
+                                      Poo0=None, Pvv0=None):
         """Spin-orbital field response ``dD_rel``; the SO analog of
-        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI)."""
+        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI).
+
+        CCSD(T): uses the **canonical** perturbed orbitals (``df``/``deri`` with ``canonical=True``,
+        so ``df`` is diagonal in oo/vv -- the non-invariant (T) kernels require it), threads the
+        perturbed (T) intermediates ``dt3`` into the density and the Lambda source, and adds the
+        perturbed active-oo/vv dependent-pairs ``dPoo``/``dPvv`` (the field derivative of the
+        unperturbed ``Poo0``/``Pvv0``, including the ``d(eps_i-eps_j) = df_ii - df_jj`` denominator
+        term) to ``dD_rel`` and the perturbed Z-vector RHS -- mirroring the spatial template."""
         cc = self.ccwfn
         o, v, nv = cc.o, cc.v, cc.nv
         co = slice(0, o.start)
@@ -539,13 +606,18 @@ class CCderiv:
         ncore = o.stop - cc.no
         ERI = np.asarray(cc.H.ERI)
         eps = np.diag(np.asarray(cc.H.F))
+        is_t = cc.model.upper() == 'CCSD(T)'
+        canon = is_t                                    # (T) needs canonical perturbed orbitals
         cphf = cc.mp._full_occ_cphf()
-        df = np.asarray(cphf.perturbed_fock(pert, ncore))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
+        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
 
         dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
-        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam)
-        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        dt3 = self._so_perturbed_t3_intermediates(df, deri, dt1, dt2) if is_t else None
+        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam,
+                                             dS1=(dt3['S1'] if is_t else None),
+                                             dS2=(dt3['S2'] if is_t else None))
+        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
         dIp = self._so_cc_perturbed_lagrangian(df, deri, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
         dPco = None
@@ -555,6 +627,13 @@ class CCderiv:
             zjc, dzjc = -Pco.T, -dPco.T
             dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
                        + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
+        dPoo = dPvv = None
+        if is_t:                                        # perturbed (T) oo/vv dependent-pairs
+            dfd = np.diag(df)                           # canonical df diagonal = the perturbed gaps
+            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
+            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
+            dX = dX + (c('kl,akil->ia', dPoo, ERI[v, o, ofull, o]) + c('kl,akil->ia', Poo0, deri[v, o, ofull, o])
+                       + c('bc,ibac->ia', dPvv, ERI[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, deri[ofull, v, v, v]))
         Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], z) + c('abij,jb->ia', deri[v, v, ofull, ofull], z)
                + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
         zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
@@ -562,6 +641,9 @@ class CCderiv:
         if cc.nfzc:
             dDrel[co, o] += dPco
             dDrel[o, co] += dPco.T
+        if is_t:
+            dDrel[o, o] += dPoo
+            dDrel[v, v] += dPvv
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
         return dDrel
@@ -678,74 +760,12 @@ class CCderiv:
             X1, X2 = diis.extrapolate(X1, X2)
         return X1, X2
 
-    def _hbar_blocks(self, hbar, F, ERI, L, t1, t2):
-        """All (spatial CCSD) HBAR blocks built from explicit integrals/amplitudes -- the
-        :meth:`cchbar._build` sequence with supplied arguments (no wavefunction-state mutation).
-        Used by :meth:`_perturbed_hbar` for the exact stencil."""
-        o, v = self.ccwfn.o, self.ccwfn.v
-        Hov = hbar.build_Hov(o, v, F, L, t1)
-        Hvv = hbar.build_Hvv(o, v, F, L, t1, t2)
-        Hoo = hbar.build_Hoo(o, v, F, L, t1, t2)
-        Hoooo = hbar.build_Hoooo(o, v, ERI, t1, t2)
-        Hvvvv = hbar.build_Hvvvv(o, v, ERI, t1, t2)
-        Hvovv = hbar.build_Hvovv(o, v, ERI, t1)
-        Hooov = hbar.build_Hooov(o, v, ERI, t1)
-        Hovvo = hbar.build_Hovvo(o, v, ERI, L, t1, t2)
-        Hovov = hbar.build_Hovov(o, v, ERI, t1, t2)
-        Hvvvo = hbar.build_Hvvvo(o, v, ERI, L, Hov, Hvvvv, t1, t2)
-        Hovoo = hbar.build_Hovoo(o, v, ERI, L, Hov, Hoooo, t1, t2)
-        return {'Hov': Hov, 'Hvv': Hvv, 'Hoo': Hoo, 'Hoooo': Hoooo, 'Hvvvv': Hvvvv,
-                'Hvovv': Hvovv, 'Hooov': Hooov, 'Hovvo': Hovvo, 'Hovov': Hovov,
-                'Hvvvo': Hvvvo, 'Hovoo': Hovoo}
-
-    def _so_hbar_blocks(self, hbar, F, ERI, t1, t2):
-        """Spin-orbital HBAR blocks from explicit integrals/amplitudes (the ``cchbar._so_build``
-        sequence -- no Hovov; Hvvvo/Hovoo via the Zovov intermediate)."""
-        o, v = self.ccwfn.o, self.ccwfn.v
-        Hov = hbar._so_build_Hov(o, v, F, ERI, t1)
-        Hvv = hbar._so_build_Hvv(o, v, F, ERI, Hov, t1, t2)
-        Hoo = hbar._so_build_Hoo(o, v, F, ERI, Hov, t1, t2)
-        Hoooo = hbar._so_build_Hoooo(o, v, ERI, t1, t2)
-        Hvvvv = hbar._so_build_Hvvvv(o, v, ERI, t1, t2)
-        Hvovv = hbar._so_build_Hvovv(o, v, ERI, t1)
-        Hooov = hbar._so_build_Hooov(o, v, ERI, t1)
-        Hovvo = hbar._so_build_Hovvo(o, v, ERI, t1, t2)
-        Zovov = hbar._so_build_Zovov(o, v, ERI, t2)
-        Hvvvo = hbar._so_build_Hvvvo(o, v, ERI, Hov, Hvvvv, Zovov, t1, t2)
-        Hovoo = hbar._so_build_Hovoo(o, v, ERI, Hov, Hoooo, Zovov, t1, t2)
-        return {'Hov': Hov, 'Hvv': Hvv, 'Hoo': Hoo, 'Hoooo': Hoooo, 'Hvvvv': Hvvvv,
-                'Hvovv': Hvovv, 'Hooov': Hooov, 'Hovvo': Hovvo, 'Hvvvo': Hvvvo, 'Hovoo': Hovoo}
-
     def _perturbed_hbar(self, df, deri, dL, dt1, dt2, hbar):
-        """Spatial perturbed HBAR ``dHBAR``.  Analytic (product rule of the ``build_H*`` blocks,
-        :meth:`_perturbed_hbar_analytic`) by default; the exact 5-point stencil is kept behind
-        ``_DBG_FORCE_STENCIL_HBAR`` as an oracle.  Both are exact for CCSD (the analytic form was
-        verified to ~1e-15 against a complex-step derivative of :meth:`_hbar_blocks`).  Needed only
-        for the perturbed-Lambda inhomogeneity."""
-        if getattr(self, '_DBG_FORCE_STENCIL_HBAR', False):
-            return self._perturbed_hbar_stencil(df, deri, dL, dt1, dt2, hbar)
-        return self._perturbed_hbar_analytic(df, deri, dL, dt1, dt2, hbar)
-
-    def _perturbed_hbar_stencil(self, df, deri, dL, dt1, dt2, hbar):
-        """Spatial perturbed HBAR via the exact 5-point central stencil of the block builders at
-        ``(F +- h df, ERI +- h deri, L +- h dL, t +- h dt)`` (degree-<=4 blocks)."""
-        cc = self.ccwfn
-        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
-        t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
-        h = 1e-2
-        def at(s):
-            return self._hbar_blocks(hbar, F0 + s*h*df, ERI0 + s*h*deri, L0 + s*h*dL,
-                                     t01 + s*h*dt1, t02 + s*h*dt2)
-        m2, m1, p1, p2 = at(-2), at(-1), at(1), at(2)
-        return {k: (np.asarray(m2[k]) - 8.0*np.asarray(m1[k]) + 8.0*np.asarray(p1[k])
-                    - np.asarray(p2[k])) / (12.0*h) for k in m2}
-
-    def _perturbed_hbar_analytic(self, df, deri, dL, dt1, dt2, hbar):
-        """Analytic spatial (closed-shell RHF) perturbed HBAR ``dHBAR``: the term-by-term
-        product-rule derivative of the :meth:`cchbar.build_H*` builders along
+        """Spatial (closed-shell RHF) perturbed HBAR ``dHBAR``: the term-by-term product-rule
+        derivative of the :meth:`cchbar.build_H*` builders along
         ``(F+df, ERI+deri, L+dL, t1+dt1, t2+dt2)``.  Computed in dependency order (``Hov``,
-        ``Hvvvv``, ``Hoooo`` feed ``Hvvvo``/``Hovoo``).  Verified to ~1e-15 against a complex-step
-        derivative of :meth:`_hbar_blocks`."""
+        ``Hvvvv``, ``Hoooo`` feed ``Hvvvo``/``Hovoo``).  Needed for the perturbed-Lambda
+        inhomogeneity; verified to ~1e-15 against a complex-step derivative of the HBAR builders."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
         c = self.contract
@@ -815,32 +835,11 @@ class CCderiv:
         return d
 
     def _so_perturbed_hbar(self, df, deri, dt1, dt2, hbar):
-        """Spin-orbital perturbed HBAR ``dHBAR``.  Analytic (product rule of the ``_so_build_*``
-        blocks, :meth:`_so_perturbed_hbar_analytic`) by default; the exact 5-point stencil is kept
-        behind ``_DBG_FORCE_STENCIL_HBAR`` as an oracle.  Both are exact for CCSD (the analytic form
-        was verified to ~1e-15 against a complex-step derivative of :meth:`_so_hbar_blocks`)."""
-        if getattr(self, '_DBG_FORCE_STENCIL_HBAR', False):
-            return self._so_perturbed_hbar_stencil(df, deri, dt1, dt2, hbar)
-        return self._so_perturbed_hbar_analytic(df, deri, dt1, dt2, hbar)
-
-    def _so_perturbed_hbar_stencil(self, df, deri, dt1, dt2, hbar):
-        """Spin-orbital perturbed HBAR via the exact 5-point stencil (degree-<=4 blocks)."""
-        cc = self.ccwfn
-        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
-        t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
-        h = 1e-2
-        def at(s):
-            return self._so_hbar_blocks(hbar, F0 + s*h*df, ERI0 + s*h*deri, t01 + s*h*dt1, t02 + s*h*dt2)
-        m2, m1, p1, p2 = at(-2), at(-1), at(1), at(2)
-        return {k: (np.asarray(m2[k]) - 8.0*np.asarray(m1[k]) + 8.0*np.asarray(p1[k])
-                    - np.asarray(p2[k])) / (12.0*h) for k in m2}
-
-    def _so_perturbed_hbar_analytic(self, df, deri, dt1, dt2, hbar):
-        """Analytic spin-orbital perturbed HBAR ``dHBAR``: the term-by-term product-rule derivative
+        """Spin-orbital perturbed HBAR ``dHBAR``: the term-by-term product-rule derivative
         of the :meth:`cchbar._so_build_*` block builders along ``(F+df, ERI+deri, t1+dt1, t2+dt2)``.
         Blocks are computed in dependency order (``Hov`` first; ``Hvvvo``/``Hovoo`` last, reusing the
         unperturbed ``Hov``/``Hvvvv``/``Hoooo``/``Zovov`` intermediates).  Verified to ~1e-15 against
-        a complex-step derivative of :meth:`_so_hbar_blocks`."""
+        a complex-step derivative of the ``_so_build_*`` builders."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
         c = self.contract
@@ -910,12 +909,41 @@ class CCderiv:
                - c('je,mbie->mbij', dt1, Zovov0) - c('je,mbie->mbij', t1, dZovov)))
         return d
 
-    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, maxiter=200, rconv=1e-13):
+    def _perturbed_t3_intermediates(self, df, deri, dL, dt1, dt2):
+        """Field response of the (T) intermediates ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}/dF``: the
+        analytic product-rule derivative ``dt3 = (dN - t3 dD)/D`` (:func:`cctriples.dt3_density`) along
+        the **canonical** field path ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``.  ``df`` MUST be the
+        canonical perturbed Fock (``perturbed_fock(..., canonical=True)``, diagonal in oo/vv) so the
+        batched diagonal-denominator (T) formula stays valid."""
+        from . import cctriples
+        cc = self.ccwfn
+        o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
+        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
+        t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
+        return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
+
+    def _so_perturbed_t3_intermediates(self, df, deri, dt1, dt2):
+        """Spin-orbital field response of the (T) intermediates: the analytic product-rule derivative
+        :func:`cctriples.so_dt3_density` along the canonical path (no ``L``); see
+        :meth:`_perturbed_t3_intermediates`."""
+        from . import cctriples
+        cc = self.ccwfn
+        o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
+        F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
+        t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
+        return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
+
+    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=200, rconv=1e-13):
         """Perturbed Lambda ``dLambda/dF`` (iterative, linear), staying in ``cclambda`` (no
         ``Y1/Y2``).  The inhomogeneity is ``r_L`` evaluated with the perturbed HBAR + ``dL``
         (unperturbed G) plus the explicit ``dG.H``/``dG.L`` product-rule halves; the Lambda-Jacobian
         action is ``r_L(dLambda) - r_L(0)`` (``r_L`` is affine in Lambda).  Iterate
-        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`."""
+        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`.
+
+        CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` (from :meth:`_perturbed_t3_intermediates`)
+        are passed straight into ``r_L1``/``r_L2`` via their ``s1``/``s2`` arguments, so they thread
+        through the same residual construction and P_ij^ab symmetrization as the unperturbed
+        ``cc.S1``/``cc.S2`` do in :meth:`cclambda.solve_lambda` -- no separate correction needed."""
         from .utils import helper_diis
         cc = self.ccwfn
         o, v = cc.o, cc.v
@@ -925,20 +953,20 @@ class CCderiv:
         t2 = np.asarray(cc.t2)
         L0 = np.asarray(cc.H.L)
 
-        def rL1(La, Lb, H, Gvv, Goo):
+        def rL1(La, Lb, H, Gvv, Goo, s1=None):
             return np.asarray(lam.r_L1(o, v, La, Lb, H['Hov'], H['Hvv'], H['Hoo'], H['Hovvo'],
-                                       H['Hovov'], H['Hvvvo'], H['Hovoo'], H['Hvovv'], H['Hooov'], Gvv, Goo))
-        def rL2(La, Lb, Ld, H, Gvv, Goo):
+                                       H['Hovov'], H['Hvvvo'], H['Hovoo'], H['Hvovv'], H['Hooov'], Gvv, Goo, s1=s1))
+        def rL2(La, Lb, Ld, H, Gvv, Goo, s2=None):
             return np.asarray(lam.r_L2(o, v, La, Lb, Ld, H['Hov'], H['Hvv'], H['Hoo'], H['Hoooo'],
                                        H['Hvvvv'], H['Hovvo'], H['Hovov'], H['Hvvvo'], H['Hovoo'],
-                                       H['Hvovv'], H['Hooov'], Gvv, Goo))
+                                       H['Hvovv'], H['Hooov'], Gvv, Goo, s2=s2))
 
         dH = self._perturbed_hbar(df, deri, dL, dt1, dt2, hbar)
         H0 = {b: np.asarray(getattr(hbar, b)) for b in self._HBAR_BLOCKS}
         Goo0 = np.asarray(lam.build_Goo(t2, l2)); Gvv0 = np.asarray(lam.build_Gvv(t2, l2))
         dGoo = np.asarray(lam.build_Goo(dt2, l2)); dGvv = np.asarray(lam.build_Gvv(dt2, l2))  # l2 fixed
-        B1 = rL1(l1, l2, dH, Gvv0, Goo0)
-        B2 = rL2(l1, l2, dL, dH, Gvv0, Goo0)
+        B1 = rL1(l1, l2, dH, Gvv0, Goo0, s1=dS1)        # (T): dS1/dS2 thread through r_L1/r_L2 exactly
+        B2 = rL2(l1, l2, dL, dH, Gvv0, Goo0, s2=dS2)    # as cc.S1/cc.S2 do unperturbed (None for CCSD)
         Hvovv0, Hooov0 = H0['Hvovv'], H0['Hooov']
         c1 = -2.0*c('ef,eifa->ia', dGvv, Hvovv0) + c('ef,eiaf->ia', dGvv, Hvovv0)
         c1 += -2.0*c('mn,mina->ia', dGoo, Hooov0) + c('mn,imna->ia', dGoo, Hooov0)
@@ -965,9 +993,14 @@ class CCderiv:
             dl1, dl2 = diis.extrapolate(dl1, dl2)
         return dl1, dl2
 
-    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, maxiter=200, rconv=1e-13):
+    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=200, rconv=1e-13):
         """Spin-orbital perturbed Lambda ``dLambda/dF`` (SO r_L; inhomogeneity = r_L with perturbed
-        HBAR + perturbed ERI, unperturbed G, plus the dG.H / dG.<pq||rs> product-rule halves)."""
+        HBAR + perturbed ERI, unperturbed G, plus the dG.H / dG.<pq||rs> product-rule halves).
+
+        CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` are passed straight into the SO
+        ``_so_r_L1``/``_so_r_L2`` via their ``s1``/``s2`` arguments (no 1/2 on S2, unlike the spatial
+        path), so they thread through the same residual construction as ``cc.S1``/``cc.S2`` do
+        unperturbed -- no separate correction needed."""
         from .utils import helper_diis
         cc = self.ccwfn
         o, v = cc.o, cc.v
@@ -977,20 +1010,20 @@ class CCderiv:
         t2 = np.asarray(cc.t2)
         ERI0 = np.asarray(cc.H.ERI)
 
-        def rL1(La, Lb, H, Gvv, Goo):
+        def rL1(La, Lb, H, Gvv, Goo, s1=None):
             return np.asarray(lam._so_r_L1(o, v, La, Lb, H['Hov'], H['Hvv'], H['Hoo'], H['Hovvo'],
-                                           H['Hvvvo'], H['Hovoo'], H['Hvovv'], H['Hooov'], Gvv, Goo))
-        def rL2(La, Lb, E, H, Gvv, Goo):
+                                           H['Hvvvo'], H['Hovoo'], H['Hvovv'], H['Hooov'], Gvv, Goo, s1=s1))
+        def rL2(La, Lb, E, H, Gvv, Goo, s2=None):
             return np.asarray(lam._so_r_L2(o, v, La, Lb, E, H['Hov'], H['Hvv'], H['Hoo'], H['Hoooo'],
                                            H['Hvvvv'], H['Hovvo'], H['Hvvvo'], H['Hovoo'], H['Hvovv'],
-                                           H['Hooov'], Gvv, Goo))
+                                           H['Hooov'], Gvv, Goo, s2=s2))
 
         dH = self._so_perturbed_hbar(df, deri, dt1, dt2, hbar)
         H0 = {b: np.asarray(getattr(hbar, b)) for b in self._SO_HBAR_BLOCKS}
         Goo0 = np.asarray(lam.build_Goo(t2, l2)); Gvv0 = np.asarray(lam.build_Gvv(t2, l2))
         dGoo = np.asarray(lam.build_Goo(dt2, l2)); dGvv = np.asarray(lam.build_Gvv(dt2, l2))  # l2 fixed
-        B1 = rL1(l1, l2, dH, Gvv0, Goo0)
-        B2 = rL2(l1, l2, deri, dH, Gvv0, Goo0)
+        B1 = rL1(l1, l2, dH, Gvv0, Goo0, s1=dS1)        # (T): dS1/dS2 thread through _so_r_L1/_so_r_L2
+        B2 = rL2(l1, l2, deri, dH, Gvv0, Goo0, s2=dS2)  # exactly as cc.S1/cc.S2 do (None for CCSD)
         Hvovv0, Hooov0 = H0['Hvovv'], H0['Hooov']
         B1 = B1 - c('ef,eifa->ia', dGvv, Hvovv0) - c('mn,mina->ia', dGoo, Hooov0)
         oovv = ERI0[o, o, v, v]
@@ -1015,39 +1048,19 @@ class CCderiv:
             dl1, dl2 = diis.extrapolate(dl1, dl2)
         return dl1, dl2
 
-    def _perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam):
-        """Field response ``(dD, dGamma)`` of the unrelaxed CC correlation densities via a 5-point
-        stencil of :meth:`ccdensity.gradient_densities` in the amplitudes/multipliers (the densities
-        are pure polynomials in ``t``/``lambda`` -- exact).  Temporarily sets ``cc.t1/t2`` and
-        ``lam.l1/l2`` to the stepped values (restored).
-
-        Analytic by default (:meth:`_so_perturbed_correlation_densities` /
-        :meth:`_spatial_perturbed_correlation_densities`, the product-rule derivative of the density
-        builders); the stencil is kept behind ``_DBG_FORCE_STENCIL_DENS`` as an oracle."""
+    def _perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
+        """Field response ``(dD, dGamma)`` of the unrelaxed CC correlation densities: the analytic
+        product-rule derivative of the density builders, dispatched by orbital basis to
+        :meth:`_so_perturbed_correlation_densities` or
+        :meth:`_spatial_perturbed_correlation_densities`.  For CCSD(T), ``dt3`` (from
+        :meth:`_perturbed_t3_intermediates`) supplies the perturbed (T) 1-/2-PDM increments, added
+        with the same blocks and symmetrization the unperturbed builders use."""
         cc = self.ccwfn
-        if not getattr(self, '_DBG_FORCE_STENCIL_DENS', False):   # analytic CCSD; no stencil
-            if cc.orbital_basis == 'spinorbital':
-                return self._so_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
-            return self._spatial_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
-        from .ccdensity import ccdensity
-        t01, t02 = np.asarray(cc.t1).copy(), np.asarray(cc.t2).copy()
-        l01, l02 = np.asarray(lam.l1).copy(), np.asarray(lam.l2).copy()
-        h = 1e-2
-        def at(s):
-            cc.t1 = t01 + s*h*dt1; cc.t2 = t02 + s*h*dt2
-            lam.l1 = l01 + s*h*dl1; lam.l2 = l02 + s*h*dl2
-            D_s, Gam_s = ccdensity(cc, lam).gradient_densities()
-            return np.asarray(D_s), np.asarray(Gam_s)
-        try:
-            m2, m1, p1, p2 = at(-2), at(-1), at(1), at(2)
-        finally:
-            cc.t1, cc.t2 = t01, t02
-            lam.l1, lam.l2 = l01, l02
-        dDg = (m2[0] - 8.0*m1[0] + 8.0*p1[0] - p2[0]) / (12.0*h)
-        dGam = (m2[1] - 8.0*m1[1] + 8.0*p1[1] - p2[1]) / (12.0*h)
-        return dDg, dGam
+        if cc.orbital_basis == 'spinorbital':
+            return self._so_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3)
+        return self._spatial_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3)
 
-    def _so_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam):
+    def _so_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
         """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
         correlation densities: the product-rule derivative of the raw density builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and :meth:`ccdensity.build_so_twopdm`),
@@ -1057,7 +1070,12 @@ class CCderiv:
         The nine two-particle block derivatives are placed into the full ``nmo^4`` array and bra-ket
         symmetrized exactly as :meth:`ccdensity.gradient_densities` / :meth:`ccdensity._so_full_twopdm`
         do (overall ``1/4``, ``1/2 (Gamma + Gamma_rspq)``), so the result matches the stenciled
-        convention block for block.  Frozen-core rows/columns stay zero (active ``o``/``v`` slices)."""
+        convention block for block.  Frozen-core rows/columns stay zero (active ``o``/``v`` slices).
+
+        For CCSD(T), ``dt3`` (from :meth:`_so_perturbed_t3_intermediates`) supplies the perturbed
+        (T) increments, which enter the density builders additively; they are added to the matching
+        derivative blocks before placement (``Goovv->ijab``, ``Gooov->ijka``, ``Gvovv->ciab``,
+        ``Govoo->kaij``, ``Gvvvo->abci``, and ``Doo``/``Dvv``/``Dov`` on the 1-PDM)."""
         cc = self.ccwfn
         o, v, nmo = cc.o, cc.v, cc.nmo
         c = self.contract
@@ -1130,6 +1148,13 @@ class CCderiv:
             + 3.0*Pijab(c('me,ia,je,mb->ijab', dl1, t1, t1, t1) + c('me,ia,je,mb->ijab', l1, dt1, t1, t1)
                         + c('me,ia,je,mb->ijab', l1, t1, dt1, t1) + c('me,ia,je,mb->ijab', l1, t1, t1, dt1)))
         dG['abij'] = dl2.transpose(2, 3, 0, 1)
+        if dt3 is not None:                              # (T) increments (additive; see build_so_twopdm)
+            dDoo = dDoo + dt3['Doo']; dDvv = dDvv + dt3['Dvv']; dDov = dDov + dt3['Dov']
+            dG['ijab'] = dG['ijab'] + dt3['Goovv']
+            dG['ijka'] = dG['ijka'] + dt3['Gooov']
+            dG['ciab'] = dG['ciab'] + dt3['Gvovv']
+            dG['kaij'] = dG['kaij'] + dt3['Govoo']
+            dG['abci'] = dG['abci'] + dt3['Gvvvo']
         # ---- placement + symmetrization (mirrors ccdensity._so_full_twopdm + gradient_densities) ----
         dGam = np.zeros((nmo, nmo, nmo, nmo))
         dGam[o, o, o, o] = dG['ijkl']
@@ -1149,7 +1174,7 @@ class CCderiv:
         dD[o, o] = dDoo; dD[v, v] = dDvv; dD[o, v] = dDov; dD[v, o] = dDvo
         return dD, 0.25 * dGam
 
-    def _spatial_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam):
+    def _spatial_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
         """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
         CCSD** correlation densities: the product-rule derivative of the ccdensity builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and ``Doooo``/``Dvvvv``/``Dooov``/
@@ -1157,7 +1182,12 @@ class CCderiv:
         :meth:`ccdensity.gradient_densities` (blocks with the same per-block factors, then the
         four-fold ``1/4(G + G_qpsr + G_rspq + G_srqp)``).  Replaces the 5-point stencil for this
         path; verified to ~1e-15 against a complex-step derivative of the builders.  Frozen-core
-        rows/columns stay zero (active ``o``/``v`` slices)."""
+        rows/columns stay zero (active ``o``/``v`` slices).
+
+        For CCSD(T), ``dt3`` (from :meth:`_perturbed_t3_intermediates`) supplies the perturbed (T)
+        increments, added to the matching derivative blocks before placement (``Gooov->Dooov``,
+        ``Gvvvo->Dvvvo``, ``Goovv->Doovv``, and ``Doo``/``Dvv``/``Dov`` on the 1-PDM); the spatial
+        route has no ``Gvovv``/``Govoo``."""
         cc = self.ccwfn
         o, v, nmo = cc.o, cc.v, cc.nmo
         c = self.contract
@@ -1272,6 +1302,11 @@ class CCderiv:
         g2, dg2 = c('ie,mnej->mnij', t1, g1), p2('ie,mnej->mnij', t1, dt1, g1, dg1)
         g3, dg3 = c('nb,mnij->mbij', t1, g2), p2('nb,mnij->mbij', t1, dt1, g2, dg2)
         dDoovv = dDoovv + p2('ma,mbij->ijab', t1, dt1, g3, dg3)
+        if dt3 is not None:                              # (T) increments (additive; see build_Dooov/Dvvvo/Doovv)
+            dDoo = dDoo + dt3['Doo']; dDvv = dDvv + dt3['Dvv']; dDov = dDov + dt3['Dov']
+            dDooov = dDooov + dt3['Gooov']
+            dDvvvo = dDvvvo + dt3['Gvvvo']
+            dDoovv = dDoovv + dt3['Goovv']
         # ---- placement + four-fold symmetrization (mirrors gradient_densities spatial path) ----
         dD = np.zeros((nmo, nmo))
         dD[o, o] = dDoo; dD[v, v] = dDvv; dD[o, v] = dDov; dD[v, o] = dDvo

@@ -917,6 +917,36 @@ non-canonical perturbed orbitals and acquire the perturbed dependent pairs
 $\partial P_{ij}/\partial y$, $\partial P_{ab}/\partial y$ for canonical ones
 (the response of Eq.~\eqref{eq:Dtilde}).
 
+\noindent
+Differentiating the dependent pairs of Eq.~\eqref{eq:Poo} by the quotient rule --
+with the canonical orbital energies responding through
+$\partial\varepsilon_i/\partial y$, the diagonal of the perturbed Fock
+[Eq.~\eqref{eq:dfpq}] -- gives the {\em total} derivatives
+\begin{align}
+\frac{\partial P_{ij}}{\partial y}
+&= \frac{1}{\varepsilon_i-\varepsilon_j}\left[
+\frac{\partial I'_{ij}}{\partial y}-\frac{\partial I'_{ji}}{\partial y}
+- P_{ij}\left(\frac{\partial\varepsilon_i}{\partial y}
+             -\frac{\partial\varepsilon_j}{\partial y}\right)\right],
+\label{eq:dPoo}\\
+\frac{\partial P_{ab}}{\partial y}
+&= \frac{1}{\varepsilon_a-\varepsilon_b}\left[
+\frac{\partial I'_{ab}}{\partial y}-\frac{\partial I'_{ba}}{\partial y}
+- P_{ab}\left(\frac{\partial\varepsilon_a}{\partial y}
+             -\frac{\partial\varepsilon_b}{\partial y}\right)\right],
+\label{eq:dPvv}
+\end{align}
+with $\partial I'/\partial y$ given below by Eq.~\eqref{eq:dIprime}.  They complete
+the relaxed one-particle response in these blocks,
+$\partial\tilde D_{ij}/\partial y=\partial D_{ij}/\partial y+\partial P_{ij}/\partial y$
+and $\partial\tilde D_{ab}/\partial y=\partial D_{ab}/\partial y+\partial P_{ab}/\partial y$.
+Equations~\eqref{eq:dPoo}--\eqref{eq:dPvv} are {\em total} derivatives of the
+dependent pairs and are not the intermediate $P^{(x)}$ of \S\ref{sec:2nd-canon}:
+$P^{(x)}$ carries the perturbed numerator over the fixed unperturbed gap, whereas
+the total derivative adds the denominator-response term (the second term in each
+bracket), nonzero only in the non-invariant case where the dependent pairs
+survive.
+
 The perturbed Z-vector $\partial Z/\partial y$ follows by differentiating the
 Z-vector equation $\mathbf{G}^{T}\mathbf{Z}=\mathbf{X}$ of \S\ref{sec:cphf-z},
 \begin{equation}
@@ -925,10 +955,35 @@ Z-vector equation $\mathbf{G}^{T}\mathbf{Z}=\mathbf{X}$ of \S\ref{sec:cphf-z},
 \label{eq:perturbed-zvector}
 \end{equation}
 a single linear solve per perturbation $y$ with the {\em unperturbed} orbital
-Hessian $\mathbf{G}$.  Its right-hand side needs the source response $\partial
-X_{ai}/\partial y = \partial I'_{ia}/\partial y - \partial I'_{ai}/\partial y$,
-hence the perturbed generalized Fock $\partial I'/\partial y$, and the response
-$\partial\mathbf{G}/\partial y$ of the orbital Hessian.  The perturbed
+Hessian $\mathbf{G}$.  Its right-hand side is the response of the same
+orbital-gradient source that drove the first-derivative Z-vector, and so depends
+on the perturbed-orbital choice.  For non-canonical orbitals
+(\S\ref{sec:2nd-noncanon}) the source is the bare $X_{ai}=I'_{ia}-I'_{ai}$,
+\begin{equation}
+\frac{\partial X_{ai}}{\partial y}
+= \frac{\partial I'_{ia}}{\partial y}-\frac{\partial I'_{ai}}{\partial y};
+\label{eq:dX-noncanon}
+\end{equation}
+for canonical orbitals (\S\ref{sec:2nd-canon}) it is the dependent-pair-augmented
+$\tilde X_{ai}$ of Eq.~\eqref{eq:Xtilde}, whose response adds the dependent-pair
+terms
+\begin{align}
+\frac{\partial\tilde X_{ai}}{\partial y}
+&= \frac{\partial X_{ai}}{\partial y}
++ \tfrac12\sum_{kl}^{\occ}\left(\frac{\partial P_{kl}}{\partial y}A_{kali}
+   + P_{kl}\frac{\partial A_{kali}}{\partial y}\right)
+\nonumber\\
+&\quad
++ \tfrac12\sum_{de}^{\vir}\left(\frac{\partial P_{de}}{\partial y}A_{daei}
+   + P_{de}\frac{\partial A_{daei}}{\partial y}\right),
+\label{eq:dXtilde}
+\end{align}
+with $\partial P/\partial y$ from Eqs.~\eqref{eq:dPoo}--\eqref{eq:dPvv} and
+$\partial A_{pqrs}/\partial y=\partial\adb{pq}{rs}/\partial y
++\partial\adb{ps}{rq}/\partial y$ the pair combination of the full two-electron
+integral derivatives [Eq.~\eqref{eq:deri}].  Either choice requires the perturbed
+generalized Fock $\partial I'/\partial y$ and the orbital-Hessian response
+$\partial\mathbf{G}/\partial y$.  The perturbed
 generalized Fock is the product-rule derivative of Eq.~\eqref{eq:Iprime},
 \begin{align}
 \frac{\partial I'_{pq}}{\partial y} = -\tfrac12\Big[
@@ -953,6 +1008,21 @@ $\partial f/\partial y$ summed over $r$: Eq.~\eqref{eq:Iprime} wrote it in the
 canonical, diagonal-$f$ form $f_{pp}(D_{pq}+D_{qp})$, but the derivative
 reactivates the off-diagonal $\partial f_{pr}/\partial y$ ($r\neq p$), nonzero
 because the one-particle density carries occupied--virtual blocks.
+
+\noindent
+Equation~\eqref{eq:dIprime} is distinct from the perturbed generalized Fock
+$I'^{(x)}$ of Eq.~\eqref{eq:Iprime-x}, despite the similar name.  Here
+$\partial I'/\partial y$ is the total $y$-derivative of the {\em first-derivative}
+generalized Fock $I'$ [Eq.~\eqref{eq:Iprime}]: it is built from the {\em unrelaxed}
+one-particle density $D$ and its response $\partial D/\partial y$, uses the full MO
+integral derivatives $\partial f/\partial y$ and $\partial\adb{}{}/\partial y$, and
+carries no overlap-derivative term; it supplies the Z-vector source
+$\partial X/\partial y$.  By contrast $I'^{(x)}$ [Eq.~\eqref{eq:Iprime-x}] is an
+$x$-{\em skeleton} generalized Fock built from the {\em relaxed} density $\tilde D$
+and the $x$-skeleton integrals $f^{(x)}$, $\adb{pq}{rs}^{(x)}$, $S^{(x)}$
+(including the overlap-derivative term the relaxed gradient carries); it supplies
+the orbital-response term $-2\sum_{pq}U^y_{pq}I'^{(x)}_{pq}$ of
+Eq.~\eqref{eq:d2E-grouped}.
 
 Finally, the energy-weighted density response $\partial I/\partial y$ is the
 product-rule derivative of the $I$ blocks assembled after
@@ -980,8 +1050,8 @@ orbital response from Eq.~\eqref{eq:grad-final} is unavailable (the contracting
 quantity now carries the first perturbation), so the occupied--virtual
 coefficients $U^y_{ai}$ remain explicit, and the first-order density responses
 $\partial\tilde D/\partial y$, $\partial\Gamma/\partial y$, $\partial I/\partial y$
-must be formed.  The two perturbed-orbital choices share the doubly-skeleton and
-density-response contributions,
+must be formed.  Both perturbed-orbital choices produce the same mixed second
+derivative through the common form
 \begin{align*}
 \frac{\partial^2 E}{\partial x\,\partial y}
 &= \sum_{pq}\tilde D_{pq}f^{(xy)}_{pq}
@@ -994,25 +1064,36 @@ density-response contributions,
 + \sum_{pqrs}\frac{\partial\Gamma_{pqrs}}{\partial y}\adb{pq}{rs}^{(x)}
 + \sum_{pq}\frac{\partial I_{pq}}{\partial y}S^{(x)}_{pq},
 \end{align*}
-and differ only in the orbital-response term.
+in which the doubly-skeleton integrals and the {\em unrelaxed} two-particle
+density and its response ($\Gamma$, $\partial\Gamma/\partial y$) are
+route-independent.  As for the gradient (\S\ref{sec:comp-summary-1}), the two
+choices differ in how the occupied--occupied and virtual--virtual orbital response
+is carried into the relaxed one-particle density $\tilde D$, the energy-weighted
+density $I$, and their responses $\partial\tilde D/\partial y$, $\partial
+I/\partial y$ -- and hence in the explicit orbital-response term and in the source
+of the perturbed Z-vector.  These route-specific pieces are given in the
+subsections below.
 
-The following ingredients are common to both perturbed-orbital choices:
+The following ingredients enter both perturbed-orbital choices:
 \begin{enumerate}
-\item The {\em undifferentiated} relaxed densities $\tilde D_{pq}$,
-$\Gamma_{pqrs}$, and $I_{pq}$, assembled exactly as in the first-derivative
-summary (\S\ref{sec:comp-summary-1}); they carry the first perturbation $x$
-implicitly.
+\item The {\em undifferentiated} densities $\tilde D_{pq}$, $\Gamma_{pqrs}$,
+$I_{pq}$, assembled exactly as in the first-derivative summary
+(\S\ref{sec:comp-summary-1}) for the chosen route (only the two-particle $\Gamma$
+is route-independent); they carry the first perturbation $x$ implicitly.
 \item The skeleton first-derivative integrals of both perturbations
 ($f^{(x)}$, $\adb{pq}{rs}^{(x)}$, $S^{(x)}$ and $f^{(y)}$, $S^{(y)}$) and the
 doubly-skeleton integrals $f^{(xy)}_{pq}$, $\adb{pq}{rs}^{(xy)}$, $S^{(xy)}_{pq}$
-(the last nonzero only when the perturbations move the atomic-orbital basis).
+(the last nonzero only when the atomic-orbital basis depends on the perturbation).
 \item The occupied--virtual response $U^y_{ai}$, from a CPHF solve for the second
 perturbation $y$; there is no Z-vector shortcut at second order.
 \item The first-order density responses $\partial\tilde D_{pq}/\partial y$,
-$\partial\Gamma_{pqrs}/\partial y$, $\partial I_{pq}/\partial y$, assembled as in
-\S\ref{sec:2nd-density-response} from the once-perturbed wave-function parameters
-and the perturbed Z-vector (the $(2n+1)$ rule; no second-order wave-function
-response is needed).
+$\partial\Gamma_{pqrs}/\partial y$, $\partial I_{pq}/\partial y$ (the $(2n+1)$ rule;
+no second-order wave-function response is needed).  The two-particle response
+$\partial\Gamma/\partial y$ is the unrelaxed perturbed density of
+Appendix~\ref{sec:deriv-densities}; the one-particle response
+$\partial\tilde D/\partial y$ and the perturbed Z-vector that supplies its
+occupied--virtual block depend on the perturbed-orbital choice and are written out
+in the subsections below (derived in \S\ref{sec:2nd-density-response}).
 \end{enumerate}
 The perturbed generalized Fock is
 \begin{align*}
@@ -1033,28 +1114,54 @@ I''^{(x)}_{pq}=I'^{(x)}_{pq}\ \text{(otherwise)}.
 \end{equation*}
 
 \subsubsection{Non-Canonical Perturbed Orbitals}
-Take $U^y_{ij}=-\tfrac12 S^{(y)}_{ij}$ and $U^y_{ab}=-\tfrac12 S^{(y)}_{ab}$.  The
-orbital-response term is
-\begin{equation}
+Take $U^y_{ij}=-\tfrac12 S^{(y)}_{ij}$ and $U^y_{ab}=-\tfrac12 S^{(y)}_{ab}$.
+\begin{enumerate}
+\item The orbital-response term is
+\begin{equation*}
 (\text{orbital response}) =
 2\sum_{a}^{\vir}\sum_{i}^{\occ}U^y_{ai}\,X^{(x)}_{ai}
 + \sum_{pq}S^{(y)}_{pq}\,I''^{(x)}_{pq}.
-\end{equation}
+\end{equation*}
+\item Solve the perturbed Z-vector
+$\mathbf{G}^{T}\,\partial\mathbf{Z}/\partial y
+=\partial\mathbf{X}/\partial y-(\partial\mathbf{G}^{T}/\partial y)\,\mathbf{Z}$
+with the bare source
+\begin{equation*}
+\frac{\partial X_{ai}}{\partial y}
+=\frac{\partial I'_{ia}}{\partial y}-\frac{\partial I'_{ai}}{\partial y},
+\end{equation*}
+$\partial I'/\partial y$ from Eq.~\eqref{eq:dIprime}.
+\item Assemble the one-particle response; the occupied--occupied and
+virtual--virtual blocks are unchanged,
+\begin{equation*}
+\frac{\partial\tilde D_{ij}}{\partial y}=\frac{\partial D_{ij}}{\partial y},\qquad
+\frac{\partial\tilde D_{ab}}{\partial y}=\frac{\partial D_{ab}}{\partial y},
+\end{equation*}
+while the occupied--virtual blocks carry the perturbed Z-vector,
+\begin{equation*}
+\frac{\partial\tilde D_{ai}}{\partial y}=\frac{\partial D_{ai}}{\partial y}-\frac{\partial Z_{ai}}{\partial y},\qquad
+\frac{\partial\tilde D_{ia}}{\partial y}=\frac{\partial D_{ia}}{\partial y}-\frac{\partial Z_{ai}}{\partial y}.
+\end{equation*}
+The two-particle response $\partial\Gamma/\partial y$ is the unrelaxed perturbed
+density of Appendix~\ref{sec:deriv-densities}, and $\partial I/\partial y$ is the
+product-rule derivative of the $I$ blocks.
+\end{enumerate}
 
 \subsubsection{Canonical Perturbed Orbitals}
-Form the occupied--occupied and virtual--virtual combinations
+\begin{enumerate}
+\item Form the occupied--occupied and virtual--virtual combinations
 \begin{equation*}
 X^{(x)}_{ij}=I'^{(x)}_{ij}-I'^{(x)}_{ji},
 \qquad
 X^{(x)}_{ab}=I'^{(x)}_{ab}-I'^{(x)}_{ba},
 \end{equation*}
-and the dependent pairs
+and the (numerator-only) dependent pairs
 \begin{equation*}
 P^{(x)}_{ij}=\frac{X^{(x)}_{ij}}{\varepsilon_i-\varepsilon_j},
 \qquad
-P^{(x)}_{ab}=\frac{X^{(x)}_{ab}}{\varepsilon_a-\varepsilon_b}.
+P^{(x)}_{ab}=\frac{X^{(x)}_{ab}}{\varepsilon_a-\varepsilon_b};
 \end{equation*}
-Fold them into the energy-weighted density,
+fold them into the energy-weighted density,
 \begin{equation*}
 \tilde I''^{(x)}_{ij} = I''^{(x)}_{ij} - P^{(x)}_{ij}\varepsilon_j
 - \tfrac12\sum_{kl}^{\occ}P^{(x)}_{kl}A_{kilj}
@@ -1068,8 +1175,8 @@ and into the occupied--virtual combination,
 + \tfrac12\sum_{kl}^{\occ}P^{(x)}_{kl}A_{kali}
 + \tfrac12\sum_{de}^{\vir}P^{(x)}_{de}A_{daei}.
 \end{equation*}
-The orbital-response term is then
-\begin{equation}
+\item The orbital-response term is
+\begin{equation*}
 \begin{split}
 (\text{orbital response}) = {}&
 \sum_{ij}P^{(x)}_{ij}f^{(y)}_{ij}
@@ -1077,7 +1184,46 @@ The orbital-response term is then
 &+ 2\sum_{a}^{\vir}\sum_{i}^{\occ}U^y_{ai}\,\tilde X^{(x)}_{ai}
 + \sum_{pq}S^{(y)}_{pq}\,\tilde I''^{(x)}_{pq}.
 \end{split}
-\end{equation}
+\end{equation*}
+\item For the density response, form the {\em total} derivatives of the dependent
+pairs (distinct from the numerator-only $P^{(x)}$ of step~1),
+\begin{align*}
+\frac{\partial P_{ij}}{\partial y}&=\frac{1}{\varepsilon_i-\varepsilon_j}\Big[
+\frac{\partial I'_{ij}}{\partial y}-\frac{\partial I'_{ji}}{\partial y}
+- P_{ij}\Big(\frac{\partial\varepsilon_i}{\partial y}-\frac{\partial\varepsilon_j}{\partial y}\Big)\Big],\\
+\frac{\partial P_{ab}}{\partial y}&=\frac{1}{\varepsilon_a-\varepsilon_b}\Big[
+\frac{\partial I'_{ab}}{\partial y}-\frac{\partial I'_{ba}}{\partial y}
+- P_{ab}\Big(\frac{\partial\varepsilon_a}{\partial y}-\frac{\partial\varepsilon_b}{\partial y}\Big)\Big].
+\end{align*}
+\item Solve the perturbed Z-vector
+$\mathbf{G}^{T}\,\partial\mathbf{Z}/\partial y
+=\partial\tilde{\mathbf{X}}/\partial y-(\partial\mathbf{G}^{T}/\partial y)\,\mathbf{Z}$
+with the dependent-pair-augmented source
+\begin{align*}
+\frac{\partial\tilde X_{ai}}{\partial y}=\frac{\partial X_{ai}}{\partial y}
+&+ \tfrac12\sum_{kl}^{\occ}\Big(\frac{\partial P_{kl}}{\partial y}A_{kali}
+   + P_{kl}\frac{\partial A_{kali}}{\partial y}\Big)\\
+&+ \tfrac12\sum_{de}^{\vir}\Big(\frac{\partial P_{de}}{\partial y}A_{daei}
+   + P_{de}\frac{\partial A_{daei}}{\partial y}\Big),
+\end{align*}
+with $\partial X_{ai}/\partial y=\partial I'_{ia}/\partial y-\partial I'_{ai}/\partial y$.
+\item Assemble the one-particle response; the occupied--occupied and
+virtual--virtual blocks now carry the dependent-pair response,
+\begin{equation*}
+\frac{\partial\tilde D_{ij}}{\partial y}=\frac{\partial D_{ij}}{\partial y}+\frac{\partial P_{ij}}{\partial y},\qquad
+\frac{\partial\tilde D_{ab}}{\partial y}=\frac{\partial D_{ab}}{\partial y}+\frac{\partial P_{ab}}{\partial y},
+\end{equation*}
+while the occupied--virtual blocks carry the perturbed Z-vector,
+\begin{equation*}
+\frac{\partial\tilde D_{ai}}{\partial y}=\frac{\partial D_{ai}}{\partial y}-\frac{\partial Z_{ai}}{\partial y},\qquad
+\frac{\partial\tilde D_{ia}}{\partial y}=\frac{\partial D_{ia}}{\partial y}-\frac{\partial Z_{ai}}{\partial y}.
+\end{equation*}
+As in the non-canonical case, $\partial\Gamma/\partial y$ is the unrelaxed
+perturbed two-particle density (Appendix~\ref{sec:deriv-densities}), and $\partial
+I/\partial y$ is the product-rule derivative of the canonical energy-weighted
+density of \S\ref{sec:comp-summary-1} (its $\tilde I''$ blocks and Z-vector terms),
+carrying the total dependent-pair derivatives $\partial P/\partial y$.
+\end{enumerate}
 
 The two recipes yield the same mixed derivative whenever the correlation energy
 is invariant to occupied--occupied and virtual--virtual rotations, as for the
@@ -1315,6 +1461,25 @@ S^{ab}_{ij} &= \tfrac12 P(ab)\!\sum_{m,ef}\!\big(2t^{(c)}+t^{(d)}\big)^{aef}_{ij
              - \tfrac12 P(ij)\!\sum_{lm,e}\!\big(2t^{(c)}+t^{(d)}\big)^{abe}_{ilm}\langle lm\|je\rangle.
 \label{eq:S2}
 \end{align}
+
+For a second derivative (\S\ref{sec:second-derivs}) the perturbed multipliers
+$\lambda^{i,x}_a$, $\lambda^{ij,x}_{ab}$ solve the perturbed $\Lambda$ equations,
+whose inhomogeneity carries the field derivatives $\partial_x S^a_i$,
+$\partial_x S^{ab}_{ij}$ of these sources (Eqs.~\eqref{eq:S1}--\eqref{eq:S2} with the
+triples amplitudes and integrals replaced by their first-order responses).  The
+perturbed sources must enter the perturbed $\Lambda$ residual in \emph{exactly} the
+same way as $S^a_i$, $S^{ab}_{ij}$ enter the unperturbed one.  This is subtle in the
+spin-adapted (closed-shell) formulation, where the doubles residual is evaluated in a
+half-permuted form and completed by a final $\lambda^{ij}_{ab}\!\leftarrow\!
+\lambda^{ij}_{ab}+\lambda^{ji}_{ba}$ symmetrization: because $S^{ab}_{ij}$ is added
+\emph{before} that step, its perturbed counterpart $\partial_x S^{ab}_{ij}$ must be
+symmetrized identically.  Adding it afterward leaves the perturbed $\Lambda_2$
+carrying the \emph{unperturbed} permuted source, $P(ij)P(ab)\,S^{ab}_{ij}$ instead of
+$P(ij)P(ab)\,\partial_x S^{ab}_{ij}$; the error is invisible to the gradient but
+corrupts the near-degenerate $vv$/$oo$ dependent-pair rotations of the perturbed
+relaxed density (and hence the polarizability).  In the implementation the (T) source
+is therefore passed into the one Lambda-residual routine that both the unperturbed and
+perturbed solves share, so the half-permutation is applied once, consistently.
 
 The (T) increments themselves are collected in Tables~\ref{Table:ccsdt_1pdm}
 (one-electron) and \ref{Table:ccsdt_2pdm} (two-electron).  As with CCSD, the

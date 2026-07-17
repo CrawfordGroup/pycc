@@ -281,7 +281,7 @@ class CPHF(object):
             return self.solve_nuclear(atom)[cart]
         raise NotImplementedError("ov response wired for 'field'/'nuclear' only.")
 
-    def _full_U(self, pert: "Perturbation", ncore: int = 0) -> np.ndarray:
+    def _full_U(self, pert: "Perturbation", ncore: int = 0, canonical: bool = False) -> np.ndarray:
         """The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 
         The matrix element ``U_qp = <phi_q|d phi_p/dx>`` (the coefficient of orbital ``q`` in
@@ -297,7 +297,15 @@ class CPHF(object):
         move the frozen/active partition), so that block is *not* left at the orthonormality
         value but determined by the canonical Brillouin condition ``d_x f_ij = 0`` -- a direct
         divide by ``(eps_i - eps_j)``, using the already-solved ov response. The redundant
-        core-core, active-active, and vir-vir blocks stay at ``-1/2 S^x``."""
+        core-core, active-active, and vir-vir blocks stay at ``-1/2 S^x``.
+
+        ``canonical=True`` (CCSD(T) derivatives): the (T) energy is *not* invariant to
+        active-occupied or virtual rotations, so the canonical perturbed-orbital condition
+        ``d_x f_pq = 0`` must also fix the active-oo and vv off-diagonal blocks -- the same
+        ``(eps_p - eps_q)`` divide, generalized from the frozen-core core<->active block to the
+        full active-oo/vv space, so that ``d_x f`` is diagonal within oo and vv. Diagonal and
+        (near-)degenerate pairs keep the orthonormality value ``-1/2 S^x`` (the divide is
+        ill-conditioned there -- the standard degeneracy caveat)."""
         o, v, nmo = self.o, self.v, self.wfn.nmo
         fx, Sx, _ = self._skeleton(pert)
         Uia = self._ov_response(pert)                       # (no, nv): U_ai = <phi_a|d phi_i>
@@ -327,9 +335,29 @@ class CPHF(object):
             Uca = -num / (eps[co][:, None] - eps[ao][None, :])
             U[co, ao] = Uca
             U[ao, co] = -(Sx[co, ao] + Uca).T
+        if canonical:
+            # Canonical Brillouin divide d_x f_pq = 0 for the active-oo and vv off-diagonal
+            # blocks (generalizes the frozen-core core<->active block above), so d_x f is
+            # diagonal within oo and vv -- required by the non-invariant (T) kernels.
+            W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
+                 else np.asarray(self.wfn.H.L))
+            eps = self.eps
+            ao = slice(o.start + ncore, o.stop)             # active occupied
+            Soo = Sx[o, o]
+            Uvo = U[v, o]
+            for blk in (ao, v):
+                Sblk = Sx[blk, blk]
+                Sterm = 0.5 * (self.contract('nm,pnqm->pq', Soo, W[blk, o, blk, o])
+                               + self.contract('nm,pmqn->pq', Soo, W[blk, o, blk, o]))
+                Uterm = (self.contract('cm,pcqm->pq', Uvo, W[blk, v, blk, o])
+                         + self.contract('cm,pmqc->pq', Uvo, W[blk, o, blk, v]))
+                num = fx[blk, blk] - Sblk * eps[blk][None, :] - Sterm + Uterm
+                gap = eps[blk][:, None] - eps[blk][None, :]
+                offdiag = np.abs(gap) > 1e-8
+                U[blk, blk] = np.where(offdiag, -num / np.where(offdiag, gap, 1.0), -0.5 * Sblk)
         return U
 
-    def perturbed_fock(self, pert: "Perturbation", ncore: int = 0) -> np.ndarray:
+    def perturbed_fock(self, pert: "Perturbation", ncore: int = 0, canonical: bool = False) -> np.ndarray:
         """Full first derivative of the MO Fock matrix ``d_x f_pq`` (``nmo x nmo``) for
         ``pert``, with the CPHF response folded in (derivints.pdf)::
 
@@ -341,8 +369,10 @@ class CPHF(object):
         on the spin-orbital path), ``n,m`` over occupied and ``c`` over virtual. The skeleton
         ``f^(x)``/``S^x`` come from :meth:`_skeleton`; for an electric field ``S^x = 0`` so the
         ``S^x`` term drops. ``ncore`` selects the frozen-core core<->active response in ``U``
-        (see :meth:`_full_U`). Cached per ``(pert, ncore)``."""
-        key = (pert, ncore)
+        (see :meth:`_full_U`). ``canonical`` selects the canonical active-oo/vv perturbed
+        orbitals (CCSD(T); makes ``d_x f`` diagonal within oo and vv). Cached per
+        ``(pert, ncore, canonical)``."""
+        key = (pert, ncore, canonical)
         if key in self._dfock:
             return self._dfock[key]
         o, v = self.o, self.v
@@ -351,7 +381,7 @@ class CPHF(object):
         W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
              else np.asarray(self.wfn.H.L))
         fx, Sx, _ = self._skeleton(pert)
-        U = self._full_U(pert, ncore)
+        U = self._full_U(pert, ncore, canonical)
         df = fx + U * eps[:, None] + U.T * eps[None, :]     # f^(x) + U_pq f_pp + U_qp f_qq
         # - 1/2 sum_nm(occ) S^x_nm ( w[p,n,q,m] + w[p,m,q,n] )
         Soo = Sx[o, o]
@@ -364,7 +394,7 @@ class CPHF(object):
         self._dfock[key] = df
         return df
 
-    def perturbed_eri(self, pert: "Perturbation", ncore: int = 0, blocks=None) -> np.ndarray:
+    def perturbed_eri(self, pert: "Perturbation", ncore: int = 0, blocks=None, canonical: bool = False) -> np.ndarray:
         """Full first derivative of the MO two-electron integrals ``d_x <pq|rs>`` for ``pert``
         (derivints.pdf)::
 
@@ -380,13 +410,14 @@ class CPHF(object):
         tensor is built and cached per ``(pert, ncore)`` (geometry-bound, shared across
         properties). ``blocks`` is an optional 4-tuple of block labels ('o'/'v'/'all'), e.g.
         ``('o','o','v','v')`` for the MP2 2PDM; the **default returns the full tensor** (CC
-        consumers need the other blocks)."""
-        key = (pert, ncore)
+        consumers need the other blocks). ``canonical`` selects the canonical active-oo/vv
+        perturbed orbitals (CCSD(T))."""
+        key = (pert, ncore, canonical)
         full = self._deri.get(key)
         if full is None:
             ERI = np.asarray(self.wfn.H.ERI)
             _, _, gx = self._skeleton(pert)
-            U = self._full_U(pert, ncore)
+            U = self._full_U(pert, ncore, canonical)
             full = gx + self._rotate_eri(U, ERI)
             self._deri[key] = full
         if blocks is None:

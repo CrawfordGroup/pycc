@@ -147,8 +147,10 @@ class cclambda(object):
 
             Goo = self.build_Goo(t2, l2)
             Gvv = self.build_Gvv(t2, l2)
-            r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
-            r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo)
+            s1 = self.ccwfn.S1 if self.ccwfn.model == 'CCSD(T)' else None    # (T) sources, else None
+            s2 = self.ccwfn.S2 if self.ccwfn.model == 'CCSD(T)' else None
+            r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s1=s1)
+            r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=s2)
    
             if self.ccwfn.model == 'CC3':
                 if self.ccwfn.orbital_basis == 'spinorbital':
@@ -638,7 +640,7 @@ class cclambda(object):
         return -1.0 * contract('ijeb,ijab->ae', t2, l2)
 
 
-    def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+    def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s1=None):
         """Compute the L1 (lambda singles) residual.
 
         The lambda equations are linear; solve_lambda drives this residual to
@@ -664,15 +666,15 @@ class cclambda(object):
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
-                                          Hovoo, Hvovv, Hooov, Gvv, Goo)
+                                          Hovoo, Hvovv, Hooov, Gvv, Goo, s1=s1)
         if self.ccwfn.model == 'CCD':
             r_l1 = zeros_like(l1)
         else:
             r_l1 = 2.0 * clone(Hov)
 
-            # Add (T) contributions to L1
-            if self.ccwfn.model == 'CCSD(T)':
-                r_l1 = r_l1 + self.ccwfn.S1
+            # (T) source, supplied by the caller (cc.S1 unperturbed / dS1 perturbed); None => omit
+            if s1 is not None:
+                r_l1 = r_l1 + s1
 
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
             r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
@@ -692,7 +694,7 @@ class cclambda(object):
                 r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
         return r_l1
 
-    def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+    def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
         """Compute the L2 (lambda doubles) residual.
 
         The lambda equations are linear; solve_lambda drives this residual to
@@ -724,7 +726,7 @@ class cclambda(object):
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_r_L2(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
                                           Hoooo, Hvvvv, Hovvo, Hvvvo, Hovoo, Hvovv, Hooov,
-                                          Gvv, Goo)
+                                          Gvv, Goo, s2=s2)
         if self.ccwfn.model == 'CCD':
             r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
 
@@ -740,9 +742,11 @@ class cclambda(object):
         else:
             r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
 
-            # Add (T) contributions to L2
-            if self.ccwfn.model == 'CCSD(T)':
-                r_l2 = r_l2 + 0.5 * self.ccwfn.S2
+            # (T) source, supplied by the caller (cc.S2 unperturbed / dS2 perturbed); None => omit.
+            # Added before the final P_ij^ab symmetrization (r_l2 += r_l2.T) so the source is
+            # symmetrized identically in the unperturbed and perturbed paths.
+            if s2 is not None:
+                r_l2 = r_l2 + 0.5 * s2
 
             r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
             r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
@@ -835,13 +839,13 @@ class cclambda(object):
         return W
                                          
     def _so_r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
-                          Hvovv, Hooov, Gvv, Goo):
+                          Hvovv, Hooov, Gvv, Goo, s1=None):
         """Spin-orbital L1 (lambda singles) residual, built from the antisymmetrized
         spin-orbital HBAR blocks (no Hovov)."""
         contract = self.contract
         r_l1 = clone(Hov)
-        if self.ccwfn.model == 'CCSD(T)':
-            r_l1 = r_l1 + self.ccwfn.S1
+        if s1 is not None:                              # (T) source (cc.S1 / dS1); None => omit
+            r_l1 = r_l1 + s1
         r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
         r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
         r_l1 = r_l1 + 0.5 * contract('imef,efam->ia', l2, Hvvvo)
@@ -852,13 +856,13 @@ class cclambda(object):
         return r_l1
 
     def _so_r_L2(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
-                          Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo):
+                          Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
         """Spin-orbital L2 (lambda doubles) residual. Built as the full residual,
         already antisymmetric in i<->j and a<->b (no separate symmetrization)."""
         contract = self.contract
         r_l2 = clone(ERI[o,o,v,v])
-        if self.ccwfn.model == 'CCSD(T)':
-            r_l2 = r_l2 + self.ccwfn.S2
+        if s2 is not None:                              # (T) source (cc.S2 / dS2); None => omit (no 1/2, SO)
+            r_l2 = r_l2 + s2
         r_l2 = r_l2 + (contract('ia,jb->ijab', l1, Hov) - contract('ja,ib->ijab', l1, Hov))
         r_l2 = r_l2 + (contract('jb,ia->ijab', l1, Hov) - contract('ib,ja->ijab', l1, Hov))
         r_l2 = r_l2 + (contract('ijae,eb->ijab', l2, Hvv) - contract('ijbe,ea->ijab', l2, Hvv))
