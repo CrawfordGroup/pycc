@@ -54,106 +54,12 @@ class CCderiv(CorrelatedDerivs):
             self._dens = ccdensity(self.ccwfn, lam)
         return self._dens
 
-    def _relaxed_density(self):
-        """The relaxed correlation 1-PDM ``Drel`` and the symmetrized 2-PDM ``Gam`` (spatial
-        closed-shell RHF).  ``Drel`` is the Lambda-response 1-PDM ``D`` plus the orbital-relaxation
-        blocks: the frozen-core core<->active-occupied divide ``P_co``, the CCSD(T) oo/vv
-        dependent-pair ``kappa_oo``/``kappa_vv`` (model-gated), and the ov Z-vector ``-z`` (one CPHF
-        solve, RHS = the ov-antisymmetric generalized Fock ``I'_ia - I'_ai``).  This is the
-        **perturbation-independent** relaxed density shared by :meth:`gradient` (contracted with the
-        skeleton derivative integrals) and :meth:`relaxed_dipole` (contracted with the dipole
-        integrals); the (T) response rides along in ``Drel`` for both."""
-        cc = self.ccwfn
-        o, v = cc.o, cc.v
-        nfzc = cc.nfzc
-        co = slice(0, nfzc)                              # frozen-core occupied
-        ofull = slice(0, o.stop)                         # full occupied (core + active)
-        c = self.contract
-        eps = np.diag(np.asarray(cc.H.F))
-        L = np.asarray(cc.H.L)
+    def _unrelaxed_densities(self):
+        """CC unrelaxed reduced densities: the Lambda-response 1-PDM ``D`` and the (symmetrized)
+        cumulant 2-PDM ``Gam`` (:meth:`ccdensity.gradient_densities`), full-MO arrays.  Supplies the
+        base Z-vector (:meth:`CorrelatedDerivs._zvector` / :meth:`_so_zvector`)."""
         D, Gam = self._density().gradient_densities()
-        Ip = self._lagrangian(D, Gam)
-        Drel = D.copy()
-        if nfzc:                                         # core<->active-occupied: direct divide
-            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-            Drel[co, o] += Pco
-            Drel[o, co] += Pco.T
-        X = Ip[ofull, v] - Ip[v, ofull].T               # ov-antisymmetric generalized Fock (full occ)
-        if nfzc:                                         # couple P_co into the Z-vector RHS
-            zjc = -Pco.T
-            X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
-                     + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
-        if cc.model.upper() == 'CCSD(T)':
-            # (T) breaks the occ-occ / virt-virt rotation invariance, so the canonical perturbed
-            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector:
-            # (I'_ij-I'_ji)/(eps_i-eps_j) over the active oo pairs and the vv analog
-            # (:meth:`_dependent_pairs`), added to the relaxed density and coupled into the ov
-            # Z-vector RHS through the antisymmetrized ERI.  For CCSD both blocks vanish (oo/vv
-            # invariance).  Frozen core: the core<->active-occupied (T) response is already carried
-            # by P_co above (its I' is the (T)-inclusive Lagrangian); these blocks add the
-            # active<->active oo and the vv pairs, and the ov-occupied index of the coupling runs
-            # over the full occupied space (ofull), reducing to the active space when nfzc=0.
-            Poo = self._dependent_pairs(Ip[o, o], eps[o])
-            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
-            Drel[o, o] += Poo
-            Drel[v, v] += Pvv
-            X = X + (c('kl,akil->ia', Poo, L[v, o, ofull, o])
-                     + c('bc,ibac->ia', Pvv, L[ofull, v, v, v]))
-        z = self._reference_hf().cphf.solve(X)          # Z-vector: A z = X (full-occ SCF Hessian)
-        Drel[v, ofull] += -z.T
-        Drel[ofull, v] += -z
-        return Drel, Gam
-
-    def _so_relaxed_density(self):
-        """Spin-orbital (UHF) analog of :meth:`_relaxed_density`: the relaxed correlation 1-PDM
-        ``Drel`` and 2-PDM ``Gam``, with the antisymmetrized-ERI Lagrangian and the inline orbital
-        Hessian (``G_ia,jb = <aj||ib> + <ab||ij> + delta (eps_a - eps_i)``) rather than a borrowed
-        all-electron CPHF.  **UHF only** -- raises for ROHF (the semicanonical response does not
-        reproduce the restricted ROHF response)."""
-        cc = self.ccwfn
-        if cc.mp.cphf.is_rohf:
-            raise NotImplementedError(
-                "The spin-orbital CCSD/CCSD(T) gradient and relaxed dipole are not implemented for "
-                "ROHF references (the semicanonical response does not reproduce the restricted ROHF "
-                "response); RHF and UHF are supported.")
-        o, v = cc.o, cc.v
-        nfzc, nv = cc.nfzc, cc.nv
-        co = slice(0, o.start)                            # frozen-core occupied (2*nfzc spin-orbitals)
-        ofull = slice(0, o.stop)                          # full occupied (core + active)
-        nof = o.stop
-        c = self.contract
-        eps = np.diag(np.asarray(cc.H.F))
-        ERI = np.asarray(cc.H.ERI)                        # spin-orbital <pq||rs>
-        D, Gam = self._density().gradient_densities()
-        Ip = self._lagrangian(D, Gam)
-        Drel = D.copy()
-        if nfzc:                                          # core<->active-occupied: direct divide
-            Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-            Drel[co, o] += Pco
-            Drel[o, co] += Pco.T
-        X = Ip[ofull, v] - Ip[v, ofull].T                # ov-antisymmetric generalized Fock
-        if nfzc:                                          # couple P_co into the Z-vector RHS
-            zjc = -Pco.T
-            X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
-                     + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
-        if cc.model.upper() == 'CCSD(T)':
-            # (T) breaks the occ-occ / virt-virt rotation invariance: the canonical perturbed
-            # orbitals acquire dependent-pair rotations kappa_oo/kappa_vv beyond the ov Z-vector --
-            # the spin-orbital analog of the (T) branch in :meth:`_relaxed_density` (spatial L ->
-            # <pq||rs>).  For CCSD both blocks vanish.
-            Poo = self._dependent_pairs(Ip[o, o], eps[o])
-            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
-            Drel[o, o] += Poo
-            Drel[v, v] += Pvv
-            X = X + (c('kl,akil->ia', Poo, ERI[v, o, ofull, o])
-                     + c('bc,ibac->ia', Pvv, ERI[ofull, v, v, v]))
-        G = (c('ajib->iajb', ERI[v, ofull, ofull, v])    # orbital Hessian, built inline
-             + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
-        G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
-        z = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)   # Z-vector A z = X
-        Drel[v, ofull] += -z.T
-        Drel[ofull, v] += -z
-        return Drel, Gam
+        return np.asarray(D), np.asarray(Gam)
 
     def relaxed_dipole(self) -> np.ndarray:
         """CCSD / CCSD(T) **correlation** contribution to the relaxed electronic dipole (a.u.),
@@ -223,7 +129,7 @@ class CCderiv(CorrelatedDerivs):
     def _so_gradient(self) -> np.ndarray:
         """Spin-orbital (UHF) CCSD / CCSD(T) **correlation** gradient via the Z-vector route -- the
         spin-orbital analog of :meth:`gradient`, mirroring :meth:`MPwfn._so_gradient` /
-        :meth:`MPwfn._so_zvector`::
+        :meth:`CorrelatedDerivs._so_zvector`::
 
             dE_corr/dX = sum_pq D~_pq f^X_pq + sum_pqrs Gamma_pqrs <pq||rs>^X + sum_pq W_pq S^X_pq
 
@@ -241,7 +147,7 @@ class CCderiv(CorrelatedDerivs):
 
         **UHF only** -- ROHF is not supported (the semicanonical response does not reproduce the
         restricted ROHF response).  Frozen-core aware (the core<->active-occupied ``P_co`` divide,
-        coupled into the Z-vector RHS, exactly as the spatial path and :meth:`MPwfn._so_zvector`).
+        coupled into the Z-vector RHS, exactly as the spatial path and :meth:`CorrelatedDerivs._so_zvector`).
         Validated against ``psi4.gradient('ccsd')`` (UHF), the spatial closed-shell gradient (SO ==
         spatial, CCSD and CCSD(T)), and a finite difference of pycc's own SO CCSD(T) energy
         (open-shell UHF)."""

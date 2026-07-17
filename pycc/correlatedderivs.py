@@ -34,6 +34,24 @@ class CorrelatedDerivs:
             self._ref_hf = HFwfn(self.wfn.ref, orbital_basis=self.wfn.orbital_basis)
         return self._ref_hf
 
+    @property
+    def perturbed_mo_gauge(self):
+        """The active occ-occ / virt-virt perturbed-orbital gauge, ``'canonical'`` or
+        ``'non-canonical'`` (docs/cc_gradients_orbital_response.tex, sec. Canonical Perturbed
+        Orbitals).  ``'non-canonical'`` uses the orthonormality conditions ``U^x_ij = -1/2 S^(x)_ij``
+        (occ) and ``U^x_ab = -1/2 S^(x)_ab`` (vir), leaving the oo/vv dependent-pair rotations to
+        vanish -- valid when the correlation energy is invariant to oo/vv rotations (MP2, CCSD).
+        ``'canonical'`` keeps the perturbed occ/vir blocks canonical (``d f_ij/dx = 0``, ``i != j``),
+        carrying the oo/vv dependent-pair rotations ``P_oo``/``P_vv`` explicitly; it is the choice
+        for the CCSD(T) gradient, where building the (T) contributions to ``Doo``/``Dvv`` from their
+        diagonal oo/vv blocks alone saves an O(N^7) step.  (The two routes give the same result; for
+        oo/vv-invariant methods the pairs vanish and the canonical recipe reduces to the
+        non-canonical one.)  Defaults to ``'canonical'`` for CCSD(T), ``'non-canonical'`` otherwise;
+        a future non-canonical-(T) route (building the full (T) density) would override this.  The
+        frozen-core core<->active-occupied divide ``P_co`` is always canonical, independent of this
+        choice."""
+        return 'canonical' if getattr(self.wfn, 'model', '').upper() == 'CCSD(T)' else 'non-canonical'
+
     # ---- generalized-Fock orbital Lagrangian I'(D, Gam) ----
     # The Gauss/Stanton/Bartlett orbital-gradient Lagrangian: a method-agnostic function of a
     # full-MO 1-PDM ``D`` and cumulant 2-PDM ``Gam`` (both supplied by the leaf) plus the SCF
@@ -102,6 +120,147 @@ class CorrelatedDerivs:
         termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
         return -0.5 * (termA + termB + termC)
 
+    # ---- unperturbed relaxed density and orbital-response (Z-vector) ----
+    # Given the leaf's unrelaxed reduced densities, the relaxed 1-PDM adds the orbital-relaxation
+    # blocks driven by the Lagrangian's ov-antisymmetric part:
+    #
+    #     Drel = D_u  +  P_co (core<->active-occ)  +  P_oo/P_vv (extra oo/vv, e.g. (T))  -  z (ov),
+    #
+    # with the Z-vector  A z = X,  X_ai = I'_ia - I'_ai (over the full occupied space).  The
+    # non-redundant core<->active-occupied rotation is a direct divide P_co = (I'_ci - I'_ic) /
+    # (eps_c - eps_i) (the SCF energy is invariant to occ-occ rotations), coupled into X.  The orbital
+    # Hessian A is the all-electron SCF Hessian: borrowed from the reference HFwfn CPHF (spatial) or
+    # built inline (spin-orbital, G_ia,jb = <aj||ib> + <ab||ij> + delta_ij delta_ab (eps_a - eps_i)).
+    # Method-agnostic given the two leaf hooks below.
+
+    def _unrelaxed_densities(self):
+        """Leaf hook: the unrelaxed reduced densities ``(D_u, Gam)`` as full-MO arrays -- the 1-PDM
+        (``nmo x nmo``, occupied/virtual diagonal blocks) and cumulant 2-PDM (``nmo^4``).  Supplied
+        by the method (MP2 amplitude seeds / CC :meth:`ccdensity.gradient_densities`)."""
+        raise NotImplementedError
+
+    def _zvector(self):
+        """Spatial (closed-shell) unperturbed Z-vector data (cached, frozen-core aware):
+        ``(Drel, Gam, D_u, z, hf, P_co)``.  The relaxed 1-PDM
+
+            Drel = D_u + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X,
+
+        with ``I' = -1/2[...]`` (:meth:`_spatial_lagrangian`), the frozen-core divide
+        ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into ``X``, the canonical-perturbed-MO
+        oo/vv rotations ``P_oo``/``P_vv`` (the branch below, active only for
+        :attr:`perturbed_mo_gauge` ``== 'canonical'``, i.e. CCSD(T)), and the ov Z-vector solved with
+        the all-electron reference ``HFwfn`` CPHF (whose occupied space is the full ``ndocc``).
+        ``z`` is indexed ``(I, a)`` over the full occupied space."""
+        if getattr(self, '_zvec', None) is None:
+            nmo, nfzc, no = self.wfn.nmo, self.wfn.nfzc, self.wfn.no
+            o, v = self.wfn.o, self.wfn.v
+            co = slice(0, nfzc)
+            ofull = slice(0, nfzc + no)
+            eps = np.diag(np.asarray(self.wfn.H.F))
+            L = np.asarray(self.wfn.H.L)
+            c = self.contract
+            Du, Gam = self._unrelaxed_densities()
+            Du = np.asarray(Du)
+            Ip = self._spatial_lagrangian(Du, Gam)
+            Drel = Du.copy()
+            Pco = None
+            if nfzc:
+                Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+                Drel[co, o] += Pco
+                Drel[o, co] += Pco.T
+            X = Ip[ofull, v] - Ip[v, ofull].T
+            if nfzc:
+                zjc = -Pco.T                                   # z_jc, active-occupied x core
+                X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
+                         + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
+            # Canonical perturbed MOs: carry the off-diagonal oo/vv orbital response as the
+            # dependent-pair rotations kappa_oo/kappa_vv (added to Drel, coupled into X).  This is
+            # the CCSD(T) choice -- the (T) contributions to Doo/Dvv are then built from their
+            # diagonal oo/vv blocks alone, saving an O(N^7) step.  For oo/vv-invariant methods the
+            # pairs vanish, so the non-canonical default (MP2, CCSD) simply skips them.
+            if self.perturbed_mo_gauge == 'canonical':
+                Poo = self._dependent_pairs(Ip[o, o], eps[o])
+                Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+                Drel[o, o] += Poo
+                Drel[v, v] += Pvv
+                X = X + (c('kl,akil->ia', Poo, L[v, o, ofull, o])
+                         + c('bc,ibac->ia', Pvv, L[ofull, v, v, v]))
+            hf = self._reference_hf()
+            zia = hf.cphf.solve(X)                              # (I,a) over full occ
+            Drel[v, ofull] += -zia.T
+            Drel[ofull, v] += -zia
+            self._zvec = (Drel, Gam, Du, zia, hf, Pco)
+        return self._zvec
+
+    def _so_zvector(self):
+        """Spin-orbital unperturbed Z-vector data (cached, frozen-core aware):
+        ``(Drel, Gam, D_u, z, G, P_co)`` -- the spin-orbital analogue of :meth:`_zvector`
+        (antisymmetrized ``<pq||rs>``; :meth:`_so_lagrangian`).  The orbital Hessian is built inline
+
+            G_ia,jb = <aj||ib> + <ab||ij> + delta_ij delta_ab (eps_a - eps_i),
+
+        over the full occupied space (there is no all-electron spin-orbital ``HFwfn`` CPHF to borrow
+        -- it orders the spins differently from the densities).  **UHF only** -- raises for ROHF (the
+        semicanonical response does not reproduce the restricted ROHF response)."""
+        if getattr(self, '_so_zvec', None) is None:
+            if self.wfn.cphf.is_rohf:
+                raise NotImplementedError(
+                    "The spin-orbital correlated relaxed gradient/dipole is not implemented for "
+                    "ROHF references (the semicanonical response does not reproduce the restricted "
+                    "ROHF response); RHF and UHF are supported.")
+            nmo, nfzc, nv = self.wfn.nmo, self.wfn.nfzc, self.wfn.nv
+            o, v, co = self.wfn.o, self.wfn.v, self.wfn.co
+            ofull = slice(0, o.stop)
+            nof = o.stop
+            ERI = np.asarray(self.wfn.H.ERI)
+            eps = np.diag(np.asarray(self.wfn.H.F))
+            c = self.contract
+            Du, Gam = self._unrelaxed_densities()
+            Du = np.asarray(Du)
+            Ip = self._so_lagrangian(Du, Gam)
+            Drel = Du.copy()
+            Pco = None
+            if nfzc:
+                Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+                Drel[co, o] += Pco
+                Drel[o, co] += Pco.T
+            X = Ip[ofull, v] - Ip[v, ofull].T
+            if nfzc:
+                zjc = -Pco.T                                   # z_jc, active-occupied x core
+                X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
+                         + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
+            # Canonical perturbed MOs: carry the off-diagonal oo/vv orbital response as the
+            # dependent-pair rotations kappa_oo/kappa_vv (added to Drel, coupled into X).  This is
+            # the CCSD(T) choice -- the (T) contributions to Doo/Dvv are then built from their
+            # diagonal oo/vv blocks alone, saving an O(N^7) step.  For oo/vv-invariant methods the
+            # pairs vanish, so the non-canonical default (MP2, CCSD) simply skips them.
+            if self.perturbed_mo_gauge == 'canonical':
+                Poo = self._dependent_pairs(Ip[o, o], eps[o])
+                Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+                Drel[o, o] += Poo
+                Drel[v, v] += Pvv
+                X = X + (c('kl,akil->ia', Poo, ERI[v, o, ofull, o])
+                         + c('bc,ibac->ia', Pvv, ERI[ofull, v, v, v]))
+            G = (c('ajib->iajb', ERI[v, ofull, ofull, v])
+                 + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
+            G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
+            zia = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)
+            Drel[v, ofull] += -zia.T
+            Drel[ofull, v] += -zia
+            self._so_zvec = (Drel, Gam, Du, zia, G, Pco)
+        return self._so_zvec
+
+    def _relaxed_density(self):
+        """Relaxed 1-PDM ``Drel`` and cumulant 2-PDM ``Gam`` (``Tr(Drel mu)`` gives the correlation
+        dipole; ``Drel``/``Gam`` feed the gradient), dispatched on the orbital basis."""
+        z = self._so_zvector() if self.wfn.orbital_basis == 'spinorbital' else self._zvector()
+        return z[0], z[1]
+
+    def _so_relaxed_density(self):
+        """Spin-orbital relaxed 1-PDM and 2-PDM -- ``(Drel, Gam)`` from :meth:`_so_zvector`."""
+        z = self._so_zvector()
+        return z[0], z[1]
+
     @staticmethod
     def _dependent_pairs(Iblock, eps_block, thresh=1e-8):
         """Canonical dependent-pair rotation ``P_mn = (I'_mn - I'_nm)/(eps_m - eps_n)`` for a square
@@ -110,8 +269,8 @@ class CorrelatedDerivs:
         near-degenerate pairs.  ``P`` is symmetric (numerator and denominator both antisymmetric).
 
         This is the frozen-core core<->active-occupied divide generalized to an arbitrary square
-        block; methods that break occ-occ/virt-virt rotation invariance (CCSD(T), CI) need it over
-        the full oo and vv blocks."""
+        block; it also supplies the active oo/vv rotations of the canonical perturbed-MO gauge
+        (:attr:`perturbed_mo_gauge`, used by :meth:`_zvector` / :meth:`_so_zvector`)."""
         num = np.asarray(Iblock) - np.asarray(Iblock).T
         den = eps_block[:, None] - eps_block[None, :]
         P = np.zeros_like(num)

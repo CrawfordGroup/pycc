@@ -254,47 +254,6 @@ class MPderiv(CorrelatedDerivs):
     # spin-orbital path builds G inline; the spatial analogue carries the spin-adapted L and
     # solves through the all-electron HFwfn CPHF. See mp2_2n1_perturbed.tex / DERIVATIVES_PLAN.
 
-    def _so_zvector(self):
-        """Unperturbed spin-orbital Z-vector data (cached, frozen-core aware): the relaxed
-        1-PDM ``D_rel``, cumulant ``Gam``, unrelaxed ``D_u``, the Z-vector amplitudes ``z``
-        (indexed ``(I,a)`` over the full occupied space), the orbital Hessian ``G``
-        (``nof*nv`` square), and the core-active block ``P_co`` (``None`` for ``nfzc=0``) --
-        shared by the relaxed density (:meth:`_so_mp2_relaxed_densities` delegates here) and
-        its perturbed response."""
-        if getattr(self, '_so_zvec', None) is None:
-            nmo, nfzc, nv = self.mp.nmo, self.mp.nfzc, self.mp.nv
-            o, v, co = self.mp.o, self.mp.v, self.mp.co
-            ofull = slice(0, o.stop)
-            nof = o.stop
-            ERI = np.asarray(self.mp.H.ERI)
-            eps = np.diag(np.asarray(self.mp.H.F))
-            c = self.contract
-            Doo, Dvv = self.mp._so_mp2_corr_opdm()
-            Gam = np.asarray(self.mp._so_mp2_tpdm())
-            Du = np.zeros((nmo, nmo))
-            Du[o, o] = np.asarray(Doo)
-            Du[v, v] = np.asarray(Dvv)
-            Ip = self._so_lagrangian(Du, Gam)
-            Drel = Du.copy()
-            Pco = None
-            if nfzc:
-                Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-                Drel[co, o] = Pco
-                Drel[o, co] = Pco.T
-            X = Ip[ofull, v] - Ip[v, ofull].T
-            if nfzc:
-                zjc = -Pco.T                                   # z_jc, active-occupied x core
-                X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
-                         + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
-            G = (c('ajib->iajb', ERI[v, ofull, ofull, v])
-                 + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof * nv, nof * nv)
-            G[np.diag_indices(nof * nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
-            zia = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)
-            Drel[v, ofull] = -zia.T
-            Drel[ofull, v] = -zia
-            self._so_zvec = (Drel, Gam, Du, zia, G, Pco)
-        return self._so_zvec
-
     def _so_perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """First-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
         spin-orbital. Differentiates :meth:`_so_lagrangian` term by term with the perturbed
@@ -381,44 +340,22 @@ class MPderiv(CorrelatedDerivs):
         dD[ofull, v] = -zx
         return dD
 
-    def _zvector(self):
-        """Spatial (closed-shell) unperturbed Z-vector data (cached, frozen-core aware):
-        relaxed 1-PDM ``D_rel``, cumulant ``Gam``, unrelaxed ``D_u``, the Z-vector amplitudes
-        ``z`` (indexed ``(I,a)`` over the full occupied space), the all-electron ``HFwfn``
-        whose CPHF carries the orbital Hessian, and the core-active block ``P_co`` (``None``
-        for ``nfzc=0``). :meth:`_mp2_relaxed_densities` delegates here."""
-        if getattr(self, '_zvec', None) is None:
-            from .hfwfn import HFwfn
-            nmo, nfzc, no = self.mp.nmo, self.mp.nfzc, self.mp.no
-            o, v = self.mp.o, self.mp.v
-            co = slice(0, nfzc)
-            ofull = slice(0, nfzc + no)
-            eps = np.diag(np.asarray(self.mp.H.F))
-            L = np.asarray(self.mp.H.L)
-            c = self.contract
+    def _unrelaxed_densities(self):
+        """MP2 unrelaxed reduced densities as full-MO arrays: the 1-PDM ``D_u`` (the ``Doo``/``Dvv``
+        correlation blocks on the occupied/virtual diagonal) and the cumulant 2-PDM ``Gamma``, from
+        the amplitude seeds (:meth:`MPwfn._{so_}mp2_corr_opdm` / ``_{so_}mp2_tpdm``).  Supplies the
+        base Z-vector (:meth:`CorrelatedDerivs._zvector` / :meth:`_so_zvector`)."""
+        nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
+        if self.mp.orbital_basis == 'spinorbital':
+            Doo, Dvv = self.mp._so_mp2_corr_opdm()
+            Gam = self.mp._so_mp2_tpdm()
+        else:
             Doo, Dvv = self.mp._mp2_corr_opdm()
-            Gam = np.asarray(self.mp._mp2_tpdm())
-            Du = np.zeros((nmo, nmo))
-            Du[o, o] = np.asarray(Doo)
-            Du[v, v] = np.asarray(Dvv)
-            Ip = self._spatial_lagrangian(Du, Gam)
-            Drel = Du.copy()
-            Pco = None
-            if nfzc:
-                Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-                Drel[co, o] = Pco
-                Drel[o, co] = Pco.T
-            hf = HFwfn(self.mp.ref)
-            X = Ip[ofull, v] - Ip[v, ofull].T
-            if nfzc:
-                zjc = -Pco.T                                   # z_jc, active-occupied x core
-                X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
-                         + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
-            zia = hf.cphf.solve(X)                              # (I,a) over full occ
-            Drel[v, ofull] = -zia.T
-            Drel[ofull, v] = -zia
-            self._zvec = (Drel, Gam, Du, zia, hf, Pco)
-        return self._zvec
+            Gam = self.mp._mp2_tpdm()
+        Du = np.zeros((nmo, nmo))
+        Du[o, o] = np.asarray(Doo)
+        Du[v, v] = np.asarray(Dvv)
+        return Du, np.asarray(Gam)
 
     def _perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """Spatial first-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
