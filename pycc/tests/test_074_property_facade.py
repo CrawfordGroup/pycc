@@ -164,14 +164,15 @@ def test_apt_bad_gauge():
 
 
 def test_facade_route_option():
-    """route (MP2 correlation algorithm) is exposed and gives the same total; ignored for HF."""
+    """route (MP2 correlation algorithm) is exposed and passed through; the two APT 2n+1 routes
+    agree, and route is ignored for HF."""
     hf, mp = _wfns()
-    assert np.max(np.abs(pycc.polarizability(mp, route='explicit').total
-                         - pycc.polarizability(mp, route='2n+1').total)) < 1e-12
-    assert np.max(np.abs(pycc.hessian(mp, route='explicit').total
-                         - pycc.hessian(mp, route='2n+1').total)) < 1e-12
-    assert np.max(np.abs(pycc.apt(mp, 'length', route='explicit').total
-                         - pycc.apt(mp, 'length', route='2n+1-nuclear').total)) < 1e-10
+    assert np.max(np.abs(pycc.polarizability(mp, route='2n+1').total
+                         - pycc.polarizability(mp).total)) < 1e-12
+    assert np.max(np.abs(pycc.hessian(mp, route='2n+1').total
+                         - pycc.hessian(mp).total)) < 1e-12
+    assert np.max(np.abs(pycc.apt(mp, 'length', route='2n+1-nuclear').total
+                         - pycc.apt(mp, 'length', route='2n+1-field').total)) < 1e-10
     assert np.all(pycc.hessian(hf, route='2n+1').correlation == 0.0)
 
 

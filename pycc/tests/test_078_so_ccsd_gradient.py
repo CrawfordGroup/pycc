@@ -97,32 +97,10 @@ def test_so_ccsd_gradient_vs_psi4_uhf_oh_c2v():
     assert np.max(np.abs(np.asarray(r.total) - g_psi4)) < 1e-8, (r.total, g_psi4)
 
 
-def test_so_ccsd_gradient_zvector_equals_explicit():
-    """The Z-vector route (default) and the independent explicit-derivative route agree to machine
-    precision.
-
-    Closed shell only, on purpose: the spin-orbital orbital Hessian of an *open-shell* UHF reference
-    carries a near-zero mode (min eigenvalue ~1e-14; cond ~1e15 for even a well-behaved radical like
-    NH2, ~1e17 for a degenerate one like OH), so the single linear solve ``solve(G, X)`` that both
-    routes run through is ill-conditioned and their difference is platform-dependent at the 1e-3
-    level -- even though each route's *final* gradient is correct (X is essentially orthogonal to the
-    null direction).  The open-shell gradient is therefore validated against psi4 instead
-    (:func:`test_so_ccsd_gradient_vs_psi4_uhf`); the closed-shell Hessian is well-conditioned
-    (cond ~50), so this identity holds to machine precision there."""
-    psi4.core.clean(); psi4.core.clean_options()
-    psi4.geometry(H2O)
-    psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'freeze_core': 'false',
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
-    _, wfn = psi4.energy('scf', return_wfn=True)
-    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital'); cc.solve_cc(E_CONV, R_CONV, 200)
-    deriv = pycc.CCderiv(cc)
-    assert np.max(np.abs(deriv.gradient() - deriv._gradient_explicit())) < 1e-9
-
-
 def test_so_ccsd_gradient_frozen_core():
     """Frozen-core spin-orbital CCSD gradient.  psi4 has no frozen-core CC gradient, so validate
     against the (psi4-validated) spatial frozen-core gradient -- the SO == spatial keystone with a
-    frozen core (the core spans 2*nfzc spin-orbitals) -- and the independent explicit route."""
+    frozen core (the core spans 2*nfzc spin-orbitals)."""
     psi4.core.clean(); psi4.core.clean_options()
     psi4.geometry(H2O)
     psi4.set_options({'basis': 'STO-3G', 'scf_type': 'pk', 'freeze_core': 'true',
@@ -133,7 +111,6 @@ def test_so_ccsd_gradient_frozen_core():
     assert cc_so.nfzc > 0
     deriv = pycc.CCderiv(cc_so)
     g_so = deriv.gradient()
-    assert np.max(np.abs(g_so - deriv._gradient_explicit())) < 1e-9      # zvector == explicit
     assert np.max(np.abs(g_so - pycc.CCderiv(cc_sp).gradient())) < 1e-9  # SO == spatial (frozen core)
 
 

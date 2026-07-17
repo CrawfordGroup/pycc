@@ -208,9 +208,8 @@ class CCderiv(CorrelatedDerivs):
         ``HFwfn(ref).gradient()`` plus this, assembled by the :func:`pycc.gradient` facade.
 
         Spatial (closed-shell RHF) path; all-electron and frozen-core.  Validated against
-        ``psi4.gradient('ccsd')``, a finite difference of the CCSD energy, and the independent
-        explicit-derivative route (:meth:`_gradient_explicit`).  The spin-orbital (UHF) path is
-        dispatched to :meth:`_so_gradient`.
+        ``psi4.gradient('ccsd')`` and a finite difference of the CCSD energy.  The spin-orbital
+        (UHF) path is dispatched to :meth:`_so_gradient`.
 
         Frozen core is handled as in the MP2 gradient: the correlation densities live in the active
         space while the orbital response spans the full occupied space.  The core<->active-occupied
@@ -260,9 +259,8 @@ class CCderiv(CorrelatedDerivs):
         restricted ROHF response).  Frozen-core aware (the core<->active-occupied ``P_co`` divide,
         coupled into the Z-vector RHS, exactly as the spatial path and :meth:`MPwfn._so_zvector`).
         Validated against ``psi4.gradient('ccsd')`` (UHF), the spatial closed-shell gradient (SO ==
-        spatial, CCSD and CCSD(T)), a finite difference of pycc's own SO CCSD(T) energy (open-shell
-        UHF), and the explicit-derivative route (:meth:`_gradient_explicit`, CCSD only -- the (T)
-        dependent-pair is not yet carried there)."""
+        spatial, CCSD and CCSD(T)), and a finite difference of pycc's own SO CCSD(T) energy
+        (open-shell UHF)."""
         cc = self.ccwfn
         o = cc.o
         ofull = slice(0, o.stop)                          # full occupied (core + active)
@@ -278,43 +276,6 @@ class CCderiv(CorrelatedDerivs):
                 grad[atom, cart] = (c('pq,pq->', Drel, fx)
                                     + c('pqrs,pqrs->', Gam, ERIx[cart])
                                     + c('pq,pq->', W, Sx[cart]))
-        return grad
-
-    def _gradient_explicit(self) -> np.ndarray:
-        """CCSD correlation gradient via the **explicit-derivative route** -- an independent
-        cross-check of :meth:`gradient`::
-
-            dE_corr/dX = sum_pq D_pq (d_X f)_pq + sum_pqrs Gamma_pqrs (d_X <pq|rs>)
-
-        The Lambda-response densities are contracted with the CPHF-folded perturbed integrals
-        (:meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`), the orbital relaxation riding
-        inside ``d_X f`` / ``d_X <pq|rs>`` -- one nuclear CPHF solve per perturbation (the "simple
-        but inefficient" form, analog of :meth:`MPwfn._corr_gradient_explicit`).  Same result as
-        :meth:`gradient` (which uses the single Z-vector solve).  Basis-agnostic: the perturbed
-        integrals and densities dispatch on the orbital basis, so this cross-checks the spatial and
-        spin-orbital gradients alike.
-
-        .. note::
-           **CCSD(T) caveat.** This route does not yet carry the (T) occ-occ/virt-virt
-           dependent-pair orbital response (the ``kappa_oo``/``kappa_vv`` divides added to
-           :meth:`gradient`), so for ``model == 'CCSD(T)'`` it is *not* equivalent to
-           :meth:`gradient` and should not be used as a cross-check -- validate the (T) gradient
-           against a finite difference of the CCSD(T) energy instead (``test_083``).  Extending
-           the explicit route to (T) is a later phase."""
-        from .cphf import Perturbation
-        cc = self.ccwfn
-        D, Gam = self._density().gradient_densities()
-        cphf = cc.mp.deriv._full_occ_cphf()
-        ncore = cc.o.stop - cc.no
-        c = self.contract
-        natom = cc.derivatives.natom
-        grad = np.zeros((natom, 3))
-        for atom in range(natom):
-            for cart in range(3):
-                pert = Perturbation('nuclear', (atom, cart))
-                df = np.asarray(cphf.perturbed_fock(pert, ncore))
-                deri = np.asarray(cphf.perturbed_eri(pert, ncore))
-                grad[atom, cart] = (c('pq,pq->', D, df) + c('pqrs,pqrs->', Gam, deri))
         return grad
 
     # ---- second derivatives: static dipole polarizability ----------------

@@ -5,10 +5,8 @@ Anchored on tight finite differences of pycc's own CCSD correlation energy: each
 the analytic correlation gradient itself, validated once against a 5-point O(h^4) central FD of the
 CCSD correlation energy (h=0.005, CC converged to 1e-13) to ~6e-12 (see _findiff_gradient, the
 regeneration recipe).  All-electron and frozen-core; STO-3G and cc-pVDZ (a real virtual space --
-polarization functions, several virtuals per irrep, A2-symmetry MOs).  Two further pycc-vs-pycc
-cross-checks stay live: the efficient Z-vector route vs the independent explicit-derivative route
-(3*natom CPHF solves) to machine precision, and the gradient-convention densities reconstructing the
-CCSD correlation energy.
+polarization functions, several virtuals per irrep, A2-symmetry MOs).  A further pycc-vs-pycc
+cross-check stays live: the gradient-convention densities reconstructing the CCSD correlation energy.
 """
 
 import contextlib
@@ -126,25 +124,12 @@ def test_ccsd_gradient_ccpvdz():
     assert abs(E - dens.compute_energy()) < 1e-12
 
 
-def test_ccsd_gradient_zvector_equals_explicit():
-    """The efficient Z-vector route (the default gradient()) agrees with the independent
-    explicit-derivative route to machine precision -- two formulations of the same correlation
-    gradient (one Z-vector solve vs 3*natom CPHF solves)."""
-    cc = _ccwfn(REF, "STO-3G")
-    deriv = pycc.CCderiv(cc)
-    g_zvector = deriv.gradient()
-    g_explicit = deriv._gradient_explicit()
-    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-12, (g_zvector, g_explicit)
-
-
 def test_ccsd_gradient_frozen_core():
-    """Frozen-core CCSD gradient: vs the FD-validated frozen reference, and the Z-vector and explicit
-    routes agree to machine precision (exercising the core<->active-occupied P_co response).  psi4
-    has no frozen-core CC gradient, so the FD of the frozen-core CCSD energy is the oracle."""
+    """Frozen-core CCSD gradient vs the FD-validated frozen reference (exercising the
+    core<->active-occupied P_co response).  psi4 has no frozen-core CC gradient, so the FD of the
+    frozen-core CCSD energy is the oracle."""
     cc = _ccwfn(REF, "STO-3G", frozen_core=True)
     assert cc.nfzc > 0
     deriv = pycc.CCderiv(cc)
     g_zvector = np.asarray(deriv.gradient())
-    g_explicit = np.asarray(deriv._gradient_explicit())
-    assert np.max(np.abs(g_zvector - g_explicit)) < 1e-12, (g_zvector, g_explicit)
     assert np.max(np.abs(g_zvector - GRAD_REF_FC_STO3G)) < 1e-11, g_zvector

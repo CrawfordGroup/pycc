@@ -167,17 +167,11 @@ class MPderiv(CorrelatedDerivs):
         return np.array([self.contract('pq,pq->', D, np.asarray(self.mp.H.mu[a]))
                          for a in range(3)])
 
-    # ---- first derivatives: explicit-derivative route (derivints.pdf) and the nuclear gradient ----
-    # The correlation-energy first derivative via the full (CPHF-folded) derivatives of f and
-    # <pq||rs> (shared CPHF engine) contracted with the *unrelaxed* densities -- the orbital
-    # relaxation rides inside d_x f / d_x <pq||rs>, not in a relaxed density. For an electric
-    # field the (negative) correlation dipole reproduces relaxed_dipole. The relaxed-density
-    # gradient (sum D f^X + sum Gamma <pq||rs>^X + sum I S^X) is the equivalent Z-vector form.
-    # Spatial closed-shell default; spin-orbital via the _so_ route.
+    # ---- full-occupied CPHF (shared by the 2n+1 perturbed-response routes) ----
 
     def _full_occ_cphf(self):
         """A CPHF over the **full** occupied space (frozen core + active) in the wavefunction's
-        own MO ordering (cached). The explicit-derivative engine needs the orbital response over
+        own MO ordering (cached). The 2n+1 perturbed-response routes need the orbital response over
         the full occupied space (core<->active and core-virtual), which ``self.mp.cphf`` (active
         only) can't supply; building it here -- rather than borrowing an all-electron ``HFwfn``
         -- keeps the spin-orbital ordering consistent with the densities (the all-electron SO
@@ -186,82 +180,6 @@ class MPderiv(CorrelatedDerivs):
             from .cphf import CPHF
             self._focphf = CPHF(self.mp, full_occ=True)
         return self._focphf
-
-    def _corr_energy_deriv(self, pert) -> float:
-        """First derivative of the MP2 correlation energy along ``pert`` (a
-        :class:`~pycc.cphf.Perturbation`)::
-
-            dE_corr/dx = sum_pq gamma_pq d_x f_pq + sum_pqrs Gamma_pqrs d_x <pq|rs>
-
-        with the unrelaxed correlation 1-PDM ``gamma`` (``Doo``/``Dvv``) and the 2PDM
-        ``Gamma`` (``oovv``/``vvoo``), and the explicit derivatives from
-        :meth:`CPHF.perturbed_fock` / :meth:`CPHF.perturbed_eri`. Spin-adapted (closed-shell
-        RHF) here; the spin-orbital path is :meth:`_so_corr_energy_deriv`.
-
-        Frozen-core aware with no rearrangement: the densities stay in the active space
-        (``Doo``/``Dvv``/``Gamma`` placed at the active ``o``/``v`` blocks of full-MO arrays),
-        while the perturbed derivatives are built over the **full occupied space**
-        (:meth:`_full_occ_cphf`) with the core<->active block of ``U`` from ``ncore``. The
-        contraction against the full ``f``/``<pq|rs>`` derivatives carries the core response."""
-        if self.mp.orbital_basis == 'spinorbital':
-            return self._so_corr_energy_deriv(pert)
-        nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
-        Doo, Dvv = self.mp._mp2_corr_opdm()
-        gamma = np.zeros((nmo, nmo))
-        gamma[o, o] = np.asarray(Doo)
-        gamma[v, v] = np.asarray(Dvv)
-        Gam = self.mp._mp2_tpdm()
-        ncore = o.stop - self.mp.no                 # frozen-core orbitals at the front of o
-        cphf = self._full_occ_cphf()
-        df = cphf.perturbed_fock(pert, ncore)
-        deri = cphf.perturbed_eri(pert, ncore)
-        return (self.contract('pq,pq->', gamma, df)
-                + self.contract('pqrs,pqrs->', Gam, deri))
-
-    def _so_corr_energy_deriv(self, pert) -> float:
-        """Spin-orbital first derivative of the MP2 correlation energy along ``pert`` --
-        the antisymmetrized-integral form of :meth:`_corr_energy_deriv` (unrelaxed
-        ``gamma`` and 2PDM ``Gamma``, with the spin-orbital perturbed derivatives over the
-        full occupied space; ``ncore`` = the frozen spin orbitals at the front of ``o``)."""
-        nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
-        Doo, Dvv = self.mp._so_mp2_corr_opdm()
-        gamma = np.zeros((nmo, nmo))
-        gamma[o, o] = np.asarray(Doo)
-        gamma[v, v] = np.asarray(Dvv)
-        Gam = self.mp._so_mp2_tpdm()
-        ncore = o.stop - self.mp.no                 # frozen-core spin orbitals at the front of o
-        cphf = self._full_occ_cphf()
-        df = cphf.perturbed_fock(pert, ncore)
-        deri = cphf.perturbed_eri(pert, ncore)
-        return (self.contract('pq,pq->', gamma, df)
-                + self.contract('pqrs,pqrs->', Gam, deri))
-
-    def _corr_dipole_explicit(self) -> np.ndarray:
-        """MP2 correlation electronic dipole (a.u.), shape ``(3,)``, via the
-        explicit-derivative route -- ``mu_a = -dE_corr/dF_a`` from :meth:`_corr_energy_deriv`
-        for the three electric-field perturbations. An independent cross-check of
-        :meth:`relaxed_dipole` (same number, computed without the relaxed density / Z-vector)
-        and the validation that the CPHF perturbed-derivative engine is correct. Basis-aware,
-        all-electron."""
-        from .cphf import Perturbation
-        return np.array([-self._corr_energy_deriv(Perturbation('field', a))
-                         for a in range(3)])
-
-    def _corr_gradient_explicit(self) -> np.ndarray:
-        """MP2 correlation contribution to the nuclear gradient (a.u.), shape
-        ``(natom, 3)``, via the explicit-derivative route: ``dE_corr/dX_Ac`` from
-        :meth:`_corr_energy_deriv` for each nuclear perturbation. The "simple but
-        inefficient" form -- one nuclear CPHF solve per perturbation (``3*natom``) and a full
-        perturbed-integral build, instead of the single Z-vector of :meth:`gradient`. An
-        independent cross-check of the relaxed-density correlation gradient (:meth:`gradient`).
-        Basis-aware, all-electron."""
-        from .cphf import Perturbation
-        natom = self.mp.derivatives.natom
-        g = np.zeros((natom, 3))
-        for atom in range(natom):
-            for c in range(3):
-                g[atom, c] = self._corr_energy_deriv(Perturbation('nuclear', (atom, c)))
-        return g
 
     def gradient(self) -> np.ndarray:
         """MP2 **correlation** contribution to the analytic nuclear energy gradient (a.u.),
@@ -624,63 +542,20 @@ class MPderiv(CorrelatedDerivs):
 
     # ---- second derivatives: polarizability, APT (dipole derivatives), Hessian ----
 
-    def polarizability(self, route: str = 'explicit') -> np.ndarray:
+    def polarizability(self, route: str = '2n+1') -> np.ndarray:
         """MP2 **correlation** contribution to the static (omega=0) dipole polarizability
-        (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``.
-
-        ``route='explicit'`` (default) -- the explicit second-derivative route (``derivints.pdf``
-        Eq. 15)::
-
-            d_ab E_corr = sum_pq [ d_a gamma_pq d_b f_pq + gamma_pq d_ab f_pq ]
-                        + sum_pqrs [ d_a Gamma_pqrs d_b <pq||rs> + Gamma_pqrs d_ab <pq||rs> ]
-
-        with the unrelaxed densities ``gamma``/``Gamma``, their responses ``d_a gamma``/
-        ``d_a Gamma`` (:meth:`_perturbed_densities`), the first perturbed derivatives
-        (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the second perturbed derivatives
-        (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order CPHF
-        response ``U^{ab}``). Basis-aware; all-electron or frozen-core.
-
-        ``route='2n+1'`` -- the 2n+1 route (:meth:`_polarizability_2n1`): differentiate the
-        relaxed-density gradient, using only the first-order perturbed *relaxed* density
+        (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``, via the 2n+1
+        route (:meth:`_polarizability_2n1`): differentiate the relaxed-density gradient in a
+        field, using only the first-order perturbed *relaxed* density
         (:meth:`_so_perturbed_relaxed_opdm` / :meth:`_perturbed_relaxed_opdm`, which carry the
-        perturbed Z-vector). Frozen-core aware (both spin-orbital and spin-adapted paths);
-        reproduces the explicit route to ~machine precision (an independent cross-check, and
-        the efficient route for the APT/Hessian).
+        perturbed Z-vector). Frozen-core aware (both spin-orbital and spin-adapted paths).
 
-        The reference part is kept separate (:meth:`HFwfn.polarizability`); the total is their
-        sum. Electric field only (the second-order engine assumes a perturbation-independent AO
-        basis)."""
-        if route == '2n+1':
-            return self._polarizability_2n1()
-        if route != 'explicit':
-            raise ValueError(f"unknown polarizability route {route!r} (use 'explicit' or '2n+1')")
-        from .cphf import Perturbation
-        o, v, nmo = self.mp.o, self.mp.v, self.mp.nmo
-        ncore = o.stop - self.mp.no
-        if self.mp.orbital_basis == 'spinorbital':
-            Doo, Dvv = self.mp._so_mp2_corr_opdm()
-            Gam = self.mp._so_mp2_tpdm()
-        else:
-            Doo, Dvv = self.mp._mp2_corr_opdm()
-            Gam = self.mp._mp2_tpdm()
-        gamma = np.zeros((nmo, nmo))
-        gamma[o, o] = np.asarray(Doo)
-        gamma[v, v] = np.asarray(Dvv)
-        cphf = self._full_occ_cphf()
-        pert = [Perturbation('field', a) for a in range(3)]
-        dgam, dGam = zip(*(self._perturbed_densities(pert[a]) for a in range(3)))
-        c = self.contract
-        alpha = np.zeros((3, 3))
-        for a in range(3):
-            for b in range(3):
-                dbf = cphf.perturbed_fock(pert[b], ncore)
-                dbe = cphf.perturbed_eri(pert[b], ncore)
-                d2f = cphf.perturbed_fock2(pert[a], pert[b], ncore)
-                d2e = cphf.perturbed_eri2(pert[a], pert[b], ncore)
-                e2 = (c('pq,pq->', dgam[a], dbf) + c('pq,pq->', gamma, d2f)
-                      + c('pqrs,pqrs->', dGam[a], dbe) + c('pqrs,pqrs->', Gam, d2e))
-                alpha[a, b] = -e2
-        return alpha
+        ``route`` accepts only ``'2n+1'`` (the sole route; the argument is retained for a uniform
+        property signature). The reference part is kept separate (:meth:`HFwfn.polarizability`);
+        the total is their sum. Electric field only."""
+        if route != '2n+1':
+            raise ValueError(f"unknown polarizability route {route!r} (only '2n+1')")
+        return self._polarizability_2n1()
 
     def _polarizability_2n1(self) -> np.ndarray:
         """MP2 correlation polarizability via the 2n+1 route (frozen-core aware; spin-orbital
@@ -719,73 +594,27 @@ class MPderiv(CorrelatedDerivs):
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
+    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
         """MP2 **correlation** contribution to the atomic polar tensors (nuclear dipole
         derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
         ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed
         field/nuclear analog of :meth:`polarizability`.
 
-        ``route='explicit'`` (default) -- the explicit second-derivative route (Eq. 15)::
-
-            d_{F X} E_corr = sum_pq [ d_X gamma_pq d_F f_pq + gamma_pq d_{F X} f_pq ]
-                           + sum_pqrs [ d_X Gamma d_F <pq||rs> + Gamma d_{F X} <pq||rs> ]
-
-        with the unrelaxed densities ``gamma``/``Gamma``, the **nuclear** density responses
-        ``d_X gamma``/``d_X Gamma`` (:meth:`_perturbed_densities`), the field first derivatives
-        (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the mixed second derivatives
-        (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry the second-order response
-        ``U^{FX}`` and the ``-mu^X`` mixed skeleton).
-
-        ``route='2n+1-nuclear'`` / ``'2n+1-field'`` -- the two 2n+1 routes
-        (:meth:`_dipole_derivatives_2n1`), which use only first-order responses (no ``U^{FX}``)
-        and reproduce the explicit route to ~machine precision. ``'2n+1-nuclear'`` differentiates
-        the relaxed dipole w.r.t. the nuclei (``3N`` nuclear relaxed-density responses);
-        ``'2n+1-field'`` differentiates the relaxed nuclear gradient w.r.t. the field (3 field
-        responses -- ``d_F D_rel``, ``d_F Gamma``, ``d_F W`` -- contracted with the ``3N`` nuclear
-        skeletons). Both are of interest for the IR/VCD path (which stores the field and nuclear
-        responses anyway).
+        ``route='2n+1-field'`` (default) / ``'2n+1-nuclear'`` -- the two 2n+1 routes
+        (:meth:`_dipole_derivatives_2n1`), which use only first-order responses (no ``U^{FX}``).
+        ``'2n+1-nuclear'`` differentiates the relaxed dipole w.r.t. the nuclei (``3N`` nuclear
+        relaxed-density responses); ``'2n+1-field'`` differentiates the relaxed nuclear gradient
+        w.r.t. the field (3 field responses -- ``d_F D_rel``, ``d_F Gamma``, ``d_F W`` -- contracted
+        with the ``3N`` nuclear skeletons). Both give the same tensor; ``'2n+1-field'`` is cheaper
+        and is what the IR/VCD path stores.
 
         Correlation only; the nuclear ``Z_A`` and SCF reference terms are separate, and the total
         (nuclear + reference + correlation) is assembled by :func:`pycc.apt`. Basis-aware.
         Validated against a finite nuclear displacement of the analytic dipole (``test_068``)."""
-        if route in ('2n+1-nuclear', '2n+1-field'):
-            return self._dipole_derivatives_2n1(route)
-        if route != 'explicit':
+        if route not in ('2n+1-nuclear', '2n+1-field'):
             raise ValueError(f"unknown dipole-derivative route {route!r} "
-                             "(use 'explicit', '2n+1-nuclear', or '2n+1-field')")
-        from .cphf import Perturbation
-        o, v, nmo = self.mp.o, self.mp.v, self.mp.nmo
-        ncore = o.stop - self.mp.no
-        if self.mp.orbital_basis == 'spinorbital':
-            Doo, Dvv = self.mp._so_mp2_corr_opdm()
-            Gam = self.mp._so_mp2_tpdm()
-        else:
-            Doo, Dvv = self.mp._mp2_corr_opdm()
-            Gam = self.mp._mp2_tpdm()
-        gamma = np.zeros((nmo, nmo))
-        gamma[o, o] = np.asarray(Doo)
-        gamma[v, v] = np.asarray(Dvv)
-        Gam = np.asarray(Gam)
-        cphf = self._full_occ_cphf()
-        c = self.contract
-        natom = self.mp.derivatives.natom
-        field = [Perturbation('field', a) for a in range(3)]
-        dFf = [np.asarray(cphf.perturbed_fock(field[a], ncore)) for a in range(3)]
-        dFe = [np.asarray(cphf.perturbed_eri(field[a], ncore)) for a in range(3)]
-        P = np.zeros((natom, 3, 3))
-        for A in range(natom):
-            for beta in range(3):
-                pX = Perturbation('nuclear', (A, beta))
-                dgX, dGX = self._perturbed_densities(pX)
-                dgX = np.asarray(dgX)
-                dGX = np.asarray(dGX)
-                for alpha in range(3):
-                    d2f = np.asarray(cphf.perturbed_fock2(field[alpha], pX, ncore))
-                    d2e = np.asarray(cphf.perturbed_eri2(field[alpha], pX, ncore))
-                    e2 = (c('pq,pq->', dgX, dFf[alpha]) + c('pq,pq->', gamma, d2f)
-                          + c('pqrs,pqrs->', dGX, dFe[alpha]) + c('pqrs,pqrs->', Gam, d2e))
-                    P[A, beta, alpha] = -e2
-        return P
+                             "(use '2n+1-nuclear' or '2n+1-field')")
+        return self._dipole_derivatives_2n1(route)
 
     def _dipole_derivatives_2n1(self, route: str) -> np.ndarray:
         """MP2 correlation atomic polar tensors via the 2n+1 route (both spin paths, frozen-core
@@ -880,74 +709,22 @@ class MPderiv(CorrelatedDerivs):
                                           + c('pq,pq->', dW[alpha], SX) + c('pq,pq->', W, rot1(Um, SX)))
         return P
 
-    def hessian(self, route: str = 'explicit') -> np.ndarray:
+    def hessian(self, route: str = '2n+1') -> np.ndarray:
         """MP2 **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` --
-        the nuclear-nuclear analog of :meth:`polarizability`/:meth:`dipole_derivatives`.
+        the nuclear-nuclear analog of :meth:`polarizability`/:meth:`dipole_derivatives`, via the
+        2n+1 route (:meth:`_hessian_2n1`): differentiate the relaxed nuclear gradient w.r.t. a
+        second nucleus, using only ``3N`` *first-order* solves (the perturbed relaxed density /
+        energy-weighted density and ``U^Y``). The nuclear-nuclear analog of the ``'2n+1-field'``
+        APT, with the full second skeletons ``f^{XY}``/``<pq||rs>^{XY}``/``S^{XY}``.
 
-        ``route='explicit'`` (default) -- the explicit second-derivative route (Eq. 15)::
-
-            d_{XY} E_corr = sum_pq [ d_X gamma d_Y f + gamma d_{XY} f ]
-                          + sum_pqrs [ d_X Gamma d_Y <pq||rs> + Gamma d_{XY} <pq||rs> ]
-
-        with the nuclear density responses ``d_X gamma``/``d_X Gamma``
-        (:meth:`_perturbed_densities`), the nuclear first derivatives
-        (:meth:`CPHF.perturbed_fock`/`perturbed_eri`), and the nuclear-nuclear second
-        derivatives (:meth:`CPHF.perturbed_fock2`/`perturbed_eri2`, which carry ``U^{XY}``, the
-        ``xi^{XY}`` ``S^{XY}``/``S^X S^Y`` overlap terms, and the ``h^{XY}``/``<pq||rs>^{XY}``
-        skeletons). This solves ``U^{XY}`` for each of the ``3N(3N+1)/2`` unique nuclear pairs --
-        an ``O(N^2)`` count of second-order solves.
-
-        ``route='2n+1'`` -- the 2n+1 route (:meth:`_hessian_2n1`): differentiate the relaxed
-        nuclear gradient w.r.t. a second nucleus, using only ``3N`` *first-order* solves (the
-        perturbed relaxed density / energy-weighted density and ``U^Y``), no ``U^{XY}``. The
-        nuclear-nuclear analog of the ``'2n+1-field'`` APT, with the full second skeletons
-        ``f^{XY}``/``<pq||rs>^{XY}``/``S^{XY}`` (all nonzero here). Reproduces the explicit route
-        to ~machine precision.
-
-        The reference and nuclear parts are separate; the total (nuclear + reference +
-        correlation) is assembled by :func:`pycc.hessian`. Basis-aware. Validated against a finite
-        difference of the analytic gradient (``test_069``)."""
-        if route == '2n+1':
-            return self._hessian_2n1()
-        if route != 'explicit':
-            raise ValueError(f"unknown hessian route {route!r} (use 'explicit' or '2n+1')")
-        from .cphf import Perturbation
-        o, v, nmo = self.mp.o, self.mp.v, self.mp.nmo
-        ncore = o.stop - self.mp.no
-        if self.mp.orbital_basis == 'spinorbital':
-            Doo, Dvv = self.mp._so_mp2_corr_opdm()
-            Gam = self.mp._so_mp2_tpdm()
-        else:
-            Doo, Dvv = self.mp._mp2_corr_opdm()
-            Gam = self.mp._mp2_tpdm()
-        gamma = np.zeros((nmo, nmo))
-        gamma[o, o] = np.asarray(Doo)
-        gamma[v, v] = np.asarray(Dvv)
-        Gam = np.asarray(Gam)
-        cphf = self._full_occ_cphf()
-        c = self.contract
-        natom = self.mp.derivatives.natom
-        nc = 3 * natom
-        pert = [Perturbation('nuclear', (A, cart)) for A in range(natom) for cart in range(3)]
-        dXf = [np.asarray(cphf.perturbed_fock(pert[i], ncore)) for i in range(nc)]
-        dXe = [np.asarray(cphf.perturbed_eri(pert[i], ncore)) for i in range(nc)]
-        dg, dG = zip(*(self._perturbed_densities(pert[i]) for i in range(nc)))
-        dg = [np.asarray(x) for x in dg]
-        dG = [np.asarray(x) for x in dG]
-        H = np.zeros((nc, nc))
-        for i in range(nc):
-            for j in range(i, nc):                      # d_{XY} f / <> symmetric in X<->Y
-                d2f = np.asarray(cphf.perturbed_fock2(pert[i], pert[j], ncore))
-                d2e = np.asarray(cphf.perturbed_eri2(pert[i], pert[j], ncore))
-                gd2f = c('pq,pq->', gamma, d2f)
-                Gd2e = c('pqrs,pqrs->', Gam, d2e)
-                H[i, j] = (c('pq,pq->', dg[i], dXf[j]) + gd2f
-                           + c('pqrs,pqrs->', dG[i], dXe[j]) + Gd2e)
-                if j != i:
-                    H[j, i] = (c('pq,pq->', dg[j], dXf[i]) + gd2f
-                               + c('pqrs,pqrs->', dG[j], dXe[i]) + Gd2e)
-        return H
+        ``route`` accepts only ``'2n+1'`` (retained for a uniform property signature). The
+        reference and nuclear parts are separate; the total (nuclear + reference + correlation) is
+        assembled by :func:`pycc.hessian`. Basis-aware. Validated against a finite difference of the
+        analytic gradient (``test_069``)."""
+        if route != '2n+1':
+            raise ValueError(f"unknown hessian route {route!r} (only '2n+1')")
+        return self._hessian_2n1()
 
     def _hessian_2n1(self) -> np.ndarray:
         """MP2 correlation molecular Hessian via the 2n+1 route (both spin paths, frozen-core

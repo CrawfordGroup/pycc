@@ -42,8 +42,8 @@ NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}   # pin 2-B1 ground state
 # (_ff_corr_dipole / _ff_total_dipole) is a disposable *external* oracle -- it re-derives, through
 # psi4, a number the pycc analytic routes already compute -- so we freeze it once rather than re-run
 # 4-8 psi4 energy evaluations per test.  Each value below was validated against the psi4 5-point
-# field to ~1e-11; the analytic routes are cross-checked live by the explicit==relaxed and (for the
-# gradient) SO==spatial keystones, which all land on these same numbers.  Regenerate with
+# field to ~1e-11; the analytic routes are cross-checked live by the (for the gradient) SO==spatial
+# keystones, which all land on these same numbers.  Regenerate with
 # _ff_corr_dipole / _ff_total_dipole.  The open-shell NH2 value is made reproducible by pinning the
 # 2-B1 ground-state occupation (NH2_OCC, C2v); without the pin its UHF is bistable (a 2-A1 solution
 # ~0.074 Eh higher is reachable by a poor SCF guess such as 'core').
@@ -124,136 +124,6 @@ def test_ump2_relaxed_dipole_nh2_631g():
                - FF_CORR_MU_Z_UHF_NH2) < 1e-8
 
 
-# ---- explicit-derivative route (derivints.pdf): correlation dipole from the full
-# CPHF-folded derivatives of f and <pq||rs> (CPHF.perturbed_fock / perturbed_eri),
-# contracted with the *unrelaxed* densities -- an independent computation of the same
-# correlation dipole, and the validation of the perturbed-derivative engine that the
-# analytic MP2 polarizability will build on. Spin-orbital path.
-
-def _pycc_corr_dipole_explicit(geom, basis, orbital_basis='spinorbital', freeze_core='false'):
-    """PyCC relaxed-MP2 correlation mu_z via :meth:`MPwfn._corr_dipole_explicit`."""
-    psi4.core.clean()
-    psi4.core.clean_options()
-    psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
-    _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
-    mp.compute_energy()
-    return mp._corr_dipole_explicit()[2]
-
-
-def test_mp2_explicit_corr_dipole_631g():
-    """Explicit-derivative SO MP2 correlation dipole vs the frozen finite-field oracle, H2O/6-31G (C1)."""
-    geom = WATER + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G')
-               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
-
-
-def test_sa_mp2_explicit_corr_dipole_631g():
-    """Explicit-derivative spin-adapted (spatial) MP2 correlation dipole vs the frozen
-    finite-field oracle, H2O/6-31G (C1)."""
-    geom = WATER + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial')
-               - FF_CORR_MU_Z[('6-31G', False)]) < 1e-8
-
-
-def test_mp2_explicit_equals_relaxed_631g():
-    """Keystone: the explicit-derivative correlation dipole equals the relaxed-density
-    route (same number, computed without the Z-vector / relaxed density), both bases, H2O/6-31G."""
-    geom = WATER + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G')
-               - _pycc_corr_dipole(geom, '6-31G')) < 1e-10
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial')
-               - _pycc_corr_dipole(geom, '6-31G', orbital_basis='spatial')) < 1e-10
-
-
-def test_mp2_explicit_corr_dipole_ccpvdz():
-    """Explicit-derivative MP2 correlation dipole vs the frozen finite-field oracle, H2O/cc-pVDZ
-    (C2v: polarization functions and A2-irrep MOs), both spin-orbital and spin-adapted."""
-    assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ')
-               - FF_CORR_MU_Z[('cc-pVDZ', False)]) < 1e-8
-    assert abs(_pycc_corr_dipole_explicit(WATER, 'cc-pVDZ', orbital_basis='spatial')
-               - FF_CORR_MU_Z[('cc-pVDZ', False)]) < 1e-8
-
-
-def _pycc_corr_gradient_explicit_and_relaxed(geom, basis, orbital_basis='spinorbital',
-                                             freeze_core='false'):
-    """MP2 correlation nuclear gradient two ways: the explicit-derivative route
-    (`_corr_gradient_explicit`) and the relaxed-density route (`gradient`, correlation-only)."""
-    psi4.core.clean()
-    psi4.core.clean_options()
-    psi4.geometry(geom)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
-    _, wfn = psi4.energy('scf', return_wfn=True)
-    mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
-    mp.compute_energy()
-    return mp._corr_gradient_explicit(), mp.gradient()
-
-
-def test_mp2_explicit_corr_gradient_631g():
-    """Keystone: the explicit-derivative SO MP2 correlation nuclear gradient equals the
-    relaxed-density route, H2O/6-31G (C1) -- the nuclear analog of the field engine,
-    exercising the full skeleton + CPHF response."""
-    geom = WATER + "symmetry c1\n"
-    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(geom, '6-31G')
-    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
-
-
-def test_sa_mp2_explicit_corr_gradient_631g():
-    """Keystone: the explicit-derivative spin-adapted (spatial) MP2 correlation gradient
-    equals the relaxed-density route, H2O/6-31G (C1)."""
-    geom = WATER + "symmetry c1\n"
-    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(geom, '6-31G', 'spatial')
-    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
-
-
-def test_mp2_explicit_corr_gradient_ccpvdz():
-    """Explicit-derivative MP2 correlation gradient == relaxed-density route, H2O/cc-pVDZ
-    (C2v: polarization functions and A2-irrep MOs), both bases."""
-    g_so_e, g_so_r = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ')
-    assert np.max(np.abs(g_so_e - g_so_r)) < 1e-9
-    g_sa_e, g_sa_r = _pycc_corr_gradient_explicit_and_relaxed(WATER, 'cc-pVDZ', 'spatial')
-    assert np.max(np.abs(g_sa_e - g_sa_r)) < 1e-9
-
-
-def test_fc_sa_mp2_explicit_corr_dipole_631g():
-    """Frozen-core spin-adapted (spatial) explicit-derivative MP2 correlation dipole vs the frozen
-    finite-field oracle, H2O/6-31G (C1) -- the core<->active orbital response (the canonical
-    d_x f_ij = 0 block of U) is what the explicit route needs for frozen core."""
-    geom = WATER + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spatial', freeze_core='true')
-               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
-
-
-def test_fc_sa_mp2_explicit_corr_gradient_631g():
-    """Keystone: frozen-core spin-adapted explicit-derivative MP2 correlation gradient ==
-    relaxed-density route, H2O/6-31G (C1)."""
-    geom = WATER + "symmetry c1\n"
-    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(
-        geom, '6-31G', orbital_basis='spatial', freeze_core='true')
-    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
-
-
-def test_fc_so_mp2_explicit_corr_dipole_631g():
-    """Frozen-core spin-orbital explicit-derivative MP2 correlation dipole vs the frozen finite-field
-    oracle, H2O/6-31G (C1). The core<->active response is built over MPwfn's own full-occupied SO
-    space (no all-electron SO HFwfn to borrow -- different spin ordering)."""
-    geom = WATER + "symmetry c1\n"
-    assert abs(_pycc_corr_dipole_explicit(geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
-               - FF_CORR_MU_Z[('6-31G', True)]) < 1e-8
-
-
-def test_fc_so_mp2_explicit_corr_gradient_631g():
-    """Keystone: frozen-core spin-orbital explicit-derivative MP2 correlation gradient ==
-    relaxed-density route, H2O/6-31G (C1)."""
-    geom = WATER + "symmetry c1\n"
-    g_explicit, g_relaxed = _pycc_corr_gradient_explicit_and_relaxed(
-        geom, '6-31G', orbital_basis='spinorbital', freeze_core='true')
-    assert np.max(np.abs(g_explicit - g_relaxed)) < 1e-9
-
-
 def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf', occ=None):
     psi4.core.clean()
     psi4.core.clean_options()
@@ -299,10 +169,10 @@ def test_ump2_gradient_nh2_631g():
     """Open-shell UHF-MP2 analytic nuclear gradient vs Psi4, NH2 (2-B1, C2v, pinned occupation) / 6-31G.
 
     The open-shell oracle for the spin-orbital Z-vector gradient (``_so_zvector``).  psi4 is the
-    right check here rather than the explicit == relaxed identity: an open-shell UHF spin-orbital
-    orbital Hessian carries a near-zero mode, so the single linear solve both internal routes run
-    through is ill-conditioned and their difference is platform-dependent -- but the final gradient
-    is orthogonal to that mode and reproduces psi4 to machine precision.  The 2-B1 occupation is
+    right check here: an open-shell UHF spin-orbital orbital Hessian carries a near-zero mode, so
+    the single linear solve the Z-vector route runs through is ill-conditioned and platform-
+    dependent -- but the final gradient is orthogonal to that mode and reproduces psi4 to machine
+    precision.  The 2-B1 occupation is
     pinned (NH2_OCC) so the SCF cannot fall into the 2-A1 excited solution; unlike OH (2-Pi) the
     reference is then reproducible."""
     assert np.max(np.abs(_pycc_gradient(NH2, '6-31G', reference='uhf', occ=NH2_OCC)
