@@ -202,15 +202,15 @@ class MPwfn(Wavefunction):
         """MP2 correlation nuclear gradient -- delegates to :meth:`MPderiv.gradient`."""
         return self.deriv.gradient()
 
-    def polarizability(self, route: str = 'explicit') -> np.ndarray:
+    def polarizability(self, route: str = '2n+1') -> np.ndarray:
         """MP2 correlation polarizability -- delegates to :meth:`MPderiv.polarizability`."""
         return self.deriv.polarizability(route)
 
-    def hessian(self, route: str = 'explicit') -> np.ndarray:
+    def hessian(self, route: str = '2n+1') -> np.ndarray:
         """MP2 correlation Hessian -- delegates to :meth:`MPderiv.hessian`."""
         return self.deriv.hessian(route)
 
-    def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
+    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
         """MP2 correlation length-gauge APT -- delegates to :meth:`MPderiv.dipole_derivatives`."""
         return self.deriv.dipole_derivatives(route)
 
@@ -222,16 +222,6 @@ class MPwfn(Wavefunction):
     def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
         """MP2 correlation AAT -- delegates to :meth:`MPderiv.atomic_axial_tensors`."""
         return self.deriv.atomic_axial_tensors(gauge)
-
-    def _corr_dipole_explicit(self) -> np.ndarray:
-        """Explicit-route MP2 correlation dipole (cross-check of :meth:`relaxed_dipole`) --
-        delegates to :meth:`MPderiv._corr_dipole_explicit`."""
-        return self.deriv._corr_dipole_explicit()
-
-    def _corr_gradient_explicit(self) -> np.ndarray:
-        """Explicit-route MP2 correlation gradient (cross-check of :meth:`gradient`) --
-        delegates to :meth:`MPderiv._corr_gradient_explicit`."""
-        return self.deriv._corr_gradient_explicit()
 
     def _perturbed_densities(self, pert):
         """First-order unrelaxed correlation-density response -- delegates to
