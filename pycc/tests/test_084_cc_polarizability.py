@@ -19,6 +19,7 @@ closed-shell RHF, all-electron (frozen core / spin-orbital / (T) to follow)."""
 import psi4
 import pycc
 import numpy as np
+import pytest
 
 
 # Equilibrium H2O (C2v, molecular plane yz, C2 along z); frame locked for a reproducible tensor.
@@ -253,17 +254,126 @@ def test_fc_so_ccsdt_polarizability_water_631g(rhf_wfn):
     psi4.core.clean()
 
 
+# --- CFOUR-oracle CCSD(T) polarizability tests ----------------------------------------------------
+# Oracles from CFOUR (xcfour, CALC=CCSD(T), PROP=SECOND_ORDER, SCF_CONV=13, CC_CONV=12): the
+# correlation polarizability is POLAR (total) - POLARSCF (HF).  To match CFOUR to all printed digits
+# the AO basis must be identical -- Psi4's "6-31G" differs from CFOUR's by ~4e-8 -- so CFOUR's exact
+# GENBAS "6-31G" is transcribed here; pycc then reproduces CFOUR to ~5e-11 on both routes.
+CFOUR_631G = """cartesian
+****
+H     0
+S   3   1.00
+     18.7311370             0.0334946
+      2.8253944             0.2347270
+      0.6401217             0.8137573
+S   1   1.00
+      0.1612778             1.0000000
+****
+O     0
+S   6   1.00
+   5484.6716600             0.0018311
+    825.2349460             0.0139502
+    188.0469580             0.0684451
+     52.9645000             0.2327143
+     16.8975704             0.4701929
+      5.7996353             0.3585209
+S   3   1.00
+     15.5396162            -0.1107775
+      3.5999336            -0.1480263
+      1.0137618             1.1307670
+S   1   1.00
+      0.2700058             1.0000000
+P   3   1.00
+     15.5396162             0.0708743
+      3.5999336             0.3397528
+      1.0137618             0.7271586
+P   1   1.00
+      0.2700058             1.0000000
+****
+F     0
+S   6   1.00
+   7001.7130900             0.0018196
+   1051.3660900             0.0139161
+    239.2856900             0.0684053
+     67.3974453             0.2331858
+     21.5199573             0.4712674
+      7.4031013             0.3566185
+S   3   1.00
+     20.8479528            -0.1085070
+      4.8083083            -0.1464517
+      1.3440699             1.1286886
+S   1   1.00
+      0.3581514             1.0000000
+P   3   1.00
+     20.8479528             0.0716287
+      4.8083083             0.3459121
+      1.3440699             0.7224700
+P   1   1.00
+      0.3581514             1.0000000
+****
+"""
+
+# CFOUR CCSD(T) correlation polarizability (a.u.), POLAR - POLARSCF, keyed by (molecule, freeze_core).
+CFOUR_ALPHA_T = {
+    ('water', 'false'): np.diag([0.0749401813, 0.0992909720, 0.2011125406]),
+    ('water', 'true'):  np.diag([0.0752394512, 0.1001121832, 0.2016555896]),
+    ('hof', 'false'): np.array([[-2.2114079425, -0.7220009461, 0.0],
+                                [-0.7220009461,  0.1659235582, 0.0],
+                                [ 0.0,           0.0,           0.0651632870]]),
+    ('hof', 'true'):  np.array([[-2.2106648649, -0.7220673958, 0.0],
+                                [-0.7220673958,  0.1661531583, 0.0],
+                                [ 0.0,           0.0,           0.0652603834]]),
+}
+_CFOUR_GEOM = {'water': WATER, 'hof': HOF}
+
+
+def _cfour_wfn(geom, freeze_core):
+    """RHF reference in CFOUR's exact GENBAS 6-31G (via basis_helper), for the CFOUR-oracle tests."""
+    psi4.core.clean(); psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'scf_type': 'pk', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    psi4.basis_helper(CFOUR_631G, name='cfour631g')
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    return wfn
+
+
+# route x molecule x freeze_core; the spin-orbital HOF cases are the expensive pair (~200 s), so they
+# are marked slow (skipped by default) -- the spatial HOF cases and the SO==spatial keystone still
+# exercise the off-diagonal and SO paths in the default run.
+_CFOUR_CASES = [
+    ('spatial', 'water', 'false'), ('spatial', 'water', 'true'),
+    ('spatial', 'hof', 'false'), ('spatial', 'hof', 'true'),
+    ('spinorbital', 'water', 'false'), ('spinorbital', 'water', 'true'),
+    pytest.param('spinorbital', 'hof', 'false', marks=pytest.mark.slow),
+    pytest.param('spinorbital', 'hof', 'true', marks=pytest.mark.slow),
+]
+
+
+@pytest.mark.parametrize('route,mol,fc', _CFOUR_CASES)
+def test_ccsdt_polarizability_cfour(route, mol, fc):
+    """CCSD(T) correlation polarizability vs the CFOUR oracle (POLAR - POLARSCF), water and HOF,
+    all-electron and frozen core, on both the spatial (closed-shell RHF) and spin-orbital routes, in
+    CFOUR's exact GENBAS 6-31G.  HOF exercises the off-diagonal (Cs) in-plane block; matches to 1e-9."""
+    wfn = _cfour_wfn(_CFOUR_GEOM[mol], fc)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=route, make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    assert np.max(np.abs(a - CFOUR_ALPHA_T[(mol, fc)])) < 1e-9, (mol, fc, route, a)
+    assert np.max(np.abs(a - a.T)) < 1e-9                      # symmetric
+    psi4.core.clean()
+
+
 def test_ccsd_polarizability_guards(rhf_wfn):
-    """The unimplemented / misused paths raise rather than silently returning a wrong tensor: spatial
-    CCSD(T) (the spatial (T) perturbed response is not yet available), spin-orbital CCSD(T) built
-    without the (T) density intermediates, and an unknown route."""
+    """The misused paths raise rather than silently returning a wrong tensor: CCSD(T) (spatial or
+    spin-orbital) built without the (T) density intermediates, and an unknown route."""
     import pytest
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
-    cc = pycc.ccwfn(wfn, model='ccsd(t)')                              # spatial CCSD(T)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)')                              # spatial CCSD(T), no make_t3_density
     cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(NotImplementedError):                          # spatial (T) not yet available
+    with pytest.raises(ValueError):                                   # (T) needs make_t3_density
         pycc.CCderiv(cc).polarizability()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):                                   # unknown route
         pycc.CCderiv(cc).polarizability(route='explicit')
     cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
     cc_so.solve_cc(1e-12, 1e-12, 100)

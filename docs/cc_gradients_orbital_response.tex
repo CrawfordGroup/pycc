@@ -1462,6 +1462,25 @@ S^{ab}_{ij} &= \tfrac12 P(ab)\!\sum_{m,ef}\!\big(2t^{(c)}+t^{(d)}\big)^{aef}_{ij
 \label{eq:S2}
 \end{align}
 
+For a second derivative (\S\ref{sec:second-derivs}) the perturbed multipliers
+$\lambda^{i,x}_a$, $\lambda^{ij,x}_{ab}$ solve the perturbed $\Lambda$ equations,
+whose inhomogeneity carries the field derivatives $\partial_x S^a_i$,
+$\partial_x S^{ab}_{ij}$ of these sources (Eqs.~\eqref{eq:S1}--\eqref{eq:S2} with the
+triples amplitudes and integrals replaced by their first-order responses).  The
+perturbed sources must enter the perturbed $\Lambda$ residual in \emph{exactly} the
+same way as $S^a_i$, $S^{ab}_{ij}$ enter the unperturbed one.  This is subtle in the
+spin-adapted (closed-shell) formulation, where the doubles residual is evaluated in a
+half-permuted form and completed by a final $\lambda^{ij}_{ab}\!\leftarrow\!
+\lambda^{ij}_{ab}+\lambda^{ji}_{ba}$ symmetrization: because $S^{ab}_{ij}$ is added
+\emph{before} that step, its perturbed counterpart $\partial_x S^{ab}_{ij}$ must be
+symmetrized identically.  Adding it afterward leaves the perturbed $\Lambda_2$
+carrying the \emph{unperturbed} permuted source, $P(ij)P(ab)\,S^{ab}_{ij}$ instead of
+$P(ij)P(ab)\,\partial_x S^{ab}_{ij}$; the error is invisible to the gradient but
+corrupts the near-degenerate $vv$/$oo$ dependent-pair rotations of the perturbed
+relaxed density (and hence the polarizability).  In the implementation the (T) source
+is therefore passed into the one Lambda-residual routine that both the unperturbed and
+perturbed solves share, so the half-permutation is applied once, consistently.
+
 The (T) increments themselves are collected in Tables~\ref{Table:ccsdt_1pdm}
 (one-electron) and \ref{Table:ccsdt_2pdm} (two-electron).  As with CCSD, the
 one-electron increments carry no prefactor while the two-electron increments are
