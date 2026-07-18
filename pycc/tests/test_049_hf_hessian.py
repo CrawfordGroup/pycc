@@ -48,13 +48,13 @@ def test_hf_hessian_shares_nuclear_cache(rhf_wfn):
     cphf = hf.cphf
 
     builds = {"n": 0}
-    original = cphf._build_nuclear
+    original = cphf._build_rhs_nuclear
 
     def counted(atom):
         builds["n"] += 1
         return original(atom)
 
-    cphf._build_nuclear = counted
+    cphf._build_rhs_nuclear = counted
     hf.hessian()
     after_hessian = builds["n"]
     hf.dipole_derivatives()

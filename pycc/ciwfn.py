@@ -438,7 +438,7 @@ class CIwfn(Wavefunction):
         if pert.kind == 'nuclear':
             dF = np.asarray(cphf.perturbed_fock(pert))
             dERI = np.asarray(cphf.perturbed_eri(pert))
-            U = np.asarray(cphf._full_U(pert))
+            U = np.asarray(cphf.full_U(pert))
             result = (dF, dERI, U)
         elif pert.kind == 'magnetic':
             result = self._build_magnetic_ints(pert.comp)
@@ -716,7 +716,7 @@ class CIwfn(Wavefunction):
             dip = self.derivatives.dipole(A)
             for beta in range(3):
                 pert = Perturbation('nuclear', (A, beta))
-                U_R = np.asarray(self.cphf._full_U(pert))
+                U_R = np.asarray(self.cphf.full_U(pert))
                 dc1, dc2, dc0v = self._solve_cpci(pert)
                 dc1, dc2 = dc1.real, dc2.real
                 dc0v = dc0v.real if hasattr(dc0v, 'real') else dc0v
@@ -1129,7 +1129,7 @@ class CIwfn(Wavefunction):
                 S_skel_1[la] = S_core[a].np
                 g_skel_1[la] = E_core[a].np.swapaxes(1, 2)
                 pert = Perturbation('nuclear', (N1, a))
-                U_all[la] = np.asarray(self.cphf._full_U(pert))
+                U_all[la] = np.asarray(self.cphf.full_U(pert))
                 dT1_all[la], dT2_all[la] = self._cpci_raw(pert)
 
         X_deriv = {la: self.build_X_deriv(h_skel_1[la], g_skel_1[la])

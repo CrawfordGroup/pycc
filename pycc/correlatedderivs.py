@@ -610,7 +610,7 @@ class CorrelatedDerivs:
         for b in range(3):
             pert = Perturbation('field', b)
             dDrel = popdm(pert).dDrel
-            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=canonical))
+            Ub = np.asarray(cphf.full_U(pert, ncore, canonical=canonical))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
@@ -669,7 +669,7 @@ class CorrelatedDerivs:
                 for beta in range(3):
                     pX = Perturbation('nuclear', (A, beta))
                     dDrel = popdm(pX).dDrel
-                    UX = np.asarray(cphf._full_U(pX, ncore, canonical=canonical))
+                    UX = np.asarray(cphf.full_U(pX, ncore, canonical=canonical))
                     for alpha in range(3):
                         dmu = np.asarray(dip[alpha * 3 + beta])       # skeleton d(mu_a)/dX_beta
                         rot = UX.T @ mu[alpha] + mu[alpha] @ UX
@@ -685,7 +685,7 @@ class CorrelatedDerivs:
         dDrel = [r.dDrel for r in resp]
         dGamF = [r.dGam for r in resp]
         dW = [r.dW for r in resp]                                     # perturbed energy-weighted density
-        U = [np.asarray(cphf._full_U(field[a], ncore, canonical=canonical)) for a in range(3)]
+        U = [np.asarray(cphf.full_U(field[a], ncore, canonical=canonical)) for a in range(3)]
 
         def rot1(Um, M):
             return Um.T @ M + M @ Um
@@ -733,10 +733,10 @@ class CorrelatedDerivs:
         the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`dipole_derivatives`).
         Only ``3N`` first-order solves -- the perturbed relaxed density ``d_Y D_rel``, the perturbed
         energy-weighted density ``d_Y W``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
-        per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF._full_U`).
+        per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
 
         The field-derivatives of the nuclear skeletons carry (i) the full second integral skeletons
-        ``f^{XY}``/``<>^{XY}``/``S^{XY}`` (:meth:`CPHF._d2int_blocks`, cached per atom pair -- all
+        ``f^{XY}``/``<>^{XY}``/``S^{XY}`` (:meth:`CPHF.nuclear_hessian_skeletons`, cached per atom pair -- all
         nonzero here, unlike the field case where only ``-mu^X`` survived), and (ii) the ``U^Y``
         orbital rotation of the ``X`` skeletons.  The rotations are hoisted off the ``O(N^2)`` pair
         loop onto the (per-``Y``) densities via ``sum A rot(U,B) = sum rot(U^T,A) B``:
@@ -774,7 +774,7 @@ class CorrelatedDerivs:
         dDrel = [r.dDrel for r in resp]
         dGamN = [r.dGam for r in resp]
         dW = [r.dW for r in resp]
-        U = [np.asarray(cphf._full_U(p, ncore, canonical=canonical)) for p in pert]
+        U = [np.asarray(cphf.full_U(p, ncore, canonical=canonical)) for p in pert]
         Dtil = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
         Wtil = [U[i] @ W + W @ U[i].T for i in range(nc)]
         Gtil = [rot4(U[i].T, Gam) for i in range(nc)]
@@ -803,7 +803,7 @@ class CorrelatedDerivs:
             Ay, cy = py.comp
             for ix, px in enumerate(pert):
                 Ax, cx = px.comp
-                blk = cphf._d2int_blocks(Ax, Ay)             # raw second skeletons (no U^{XY})
+                blk = cphf.nuclear_hessian_skeletons(Ax, Ay)             # raw second skeletons (no U^{XY})
                 core2 = blk['core'][cx * 3 + cy]
                 ov2 = blk['overlap'][cx * 3 + cy]
                 e2 = blk['eri'][cx * 3 + cy]

@@ -172,7 +172,7 @@ class MPderiv(CorrelatedDerivs):
         * ``'canonical'``: all oo/vv blocks canonical.
 
         The total is invariant to this choice (:meth:`CPHF.magnetic_ints`).  The nuclear MO
-        responses use pycc's ``-1/2 S`` gauge (:meth:`_perturbed_t2` / :meth:`CPHF._full_U`).
+        responses use pycc's ``-1/2 S`` gauge (:meth:`_perturbed_t2` / :meth:`CPHF.full_U`).
         Magnetic quantities are stripped of their ``i`` (as in the HF AAT); the VCD rotatory
         strength takes ``Im`` of the APT*AAT product.
 
@@ -232,7 +232,7 @@ class MPderiv(CorrelatedDerivs):
                 dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
-                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[cart]).T
+                UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[cart]).T
                 gR = np.zeros((nmo, nmo))
                 gR[o, o] = -2.0 * c('ikab,jkab->ij', tauR, c2)
                 gR[v, v] = +2.0 * c('ijac,ijbc->ab', tauR, c2)
@@ -309,7 +309,7 @@ class MPderiv(CorrelatedDerivs):
                 dt2R = np.asarray(self._perturbed_t2(pX))
                 dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
-                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[cart]).T
+                UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[cart]).T
                 gR = gdens(dc2R, imaginary=False)          # symmetric
                 for b in range(3):
                     Icc = 0.25 * c('ijab,ijab->', dc2R, dc2Hs[b])
@@ -385,7 +385,7 @@ class MPderiv(CorrelatedDerivs):
                 dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
-                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[beta]).T
+                UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[beta]).T
                 gR = np.zeros((nmo, nmo))
                 gR[o, o] = -2.0 * c('ikab,jkab->ij', tauR, c2)
                 gR[v, v] = +2.0 * c('ijac,ijbc->ab', tauR, c2)
@@ -457,7 +457,7 @@ class MPderiv(CorrelatedDerivs):
                 dt2R = np.asarray(self._perturbed_t2(pX))
                 dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
-                UReff = np.asarray(cphf._full_U(pX, ncore)) + np.asarray(hs[beta]).T
+                UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[beta]).T
                 gR = gdens(dc2R, imaginary=False)
                 for alpha in range(3):
                     Icc = 0.25 * c('ijab,ijab->', dc2R, dc2As[alpha])
