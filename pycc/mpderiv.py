@@ -128,13 +128,12 @@ class MPderiv(CorrelatedDerivs):
         either way (:meth:`_perturbed_densities`). The ``termA`` derivative is the full Fock
         matrix product ``d_x f @ (D + D.T)`` (the diagonal ``d_x eps`` alone suffices for the
         unrelaxed ``D`` -- no ov block -- but the relaxed ``D`` has ov/core-active blocks that
-        the off-diagonal ``d_x f`` couples)."""
-        nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
-        ofull = slice(0, o.stop)
+        the off-diagonal ``d_x f`` couples).
+
+        MP2 (closed-form) adapter: builds the perturbed integrals + densities and evaluates the
+        shared :meth:`CorrelatedDerivs._so_perturbed_lagrangian_matrix`."""
+        o = self.mp.o
         ncore = o.stop - self.mp.no
-        ERI = np.asarray(self.mp.H.ERI)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        c = self.contract
         cphf = self._full_occ_cphf()
         Gam = np.asarray(self.mp._so_mp2_tpdm())
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
@@ -144,14 +143,7 @@ class MPderiv(CorrelatedDerivs):
         if D is None:
             _, _, D, _, _, _ = self._so_zvector()      # unrelaxed 1-PDM
             dD = np.asarray(dDg)
-        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
-        dB = np.zeros((nmo, nmo))
-        dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull])
-                        + c('rs,rpsq->pq', D, deri[:, :, :, ofull])
-                        + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :])
-                        + c('rs,rqsp->pq', D, deri[:, ofull, :, :]))
-        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
-        return -0.5 * (dA + dB + dC)
+        return self._so_perturbed_lagrangian_matrix(df, deri, D, dD, Gam, dGam)
 
     def _so_perturbed_relaxed_opdm(self, pert) -> np.ndarray:
         """First-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),
@@ -224,14 +216,13 @@ class MPderiv(CorrelatedDerivs):
         (and its derivative ``dL = 2 d_x<pq|rs> - d_x<pq|sr>``) in the two-electron 1-PDM term,
         ``<pr|st>`` (H.ERI) with ``Gamma`` in the 2-PDM term. ``D``/``dD`` default to the
         unrelaxed 1-PDM and its response (Z-vector RHS); pass the relaxed 1-PDM and its response
-        for ``d_x W``. See :meth:`_so_perturbed_lagrangian`."""
-        nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
-        ofull = slice(0, o.stop)
+        for ``d_x W``. See :meth:`_so_perturbed_lagrangian`.
+
+        This is the MP2 (closed-form) adapter: it builds the perturbed integrals ``df``/``deri``/``dL``
+        (CPHF) and the perturbed densities ``dDg``/``dGam`` (:meth:`_perturbed_densities`), then
+        evaluates the shared :meth:`CorrelatedDerivs._perturbed_lagrangian_matrix`."""
+        o = self.mp.o
         ncore = o.stop - self.mp.no
-        ERI = np.asarray(self.mp.H.ERI)
-        L = np.asarray(self.mp.H.L)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        c = self.contract
         cphf = self._full_occ_cphf()
         Gam = np.asarray(self.mp._mp2_tpdm())
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
@@ -242,14 +233,7 @@ class MPderiv(CorrelatedDerivs):
         if D is None:
             _, _, D, _, _, _ = self._zvector()          # unrelaxed 1-PDM
             dD = np.asarray(dDg)
-        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
-        dB = np.zeros((nmo, nmo))
-        dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull])
-                        + c('rs,rpsq->pq', D, dL[:, :, :, ofull])
-                        + c('rs,rqsp->pq', dD, L[:, ofull, :, :])
-                        + c('rs,rqsp->pq', D, dL[:, ofull, :, :]))
-        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
-        return -0.5 * (dA + dB + dC)
+        return self._perturbed_lagrangian_matrix(df, deri, dL, D, dD, Gam, dGam)
 
     def _perturbed_relaxed_opdm(self, pert) -> np.ndarray:
         """Spatial first-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),

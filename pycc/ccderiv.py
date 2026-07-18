@@ -229,7 +229,7 @@ class CCderiv(CorrelatedDerivs):
         """Field response ``dD_rel`` of the CC relaxed 1-PDM (spatial; all-electron or frozen core).
         Mirrors :meth:`MPwfn._perturbed_relaxed_opdm` with the CC densities, but (i) keeps the CC
         *unrelaxed* ov/vo blocks (``D_ai != D_ia`` for CC; MP2 has none) and (ii) builds the perturbed
-        Lagrangian with the FULL-df Fock term (see :meth:`_cc_perturbed_lagrangian`).  For frozen core
+        Lagrangian with the FULL-df Fock term (see :meth:`CorrelatedDerivs._perturbed_lagrangian_matrix`).  For frozen core
         the perturbed core<->active Sylvester divide ``dP_co`` is added and coupled into the perturbed
         Z-vector RHS, exactly as in the MP2 template / the unperturbed :meth:`_relaxed_density`.
 
@@ -261,7 +261,7 @@ class CCderiv(CorrelatedDerivs):
                                           dS1=(dt3['S1'] if is_t else None),
                                           dS2=(dt3['S2'] if is_t else None))
         dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
-        dIp = self._cc_perturbed_lagrangian(df, deri, dL, D0, dDg, Gam0, dGam)
+        dIp = self._perturbed_lagrangian_matrix(df, deri, dL, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
         dPco = None
         if cc.nfzc:                                     # perturbed core<->active divide (Sylvester derivative)
@@ -324,7 +324,7 @@ class CCderiv(CorrelatedDerivs):
                                              dS1=(dt3['S1'] if is_t else None),
                                              dS2=(dt3['S2'] if is_t else None))
         dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
-        dIp = self._so_cc_perturbed_lagrangian(df, deri, D0, dDg, Gam0, dGam)
+        dIp = self._so_perturbed_lagrangian_matrix(df, deri, D0, dDg, Gam0, dGam)
         dX = dIp[ofull, v] - dIp[v, ofull].T
         dPco = None
         if cc.nfzc:
@@ -1040,43 +1040,3 @@ class CCderiv(CorrelatedDerivs):
         dG[v, o, v, v] = 0.5 * dDvvvo.transpose(2, 3, 0, 1)
         dG = 0.25 * (dG + dG.transpose(1, 0, 3, 2) + dG.transpose(2, 3, 0, 1) + dG.transpose(3, 2, 1, 0))
         return dD, dG
-
-    def _cc_perturbed_lagrangian(self, df, deri, dL, D, dD, Gam, dGam):
-        """Field response ``dI'`` of the generalized-Fock (GSB) Lagrangian, density-generic.  The
-        Fock term is the **full matrix product** ``df @ (D + D.T)`` -- NOT the diagonal ``diag(df)``
-        a stencil of :meth:`CorrelatedDerivs._spatial_lagrangian` (which uses ``eps[:,None]*(D+D.T)``,
-        valid only at the canonical F=0) would give.  The omitted ``df_offdiag @ (D+D.T)`` vanishes
-        for MP2 (unrelaxed ``D`` has no ov block) but is nonzero for CC (couples to ``Dov``/``Dvo``);
-        see DERIVATIVES_PLAN sec 8.2.  (Same formula as :meth:`MPderiv._perturbed_lagrangian`;
-        destined to merge with it under ``CorrelatedDerivs`` in Phase 3.)"""
-        cc = self.ccwfn
-        o = cc.o
-        ofull = slice(0, o.stop)
-        c = self.contract
-        ERI = np.asarray(cc.H.ERI)
-        L = np.asarray(cc.H.L)
-        eps = np.diag(np.asarray(cc.H.F))
-        nmo = cc.nmo
-        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
-        dB = np.zeros((nmo, nmo))
-        dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull]) + c('rs,rpsq->pq', D, dL[:, :, :, ofull])
-                        + c('rs,rqsp->pq', dD, L[:, ofull, :, :]) + c('rs,rqsp->pq', D, dL[:, ofull, :, :]))
-        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
-        return -0.5 * (dA + dB + dC)
-
-    def _so_cc_perturbed_lagrangian(self, df, deri, D, dD, Gam, dGam):
-        """Spin-orbital field response ``dI'`` of the GSB Lagrangian (full-df Fock term, as in
-        :meth:`MPwfn._so_perturbed_lagrangian`), density-generic with the CC densities."""
-        cc = self.ccwfn
-        o = cc.o
-        ofull = slice(0, o.stop)
-        c = self.contract
-        ERI = np.asarray(cc.H.ERI)
-        eps = np.diag(np.asarray(cc.H.F))
-        nmo = cc.nmo
-        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
-        dB = np.zeros((nmo, nmo))
-        dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull]) + c('rs,rpsq->pq', D, deri[:, :, :, ofull])
-                        + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :]) + c('rs,rqsp->pq', D, deri[:, ofull, :, :]))
-        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
-        return -0.5 * (dA + dB + dC)
