@@ -120,6 +120,54 @@ class CorrelatedDerivs:
         termC = 4.0 * self.contract('prst,qrst->pq', ERI, Gam)
         return -0.5 * (termA + termB + termC)
 
+    # ---- first-order response dI' of the generalized-Fock Lagrangian ----
+    # The field/nuclear derivative of I'(D, Gam), method-agnostic given the perturbed integrals
+    # (df = d_x f, deri = d_x <pq|rs>, dL = 2 deri - deri.swap) and the density responses (dD, dGam).
+    # Its ov-antisymmetric part is the perturbed Z-vector RHS; evaluated at the relaxed density (with
+    # its response) it is the perturbed energy-weighted density d_x W.  The termA derivative is the
+    # FULL Fock matrix product df @ (D + D.T) -- not the diagonal d_x(eps) stencil of the unperturbed
+    # form (valid only at F=0); the off-diagonal df couples the ov/core-active blocks of a relaxed D
+    # (zero for an unrelaxed MP2 D, nonzero for CC's Dov/Dvo).
+
+    def _perturbed_lagrangian_matrix(self, df, deri, dL, D, dD, Gam, dGam) -> np.ndarray:
+        """Spin-adapted first-order response ``dI'`` (``nmo x nmo``) given the perturbed integrals
+        and density responses
+
+            dI'_pq = -1/2 [ df @ (D + D.T) + eps_p (dD_pq + dD_qp)
+                            + delta_{q in ofull} sum_rs ( dD_rs L_rpsq + D_rs dL_rpsq
+                                                          + dD_rs L_rqsp + D_rs dL_rqsp )
+                            + 4 sum_rst ( deri_prst Gamma_qrst + <pr|st> dGamma_qrst ) ]
+
+        with ``L`` (= ``H.L``) and its derivative ``dL`` in the 1-PDM term, and ``<pr|st>`` (= ``H.ERI``)
+        with ``Gamma``/``dGamma`` in the 2-PDM term.  The caller supplies the perturbed integrals and
+        the (unrelaxed or relaxed) densities + responses."""
+        nmo, ofull = self.wfn.nmo, slice(0, self.wfn.o.stop)
+        ERI = np.asarray(self.wfn.H.ERI)
+        L = np.asarray(self.wfn.H.L)
+        eps = np.diag(np.asarray(self.wfn.H.F))
+        c = self.contract
+        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
+        dB = np.zeros((nmo, nmo))
+        dB[:, ofull] = (c('rs,rpsq->pq', dD, L[:, :, :, ofull]) + c('rs,rpsq->pq', D, dL[:, :, :, ofull])
+                        + c('rs,rqsp->pq', dD, L[:, ofull, :, :]) + c('rs,rqsp->pq', D, dL[:, ofull, :, :]))
+        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
+        return -0.5 * (dA + dB + dC)
+
+    def _so_perturbed_lagrangian_matrix(self, df, deri, D, dD, Gam, dGam) -> np.ndarray:
+        """Spin-orbital first-order response ``dI'`` -- the antisymmetrized-integral analogue of
+        :meth:`_perturbed_lagrangian_matrix` (the ``<pq||rs>`` derivative ``deri`` in the 1-PDM term
+        in place of ``L``/``dL``)."""
+        nmo, ofull = self.wfn.nmo, slice(0, self.wfn.o.stop)
+        ERI = np.asarray(self.wfn.H.ERI)
+        eps = np.diag(np.asarray(self.wfn.H.F))
+        c = self.contract
+        dA = df @ (D + D.T) + eps[:, None] * (dD + dD.T)
+        dB = np.zeros((nmo, nmo))
+        dB[:, ofull] = (c('rs,rpsq->pq', dD, ERI[:, :, :, ofull]) + c('rs,rpsq->pq', D, deri[:, :, :, ofull])
+                        + c('rs,rqsp->pq', dD, ERI[:, ofull, :, :]) + c('rs,rqsp->pq', D, deri[:, ofull, :, :]))
+        dC = 4.0 * (c('prst,qrst->pq', deri, Gam) + c('prst,qrst->pq', ERI, dGam))
+        return -0.5 * (dA + dB + dC)
+
     # ---- unperturbed relaxed density and orbital-response (Z-vector) ----
     # Given the leaf's unrelaxed reduced densities, the relaxed 1-PDM adds the orbital-relaxation
     # blocks driven by the Lagrangian's ov-antisymmetric part:
