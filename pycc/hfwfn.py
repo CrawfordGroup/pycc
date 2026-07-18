@@ -147,7 +147,7 @@ class HFwfn(Wavefunction):
         o, v = self.o, self.v
         k = 2.0 if self.orbital_basis == 'spinorbital' else 4.0
         mu = [np.asarray(self.H.mu[c])[o, v] for c in range(3)]
-        U = [self.cphf.solve(self.cphf.rhs_field(b), kind="electric") for b in range(3)]
+        U = [self.cphf.solve_field(b) for b in range(3)]
         alpha = np.zeros((3, 3))
         for a in range(3):
             for b in range(3):
@@ -277,9 +277,9 @@ class HFwfn(Wavefunction):
         # Pre-solve & cache the nuclear response for every atom (shared with the APTs);
         # all four come from a single heavy per-atom pass (CPHF.solve_nuclear).
         U = [self.cphf.solve_nuclear(A) for A in range(natom)]            # U[A][a]->(no,nv)
-        B = [self.cphf.rhs_nuclear_cached(A) for A in range(natom)]       # B[A][a]->(no,nv)
-        Foo = [self.cphf.fock_nuclear_cached(A) for A in range(natom)]    # F^X_ij->(no,no)
-        Soo = [self.cphf.overlap_nuclear_cached(A) for A in range(natom)]  # S^X_ij->(no,no)
+        B = [self.cphf.rhs_nuclear(A) for A in range(natom)]       # B[A][a]->(no,nv)
+        Foo = [self.cphf.nuclear_skeleton_fock(A) for A in range(natom)]    # F^X_ij->(no,no)
+        Soo = [self.cphf.nuclear_skeleton_overlap(A) for A in range(natom)]  # S^X_ij->(no,no)
 
         H = np.zeros((3 * natom, 3 * natom))
         for A in range(natom):
@@ -329,9 +329,9 @@ class HFwfn(Wavefunction):
         natom = self.ref.molecule().natom()
 
         U = [self.cphf.solve_nuclear(A) for A in range(natom)]            # U[A][a]->(no,nv)
-        B = [self.cphf.rhs_nuclear_cached(A) for A in range(natom)]       # B[A][a]->(no,nv)
-        Foo = [self.cphf.fock_nuclear_cached(A) for A in range(natom)]    # F^X_ij->(no,no)
-        Soo = [self.cphf.overlap_nuclear_cached(A) for A in range(natom)]  # S^X_ij->(no,no)
+        B = [self.cphf.rhs_nuclear(A) for A in range(natom)]       # B[A][a]->(no,nv)
+        Foo = [self.cphf.nuclear_skeleton_fock(A) for A in range(natom)]    # F^X_ij->(no,no)
+        Soo = [self.cphf.nuclear_skeleton_overlap(A) for A in range(natom)]  # S^X_ij->(no,no)
 
         H = np.zeros((3 * natom, 3 * natom))
         for A in range(natom):
