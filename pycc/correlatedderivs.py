@@ -364,8 +364,8 @@ class CorrelatedDerivs:
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """Leaf hook: the first-order response ``(d_x gamma, d_x Gamma)`` of the unrelaxed reduced
         densities to ``pert`` (full-MO arrays).  MP2 supplies the closed-form response
-        (:meth:`MPderiv._perturbed_densities`); CC supplies the iterative perturbed-amplitude /
-        perturbed-Lambda response.  ``df``/``deri``/``dL`` are the CPHF-folded perturbed integrals
+        (:meth:`MPderiv._perturbed_unrelaxed_densities`); CC supplies the iterative
+        perturbed-amplitude / perturbed-Lambda response.  ``df``/``deri``/``dL`` are the CPHF-folded perturbed integrals
         (canonical per :attr:`perturbed_mo_gauge`) the CC iterative solve consumes; the MP2 closed
         form recomputes its own and ignores them."""
         raise NotImplementedError

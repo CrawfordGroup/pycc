@@ -102,7 +102,7 @@ APT_631G_FC = {  # frozen core
 
 
 def test_mp2_nuclear_t2_response_631g():
-    """Nuclear T2 density response d_X gamma / d_X Gamma (the analytic MPwfn._perturbed_densities)
+    """Nuclear T2 density response d_X gamma / d_X Gamma (the analytic MPwfn._perturbed_unrelaxed_densities)
     vs its frozen reference, via the gauge-invariant scalars d Tr(gamma^2), d ||Gamma||^2 (spatial,
     H2O/6-31G).  The reference was validated against a 5-point FD of the invariants to ~6e-12."""
     from pycc.cphf import Perturbation
@@ -111,7 +111,7 @@ def test_mp2_nuclear_t2_response_631g():
     Doo, Dvv = mp0._mp2_corr_opdm(); Gam = np.asarray(mp0._mp2_tpdm())
     g = np.zeros((nmo, nmo)); g[o, o] = np.asarray(Doo); g[v, v] = np.asarray(Dvv)
     for (atom, cart) in [(0, 2), (2, 1)]:
-        dgX, dGX = mp0._perturbed_densities(Perturbation('nuclear', (atom, cart)))
+        dgX, dGX = mp0._perturbed_unrelaxed_densities(Perturbation('nuclear', (atom, cart)))
         dTrg2 = 2.0 * np.sum(g * np.asarray(dgX))
         dGam2 = 2.0 * np.sum(Gam * np.asarray(dGX))
         ref_g, ref_G = NUCLEAR_T2[(atom, cart)]
