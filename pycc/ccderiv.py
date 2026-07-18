@@ -99,56 +99,17 @@ class CCderiv(CorrelatedDerivs):
         Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
         core.  CCSD is validated against a tight finite field of :meth:`relaxed_dipole` and the
         SO == spatial keystone; CCSD(T) against the energy second-derivative finite field and the
-        SO == spatial keystone (SO CCSD(T) itself matched to CFOUR)."""
-        if route != '2n+1':
-            raise ValueError(f"CC polarizability supports only the asymmetric '2n+1' route, not {route!r}.")
+        SO == spatial keystone (SO CCSD(T) itself matched to CFOUR).
+
+        Overrides :meth:`CorrelatedDerivs.polarizability` only to add the CC method-specific guards
+        (supported model, (T) density intermediates); the shared 2n+1 assembly runs via ``super()``."""
         cc = self.ccwfn
         if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
             raise NotImplementedError(f"CC polarizability: only CCSD and CCSD(T) are implemented (not {cc.model}).")
-        is_t = cc.model.upper() == 'CCSD(T)'
-        if is_t and not hasattr(cc, 'S1'):
+        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
             raise ValueError("CCSD(T) polarizability requires the (T) density intermediates; "
                              "build the wavefunction with make_t3_density=True.")
-        if cc.orbital_basis == 'spinorbital':
-            return self._so_polarizability()
-        from .cphf import Perturbation
-        c = self.contract
-        ncore = cc.o.stop - cc.no
-        canonical = self.perturbed_mo_gauge == 'canonical'
-        Drel = self._relaxed_density()[0]               # base Z-vector (unperturbed relaxed 1-PDM)
-        cphf = self._full_occ_cphf()
-        mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
-        alpha = np.zeros((3, 3))
-        for b in range(3):
-            pert = Perturbation('field', b)
-            dDrel = self._perturbed_relaxed_density(pert)
-            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=canonical))
-            for a in range(3):
-                rot = Ub.T @ mu[a] + mu[a] @ Ub
-                alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
-        return alpha
-
-    def _so_polarizability(self) -> np.ndarray:
-        """Spin-orbital (UHF) CCSD correlation polarizability -- the SO analog of
-        :meth:`polarizability` (all-electron or frozen core).  Raises for ROHF (via the base
-        :meth:`CorrelatedDerivs._so_orbital_response`)."""
-        from .cphf import Perturbation
-        cc = self.ccwfn
-        c = self.contract
-        ncore = cc.o.stop - cc.no
-        canonical = self.perturbed_mo_gauge == 'canonical'
-        Drel = self._so_relaxed_density()[0]            # base Z-vector (inline G Hessian; raises for ROHF)
-        cphf = self._full_occ_cphf()
-        mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
-        alpha = np.zeros((3, 3))
-        for b in range(3):
-            pert = Perturbation('field', b)
-            dDrel = self._so_perturbed_relaxed_density(pert)
-            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=canonical))
-            for a in range(3):
-                rot = Ub.T @ mu[a] + mu[a] @ Ub
-                alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
-        return alpha
+        return super().polarizability(route)        # shared 2n+1 assembly (SO/spatial dispatch in the base)
 
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """CC perturbed unrelaxed densities ``(d_x gamma, d_x Gamma)`` -- the base
