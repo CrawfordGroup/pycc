@@ -261,6 +261,77 @@ class CorrelatedDerivs:
         z = self._so_zvector()
         return z[0], z[1]
 
+    # ---- first-derivative properties: relaxed dipole and nuclear gradient ----
+    # Both are contractions of the relaxed density against the property integrals, method-agnostic
+    # given (Drel, Gam) and the energy-weighted density W = I'(Drel).  The reference (SCF) and
+    # nuclear contributions are kept separate and summed by the pycc.properties facade.
+
+    def relaxed_dipole(self) -> np.ndarray:
+        """Correlation contribution to the electronic dipole moment (a.u.), shape ``(3,)``
+
+            mu_a^corr = sum_pq Drel_pq (mu_a)_pq,
+
+        the relaxed 1-PDM contracted with the MO dipole integrals (``H.mu = -e r``).  A static
+        field does not move the AO basis, so there is no energy-weighted-density or 2-PDM term (only
+        the gradient has those); the orbital relaxation (and, for CCSD(T), the canonical-MO oo/vv
+        response) rides inside ``Drel``.  The reference (SCF) dipole is kept separate; the total is
+        their sum.  Basis-aware (dispatches via :meth:`_relaxed_density`)."""
+        Drel, _ = self._relaxed_density()
+        c = self.contract
+        return np.array([c('pq,pq->', Drel, np.asarray(self.wfn.H.mu[a])) for a in range(3)])
+
+    def gradient(self) -> np.ndarray:
+        """Correlation contribution to the analytic nuclear energy gradient (a.u.), shape
+        ``(natom, 3)``
+
+            dE_corr/dX = sum_pq Drel_pq f^(X)_pq + sum_pqrs Gamma_pqrs <pq|rs>^(X)
+                         + sum_pq W_pq S^(X)_pq,
+
+        with the relaxed 1-PDM ``Drel``, cumulant 2-PDM ``Gamma`` (:meth:`_relaxed_density`), and the
+        energy-weighted density ``W = I'(Drel)`` (:meth:`_lagrangian`).  ``f^(X) = h^(X) + sum_m
+        L[p,m,q,m]^(X)`` is the closed-shell skeleton Fock derivative (``m`` over the full occupied
+        space), and ``S^(X)``/``<pq|rs>^(X)`` are the skeleton derivative integrals from
+        ``wfn.derivatives`` (chemist ``(pq|rs)^(X)``, converted to physicist here) -- no
+        per-perturbation CPHF solve.  Spatial (closed-shell RHF) path; the spin-orbital path is
+        :meth:`_so_gradient`.  The reference (SCF) gradient is kept separate."""
+        if self.wfn.orbital_basis == 'spinorbital':
+            return self._so_gradient()
+        ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
+        Drel, Gam = self._relaxed_density()
+        W = self._lagrangian(Drel, Gam)
+        c = self.contract
+        d = self.wfn.derivatives
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)   # chemist (pq|rs)^X
+            for cart in range(3):
+                phys = ERIx[cart].transpose(0, 2, 1, 3)                   # -> physicist <pq|rs>^X
+                Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
+                fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])     # skeleton Fock deriv (full occ)
+                grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                    + c('pqrs,pqrs->', Gam, phys)
+                                    + c('pq,pq->', W, Sx[cart]))
+        return grad
+
+    def _so_gradient(self) -> np.ndarray:
+        """Spin-orbital correlation gradient -- the spin-orbital analogue of :meth:`gradient` with
+        the antisymmetrized ``<pq||rs>^(X)`` from ``wfn.derivatives.so_*`` and ``f^(X) = h^(X) +
+        sum_m <pm||qm>^(X)`` (``m`` over the full occupied space)."""
+        ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
+        Drel, Gam = self._so_relaxed_density()
+        W = self._lagrangian(Drel, Gam)
+        c = self.contract
+        d = self.wfn.derivatives
+        grad = np.zeros((d.natom, 3))
+        for atom in range(d.natom):
+            hx = d.so_core(atom); Sx = d.so_overlap(atom); ERIx = d.so_eri(atom)
+            for cart in range(3):
+                fx = hx[cart] + c('pmqm->pq', ERIx[cart][:, ofull, :, ofull])   # skeleton Fock deriv
+                grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                    + c('pqrs,pqrs->', Gam, ERIx[cart])
+                                    + c('pq,pq->', W, Sx[cart]))
+        return grad
+
     @staticmethod
     def _dependent_pairs(Iblock, eps_block, thresh=1e-8):
         """Canonical dependent-pair rotation ``P_mn = (I'_mn - I'_nm)/(eps_m - eps_n)`` for a square
