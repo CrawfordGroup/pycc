@@ -64,6 +64,20 @@ class CorrelatedDerivs:
         choice."""
         return 'canonical' if getattr(self.wfn, 'model', '').upper() == 'CCSD(T)' else 'non-canonical'
 
+    def _full_occ_cphf(self):
+        """A CPHF over the **full** occupied space (frozen core + active) in the wavefunction's own
+        MO ordering (cached).  The perturbed-response (2n+1) routes need the orbital response over the
+        full occupied space (core<->active and core-virtual), which the active-only ``wfn.cphf``
+        can't supply; building it here -- rather than borrowing an all-electron ``HFwfn`` -- keeps
+        the spin-orbital ordering consistent with the densities.  For ``nfzc=0`` it coincides with
+        ``wfn.cphf``.  CPHF depends only on the shared reference/orbitals/integrals, so building it on
+        ``self.wfn`` is equivalent for MP2 (``self.wfn`` is the MPwfn) and CC (the CCwfn shares those
+        with its ``cc.mp``)."""
+        if getattr(self, '_focphf', None) is None:
+            from .cphf import CPHF
+            self._focphf = CPHF(self.wfn, full_occ=True)
+        return self._focphf
+
     # ---- generalized-Fock orbital Lagrangian I'(D, Gam) ----
     # The Gauss/Stanton/Bartlett orbital-gradient Lagrangian: a method-agnostic function of a
     # full-MO 1-PDM ``D`` and cumulant 2-PDM ``Gam`` (both supplied by the leaf) plus the SCF
@@ -331,6 +345,137 @@ class CorrelatedDerivs:
         """Spin-orbital relaxed 1-PDM and 2-PDM -- ``(Drel, Gam)`` from :meth:`_so_orbital_response`."""
         rec = self._so_orbital_response()
         return rec.Drel, rec.Gam
+
+    # ---- first-order response of the relaxed density (perturbed Z-vector) ----
+    # d_x Drel differentiates the relaxed-density build once more.  Given the leaf's perturbed
+    # unrelaxed densities (dDg, dGam), the assembly is method-agnostic: the perturbed Lagrangian dI'
+    # (with the perturbed integrals df/deri/dL), the perturbed frozen-core divide d_x P_co (a
+    # Sylvester relation), the perturbed canonical-MO oo/vv rotations d_x P_oo/d_x P_vv (gauge-gated),
+    # and the perturbed ov Z-vector z^x = A^{-1}(dX - A^x z) reusing the unperturbed orbital Hessian A
+    # and z from the OrbitalResponse record.
+
+    def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
+        """Leaf hook: the first-order response ``(d_x gamma, d_x Gamma)`` of the unrelaxed reduced
+        densities to ``pert`` (full-MO arrays).  MP2 supplies the closed-form response
+        (:meth:`MPderiv._perturbed_densities`); CC supplies the iterative perturbed-amplitude /
+        perturbed-Lambda response.  ``df``/``deri``/``dL`` are the CPHF-folded perturbed integrals
+        (canonical per :attr:`perturbed_mo_gauge`) the CC iterative solve consumes; the MP2 closed
+        form recomputes its own and ignores them."""
+        raise NotImplementedError
+
+    def _perturbed_relaxed_density(self, pert):
+        """Spatial first-order response ``d_x Drel`` of the relaxed 1-PDM (``nmo x nmo``)
+
+            d_x Drel = d_x D + d_x P_co + d_x P_oo + d_x P_vv - z^x,   A z^x = dX - A^x z,
+
+        with the perturbed unrelaxed density ``d_x D`` (:meth:`_perturbed_unrelaxed_densities`), the
+        perturbed Lagrangian ``dI'`` (:meth:`_perturbed_lagrangian_matrix`) giving the perturbed
+        Z-vector RHS ``dX_ai = dI'_ia - dI'_ai``, the perturbed frozen-core Sylvester divide
+        ``d_x P_co = [d_x(I'_ci - I'_ic) - df_cd P_di + P_cj df_ji] / (eps_c - eps_i)`` coupled into
+        ``dX``, the perturbed canonical-MO oo/vv rotations ``d_x P_oo``/``d_x P_vv``
+        (:meth:`_perturbed_dependent_pairs`, populated only for :attr:`perturbed_mo_gauge` ``==
+        'canonical'``) coupled into ``dX``, and the perturbed ov Z-vector ``z^x`` reusing the
+        unperturbed orbital Hessian ``A`` and ``z`` from :meth:`_orbital_response` (``A^x z`` the
+        perturbed-Hessian response).  The perturbed integrals ``df``/``deri`` are canonical per
+        :attr:`perturbed_mo_gauge`."""
+        wfn = self.wfn
+        o, v = wfn.o, wfn.v
+        co = slice(0, wfn.nfzc)
+        ofull = slice(0, o.stop)
+        ncore = o.stop - wfn.no
+        c = self.contract
+        L = np.asarray(wfn.H.L)
+        eps = np.diag(np.asarray(wfn.H.F))
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        rec = self._orbital_response()
+        z, hf, Pco, Poo0, Pvv0, D0, Gam0 = rec.z, rec.mo_hessian, rec.Pco, rec.Poo, rec.Pvv, rec.D, rec.Gam
+        cphf = self._full_occ_cphf()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canonical))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canonical))
+        dL = 2.0 * deri - deri.swapaxes(2, 3)
+        dDg, dGam = self._perturbed_unrelaxed_densities(pert, df, deri, dL)
+        dDg = np.asarray(dDg)
+        dIp = self._perturbed_lagrangian_matrix(df, deri, dL, D0, dDg, Gam0, np.asarray(dGam))
+        dX = dIp[ofull, v] - dIp[v, ofull].T
+        dPco = None
+        if wfn.nfzc:
+            gap = eps[co][:, None] - eps[o][None, :]
+            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
+            zjc, dzjc = -Pco.T, -dPco.T
+            dX = dX - (c('jc,ajic->ia', dzjc, L[v, o, ofull, co]) + c('jc,acij->ia', dzjc, L[v, co, ofull, o])
+                       + c('jc,ajic->ia', zjc, dL[v, o, ofull, co]) + c('jc,acij->ia', zjc, dL[v, co, ofull, o]))
+        dPoo = dPvv = None
+        if canonical:
+            dfd = np.diag(df)                              # canonical df diagonal = the perturbed gaps
+            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
+            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
+            dX = dX + (c('kl,akil->ia', dPoo, L[v, o, ofull, o]) + c('kl,akil->ia', Poo0, dL[v, o, ofull, o])
+                       + c('bc,ibac->ia', dPvv, L[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, dL[ofull, v, v, v]))
+        Axz = (c('ajib,jb->ia', dL[v, ofull, ofull, v], z) + c('abij,jb->ia', dL[v, v, ofull, ofull], z)
+               + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
+        zx = np.asarray(hf.cphf.solve(dX - Axz))
+        dDrel = dDg.copy()
+        if wfn.nfzc:
+            dDrel[co, o] += dPco
+            dDrel[o, co] += dPco.T
+        if canonical:
+            dDrel[o, o] += dPoo
+            dDrel[v, v] += dPvv
+        dDrel[v, ofull] += -zx.T
+        dDrel[ofull, v] += -zx
+        return dDrel
+
+    def _so_perturbed_relaxed_density(self, pert):
+        """Spin-orbital first-order response ``d_x Drel`` -- the spin-orbital analogue of
+        :meth:`_perturbed_relaxed_density` (antisymmetrized ``<pq||rs>`` derivatives ``deri`` in the
+        couplings; the inline orbital Hessian ``G`` from :meth:`_so_orbital_response` solved with
+        ``numpy.linalg.solve``)."""
+        wfn = self.wfn
+        o, v, nv = wfn.o, wfn.v, wfn.nv
+        co = wfn.co
+        ofull = slice(0, o.stop)
+        nof = o.stop
+        ncore = o.stop - wfn.no
+        c = self.contract
+        ERI = np.asarray(wfn.H.ERI)
+        eps = np.diag(np.asarray(wfn.H.F))
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        rec = self._so_orbital_response()
+        z, G, Pco, Poo0, Pvv0, D0, Gam0 = rec.z, rec.mo_hessian, rec.Pco, rec.Poo, rec.Pvv, rec.D, rec.Gam
+        cphf = self._full_occ_cphf()
+        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canonical))
+        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canonical))
+        dDg, dGam = self._perturbed_unrelaxed_densities(pert, df, deri, None)
+        dDg = np.asarray(dDg)
+        dIp = self._so_perturbed_lagrangian_matrix(df, deri, D0, dDg, Gam0, np.asarray(dGam))
+        dX = dIp[ofull, v] - dIp[v, ofull].T
+        dPco = None
+        if wfn.nfzc:
+            gap = eps[co][:, None] - eps[o][None, :]
+            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
+            zjc, dzjc = -Pco.T, -dPco.T
+            dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
+                       + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
+        dPoo = dPvv = None
+        if canonical:
+            dfd = np.diag(df)
+            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
+            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
+            dX = dX + (c('kl,akil->ia', dPoo, ERI[v, o, ofull, o]) + c('kl,akil->ia', Poo0, deri[v, o, ofull, o])
+                       + c('bc,ibac->ia', dPvv, ERI[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, deri[ofull, v, v, v]))
+        Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], z) + c('abij,jb->ia', deri[v, v, ofull, ofull], z)
+               + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
+        zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
+        dDrel = dDg.copy()
+        if wfn.nfzc:
+            dDrel[co, o] += dPco
+            dDrel[o, co] += dPco.T
+        if canonical:
+            dDrel[o, o] += dPoo
+            dDrel[v, v] += dPvv
+        dDrel[v, ofull] += -zx.T
+        dDrel[ofull, v] += -zx
+        return dDrel
 
     # ---- first-derivative properties: relaxed dipole and nuclear gradient ----
     # Both are contractions of the relaxed density against the property integrals, method-agnostic

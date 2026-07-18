@@ -111,55 +111,18 @@ class CCderiv(CorrelatedDerivs):
                              "build the wavefunction with make_t3_density=True.")
         if cc.orbital_basis == 'spinorbital':
             return self._so_polarizability()
-        from .cchbar import cchbar
-        from .cclambda import cclambda
-        from .ccdensity import ccdensity
         from .cphf import Perturbation
-        o, v = cc.o, cc.v
-        co = slice(0, cc.nfzc)                            # frozen-core occupied
-        ofull = slice(0, o.stop)                         # full occupied (core + active)
         c = self.contract
-        ncore = o.stop - cc.no
-        eps = np.diag(np.asarray(cc.H.F))
-        L = np.asarray(cc.H.L)
-
-        # Lambda inherits the wavefunction's convergence (set by solve_cc); the test/user tightens
-        # ccwfn convergence to reach the second-derivative oracle rather than hardwiring it here.
-        hbar = cchbar(cc)
-        lam = cclambda(cc, hbar)
-        lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
-        dens = ccdensity(cc, lam)
-        D0, Gam0 = (np.asarray(x) for x in dens.gradient_densities())
-        Ip0 = np.asarray(self._lagrangian(D0, Gam0))
-        hf = self._reference_hf()
-        Drel = D0.copy()
-        Pco = None
-        if cc.nfzc:                                      # core<->active-occupied divide (as in _relaxed_density)
-            Pco = (Ip0[co, o] - Ip0[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-            Drel[co, o] += Pco
-            Drel[o, co] += Pco.T
-        X0 = Ip0[ofull, v] - Ip0[v, ofull].T
-        if cc.nfzc:                                      # couple P_co into the Z-vector RHS
-            zjc = -Pco.T
-            X0 = X0 - (c('jc,ajic->ia', zjc, L[v, o, ofull, co]) + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
-        Poo0 = Pvv0 = None
-        if cc.model.upper() == 'CCSD(T)':                # (T) oo/vv dependent-pairs (as in _relaxed_density)
-            Poo0 = self._dependent_pairs(Ip0[o, o], eps[o])
-            Pvv0 = self._dependent_pairs(Ip0[v, v], eps[v])
-            Drel[o, o] += Poo0
-            Drel[v, v] += Pvv0
-            X0 = X0 + (c('kl,akil->ia', Poo0, L[v, o, ofull, o]) + c('bc,ibac->ia', Pvv0, L[ofull, v, v, v]))
-        z = np.asarray(hf.cphf.solve(X0))
-        Drel[v, ofull] += -z.T
-        Drel[ofull, v] += -z
-
-        cphf = cc.mp.deriv._full_occ_cphf()
+        ncore = cc.o.stop - cc.no
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        Drel = self._relaxed_density()[0]               # base Z-vector (unperturbed relaxed 1-PDM)
+        cphf = self._full_occ_cphf()
         mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, Pco, Poo0, Pvv0)
-            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=is_t))
+            dDrel = self._perturbed_relaxed_density(pert)
+            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=canonical))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
@@ -167,192 +130,51 @@ class CCderiv(CorrelatedDerivs):
 
     def _so_polarizability(self) -> np.ndarray:
         """Spin-orbital (UHF) CCSD correlation polarizability -- the SO analog of
-        :meth:`polarizability` (all-electron or frozen core).  Raises for ROHF."""
-        from .cchbar import cchbar
-        from .cclambda import cclambda
-        from .ccdensity import ccdensity
+        :meth:`polarizability` (all-electron or frozen core).  Raises for ROHF (via the base
+        :meth:`CorrelatedDerivs._so_orbital_response`)."""
         from .cphf import Perturbation
         cc = self.ccwfn
-        if cc.mp.cphf.is_rohf:
-            raise NotImplementedError("CC polarizability: ROHF is not supported (RHF/UHF only).")
-        o, v, nv = cc.o, cc.v, cc.nv
-        co = slice(0, o.start)                            # frozen core (2*nfzc spin-orbitals)
-        ofull = slice(0, o.stop)
-        nof = o.stop
         c = self.contract
-        ncore = o.stop - cc.no
-        eps = np.diag(np.asarray(cc.H.F))
-        ERI = np.asarray(cc.H.ERI)
-
-        hbar = cchbar(cc)
-        lam = cclambda(cc, hbar)
-        lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
-        D0, Gam0 = (np.asarray(x) for x in ccdensity(cc, lam).gradient_densities())
-        Ip0 = np.asarray(self._lagrangian(D0, Gam0))
-        Drel = D0.copy()
-        Pco = None
-        if cc.nfzc:
-            Pco = (Ip0[co, o] - Ip0[o, co].T) / (eps[co][:, None] - eps[o][None, :])
-            Drel[co, o] += Pco
-            Drel[o, co] += Pco.T
-        X0 = Ip0[ofull, v] - Ip0[v, ofull].T
-        if cc.nfzc:
-            zjc = -Pco.T
-            X0 = X0 - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
-        Poo0 = Pvv0 = None
-        if cc.model.upper() == 'CCSD(T)':                 # (T) oo/vv dependent-pairs (as in _so_relaxed_density)
-            Poo0 = self._dependent_pairs(Ip0[o, o], eps[o])
-            Pvv0 = self._dependent_pairs(Ip0[v, v], eps[v])
-            Drel[o, o] += Poo0
-            Drel[v, v] += Pvv0
-            X0 = X0 + (c('kl,akil->ia', Poo0, ERI[v, o, ofull, o]) + c('bc,ibac->ia', Pvv0, ERI[ofull, v, v, v]))
-        G = (c('ajib->iajb', ERI[v, ofull, ofull, v]) + c('abij->iajb', ERI[v, v, ofull, ofull])).reshape(nof*nv, nof*nv)
-        G[np.diag_indices(nof*nv)] += (eps[v][None, :] - eps[ofull][:, None]).reshape(-1)
-        z = np.linalg.solve(G, X0.reshape(-1)).reshape(nof, nv)
-        Drel[v, ofull] += -z.T
-        Drel[ofull, v] += -z
-
-        cphf = cc.mp.deriv._full_occ_cphf()
+        ncore = cc.o.stop - cc.no
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        Drel = self._so_relaxed_density()[0]            # base Z-vector (inline G Hessian; raises for ROHF)
+        cphf = self._full_occ_cphf()
         mu = [np.asarray(cc.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = self._so_perturbed_relaxed_density(pert, hbar, lam, D0, Gam0, z, G, Pco, Poo0, Pvv0)
-            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=(cc.model.upper() == 'CCSD(T)')))
+            dDrel = self._so_perturbed_relaxed_density(pert)
+            Ub = np.asarray(cphf._full_U(pert, ncore, canonical=canonical))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def _perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, Pco=None,
-                                   Poo0=None, Pvv0=None) -> np.ndarray:
-        """Field response ``dD_rel`` of the CC relaxed 1-PDM (spatial; all-electron or frozen core).
-        Mirrors :meth:`MPwfn._perturbed_relaxed_opdm` with the CC densities, but (i) keeps the CC
-        *unrelaxed* ov/vo blocks (``D_ai != D_ia`` for CC; MP2 has none) and (ii) builds the perturbed
-        Lagrangian with the FULL-df Fock term (see :meth:`CorrelatedDerivs._perturbed_lagrangian_matrix`).  For frozen core
-        the perturbed core<->active Sylvester divide ``dP_co`` is added and coupled into the perturbed
-        Z-vector RHS, exactly as in the MP2 template / the unperturbed :meth:`_relaxed_density`.
-
-        CCSD(T): uses the **canonical** perturbed orbitals (``df``/``deri`` with ``canonical=True``, so
-        ``df`` is diagonal in oo/vv -- the non-invariant (T) kernels require it), threads the perturbed
-        (T) intermediates ``dt3`` into the density and the Lambda source, and adds the perturbed
-        active-oo/vv dependent-pairs ``dPoo``/``dPvv`` (the field-derivative of the unperturbed
-        ``Poo0``/``Pvv0``, including the ``d(eps_i-eps_j) = df_ii - df_jj`` denominator term) to
-        ``dD_rel`` + the perturbed Z-vector RHS."""
+    def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
+        """CC perturbed unrelaxed densities ``(d_x gamma, d_x Gamma)`` -- the base
+        :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook.  Runs the iterative perturbed
+        amplitude solve ``dt = dt(df, deri, dL)`` and the perturbed Lambda solve ``dLambda``
+        (reusing the converged ``hbar``/``lam`` from :meth:`_density`), threading the perturbed (T)
+        intermediates ``dt3`` into both and into the density for CCSD(T), then builds the perturbed
+        correlation densities (:meth:`_perturbed_correlation_densities`).  ``df``/``deri`` are already
+        canonical per :attr:`perturbed_mo_gauge` (passed in by the base perturbed Z-vector solve)."""
         cc = self.ccwfn
-        o, v = cc.o, cc.v
-        co = slice(0, cc.nfzc)
-        ofull = slice(0, o.stop)
-        c = self.contract
-        ncore = o.stop - cc.no
-        L = np.asarray(cc.H.L)
-        eps = np.diag(np.asarray(cc.H.F))
+        lam = self._density().cclambda
+        hbar = lam.hbar
         is_t = cc.model.upper() == 'CCSD(T)'
-        canon = is_t                                    # (T) needs canonical perturbed orbitals
-        cphf = cc.mp.deriv._full_occ_cphf()
-        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
-        dL = 2.0 * deri - deri.swapaxes(2, 3)
-        hf = self._reference_hf()
-
-        dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar)
-        dt3 = self._perturbed_t3_intermediates(df, deri, dL, dt1, dt2) if is_t else None
-        dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam,
-                                          dS1=(dt3['S1'] if is_t else None),
-                                          dS2=(dt3['S2'] if is_t else None))
-        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
-        dIp = self._perturbed_lagrangian_matrix(df, deri, dL, D0, dDg, Gam0, dGam)
-        dX = dIp[ofull, v] - dIp[v, ofull].T
-        dPco = None
-        if cc.nfzc:                                     # perturbed core<->active divide (Sylvester derivative)
-            gap = eps[co][:, None] - eps[o][None, :]
-            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
-            zjc, dzjc = -Pco.T, -dPco.T
-            dX = dX - (c('jc,ajic->ia', dzjc, L[v, o, ofull, co]) + c('jc,acij->ia', dzjc, L[v, co, ofull, o])
-                       + c('jc,ajic->ia', zjc, dL[v, o, ofull, co]) + c('jc,acij->ia', zjc, dL[v, co, ofull, o]))
-        dPoo = dPvv = None
-        if is_t:                                        # perturbed (T) oo/vv dependent-pairs
-            dfd = np.diag(df)                           # canonical df diagonal = the perturbed gaps
-            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
-            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
-            dX = dX + (c('kl,akil->ia', dPoo, L[v, o, ofull, o]) + c('kl,akil->ia', Poo0, dL[v, o, ofull, o])
-                       + c('bc,ibac->ia', dPvv, L[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, dL[ofull, v, v, v]))
-        # perturbed orbital-Hessian response (A^x z); reference-only, as in MP2
-        Axz = (c('ajib,jb->ia', dL[v, ofull, ofull, v], z) + c('abij,jb->ia', dL[v, v, ofull, ofull], z)
-               + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
-        zx = np.asarray(hf.cphf.solve(dX - Axz))
-        dDrel = dDg.copy()                              # keep unrelaxed dD_ov/dD_vo (CC-only)
-        if cc.nfzc:
-            dDrel[co, o] += dPco
-            dDrel[o, co] += dPco.T
-        if is_t:
-            dDrel[o, o] += dPoo
-            dDrel[v, v] += dPvv
-        dDrel[v, ofull] += -zx.T
-        dDrel[ofull, v] += -zx
-        return dDrel
-
-    def _so_perturbed_relaxed_density(self, pert, hbar, lam, D0, Gam0, z, G, Pco,
-                                      Poo0=None, Pvv0=None):
-        """Spin-orbital field response ``dD_rel``; the SO analog of
-        :meth:`_perturbed_relaxed_density` (inline Hessian ``G``, antisymmetrized ERI).
-
-        CCSD(T): uses the **canonical** perturbed orbitals (``df``/``deri`` with ``canonical=True``,
-        so ``df`` is diagonal in oo/vv -- the non-invariant (T) kernels require it), threads the
-        perturbed (T) intermediates ``dt3`` into the density and the Lambda source, and adds the
-        perturbed active-oo/vv dependent-pairs ``dPoo``/``dPvv`` (the field derivative of the
-        unperturbed ``Poo0``/``Pvv0``, including the ``d(eps_i-eps_j) = df_ii - df_jj`` denominator
-        term) to ``dD_rel`` and the perturbed Z-vector RHS -- mirroring the spatial template."""
-        cc = self.ccwfn
-        o, v, nv = cc.o, cc.v, cc.nv
-        co = slice(0, o.start)
-        ofull = slice(0, o.stop)
-        nof = o.stop
-        c = self.contract
-        ncore = o.stop - cc.no
-        ERI = np.asarray(cc.H.ERI)
-        eps = np.diag(np.asarray(cc.H.F))
-        is_t = cc.model.upper() == 'CCSD(T)'
-        canon = is_t                                    # (T) needs canonical perturbed orbitals
-        cphf = cc.mp.deriv._full_occ_cphf()
-        df = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canon))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canon))
-
-        dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
-        dt3 = self._so_perturbed_t3_intermediates(df, deri, dt1, dt2) if is_t else None
-        dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam,
-                                             dS1=(dt3['S1'] if is_t else None),
-                                             dS2=(dt3['S2'] if is_t else None))
-        dDg, dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
-        dIp = self._so_perturbed_lagrangian_matrix(df, deri, D0, dDg, Gam0, dGam)
-        dX = dIp[ofull, v] - dIp[v, ofull].T
-        dPco = None
-        if cc.nfzc:
-            gap = eps[co][:, None] - eps[o][None, :]
-            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
-            zjc, dzjc = -Pco.T, -dPco.T
-            dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
-                       + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
-        dPoo = dPvv = None
-        if is_t:                                        # perturbed (T) oo/vv dependent-pairs
-            dfd = np.diag(df)                           # canonical df diagonal = the perturbed gaps
-            dPoo = self._perturbed_dependent_pairs(dIp[o, o], Poo0, eps[o], dfd[o])
-            dPvv = self._perturbed_dependent_pairs(dIp[v, v], Pvv0, eps[v], dfd[v])
-            dX = dX + (c('kl,akil->ia', dPoo, ERI[v, o, ofull, o]) + c('kl,akil->ia', Poo0, deri[v, o, ofull, o])
-                       + c('bc,ibac->ia', dPvv, ERI[ofull, v, v, v]) + c('bc,ibac->ia', Pvv0, deri[ofull, v, v, v]))
-        Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], z) + c('abij,jb->ia', deri[v, v, ofull, ofull], z)
-               + c('ab,ib->ia', df[v, v], z) - c('ij,ja->ia', df[ofull, ofull], z))
-        zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
-        dDrel = dDg.copy()
-        if cc.nfzc:
-            dDrel[co, o] += dPco
-            dDrel[o, co] += dPco.T
-        if is_t:
-            dDrel[o, o] += dPoo
-            dDrel[v, v] += dPvv
-        dDrel[v, ofull] += -zx.T
-        dDrel[ofull, v] += -zx
-        return dDrel
+        if cc.orbital_basis == 'spinorbital':
+            dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
+            dt3 = self._so_perturbed_t3_intermediates(df, deri, dt1, dt2) if is_t else None
+            dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam,
+                                                 dS1=(dt3['S1'] if is_t else None),
+                                                 dS2=(dt3['S2'] if is_t else None))
+        else:
+            dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar)
+            dt3 = self._perturbed_t3_intermediates(df, deri, dL, dt1, dt2) if is_t else None
+            dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam,
+                                              dS1=(dt3['S1'] if is_t else None),
+                                              dS2=(dt3['S2'] if is_t else None))
+        return self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
 
     def _ccsd_jacobian(self, X1, X2, hbar):
         """The CCSD Jacobian applied to an amplitude pair, ``(HBAR . X)_singles``,
