@@ -32,17 +32,6 @@ class MPderiv(CorrelatedDerivs):
         super().__init__(wfn)
         self.mp = wfn                       # alias: the MP2 wavefunction whose densities we differentiate
 
-    # ---- relaxed one-particle density accessor (the base owns the Z-vector build) ----
-
-    def mp2_relaxed_opdm(self) -> np.ndarray:
-        """Relaxed MP2 one-particle correlation density (``nmo x nmo``): the unrelaxed
-        ``Doo``/``Dvv`` plus the orbital-relaxation blocks from the base Z-vector solve
-        (:meth:`CorrelatedDerivs._relaxed_density`).  The MP2-named accessor the
-        :class:`~pycc.mpwfn.MPwfn` facade shim delegates to."""
-        return self._relaxed_density()[0]
-
-    # ---- full-occupied CPHF (shared by the 2n+1 perturbed-response routes) ----
-
     # ---- perturbed amplitudes / densities (for the second derivatives) ----
 
     def _perturbed_t2(self, pert) -> np.ndarray:
@@ -70,12 +59,18 @@ class MPderiv(CorrelatedDerivs):
                - c('ik,kjab->ijab', dfoo, t2) - c('jk,ikab->ijab', dfoo, t2))
         return num / np.asarray(self.mp.Dijab)
 
-    def _perturbed_densities(self, pert):
+    def _perturbed_unrelaxed_densities(self, pert, df=None, deri=None, dL=None):
         """First-order response of the unrelaxed correlation densities to ``pert``: returns
         ``(d_a gamma, d_a Gamma)`` (full-MO arrays), from the perturbed amplitudes
         :meth:`_perturbed_t2` by the product rule -- the same density expressions as the
         unrelaxed densities (:meth:`MPwfn._so_mp2_corr_opdm`/`MPwfn._so_mp2_tpdm` and the
-        spatial siblings), differentiated. Basis-aware."""
+        spatial siblings), differentiated. Basis-aware.
+
+        This is MP2's implementation of the base
+        :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook.  The MP2 response is closed
+        form, so it rebuilds its own perturbed integrals from ``pert`` and ignores the CPHF-folded
+        ``df``/``deri``/``dL`` the base passes in (those exist for the CC iterative path); they
+        default to ``None`` so the closed form can also be called directly with just ``pert``."""
         o, v, nmo = self.mp.o, self.mp.v, self.mp.nmo
         t2 = np.asarray(self.mp.t2)
         ta = self._perturbed_t2(pert)
@@ -95,14 +90,6 @@ class MPderiv(CorrelatedDerivs):
         dGam[o, o, v, v] = u
         dGam[v, v, o, o] = u.transpose(2, 3, 0, 1)
         return dgam, dGam
-
-    def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
-        """MP2 perturbed unrelaxed densities -- the closed-form response
-        (:meth:`_perturbed_densities`).  The perturbed integrals ``df``/``deri``/``dL`` are unused
-        (recomputed internally from the non-canonical perturbed integrals); the argument matches the
-        base :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook that the CC iterative path
-        needs."""
-        return self._perturbed_densities(pert)
 
     # ---- 2n+1 route: perturbed relaxed density (assembly hoisted to CorrelatedDerivs) ----
     # The relaxed-density gradient is already the 2n+1 first derivative; its second derivative

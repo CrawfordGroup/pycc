@@ -193,11 +193,6 @@ class MPwfn(Wavefunction):
         """MP2 correlation dipole -- delegates to :meth:`MPderiv.relaxed_dipole`."""
         return self.deriv.relaxed_dipole()
 
-    def mp2_relaxed_opdm(self) -> np.ndarray:
-        """Relaxed MP2 one-particle correlation density -- delegates to
-        :meth:`MPderiv.mp2_relaxed_opdm`."""
-        return self.deriv.mp2_relaxed_opdm()
-
     def gradient(self) -> np.ndarray:
         """MP2 correlation nuclear gradient -- delegates to :meth:`MPderiv.gradient`."""
         return self.deriv.gradient()
@@ -223,10 +218,10 @@ class MPwfn(Wavefunction):
         """MP2 correlation AAT -- delegates to :meth:`MPderiv.atomic_axial_tensors`."""
         return self.deriv.atomic_axial_tensors(gauge)
 
-    def _perturbed_densities(self, pert):
+    def _perturbed_unrelaxed_densities(self, pert):
         """First-order unrelaxed correlation-density response -- delegates to
-        :meth:`MPderiv._perturbed_densities`."""
-        return self.deriv._perturbed_densities(pert)
+        :meth:`MPderiv._perturbed_unrelaxed_densities`."""
+        return self.deriv._perturbed_unrelaxed_densities(pert)
 
     # ---- reference for the total (reference + correlation) properties ----
     # The property methods above are the correlation contribution only.  The full molecular
