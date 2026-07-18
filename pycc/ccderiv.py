@@ -43,15 +43,18 @@ class CCderiv(CorrelatedDerivs):
 
     def _density(self):
         """Converged Lambda amplitudes and the (Lambda-response) reduced densities, cached.
-        Builds ``cchbar`` -> ``cclambda`` (solved) -> ``ccdensity`` on first use."""
+        Builds ``cchbar`` -> ``cclambda`` (solved) -> ``ccdensity`` on first use.  Lambda inherits
+        the wavefunction's convergence criteria (``ccwfn.e_conv``/``r_conv``/``maxiter``, set by
+        ``solve_cc``) rather than hardwiring its own."""
         if self._dens is None:
             from .cchbar import cchbar
             from .cclambda import cclambda
             from .ccdensity import ccdensity
-            hbar = cchbar(self.ccwfn)
-            lam = cclambda(self.ccwfn, hbar)
-            lam.solve_lambda(e_conv=1e-10, r_conv=1e-10)
-            self._dens = ccdensity(self.ccwfn, lam)
+            cc = self.ccwfn
+            hbar = cchbar(cc)
+            lam = cclambda(cc, hbar)
+            lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
+            self._dens = ccdensity(cc, lam)
         return self._dens
 
     def _unrelaxed_densities(self):
@@ -120,10 +123,11 @@ class CCderiv(CorrelatedDerivs):
         eps = np.diag(np.asarray(cc.H.F))
         L = np.asarray(cc.H.L)
 
-        # Tight Lambda (the second derivative wants Lambda well past the 1e-10 the gradient uses).
+        # Lambda inherits the wavefunction's convergence (set by solve_cc); the test/user tightens
+        # ccwfn convergence to reach the second-derivative oracle rather than hardwiring it here.
         hbar = cchbar(cc)
         lam = cclambda(cc, hbar)
-        lam.solve_lambda(1e-13, 1e-13)
+        lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
         dens = ccdensity(cc, lam)
         D0, Gam0 = (np.asarray(x) for x in dens.gradient_densities())
         Ip0 = np.asarray(self._lagrangian(D0, Gam0))
@@ -182,7 +186,7 @@ class CCderiv(CorrelatedDerivs):
 
         hbar = cchbar(cc)
         lam = cclambda(cc, hbar)
-        lam.solve_lambda(1e-13, 1e-13)
+        lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
         D0, Gam0 = (np.asarray(x) for x in ccdensity(cc, lam).gradient_densities())
         Ip0 = np.asarray(self._lagrangian(D0, Gam0))
         Drel = D0.copy()
@@ -405,14 +409,17 @@ class CCderiv(CorrelatedDerivs):
         r2 += tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3) + tmp.swapaxes(0, 1).swapaxes(2, 3)
         return r1, r2
 
-    def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=200, rconv=1e-13):
+    def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=None, rconv=None):
         """Perturbed CCSD amplitudes ``dt/dF`` (iterative).  RHS = the field-derivative of the CC
         residual at fixed ``t`` -- since the residual is linear in H, that is just
         ``residuals(df, t1, t2)`` with the perturbed two-electron integrals swapped in (the
         CPHF-folded ``deri``/``dL`` carry the orbital relaxation).  LHS = the CCSD Jacobian;
-        iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like :meth:`ccresponse.solve_right`."""
+        iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like :meth:`ccresponse.solve_right`.
+        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
+        maxiter = cc.maxiter if maxiter is None else maxiter
+        rconv = cc.r_conv if rconv is None else rconv
         Dia, Dijab = cc.Dia, cc.Dijab
         saveERI, saveL = cc.H.ERI, cc.H.L
         cc.H.ERI, cc.H.L = deri, dL
@@ -436,11 +443,14 @@ class CCderiv(CorrelatedDerivs):
             X1, X2 = diis.extrapolate(X1, X2)
         return X1, X2
 
-    def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=200, rconv=1e-13):
+    def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=None, rconv=None):
         """Spin-orbital perturbed CCSD amplitudes ``dt/dF`` (SO Jacobian; SO residual has no 0.5 /
-        no final symmetrization, matching ``ccresponse.solve_right``)."""
+        no final symmetrization, matching ``ccresponse.solve_right``).  ``maxiter``/``rconv`` default
+        to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
+        maxiter = cc.maxiter if maxiter is None else maxiter
+        rconv = cc.r_conv if rconv is None else rconv
         Dia, Dijab = cc.Dia, cc.Dijab
         saveERI = cc.H.ERI
         cc.H.ERI = deri
@@ -635,12 +645,13 @@ class CCderiv(CorrelatedDerivs):
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
-    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=200, rconv=1e-13):
+    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
         """Perturbed Lambda ``dLambda/dF`` (iterative, linear), staying in ``cclambda`` (no
         ``Y1/Y2``).  The inhomogeneity is ``r_L`` evaluated with the perturbed HBAR + ``dL``
         (unperturbed G) plus the explicit ``dG.H``/``dG.L`` product-rule halves; the Lambda-Jacobian
         action is ``r_L(dLambda) - r_L(0)`` (``r_L`` is affine in Lambda).  Iterate
-        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`.
+        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`.  ``maxiter``/``rconv``
+        default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``).
 
         CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` (from :meth:`_perturbed_t3_intermediates`)
         are passed straight into ``r_L1``/``r_L2`` via their ``s1``/``s2`` arguments, so they thread
@@ -648,6 +659,8 @@ class CCderiv(CorrelatedDerivs):
         ``cc.S1``/``cc.S2`` do in :meth:`cclambda.solve_lambda` -- no separate correction needed."""
         from .utils import helper_diis
         cc = self.ccwfn
+        maxiter = cc.maxiter if maxiter is None else maxiter
+        rconv = cc.r_conv if rconv is None else rconv
         o, v = cc.o, cc.v
         c = self.contract
         Dia, Dijab = cc.Dia, cc.Dijab
@@ -695,16 +708,19 @@ class CCderiv(CorrelatedDerivs):
             dl1, dl2 = diis.extrapolate(dl1, dl2)
         return dl1, dl2
 
-    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=200, rconv=1e-13):
+    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
         """Spin-orbital perturbed Lambda ``dLambda/dF`` (SO r_L; inhomogeneity = r_L with perturbed
         HBAR + perturbed ERI, unperturbed G, plus the dG.H / dG.<pq||rs> product-rule halves).
 
         CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` are passed straight into the SO
         ``_so_r_L1``/``_so_r_L2`` via their ``s1``/``s2`` arguments (no 1/2 on S2, unlike the spatial
         path), so they thread through the same residual construction as ``cc.S1``/``cc.S2`` do
-        unperturbed -- no separate correction needed."""
+        unperturbed -- no separate correction needed.  ``maxiter``/``rconv`` default to the
+        wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
+        maxiter = cc.maxiter if maxiter is None else maxiter
+        rconv = cc.r_conv if rconv is None else rconv
         o, v = cc.o, cc.v
         c = self.contract
         Dia, Dijab = cc.Dia, cc.Dijab

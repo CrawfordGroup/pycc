@@ -93,6 +93,13 @@ class CCwfn(Wavefunction):
             raise InvalidKeywordError('model', model, valid_cc_models)
         self.model = model
 
+        # Convergence criteria (overwritten by solve_cc with the values actually used); defaulted
+        # here so downstream code that inherits them (the derivative drivers' Lambda / perturbed
+        # solves) always has a value to read even before solve_cc runs.
+        self.e_conv = 1e-7
+        self.r_conv = 1e-7
+        self.maxiter = 100
+
         # models requiring singles
         self.need_singles = ['CCSD', 'CCSD(T)', 'CC2', 'CC3']
 
@@ -228,6 +235,12 @@ class CCwfn(Wavefunction):
             CC correlation energy
         """
         ccsd_tstart = time.time()
+
+        # Record the convergence criteria so downstream code (e.g. the derivative drivers'
+        # Lambda / perturbed-response solves) can inherit them rather than hardwiring their own.
+        self.e_conv = e_conv
+        self.r_conv = r_conv
+        self.maxiter = maxiter
 
         o = self.o
         v = self.v
