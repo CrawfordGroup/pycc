@@ -168,7 +168,7 @@ def test_sa_mp2_gradient_631g():
 def test_ump2_gradient_nh2_631g():
     """Open-shell UHF-MP2 analytic nuclear gradient vs Psi4, NH2 (2-B1, C2v, pinned occupation) / 6-31G.
 
-    The open-shell oracle for the spin-orbital Z-vector gradient (``_so_zvector``).  psi4 is the
+    The open-shell oracle for the spin-orbital Z-vector gradient (``_so_orbital_response``).  psi4 is the
     right check here: an open-shell UHF spin-orbital orbital Hessian carries a near-zero mode, so
     the single linear solve the Z-vector route runs through is ill-conditioned and platform-
     dependent -- but the final gradient is orthogonal to that mode and reproduces psi4 to machine

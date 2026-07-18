@@ -141,7 +141,7 @@ class MPderiv(CorrelatedDerivs):
         dDg, dGam = self._perturbed_densities(pert)
         dGam = np.asarray(dGam)
         if D is None:
-            _, _, D, _, _, _ = self._so_zvector()      # unrelaxed 1-PDM
+            D = self._so_orbital_response().D         # unrelaxed 1-PDM
             dD = np.asarray(dDg)
         return self._so_perturbed_lagrangian_matrix(df, deri, D, dD, Gam, dGam)
 
@@ -166,7 +166,7 @@ class MPderiv(CorrelatedDerivs):
         ncore = o.stop - self.mp.no
         c = self.contract
         cphf = self._full_occ_cphf()
-        _, _, _, zia, G, Pco = self._so_zvector()
+        _r = self._so_orbital_response(); zia, G, Pco = _r.z, _r.mo_hessian, _r.Pco
         ERI = np.asarray(self.mp.H.ERI)
         eps = np.diag(np.asarray(self.mp.H.F))
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
@@ -194,10 +194,10 @@ class MPderiv(CorrelatedDerivs):
         return dD
 
     def _unrelaxed_densities(self):
-        """MP2 unrelaxed reduced densities as full-MO arrays: the 1-PDM ``D_u`` (the ``Doo``/``Dvv``
+        """MP2 unrelaxed reduced densities as full-MO arrays: the 1-PDM ``D`` (the ``Doo``/``Dvv``
         correlation blocks on the occupied/virtual diagonal) and the cumulant 2-PDM ``Gamma``, from
         the amplitude seeds (:meth:`MPwfn._{so_}mp2_corr_opdm` / ``_{so_}mp2_tpdm``).  Supplies the
-        base Z-vector (:meth:`CorrelatedDerivs._zvector` / :meth:`_so_zvector`)."""
+        base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
         nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
         if self.mp.orbital_basis == 'spinorbital':
             Doo, Dvv = self.mp._so_mp2_corr_opdm()
@@ -205,10 +205,10 @@ class MPderiv(CorrelatedDerivs):
         else:
             Doo, Dvv = self.mp._mp2_corr_opdm()
             Gam = self.mp._mp2_tpdm()
-        Du = np.zeros((nmo, nmo))
-        Du[o, o] = np.asarray(Doo)
-        Du[v, v] = np.asarray(Dvv)
-        return Du, np.asarray(Gam)
+        D = np.zeros((nmo, nmo))
+        D[o, o] = np.asarray(Doo)
+        D[v, v] = np.asarray(Dvv)
+        return D, np.asarray(Gam)
 
     def _perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """Spatial first-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
@@ -231,7 +231,7 @@ class MPderiv(CorrelatedDerivs):
         dDg, dGam = self._perturbed_densities(pert)
         dGam = np.asarray(dGam)
         if D is None:
-            _, _, D, _, _, _ = self._zvector()          # unrelaxed 1-PDM
+            D = self._orbital_response().D             # unrelaxed 1-PDM
             dD = np.asarray(dDg)
         return self._perturbed_lagrangian_matrix(df, deri, dL, D, dD, Gam, dGam)
 
@@ -250,7 +250,7 @@ class MPderiv(CorrelatedDerivs):
         ncore = o.stop - self.mp.no
         c = self.contract
         cphf = self._full_occ_cphf()
-        _, _, _, zia, hf, Pco = self._zvector()
+        _r = self._orbital_response(); zia, hf, Pco = _r.z, _r.mo_hessian, _r.Pco
         L = np.asarray(self.mp.H.L)
         eps = np.diag(np.asarray(self.mp.H.F))
         df = np.asarray(cphf.perturbed_fock(pert, ncore))
@@ -316,10 +316,10 @@ class MPderiv(CorrelatedDerivs):
         cphf = self._full_occ_cphf()
         c = self.contract
         if self.mp.orbital_basis == 'spinorbital':
-            Drel = self._so_zvector()[0]
+            Drel = self._so_orbital_response().Drel
             perturbed_opdm = self._so_perturbed_relaxed_opdm
         else:
-            Drel = self._zvector()[0]
+            Drel = self._orbital_response().Drel
             perturbed_opdm = self._perturbed_relaxed_opdm
         mu = [np.asarray(self.mp.H.mu[a]) for a in range(3)]
         field = [Perturbation('field', b) for b in range(3)]
@@ -385,7 +385,7 @@ class MPderiv(CorrelatedDerivs):
         cphf = self._full_occ_cphf()
         d = self.mp.derivatives
         natom = d.natom
-        Drel = (self._so_zvector() if so else self._zvector())[0]
+        Drel = (self._so_orbital_response() if so else self._orbital_response()).Drel
         popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
         mu = [np.asarray(self.mp.H.mu[a]) for a in range(3)]
         P = np.zeros((natom, 3, 3))
@@ -496,7 +496,7 @@ class MPderiv(CorrelatedDerivs):
         d = self.mp.derivatives
         natom = d.natom
         nc = 3 * natom
-        Drel = (self._so_zvector() if so else self._zvector())[0]
+        Drel = (self._so_orbital_response() if so else self._orbital_response()).Drel
         Gam = np.asarray(self.mp._so_mp2_tpdm() if so else self.mp._mp2_tpdm())
         W = self._lagrangian(Drel, Gam)
         popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm

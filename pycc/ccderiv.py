@@ -60,7 +60,7 @@ class CCderiv(CorrelatedDerivs):
     def _unrelaxed_densities(self):
         """CC unrelaxed reduced densities: the Lambda-response 1-PDM ``D`` and the (symmetrized)
         cumulant 2-PDM ``Gam`` (:meth:`ccdensity.gradient_densities`), full-MO arrays.  Supplies the
-        base Z-vector (:meth:`CorrelatedDerivs._zvector` / :meth:`_so_zvector`)."""
+        base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
         D, Gam = self._density().gradient_densities()
         return np.asarray(D), np.asarray(Gam)
 

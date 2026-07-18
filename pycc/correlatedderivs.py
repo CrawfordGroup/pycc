@@ -9,7 +9,19 @@ base/leaf split and the phased plan; more machinery moves here in later phases.
 
 from __future__ import annotations
 
+from collections import namedtuple
+
 import numpy as np
+
+
+#: Result of the unperturbed orbital-response (Z-vector) solve.  ``Drel``/``Gam`` are the relaxed
+#: 1-PDM and cumulant 2-PDM; the remaining fields are the byproducts the perturbed (2n+1) machinery
+#: reuses: the unrelaxed 1-PDM ``D``, the ov Z-vector amplitudes ``z``, the MO orbital-Hessian
+#: solver handle ``mo_hessian`` (the reference ``HFwfn`` on the spatial path, the inline matrix ``G``
+#: on the spin-orbital path), the frozen-core core<->active divide ``Pco``, and the
+#: canonical-perturbed-MO oo/vv dependent-pair rotations ``Poo``/``Pvv`` (``None`` unless the gauge
+#: is canonical).
+OrbitalResponse = namedtuple('OrbitalResponse', 'Drel Gam D z mo_hessian Pco Poo Pvv')
 
 
 class CorrelatedDerivs:
@@ -172,7 +184,7 @@ class CorrelatedDerivs:
     # Given the leaf's unrelaxed reduced densities, the relaxed 1-PDM adds the orbital-relaxation
     # blocks driven by the Lagrangian's ov-antisymmetric part:
     #
-    #     Drel = D_u  +  P_co (core<->active-occ)  +  P_oo/P_vv (extra oo/vv, e.g. (T))  -  z (ov),
+    #     Drel = D  +  P_co (core<->active-occ)  +  P_oo/P_vv (extra oo/vv, e.g. (T))  -  z (ov),
     #
     # with the Z-vector  A z = X,  X_ai = I'_ia - I'_ai (over the full occupied space).  The
     # non-redundant core<->active-occupied rotation is a direct divide P_co = (I'_ci - I'_ic) /
@@ -182,24 +194,26 @@ class CorrelatedDerivs:
     # Method-agnostic given the two leaf hooks below.
 
     def _unrelaxed_densities(self):
-        """Leaf hook: the unrelaxed reduced densities ``(D_u, Gam)`` as full-MO arrays -- the 1-PDM
+        """Leaf hook: the unrelaxed reduced densities ``(D, Gam)`` as full-MO arrays -- the 1-PDM
         (``nmo x nmo``, occupied/virtual diagonal blocks) and cumulant 2-PDM (``nmo^4``).  Supplied
         by the method (MP2 amplitude seeds / CC :meth:`ccdensity.gradient_densities`)."""
         raise NotImplementedError
 
-    def _zvector(self):
-        """Spatial (closed-shell) unperturbed Z-vector data (cached, frozen-core aware):
-        ``(Drel, Gam, D_u, z, hf, P_co)``.  The relaxed 1-PDM
+    def _orbital_response(self):
+        """Spatial (closed-shell) unperturbed orbital-response (Z-vector) solve (cached, frozen-core
+        aware), returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM
 
-            Drel = D_u + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X,
+            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X,
 
-        with ``I' = -1/2[...]`` (:meth:`_spatial_lagrangian`), the frozen-core divide
-        ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into ``X``, the canonical-perturbed-MO
-        oo/vv rotations ``P_oo``/``P_vv`` (the branch below, active only for
-        :attr:`perturbed_mo_gauge` ``== 'canonical'``, i.e. CCSD(T)), and the ov Z-vector solved with
-        the all-electron reference ``HFwfn`` CPHF (whose occupied space is the full ``ndocc``).
-        ``z`` is indexed ``(I, a)`` over the full occupied space."""
-        if getattr(self, '_zvec', None) is None:
+        with the generalized-Fock Lagrangian ``I'`` from :meth:`_spatial_lagrangian` (spin-adapted
+        ``L``), the frozen-core divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into ``X``,
+        the canonical-perturbed-MO oo/vv rotations ``P_oo``/``P_vv`` (populated only for
+        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``A z = X`` solved with
+        the orbital Hessian ``A`` from the all-electron reference ``HFwfn`` CPHF (``mo_hessian`` =
+        that ``HFwfn``; occupied space = the full ``ndocc``).  ``z`` is indexed ``(I, a)`` over the
+        full occupied space.  The record's byproducts (``z``, ``mo_hessian``, ``Pco``, ``Poo``,
+        ``Pvv``, ``D``) are reused by the perturbed (2n+1) machinery."""
+        if getattr(self, '_orbresp', None) is None:
             nmo, nfzc, no = self.wfn.nmo, self.wfn.nfzc, self.wfn.no
             o, v = self.wfn.o, self.wfn.v
             co = slice(0, nfzc)
@@ -207,11 +221,11 @@ class CorrelatedDerivs:
             eps = np.diag(np.asarray(self.wfn.H.F))
             L = np.asarray(self.wfn.H.L)
             c = self.contract
-            Du, Gam = self._unrelaxed_densities()
-            Du = np.asarray(Du)
-            Ip = self._spatial_lagrangian(Du, Gam)
-            Drel = Du.copy()
-            Pco = None
+            D, Gam = self._unrelaxed_densities()
+            D = np.asarray(D)
+            Ip = self._spatial_lagrangian(D, Gam)
+            Drel = D.copy()
+            Pco = Poo = Pvv = None
             if nfzc:
                 Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
                 Drel[co, o] += Pco
@@ -237,20 +251,27 @@ class CorrelatedDerivs:
             zia = hf.cphf.solve(X)                              # (I,a) over full occ
             Drel[v, ofull] += -zia.T
             Drel[ofull, v] += -zia
-            self._zvec = (Drel, Gam, Du, zia, hf, Pco)
-        return self._zvec
+            self._orbresp = OrbitalResponse(Drel, Gam, D, zia, hf, Pco, Poo, Pvv)
+        return self._orbresp
 
-    def _so_zvector(self):
-        """Spin-orbital unperturbed Z-vector data (cached, frozen-core aware):
-        ``(Drel, Gam, D_u, z, G, P_co)`` -- the spin-orbital analogue of :meth:`_zvector`
-        (antisymmetrized ``<pq||rs>``; :meth:`_so_lagrangian`).  The orbital Hessian is built inline
+    def _so_orbital_response(self):
+        """Spin-orbital unperturbed orbital-response (Z-vector) solve (cached, frozen-core aware),
+        returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM
 
-            G_ia,jb = <aj||ib> + <ab||ij> + delta_ij delta_ab (eps_a - eps_i),
+            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X,
 
-        over the full occupied space (there is no all-electron spin-orbital ``HFwfn`` CPHF to borrow
-        -- it orders the spins differently from the densities).  **UHF only** -- raises for ROHF (the
-        semicanonical response does not reproduce the restricted ROHF response)."""
-        if getattr(self, '_so_zvec', None) is None:
+        with the generalized-Fock Lagrangian ``I'`` from :meth:`_so_lagrangian` (antisymmetrized
+        ``<pq||rs>``), the frozen-core divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into
+        ``X``, the canonical-perturbed-MO oo/vv rotations ``P_oo``/``P_vv`` (populated only for
+        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``A z = X`` solved with
+        the orbital Hessian ``A = G`` built inline (``G_ia,jb = <aj||ib> + <ab||ij> + delta_ij
+        delta_ab (eps_a - eps_i)``, ``mo_hessian`` = that ``G``) -- there is no all-electron
+        spin-orbital ``HFwfn`` CPHF to borrow (it orders the spins differently from the densities).
+        ``z`` is indexed ``(I, a)`` over the full occupied space.  The record's byproducts (``z``,
+        ``mo_hessian``, ``Pco``, ``Poo``, ``Pvv``, ``D``) are reused by the perturbed (2n+1)
+        machinery.  **UHF only** -- raises for ROHF (the semicanonical response does not reproduce
+        the restricted ROHF response)."""
+        if getattr(self, '_so_orbresp', None) is None:
             if self.wfn.cphf.is_rohf:
                 raise NotImplementedError(
                     "The spin-orbital correlated relaxed gradient/dipole is not implemented for "
@@ -263,11 +284,11 @@ class CorrelatedDerivs:
             ERI = np.asarray(self.wfn.H.ERI)
             eps = np.diag(np.asarray(self.wfn.H.F))
             c = self.contract
-            Du, Gam = self._unrelaxed_densities()
-            Du = np.asarray(Du)
-            Ip = self._so_lagrangian(Du, Gam)
-            Drel = Du.copy()
-            Pco = None
+            D, Gam = self._unrelaxed_densities()
+            D = np.asarray(D)
+            Ip = self._so_lagrangian(D, Gam)
+            Drel = D.copy()
+            Pco = Poo = Pvv = None
             if nfzc:
                 Pco = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
                 Drel[co, o] += Pco
@@ -295,19 +316,21 @@ class CorrelatedDerivs:
             zia = np.linalg.solve(G, X.reshape(-1)).reshape(nof, nv)
             Drel[v, ofull] += -zia.T
             Drel[ofull, v] += -zia
-            self._so_zvec = (Drel, Gam, Du, zia, G, Pco)
-        return self._so_zvec
+            self._so_orbresp = OrbitalResponse(Drel, Gam, D, zia, G, Pco, Poo, Pvv)
+        return self._so_orbresp
 
     def _relaxed_density(self):
         """Relaxed 1-PDM ``Drel`` and cumulant 2-PDM ``Gam`` (``Tr(Drel mu)`` gives the correlation
-        dipole; ``Drel``/``Gam`` feed the gradient), dispatched on the orbital basis."""
-        z = self._so_zvector() if self.wfn.orbital_basis == 'spinorbital' else self._zvector()
-        return z[0], z[1]
+        dipole; ``Drel``/``Gam`` feed the gradient), dispatched on the orbital basis.  The full
+        orbital-response byproducts are available from :meth:`_orbital_response` /
+        :meth:`_so_orbital_response`."""
+        rec = self._so_orbital_response() if self.wfn.orbital_basis == 'spinorbital' else self._orbital_response()
+        return rec.Drel, rec.Gam
 
     def _so_relaxed_density(self):
-        """Spin-orbital relaxed 1-PDM and 2-PDM -- ``(Drel, Gam)`` from :meth:`_so_zvector`."""
-        z = self._so_zvector()
-        return z[0], z[1]
+        """Spin-orbital relaxed 1-PDM and 2-PDM -- ``(Drel, Gam)`` from :meth:`_so_orbital_response`."""
+        rec = self._so_orbital_response()
+        return rec.Drel, rec.Gam
 
     # ---- first-derivative properties: relaxed dipole and nuclear gradient ----
     # Both are contractions of the relaxed density against the property integrals, method-agnostic
@@ -389,7 +412,7 @@ class CorrelatedDerivs:
 
         This is the frozen-core core<->active-occupied divide generalized to an arbitrary square
         block; it also supplies the active oo/vv rotations of the canonical perturbed-MO gauge
-        (:attr:`perturbed_mo_gauge`, used by :meth:`_zvector` / :meth:`_so_zvector`)."""
+        (:attr:`perturbed_mo_gauge`, used by :meth:`_orbital_response` / :meth:`_so_orbital_response`)."""
         num = np.asarray(Iblock) - np.asarray(Iblock).T
         den = eps_block[:, None] - eps_block[None, :]
         P = np.zeros_like(num)
