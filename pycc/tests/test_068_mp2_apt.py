@@ -185,7 +185,7 @@ def test_fc_mp2_apt_translational_sum_rule_631g():
 def test_mp2_apt_2n1_routes_agree_631g():
     """The two 2n+1 APT routes agree, all four spin/frozen-core combinations (H2O/6-31G).
     '2n+1-nuclear' differentiates the relaxed dipole w.r.t. the nuclei (3N responses, reuses
-    _perturbed_relaxed_opdm); '2n+1-field' (the default) differentiates the relaxed nuclear
+    _perturbed_relaxed_density); '2n+1-field' (the default) differentiates the relaxed nuclear
     gradient w.r.t. the field (3 field responses -- d_F D_rel, d_F Gamma, and the perturbed
     energy-weighted density d_F W -- contracted with the nuclear skeletons + their field
     rotations)."""

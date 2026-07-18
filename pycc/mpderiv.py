@@ -43,18 +43,6 @@ class MPderiv(CorrelatedDerivs):
 
     # ---- full-occupied CPHF (shared by the 2n+1 perturbed-response routes) ----
 
-    def _full_occ_cphf(self):
-        """A CPHF over the **full** occupied space (frozen core + active) in the wavefunction's
-        own MO ordering (cached). The 2n+1 perturbed-response routes need the orbital response over
-        the full occupied space (core<->active and core-virtual), which ``self.mp.cphf`` (active
-        only) can't supply; building it here -- rather than borrowing an all-electron ``HFwfn``
-        -- keeps the spin-orbital ordering consistent with the densities (the all-electron SO
-        ``HFwfn`` orders the spins differently). For ``nfzc=0`` it coincides with ``self.mp.cphf``."""
-        if getattr(self, '_focphf', None) is None:
-            from .cphf import CPHF
-            self._focphf = CPHF(self.mp, full_occ=True)
-        return self._focphf
-
     # ---- perturbed amplitudes / densities (for the second derivatives) ----
 
     def _perturbed_t2(self, pert) -> np.ndarray:
@@ -108,12 +96,20 @@ class MPderiv(CorrelatedDerivs):
         dGam[v, v, o, o] = u.transpose(2, 3, 0, 1)
         return dgam, dGam
 
-    # ---- 2n+1 route: perturbed relaxed density ----
+    def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
+        """MP2 perturbed unrelaxed densities -- the closed-form response
+        (:meth:`_perturbed_densities`).  The perturbed integrals ``df``/``deri``/``dL`` are unused
+        (recomputed internally from the non-canonical perturbed integrals); the argument matches the
+        base :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook that the CC iterative path
+        needs."""
+        return self._perturbed_densities(pert)
+
+    # ---- 2n+1 route: perturbed relaxed density (assembly hoisted to CorrelatedDerivs) ----
     # The relaxed-density gradient is already the 2n+1 first derivative; its second derivative
     # (polarizability/APT/Hessian) needs the *response* of the relaxed density, whose new piece
-    # is the perturbed Z-vector z^x (same orbital Hessian as the gradient, perturbed RHS). The
-    # spin-orbital path builds G inline; the spatial analogue carries the spin-adapted L and
-    # solves through the all-electron HFwfn CPHF. See mp2_2n1_perturbed.tex / DERIVATIVES_PLAN.
+    # is the perturbed Z-vector z^x (same orbital Hessian as the gradient, perturbed RHS).  The
+    # assembly lives in CorrelatedDerivs._{so_}perturbed_relaxed_density, driven by the
+    # _perturbed_unrelaxed_densities hook above.  See mp2_2n1_perturbed.tex / DERIVATIVES_PLAN.
 
     def _so_perturbed_lagrangian(self, pert, D=None, dD=None) -> np.ndarray:
         """First-order response ``d_x I'`` of the GSB orbital Lagrangian (``nmo x nmo``),
@@ -122,7 +118,7 @@ class MPderiv(CorrelatedDerivs):
 
         With ``D``/``dD`` omitted this uses the **unrelaxed** 1-PDM and its response
         (:meth:`_perturbed_densities`) -- the Z-vector RHS derivative. Passing ``D`` = the
-        relaxed 1-PDM and ``dD`` = its response (:meth:`_so_perturbed_relaxed_opdm`) gives
+        relaxed 1-PDM and ``dD`` = its response (:meth:`_so_perturbed_relaxed_density`) gives
         instead ``d_x W`` (the perturbed energy-weighted density; :meth:`_so_gradient` uses
         ``W = I'(D_rel)`` with the nuclear ``S^X``). The 2-PDM response ``dGam`` is the same
         either way (:meth:`_perturbed_densities`). The ``termA`` derivative is the full Fock
@@ -144,54 +140,6 @@ class MPderiv(CorrelatedDerivs):
             D = self._so_orbital_response().D         # unrelaxed 1-PDM
             dD = np.asarray(dDg)
         return self._so_perturbed_lagrangian_matrix(df, deri, D, dD, Gam, dGam)
-
-    def _so_perturbed_relaxed_opdm(self, pert) -> np.ndarray:
-        """First-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),
-        spin-orbital, frozen-core aware: the unrelaxed oo/vv responses
-        (:meth:`_perturbed_densities`), the perturbed core-active divide ``d_x P_co``, and the
-        **perturbed Z-vector** ``z^x`` in the ov/vo blocks over the full occupied space. ``z^x``
-        solves the same orbital Hessian ``G`` as the gradient's Z-vector with the perturbed RHS
-        ``X^x - A^x z`` (``A^x z`` uses the full non-canonical ``d_x f`` vv/oo blocks).
-
-        ``d_x P_co`` is the derivative of the divide ``(eps_c - eps_i) P_ci = I'_ci - I'_ic``,
-        a Sylvester relation ``(eps_c - eps_i) d_x P_ci = d_x(I'_ci - I'_ic) - sum_d d_x f_cd
-        P_di + sum_j P_cj d_x f_ji``: the diagonal ``d=c``/``j=i`` terms are the
-        ``-P_ci(d_x eps_c - d_x eps_i)`` orbital-energy shift, and the off-diagonal ``j != i``
-        active-active ``d_x f`` couples the block because a field leaves the active occupied
-        space non-canonical. ``P_co`` also feeds the ov RHS coupling (perturbed here too)."""
-        nmo, nfzc, nv = self.mp.nmo, self.mp.nfzc, self.mp.nv
-        o, v, co = self.mp.o, self.mp.v, self.mp.co
-        ofull = slice(0, o.stop)
-        nof = o.stop
-        ncore = o.stop - self.mp.no
-        c = self.contract
-        cphf = self._full_occ_cphf()
-        _r = self._so_orbital_response(); zia, G, Pco = _r.z, _r.mo_hessian, _r.Pco
-        ERI = np.asarray(self.mp.H.ERI)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        df = np.asarray(cphf.perturbed_fock(pert, ncore))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
-        dIp = self._so_perturbed_lagrangian(pert)
-        dDg, _ = self._perturbed_densities(pert)
-        dDg = np.asarray(dDg)
-        dD = np.zeros((nmo, nmo))
-        dD[o, o] = dDg[o, o]
-        dD[v, v] = dDg[v, v]
-        dX = dIp[ofull, v] - dIp[v, ofull].T
-        if nfzc:
-            gap = eps[co][:, None] - eps[o][None, :]
-            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
-            dD[co, o] = dPco
-            dD[o, co] = dPco.T
-            zjc, dzjc = -Pco.T, -dPco.T
-            dX = dX - (c('jc,ajic->ia', dzjc, ERI[v, o, ofull, co]) + c('jc,acij->ia', dzjc, ERI[v, co, ofull, o])
-                       + c('jc,ajic->ia', zjc, deri[v, o, ofull, co]) + c('jc,acij->ia', zjc, deri[v, co, ofull, o]))
-        Axz = (c('ajib,jb->ia', deri[v, ofull, ofull, v], zia) + c('abij,jb->ia', deri[v, v, ofull, ofull], zia)
-               + c('ab,ib->ia', df[v, v], zia) - c('ij,ja->ia', df[ofull, ofull], zia))
-        zx = np.linalg.solve(G, (dX - Axz).reshape(-1)).reshape(nof, nv)
-        dD[v, ofull] = -zx.T
-        dD[ofull, v] = -zx
-        return dD
 
     def _unrelaxed_densities(self):
         """MP2 unrelaxed reduced densities as full-MO arrays: the 1-PDM ``D`` (the ``Doo``/``Dvv``
@@ -235,49 +183,6 @@ class MPderiv(CorrelatedDerivs):
             dD = np.asarray(dDg)
         return self._perturbed_lagrangian_matrix(df, deri, dL, D, dD, Gam, dGam)
 
-    def _perturbed_relaxed_opdm(self, pert) -> np.ndarray:
-        """Spatial first-order response ``d_x D_rel`` of the relaxed MP2 1-PDM (``nmo x nmo``),
-        frozen-core aware: the unrelaxed oo/vv responses, the perturbed core-active divide
-        ``d_x P_co`` (the Sylvester derivative -- see :meth:`_so_perturbed_relaxed_opdm`), and
-        the perturbed Z-vector ``z^x`` in the ov/vo blocks over the full occupied space. ``z^x``
-        reuses the all-electron HFwfn CPHF (same orbital Hessian as the gradient's Z-vector)
-        with the perturbed RHS ``X^x - A^x z``; ``A^x z`` uses ``dL`` and the full non-canonical
-        ``d_x f`` vv/oo blocks, and (for ``nfzc>0``) the perturbed ``P_co`` RHS coupling."""
-        nmo, nfzc, no = self.mp.nmo, self.mp.nfzc, self.mp.no
-        o, v = self.mp.o, self.mp.v
-        co = slice(0, nfzc)
-        ofull = slice(0, nfzc + no)
-        ncore = o.stop - self.mp.no
-        c = self.contract
-        cphf = self._full_occ_cphf()
-        _r = self._orbital_response(); zia, hf, Pco = _r.z, _r.mo_hessian, _r.Pco
-        L = np.asarray(self.mp.H.L)
-        eps = np.diag(np.asarray(self.mp.H.F))
-        df = np.asarray(cphf.perturbed_fock(pert, ncore))
-        deri = np.asarray(cphf.perturbed_eri(pert, ncore))
-        dL = 2.0 * deri - deri.swapaxes(2, 3)
-        dIp = self._perturbed_lagrangian(pert)
-        dDg, _ = self._perturbed_densities(pert)
-        dDg = np.asarray(dDg)
-        dD = np.zeros((nmo, nmo))
-        dD[o, o] = dDg[o, o]
-        dD[v, v] = dDg[v, v]
-        dX = dIp[ofull, v] - dIp[v, ofull].T
-        if nfzc:
-            gap = eps[co][:, None] - eps[o][None, :]
-            dPco = (dIp[co, o] - dIp[o, co].T - df[co, co] @ Pco + Pco @ df[o, o]) / gap
-            dD[co, o] = dPco
-            dD[o, co] = dPco.T
-            zjc, dzjc = -Pco.T, -dPco.T
-            dX = dX - (c('jc,ajic->ia', dzjc, L[v, o, ofull, co]) + c('jc,acij->ia', dzjc, L[v, co, ofull, o])
-                       + c('jc,ajic->ia', zjc, dL[v, o, ofull, co]) + c('jc,acij->ia', zjc, dL[v, co, ofull, o]))
-        Axz = (c('ajib,jb->ia', dL[v, ofull, ofull, v], zia) + c('abij,jb->ia', dL[v, v, ofull, ofull], zia)
-               + c('ab,ib->ia', df[v, v], zia) - c('ij,ja->ia', df[ofull, ofull], zia))
-        zx = hf.cphf.solve(dX - Axz)
-        dD[v, ofull] = -zx.T
-        dD[ofull, v] = -zx
-        return dD
-
     # ---- second derivatives: polarizability, APT (dipole derivatives), Hessian ----
 
     def polarizability(self, route: str = '2n+1') -> np.ndarray:
@@ -285,7 +190,7 @@ class MPderiv(CorrelatedDerivs):
         (a.u.), shape ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``, via the 2n+1
         route (:meth:`_polarizability_2n1`): differentiate the relaxed-density gradient in a
         field, using only the first-order perturbed *relaxed* density
-        (:meth:`_so_perturbed_relaxed_opdm` / :meth:`_perturbed_relaxed_opdm`, which carry the
+        (:meth:`_so_perturbed_relaxed_density` / :meth:`_perturbed_relaxed_density`, which carry the
         perturbed Z-vector). Frozen-core aware (both spin-orbital and spin-adapted paths).
 
         ``route`` accepts only ``'2n+1'`` (the sole route; the argument is retained for a uniform
@@ -305,7 +210,7 @@ class MPderiv(CorrelatedDerivs):
             alpha_ab = sum_pq d_a D_rel_pq (mu_b)_pq
                      + sum_pq D_rel_pq [ (U^a).T mu_b + mu_b U^a ]_pq
 
-        The first term is the perturbed relaxed density (:meth:`_so_perturbed_relaxed_opdm`,
+        The first term is the perturbed relaxed density (:meth:`_so_perturbed_relaxed_density`,
         carrying the perturbed Z-vector and, for frozen core, the perturbed core-active divide);
         the second is the MO dipole rotating under the field (``d_a f^(b) = rotate(U^a, -mu_b)``,
         with ``U^a`` over the full occupied space -- ``ncore`` canonical core-active block). No
@@ -317,10 +222,10 @@ class MPderiv(CorrelatedDerivs):
         c = self.contract
         if self.mp.orbital_basis == 'spinorbital':
             Drel = self._so_orbital_response().Drel
-            perturbed_opdm = self._so_perturbed_relaxed_opdm
+            perturbed_opdm = self._so_perturbed_relaxed_density
         else:
             Drel = self._orbital_response().Drel
-            perturbed_opdm = self._perturbed_relaxed_opdm
+            perturbed_opdm = self._perturbed_relaxed_density
         mu = [np.asarray(self.mp.H.mu[a]) for a in range(3)]
         field = [Perturbation('field', b) for b in range(3)]
         alpha = np.zeros((3, 3))
@@ -370,7 +275,7 @@ class MPderiv(CorrelatedDerivs):
             P[X,a] = -[ sum d_a D_rel f^X + sum D_rel d_a f^X + sum d_a Gamma <>^X
                         + sum Gamma d_a <>^X + sum d_a W S^X + sum W d_a S^X ],
 
-        with the 3 field responses ``d_a D_rel`` (:meth:`_so_perturbed_relaxed_opdm`),
+        with the 3 field responses ``d_a D_rel`` (:meth:`_so_perturbed_relaxed_density`),
         ``d_a Gamma`` (:meth:`_perturbed_densities`), and the perturbed energy-weighted density
         ``d_a W`` (:meth:`_so_perturbed_lagrangian` at the relaxed density). The field-derivatives
         of the nuclear skeletons carry the orbital rotation ``rotate(U^a, .)`` plus, for
@@ -386,7 +291,7 @@ class MPderiv(CorrelatedDerivs):
         d = self.mp.derivatives
         natom = d.natom
         Drel = (self._so_orbital_response() if so else self._orbital_response()).Drel
-        popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
+        popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
         mu = [np.asarray(self.mp.H.mu[a]) for a in range(3)]
         P = np.zeros((natom, 3, 3))
 
@@ -474,7 +379,7 @@ class MPderiv(CorrelatedDerivs):
 
         the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`_dipole_derivatives_2n1`).
         Only ``3N`` first-order solves -- the perturbed relaxed density ``d_Y D_rel``
-        (:meth:`_so_perturbed_relaxed_opdm`), the perturbed energy-weighted density ``d_Y W``
+        (:meth:`_so_perturbed_relaxed_density`), the perturbed energy-weighted density ``d_Y W``
         (:meth:`_so_perturbed_lagrangian` at ``D_rel``), ``d_Y Gamma``
         (:meth:`_perturbed_densities`), and ``U^Y`` (:meth:`CPHF._full_U`) -- vs the explicit
         route's ``O(N^2)`` ``U^{XY}`` solves.
@@ -499,7 +404,7 @@ class MPderiv(CorrelatedDerivs):
         Drel = (self._so_orbital_response() if so else self._orbital_response()).Drel
         Gam = np.asarray(self.mp._so_mp2_tpdm() if so else self.mp._mp2_tpdm())
         W = self._lagrangian(Drel, Gam)
-        popdm = self._so_perturbed_relaxed_opdm if so else self._perturbed_relaxed_opdm
+        popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
         lagr = self._so_perturbed_lagrangian if so else self._perturbed_lagrangian
         pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
 
