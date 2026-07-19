@@ -59,13 +59,25 @@ class MPwfn(Wavefunction):
         return mp
 
     def _build_mp2(self) -> None:
-        """Build the energy denominators and MP2 doubles amplitudes from the seeded
+        r"""Build the energy denominators and MP2 doubles amplitudes from the seeded
         MO integrals. The ERI oovv block is staged onto the compute device with
         clone(..., device1) so the divide lands where the amplitudes live.
 
-        Basis-agnostic: ``t2 = <ij|ab> / Dijab`` (spatial) and
-        ``t2 = <ij||ab> / Dijab`` (spin-orbital) are the same expression in the
-        respective ``H.ERI``, and the denominator from the Fock diagonal is too.
+        Basis-agnostic -- the same expression in the respective ``H.ERI`` (``<ij|ab>`` spatial,
+        the antisymmetrized ``<ij||ab>`` spin-orbital), with the denominator from the Fock
+        diagonal::
+
+            D_ijab  = eps_i + eps_j - eps_a - eps_b
+            t2_ijab = <ij||ab> / D_ijab
+            t1_ia   = f_ia / D_ia          (spin-orbital only)
+
+        .. math::
+
+            \begin{aligned}
+            D_{ijab} &= \varepsilon_i + \varepsilon_j - \varepsilon_a - \varepsilon_b \\
+            t^{ab}_{ij} &= \langle ij||ab \rangle / D_{ijab} \\
+            t^a_i &= f_{ia} / D_{ia} \qquad \text{(spin-orbital only)}
+            \end{aligned}
         """
         o = self.o
         v = self.v
@@ -84,12 +96,21 @@ class MPwfn(Wavefunction):
             self.t1 = clone(self.H.F[o, v], device=self.device1) / self.Dia
 
     def compute_energy(self) -> "Tensor":
-        """Compute and return the MP2 correlation energy.
+        r"""Compute and return the MP2 correlation energy.
 
-        Spatial (spin-adapted) path: ``E = t2_ijab L_ijab``. Spin-orbital path:
-        ``E = f_ia t1_ia + 1/4 <ij||ab> t2_ijab`` -- no ``L`` exists, the 1/4 accounts
-        for the unrestricted sum over the antisymmetrized doubles, and the singles term
-        is nonzero only for a non-canonical (e.g. ROHF) reference.
+        Spatial (spin-adapted) and spin-orbital paths (no ``L`` exists in the SO path; the ``1/4``
+        accounts for the unrestricted sum over the antisymmetrized doubles, and the singles term is
+        nonzero only for a non-canonical, e.g. ROHF, reference)::
+
+            E = sum_ijab t2_ijab L_ijab                            (spatial)
+            E = sum_ia f_ia t1_ia + 1/4 sum_ijab <ij||ab> t2_ijab  (spin-orbital)
+
+        .. math::
+
+            \begin{aligned}
+            E &= \sum_{ijab} t^{ab}_{ij} L_{ijab} && \text{(spatial)} \\
+            E &= \sum_{ia} f_{ia} t^a_i + \tfrac{1}{4} \sum_{ijab} \langle ij||ab \rangle t^{ab}_{ij} && \text{(spin-orbital)}
+            \end{aligned}
         """
         o = self.o
         v = self.v
@@ -109,10 +130,20 @@ class MPwfn(Wavefunction):
     # l2 = 2(2 t2 - t2.swap) and the spin-adapted L (= H.L).
 
     def _so_mp2_corr_opdm(self):
-        """Spin-orbital unrelaxed MP2 one-particle correlation density blocks
-        ``(Doo, Dvv)``: ``Doo = -1/2 t_imef t_jmef``, ``Dvv = 1/2 t_mnbe t_mnae``. The
-        1/2 is the normalization that makes the densities close the energy
-        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)."""
+        r"""Spin-orbital unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``.
+        The ``1/2`` is the normalization that makes the densities close the energy
+        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)::
+
+            Doo_ij = -1/2 sum_mef t_imef t_jmef
+            Dvv_ab =  1/2 sum_mne t_mnbe t_mnae
+
+        .. math::
+
+            \begin{aligned}
+            D^{oo}_{ij} &= -\tfrac{1}{2} \sum_{mef} t_{imef} t_{jmef} \\
+            D^{vv}_{ab} &=  \tfrac{1}{2} \sum_{mne} t_{mnbe} t_{mnae}
+            \end{aligned}
+        """
         c = self.contract
         t2 = self.t2
         Doo = -0.5 * c('imef,jmef->ij', t2, t2)
@@ -120,10 +151,19 @@ class MPwfn(Wavefunction):
         return Doo, Dvv
 
     def _so_mp2_tpdm(self) -> np.ndarray:
-        """Spin-orbital MP2 cumulant 2-PDM ``Gamma_ijab = 1/4 t2`` in the ``oovv``/``vvoo``
-        blocks -- the only blocks that contribute (determined from the MP2 energy
-        Lagrangian, in which Lambda and T2 enter linearly). Built over the full MO space
-        (``self.nmo``); the active ``o``/``v`` slices place the amplitudes."""
+        r"""Spin-orbital MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks -- the only blocks that
+        contribute (determined from the MP2 energy Lagrangian, in which Lambda and T2 enter
+        linearly). Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place
+        the amplitudes::
+
+            Gamma_ijab = 1/4 t2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} = \tfrac{1}{4} t^{ab}_{ij}
+            \end{aligned}
+        """
         o, v = self.o, self.v
         nmo = self.nmo
         t2 = np.asarray(self.t2)
@@ -133,9 +173,22 @@ class MPwfn(Wavefunction):
         return Gam
 
     def _mp2_corr_opdm(self):
-        """Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo,
-        Dvv)``: ``Doo = -t_imef l2_jmef``, ``Dvv = t_mnbe l2_mnae``, with the spin-adapted
-        lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell spin sum)."""
+        r"""Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``, with
+        the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell
+        spin sum)::
+
+            Doo_ij  = -sum_mef t_imef l2_jmef
+            Dvv_ab  =  sum_mne t_mnbe l2_mnae
+            l2_ijab = 2(2 t2_ijab - t2_ijba)
+
+        .. math::
+
+            \begin{aligned}
+            D^{oo}_{ij} &= -\sum_{mef} t_{imef} \lambda_{jmef} \\
+            D^{vv}_{ab} &=  \sum_{mne} t_{mnbe} \lambda_{mnae} \\
+            \lambda_{ijab} &= 2(2 t^{ab}_{ij} - t^{ba}_{ij})
+            \end{aligned}
+        """
         c = self.contract
         t2 = self.t2
         l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
@@ -144,9 +197,18 @@ class MPwfn(Wavefunction):
         return Doo, Dvv
 
     def _mp2_tpdm(self) -> np.ndarray:
-        """Spin-adapted MP2 cumulant 2-PDM ``Gamma_ijab = 2 t2 - t2.swap`` (``oovv``/``vvoo``).
-        Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place the
-        amplitudes, leaving any frozen-core rows/columns zero."""
+        r"""Spin-adapted MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks. Built over the full MO
+        space (``self.nmo``); the active ``o``/``v`` slices place the amplitudes, leaving any
+        frozen-core rows/columns zero::
+
+            Gamma_ijab = 2 t2_ijab - t2_ijba
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} = 2 t^{ab}_{ij} - t^{ba}_{ij}
+            \end{aligned}
+        """
         o, v = self.o, self.v
         nmo = self.nmo
         t2 = np.asarray(self.t2)
@@ -157,17 +219,35 @@ class MPwfn(Wavefunction):
         return Gam
 
     def _mp2_normalization(self) -> float:
-        """MP2 intermediate normalization ``N = 1/sqrt(1 + <T2|2T2 - T2~>)`` (spin-adapted),
-        for the wave-function-overlap AAT (:meth:`MPderiv.atomic_axial_tensors`). The normalized
-        doubles are ``c2 = N t2`` and the reference coefficient is ``c0 = N``."""
+        r"""MP2 intermediate normalization (spin-adapted), for the wave-function-overlap AAT
+        (:meth:`MPderiv.atomic_axial_tensors`). The normalized doubles are ``c2 = N t2`` and the
+        reference coefficient is ``c0 = N``::
+
+            N = 1 / sqrt(1 + sum_ijab t2_ijab (2 t2_ijab - t2_ijba))
+
+        .. math::
+
+            \begin{aligned}
+            N = \Big(1 + \sum_{ijab} t^{ab}_{ij} \, (2 t^{ab}_{ij} - t^{ba}_{ij})\Big)^{-1/2}
+            \end{aligned}
+        """
         t2 = np.asarray(self.t2)
         norm2 = self.contract('ijab,ijab->', t2, 2.0 * t2 - t2.swapaxes(2, 3))
         return 1.0 / np.sqrt(1.0 + norm2)
 
     def _so_mp2_normalization(self) -> float:
-        """Spin-orbital MP2 normalization ``N = 1/sqrt(1 + (1/4)<T2|T2>)`` -- the spin-orbital
-        analogue of :meth:`_mp2_normalization` (the ``1/4`` for the antisymmetric double sum).
-        Equal to the spin-adapted value on a closed shell."""
+        r"""Spin-orbital MP2 normalization -- the spin-orbital analogue of
+        :meth:`_mp2_normalization` (the ``1/4`` for the antisymmetric double sum). Equal to the
+        spin-adapted value on a closed shell::
+
+            N = 1 / sqrt(1 + 1/4 sum_ijab t2_ijab t2_ijab)
+
+        .. math::
+
+            \begin{aligned}
+            N = \Big(1 + \tfrac{1}{4} \sum_{ijab} t^{ab}_{ij} t^{ab}_{ij}\Big)^{-1/2}
+            \end{aligned}
+        """
         t2 = np.asarray(self.t2)
         norm2 = 0.25 * self.contract('ijab,ijab->', t2, t2)
         return 1.0 / np.sqrt(1.0 + norm2)
