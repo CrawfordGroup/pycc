@@ -1,11 +1,13 @@
 """MP2 analytic-derivative property driver.
 
 `MPderiv` is the MP2 leaf of the :class:`~pycc.correlatedderivs.CorrelatedDerivs` hierarchy (see
-docs/DERIVATIVES_PLAN_2026-06.md section 9): it supplies the MP2 reduced densities and their
-first-order responses and carries the MP2 correlation-property methods (dipole, gradient,
-polarizability, APT, Hessian, AAT, VG-APT).  The base holds the method-agnostic machinery
-(reference ``HFwfn``, canonical dependent-pair rotations); later phases hoist more shared
-orbital-response and 2n+1 assembly into it.
+docs/DERIVATIVES_PLAN_2026-06.md section 9): it supplies MP2's two density hooks -- the unrelaxed
+reduced densities (:meth:`_unrelaxed_densities`) and their first-order response
+(:meth:`_perturbed_unrelaxed_densities`) -- and adds the MP2-specific atomic axial tensors (AAT) and
+velocity-gauge APT, which are overlap formulations the base does not provide.  Everything else is
+inherited: the base owns the method-agnostic orbital-response (Z-vector) solve and the 2n+1 assembly,
+so the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian come from it unchanged,
+driven by the two hooks above.
 
 State is read from the MP2 wavefunction ``self.mp`` (an :class:`~pycc.mpwfn.MPwfn`); the unrelaxed
 correlation-density seeds (``_*_corr_opdm`` / ``_*_tpdm``) and the intermediate normalization stay
@@ -22,10 +24,13 @@ from .correlatedderivs import CorrelatedDerivs
 class MPderiv(CorrelatedDerivs):
     """MP2 correlation derivative-property driver.
 
-    Constructed from a converged :class:`~pycc.mpwfn.MPwfn`; carries the orbital-response
-    (Z-vector) machinery and the correlation contributions to the analytic first and second
-    derivative properties.  Both the spin-adapted (closed-shell RHF) and spin-orbital (``_so_``)
-    paths are frozen-core aware.
+    Constructed from a converged :class:`~pycc.mpwfn.MPwfn`.  Supplies the MP2 density hooks
+    (:meth:`_unrelaxed_densities`, :meth:`_perturbed_unrelaxed_densities`) and the MP2-specific atomic
+    axial tensors (:meth:`atomic_axial_tensors`) and velocity-gauge APT
+    (:meth:`velocity_dipole_derivatives`); the orbital-response (Z-vector) solve and the 2n+1 assembly
+    of the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian are inherited from
+    :class:`~pycc.correlatedderivs.CorrelatedDerivs`.  Both the spin-adapted (closed-shell RHF) and
+    spin-orbital (``_so_``) paths are frozen-core aware.
     """
 
     def __init__(self, wfn) -> None:

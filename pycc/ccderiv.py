@@ -32,8 +32,9 @@ class CCderiv(CorrelatedDerivs):
     -----
     Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported; ROHF is not
     (the semicanonical response does not reproduce the restricted ROHF response).  Lambda and the
-    reduced densities are solved/built on first use and cached.  The analytic nuclear gradient is
-    implemented (Hessian, APTs, etc. to follow).
+    reduced densities are solved/built on first use and cached.  The analytic gradient, static
+    polarizability, atomic polar tensors (length-gauge APTs), and molecular Hessian are implemented,
+    for CCSD and CCSD(T), all-electron and frozen core.
     """
 
     def __init__(self, ccwfn: "CCwfn") -> None:
@@ -73,7 +74,7 @@ class CCderiv(CorrelatedDerivs):
     # relaxation), the perturbed correlation densities, the perturbed Lagrangian (FULL-df Fock term
     # -- see the diagonal-eps gotcha below), and the perturbed Z-vector.  Only first-order responses;
     # no second-order CPHF.  See DERIVATIVES_PLAN_2026-06.md sec 8.  Spatial (closed-shell RHF) and
-    # spin-orbital (UHF) paths, all-electron and frozen core; (T) to follow.  Each _so_* method
+    # spin-orbital (UHF) paths, all-electron and frozen core, CCSD and CCSD(T).  Each _so_* method
     # follows its spatial counterpart -- the SO path mirrors the spatial with antisymmetrized
     # <pq||rs> (no L, no Hovov; Hvvvo/Hovoo via a Zovov intermediate) and the inline orbital Hessian
     # G (as in _so_relaxed_density) rather than a borrowed all-electron CPHF.
