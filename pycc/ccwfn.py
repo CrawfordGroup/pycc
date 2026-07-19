@@ -1654,9 +1654,36 @@ class CCwfn(Wavefunction):
         return Wovvo
 
     def _so_cc3_t_residual(self, o, v, F, ERI, Fme, t1, t2):
-        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
-        residuals, via per-(i,j,k) batched T3 built from the T1-dressed
-        intermediates."""
+        r"""Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        residuals, via per-(i,j,k) batched T3 built from the T1-dressed intermediates.
+
+        Notes
+        -----
+        The connected triples T3 is built per-(i,j,k) (:func:`~pycc.cctriples.t3c_ijk_so`)
+        from the T1-dressed CC3 intermediates W_bcdk (:meth:`_so_build_Wvvvo_CC3`, <bc||dk>)
+        and W_lcjk (:meth:`_so_build_Wovoo_CC3`, <lc||jk>), then folded into the T1/T2
+        residuals.  With the one-vs-pair antisymmetrizer P(p/qr) = 1 - P(pq) - P(pr)
+        (repeated indices summed; F_kc = Fme, W_bkcd = :meth:`_so_build_Wvovv_CC3` <bk||cd>,
+        W_kljc = :meth:`_so_build_Wooov_CC3` <kl||jc>)::
+
+            D_ijkabc t3_ijkabc = P(k/ij) P(a/bc) t2_ijad W_bcdk
+                               - P(i/jk) P(c/ab) t2_ilab W_lcjk
+            D_ijkabc = f_ii + f_jj + f_kk - f_aa - f_bb - f_cc
+
+            x1_ia   = 1/4 t3_ijkabc <jk||bc>
+            x2_ijab = t3_ijkabc F_kc
+                    + 1/2 P(ab) t3_ijkacd W_bkcd
+                    - 1/2 P(ij) t3_iklabc W_kljc
+
+        .. math::
+
+            \begin{aligned}
+            D^{abc}_{ijk}\, t^{abc}_{ijk} &= \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} W_{bcdk} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\; t^{ab}_{il} W_{lcjk} \\
+            D^{abc}_{ijk} &= f_{ii} + f_{jj} + f_{kk} - f_{aa} - f_{bb} - f_{cc} \\
+            (x_1)^a_i &= \tfrac{1}{4} t^{abc}_{ijk} \langle jk||bc \rangle \\
+            (x_2)^{ab}_{ij} &= t^{abc}_{ijk} F_{kc} + \tfrac{1}{2}\mathcal{P}(ab)\, t^{acd}_{ijk} W_{bkcd} - \tfrac{1}{2}\mathcal{P}(ij)\, t^{abc}_{ikl} W_{kljc}
+            \end{aligned}
+        """
         contract = self.contract
         Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
         Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
@@ -1682,16 +1709,51 @@ class CCwfn(Wavefunction):
         return x1, x2
 
     def _so_cc3_t_residual_full(self, o, v, F, ERI, Fme, t1, t2):
-        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        r"""Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
         residuals via the full T3 array (store_triples=True path).
 
         Builds the whole connected T3 with one set of whole-array contractions
         (no per-(i,j,k) batching), stores it on ``self.t3``, and folds it into the
-        residuals. Full-array counterpart of the batched :func:`_so_cc3_t_residual`;
-        port of socc ``CC3_full``. With a static external field the T3 also picks up
-        the perturbation coupling: ``[V,T3]`` (iterative -- uses the previous
-        ``self.t3``) and ``1/2 [[V,T2],T2]``, and the (canonical) ``F0`` sets the
-        denominator. Without a field the two paths give identical x1/x2."""
+        residuals. Full-array counterpart of the batched :meth:`_so_cc3_t_residual`;
+        port of socc ``CC3_full``. Without a field the two paths give identical x1/x2.
+
+        Notes
+        -----
+        Same connected T3 and x1/x2 folding as :meth:`_so_cc3_t_residual`, but built with
+        whole-array contractions (the one-vs-pair antisymmetrizer P(p/qr) = 1 - P(pq) -
+        P(pr) applied by :func:`~pycc.utils.permute_triples`) and stored on ``self.t3``::
+
+            D_ijkabc t3_ijkabc = P(k/ij) P(a/bc) t2_ijad W_bcdk
+                               - P(i/jk) P(c/ab) t2_ilab W_lcjk
+
+            x1_ia   = 1/4 t3_ijkabc <jk||bc>
+            x2_ijab = t3_ijkabc F_kc
+                    + 1/2 P(ab) t3_ijkacd W_bkcd
+                    - 1/2 P(ij) t3_iklabc W_kljc
+
+        For a static perturbation V (``self.field``) the T3 numerator gains the field
+        coupling -- built from the previous iteration's amplitudes t3' = ``self.t3`` and
+        the T1-dressed field intermediates Vbar_ae = V_ae - t_ma V_me,
+        Vbar_mi = V_mi + t_ie V_me -- and the canonical F0 replaces F in D_ijkabc::
+
+            [V,T3]:          P(c/ab) t3'_ijkabd Vbar_cd - P(k/ij) t3'_ijlabc Vbar_lk
+            1/2 [[V,T2],T2]: -P(k/ij) P(a/bc) t2_ijad t2_lkbc V_ld
+
+        .. math::
+
+            \begin{aligned}
+            D^{abc}_{ijk}\, t^{abc}_{ijk} &= \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} W_{bcdk} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\; t^{ab}_{il} W_{lcjk} \\
+            (x_1)^a_i &= \tfrac{1}{4} t^{abc}_{ijk} \langle jk||bc \rangle \\
+            (x_2)^{ab}_{ij} &= t^{abc}_{ijk} F_{kc} + \tfrac{1}{2}\mathcal{P}(ab)\, t^{acd}_{ijk} W_{bkcd} - \tfrac{1}{2}\mathcal{P}(ij)\, t^{abc}_{ikl} W_{kljc}
+            \end{aligned}
+
+        .. math::
+
+            \begin{aligned}
+            \text{[V,T3]:}&\quad \mathcal{P}(c/ab)\, \tilde t^{abd}_{ijk} \bar V_{cd} - \mathcal{P}(k/ij)\, \tilde t^{abc}_{ijl} \bar V_{lk} \\
+            \tfrac{1}{2}\text{[[V,T2],T2]:}&\quad -\mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} t^{bc}_{lk} V_{ld}
+            \end{aligned}
+        """
         contract = self.contract
         Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
         Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
