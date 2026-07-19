@@ -1,36 +1,4 @@
-"""
-derivatives.py: lazy MO-basis derivative-integral provider.
-
-A thin, memory-conscious wrapper around Psi4's MintsHelper MO derivative-integral
-routines (mo_*_deriv1/2). It serves the *skeleton* (fixed-MO-coefficient) first and
-second derivatives of the one- and two-electron integrals, the overlap half-derivatives
-(for AATs), and the dipole derivatives (for APTs), in the MO basis -- consistent with
-PyCC's reference-implementation, MO-basis derivative-property formulations.
-
-Block-label interface
----------------------
-Both the spatial and the spin-orbital methods select the MO block(s) to transform into
-by *label* rather than by passing coefficient matrices: ``'o'`` (occupied), ``'v'``
-(virtual), or ``'all'`` (the full MO space, the default). The provider owns all the MO
-bookkeeping -- the spatial methods slice the base's symmetry-handled ``self.wfn.C`` (a
-single irrep block in global energy order, so symmetry stays on), while the spin-orbital
-``so_*`` methods spin-block the spatial MO derivatives (built in the semicanonical MO
-gauge from the spin-orbital Hamiltonian's ``Ca``/``Cb`` + ``spin``/``spat`` maps), so the
-spin-orbital integrals live in the same MO gauge the spin-orbital densities do. The call
-sites are therefore parallel between the two paths, e.g. ``d.core(atom, 'o', 'o')`` and
-``d.so_core(atom, 'o', 'o')``.
-
-Memory discipline
------------------
-One-electron derivatives are small (3*N_atom * n**2), so they are served per atom
-directly. Two-electron derivatives (3*N_atom * n**4) are the heavy class: they are
-computed one atom at a time (via :meth:`eri` / :meth:`iter_eri`), so the caller contracts
-and discards each atom's block rather than ever materializing all 3*N_atom of them; a
-caller wanting only the occupied block passes ``'o'`` to keep the transform at n_occ**4.
-
-Lives on the Wavefunction base (lazy ``self.derivatives``); it depends only on base state
-(the basis set, molecule, and MO coefficients).
-"""
+"""derivatives.py: lazy MO-basis derivative-integral provider (see :class:`Derivatives`)."""
 
 from __future__ import annotations
 
@@ -42,6 +10,14 @@ import numpy as np
 
 class Derivatives(object):
     """MO-basis derivative-integral provider built on Psi4's MintsHelper.
+
+    A thin, memory-conscious wrapper around Psi4's MintsHelper MO derivative-integral routines
+    (``mo_*_deriv1/2``).  It serves the *skeleton* (fixed-MO-coefficient) first and second derivatives
+    of the one- and two-electron integrals, the overlap half-derivatives (for AATs), and the dipole
+    derivatives (for APTs), in the MO basis -- consistent with PyCC's reference-implementation,
+    MO-basis derivative-property formulations.  Lives on the Wavefunction base (lazy
+    ``self.derivatives``); it depends only on base state (the basis set, molecule, and MO
+    coefficients).
 
     Parameters
     ----------
@@ -56,6 +32,26 @@ class Derivatives(object):
     ``atom``; ``deriv2`` calls return the nine (cart1, cart2) pairs (indexed
     ``cart1*3 + cart2``) for an ``(atom1, atom2)`` pair. Block labels ('o'/'v'/'all',
     default 'all') select the MO block(s) to transform into.
+
+    .. rubric:: Block-label interface
+
+    Both the spatial and the spin-orbital methods select the MO block(s) to transform into by *label*
+    rather than by passing coefficient matrices: ``'o'`` (occupied), ``'v'`` (virtual), or ``'all'``
+    (the full MO space, the default).  The provider owns all the MO bookkeeping -- the spatial methods
+    slice the base's symmetry-handled ``self.wfn.C`` (a single irrep block in global energy order, so
+    symmetry stays on), while the spin-orbital ``so_*`` methods spin-block the spatial MO derivatives
+    (built in the semicanonical MO gauge from the spin-orbital Hamiltonian's ``Ca``/``Cb`` +
+    ``spin``/``spat`` maps), so the spin-orbital integrals live in the same MO gauge the spin-orbital
+    densities do.  The call sites are therefore parallel between the two paths, e.g.
+    ``d.core(atom, 'o', 'o')`` and ``d.so_core(atom, 'o', 'o')``.
+
+    .. rubric:: Memory discipline
+
+    One-electron derivatives are small (``3*N_atom * n**2``), so they are served per atom directly.
+    Two-electron derivatives (``3*N_atom * n**4``) are the heavy class: they are computed one atom at
+    a time (via :meth:`eri` / :meth:`iter_eri`), so the caller contracts and discards each atom's
+    block rather than ever materializing all ``3*N_atom`` of them; a caller wanting only the occupied
+    block passes ``'o'`` to keep the transform at ``n_occ**4``.
     """
 
     def __init__(self, wfn: Any) -> None:

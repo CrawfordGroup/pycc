@@ -1,60 +1,4 @@
-"""
-cideriv.py: CISD analytic-derivative property driver (SCAFFOLD / STUB).
-
-This is the Phase-4 slot of the CorrelatedDerivs refactor: the place where CISD's analytic
-derivative properties will live behind a driver, exactly as MP2 lives on :class:`~pycc.mpderiv.MPderiv`
-and CC on :class:`~pycc.ccderiv.CCderiv`.  It is intentionally a STUB -- the two density hooks below
-raise :class:`NotImplementedError`.  Filling them in is a programmer task.
-
-WHY A STUB IS ENOUGH
---------------------
-:class:`~pycc.correlatedderivs.CorrelatedDerivs` already owns the entire method-agnostic
-orbital-response + property-assembly machinery: the unperturbed Z-vector
-(:meth:`~pycc.correlatedderivs.CorrelatedDerivs._orbital_response`), the perturbed relaxed density
-(:meth:`~pycc.correlatedderivs.CorrelatedDerivs._perturbed_relaxed_density`), and the public
-properties ``gradient`` / ``relaxed_dipole`` / ``polarizability`` / ``dipole_derivatives`` /
-``hessian``.  All of that is driven by just two method-specific hooks, which each leaf supplies:
-
-  * :meth:`_unrelaxed_densities`            -- the unrelaxed reduced densities ``(D, Gam)``
-  * :meth:`_perturbed_unrelaxed_densities`  -- their first-order response to a perturbation
-
-Implement those two hooks for CISD and ``CIderiv`` immediately inherits gradients, the relaxed
-dipole, the polarizability, the atomic polar tensors (LG-APT), and the molecular Hessian -- no
-per-property CISD code required.  (Atomic axial tensors and the velocity-gauge APT are NOT provided
-by the base -- they are method-specific overlap formulations -- so those stay as bespoke methods,
-as they are for MP2 on ``MPderiv`` and currently for CISD on ``CIwfn``.)
-
-MIGRATION ROADMAP (for the programmer)
---------------------------------------
-1. Implement :meth:`_unrelaxed_densities` and :meth:`_perturbed_unrelaxed_densities` below, drawing
-   on the CISD density machinery that already exists on :class:`~pycc.ciwfn.CIwfn`
-   (``_cisd_densities``, ``_solve_cpci``, ``_perturbed_cisd_corr_opdm``, ``_perturbed_cisd_tpdm``,
-   ``_solve_dz_dR``).  The crux is the DENSITY CONVENTION (see each hook's docstring): the base
-   wants the *correlation* 1-PDM (no HF ``2*delta_oo`` block) and the *cumulant* 2-PDM (no HF 2-RDM
-   block), matching :meth:`~pycc.correlatedderivs.CorrelatedDerivs._lagrangian`.  ``CIwfn._corr_QGX``
-   already strips exactly those HF blocks off ``CIwfn._zvector``'s full ``Q``/``G`` -- study it.
-2. Validate.  ``CIwfn``'s current ``dipole_derivatives`` / ``hessian`` / ``atomic_axial_tensors`` /
-   ``velocity_dipole_derivatives`` are already the perturbed-relaxed-density (2n+1-style) results
-   (their ``route='explicit'`` argument is a vestigial, inert label -- the body never branches on
-   it), so they are a ready-made numerical oracle for the new base-driven ``CIderiv`` output.  Also
-   check the SO==spatial keystone and a tight finite-difference oracle, per pycc convention.
-3. Register the driver: uncomment ``register_deriv(CIwfn, CIderiv)`` in ``pycc/__init__.py`` so the
-   :mod:`pycc.properties` facade routes CISD through ``CIderiv`` instead of the transitional
-   on-``CIwfn`` code.  Then retire the now-redundant per-property CISD derivative code on ``CIwfn``
-   (keeping only the genuinely CISD-specific AAT / VG-APT pieces), and drop the inert ``route``
-   arguments.
-
-ORBITAL GAUGE
--------------
-CISD is invariant to occupied-occupied and virtual-virtual orbital rotations, so it takes the
-NON-CANONICAL perturbed-MO approach (the ``U^x_ij = -1/2 S^(x)_ij`` / ``U^x_ab = -1/2 S^(x)_ab``
-orthonormality gauge; the oo/vv dependent-pair rotations vanish) -- the same choice as MP2 and CCSD,
-and the opposite of CCSD(T).  This is already the default: the inherited
-:attr:`~pycc.correlatedderivs.CorrelatedDerivs.perturbed_mo_gauge` returns ``'non-canonical'`` for
-any wavefunction whose ``model`` is not ``CCSD(T)``, and ``CIwfn.model`` is ``'CISD'``, so no
-override is needed here.  The programmer should nonetheless CONFIRM this holds for their CISD variant
-(a non-invariant CI truncation would need the canonical route and an override).
-"""
+"""cideriv.py: CISD analytic-derivative property driver (scaffold/stub) -- see :class:`CIderiv`."""
 
 from __future__ import annotations
 
@@ -64,11 +8,64 @@ from .correlatedderivs import CorrelatedDerivs
 class CIderiv(CorrelatedDerivs):
     """CISD correlation derivative-property driver -- SCAFFOLD / STUB (Phase 4).
 
-    Constructed from a converged :class:`~pycc.ciwfn.CIwfn`.  Inherits the full orbital-response and
-    property-assembly machinery from :class:`~pycc.correlatedderivs.CorrelatedDerivs`; a programmer
-    supplies the two CISD density hooks (:meth:`_unrelaxed_densities`,
-    :meth:`_perturbed_unrelaxed_densities`) to bring it to life.  See the module docstring for the
-    migration roadmap and the density-convention notes.
+    This is the Phase-4 slot of the CorrelatedDerivs refactor: the place where CISD's analytic
+    derivative properties will live behind a driver, exactly as MP2 lives on
+    :class:`~pycc.mpderiv.MPderiv` and CC on :class:`~pycc.ccderiv.CCderiv`.  Constructed from a
+    converged :class:`~pycc.ciwfn.CIwfn`, it inherits the full orbital-response and property-assembly
+    machinery from :class:`~pycc.correlatedderivs.CorrelatedDerivs`.  It is intentionally a STUB --
+    the two density hooks (:meth:`_unrelaxed_densities`, :meth:`_perturbed_unrelaxed_densities`) raise
+    :class:`NotImplementedError`; filling them in is a programmer task.
+
+    .. rubric:: Why a stub is enough
+
+    :class:`~pycc.correlatedderivs.CorrelatedDerivs` already owns the entire method-agnostic
+    orbital-response + property-assembly machinery: the unperturbed Z-vector
+    (:meth:`~pycc.correlatedderivs.CorrelatedDerivs._orbital_response`), the perturbed relaxed density
+    (:meth:`~pycc.correlatedderivs.CorrelatedDerivs._perturbed_relaxed_density`), and the public
+    properties ``gradient`` / ``relaxed_dipole`` / ``polarizability`` / ``dipole_derivatives`` /
+    ``hessian``.  All of that is driven by just two method-specific hooks, which each leaf supplies:
+
+    * :meth:`_unrelaxed_densities`            -- the unrelaxed reduced densities ``(D, Gam)``
+    * :meth:`_perturbed_unrelaxed_densities`  -- their first-order response to a perturbation
+
+    Implement those two hooks for CISD and ``CIderiv`` immediately inherits gradients, the relaxed
+    dipole, the polarizability, the atomic polar tensors (LG-APT), and the molecular Hessian -- no
+    per-property CISD code required.  (Atomic axial tensors and the velocity-gauge APT are NOT
+    provided by the base -- they are method-specific overlap formulations -- so those stay as bespoke
+    methods, as they are for MP2 on ``MPderiv`` and currently for CISD on ``CIwfn``.)
+
+    .. rubric:: Migration roadmap (for the programmer)
+
+    1. Implement :meth:`_unrelaxed_densities` and :meth:`_perturbed_unrelaxed_densities` below,
+       drawing on the CISD density machinery that already exists on :class:`~pycc.ciwfn.CIwfn`
+       (``_cisd_densities``, ``_solve_cpci``, ``_perturbed_cisd_corr_opdm``, ``_perturbed_cisd_tpdm``,
+       ``_solve_dz_dR``).  The crux is the DENSITY CONVENTION (see each hook's docstring): the base
+       wants the *correlation* 1-PDM (no HF ``2*delta_oo`` block) and the *cumulant* 2-PDM (no HF
+       2-RDM block), matching :meth:`~pycc.correlatedderivs.CorrelatedDerivs._lagrangian`.
+       ``CIwfn._corr_QGX`` already strips exactly those HF blocks off ``CIwfn._zvector``'s full
+       ``Q``/``G`` -- study it.
+    2. Validate.  ``CIwfn``'s current ``dipole_derivatives`` / ``hessian`` / ``atomic_axial_tensors``
+       / ``velocity_dipole_derivatives`` are already the perturbed-relaxed-density (2n+1-style)
+       results (their ``route='explicit'`` argument is a vestigial, inert label -- the body never
+       branches on it), so they are a ready-made numerical oracle for the new base-driven ``CIderiv``
+       output.  Also check the SO==spatial keystone and a tight finite-difference oracle, per pycc
+       convention.
+    3. Register the driver: uncomment ``register_deriv(CIwfn, CIderiv)`` in ``pycc/__init__.py`` so
+       the :mod:`pycc.properties` facade routes CISD through ``CIderiv`` instead of the transitional
+       on-``CIwfn`` code.  Then retire the now-redundant per-property CISD derivative code on
+       ``CIwfn`` (keeping only the genuinely CISD-specific AAT / VG-APT pieces), and drop the inert
+       ``route`` arguments.
+
+    .. rubric:: Orbital gauge
+
+    CISD is invariant to occupied-occupied and virtual-virtual orbital rotations, so it takes the
+    NON-CANONICAL perturbed-MO approach (the ``U^x_ij = -1/2 S^(x)_ij`` / ``U^x_ab = -1/2 S^(x)_ab``
+    orthonormality gauge; the oo/vv dependent-pair rotations vanish) -- the same choice as MP2 and
+    CCSD, and the opposite of CCSD(T).  This is already the default: the inherited
+    :attr:`~pycc.correlatedderivs.CorrelatedDerivs.perturbed_mo_gauge` returns ``'non-canonical'`` for
+    any wavefunction whose ``model`` is not ``CCSD(T)``, and ``CIwfn.model`` is ``'CISD'``, so no
+    override is needed here.  The programmer should nonetheless CONFIRM this holds for their CISD
+    variant (a non-invariant CI truncation would need the canonical route and an override).
     """
 
     def __init__(self, ciwfn) -> None:
