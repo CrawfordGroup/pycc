@@ -111,6 +111,34 @@ class CCderiv(CorrelatedDerivs):
                              "build the wavefunction with make_t3_density=True.")
         return super().polarizability(route)        # shared 2n+1 assembly (SO/spatial dispatch in the base)
 
+    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
+        """CCSD/CCSD(T) **correlation** contribution to the atomic polar tensors (nuclear dipole
+        derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
+        ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed field/nuclear
+        analog of :meth:`polarizability`.
+
+        ``route='2n+1-field'`` (default, 3 field solves) or ``'2n+1-nuclear'`` (``3N`` nuclear
+        solves); both give the same tensor.  The nuclear ``Z_A`` and SCF reference terms are kept
+        separate (:meth:`HFwfn.dipole_derivatives`) and summed with this correlation part by
+        :func:`pycc.apt`.
+
+        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
+        core.  The (T) contribution enters entirely through the (T)-aware relaxed and perturbed
+        densities the shared base already builds (no APT-specific (T) code); the spin-orbital CCSD(T)
+        APT is validated against a CFOUR DIPDER oracle (``DIPDER(CCSD(T)) - DIPDER(SCF)``, see
+        ``test_087_ccsdt_apt``).
+
+        Overrides :meth:`CorrelatedDerivs.dipole_derivatives` only to add the CC method-specific
+        guards (supported model, (T) density intermediates); the shared 2n+1 assembly runs via
+        ``super()``."""
+        cc = self.ccwfn
+        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
+            raise NotImplementedError(f"CC dipole derivatives: only CCSD and CCSD(T) are implemented (not {cc.model}).")
+        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
+            raise ValueError("CCSD(T) dipole derivatives require the (T) density intermediates; "
+                             "build the wavefunction with make_t3_density=True.")
+        return super().dipole_derivatives(route)    # shared 2n+1 assembly (SO/spatial dispatch in the base)
+
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """CC perturbed unrelaxed densities ``(d_x gamma, d_x Gamma)`` -- the base
         :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook.  Runs the iterative perturbed
