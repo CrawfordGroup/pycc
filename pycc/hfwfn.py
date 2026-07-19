@@ -96,10 +96,19 @@ class HFwfn(Wavefunction):
         return grad
 
     def _so_gradient_electronic(self) -> np.ndarray:
-        """Electronic part of the spin-orbital HF gradient (i, j over occupied spin orbitals;
+        r"""Electronic part of the spin-orbital HF gradient (i, j over occupied spin orbitals;
         ``<ij||ij>`` antisymmetrized), valid for UHF/ROHF and a closed shell forced to spin
-        orbitals.  For a closed shell this equals the spatial electronic gradient term-for-term;
-        :meth:`gradient` adds ``dV_NN/dX``."""
+        orbitals.  :meth:`gradient` adds ``dV_NN/dX``::
+
+            (dE/dX)_elec = sum_i h^x_ii + 1/2 sum_ij <ij||ij>^x - sum_i eps_i S^x_ii
+
+        .. math::
+
+            \begin{aligned}
+            \Big(\frac{dE}{dX}\Big)_{\mathrm{elec}} = \sum_i h^x_{ii} + \tfrac{1}{2}\sum_{ij} \langle ij||ij \rangle^x - \sum_i \varepsilon_i S^x_{ii}
+            \end{aligned}
+
+        For a closed shell this equals the spatial electronic gradient term-for-term."""
         eps = np.asarray(diag(self.H.F))[self.o]
         d = self.derivatives
         grad = np.zeros((d.natom, 3))
@@ -188,17 +197,17 @@ class HFwfn(Wavefunction):
         insensitive to it). The assembly is nuclear + explicit electronic + overlap
         (Pulay) + CPHF response::
 
-            d mu_a / d X_Ab = Z_A delta_ab                         (nuclear)
-                            + 2 sum_i (d mu_a / d X_Ab)_ii         (explicit electronic)
-                            - 2 sum_ik S^X_ki (mu_a)_ik            (oo / Pulay response)
-                            + 4 sum_ia U^X_ia (mu_a)_ia            (ov / CPHF response)
+            d mu_a / d X_Ab = Z_A delta_ab                (nuclear)
+                            + 2 sum_i (mu_a)^X_ii         (explicit electronic)
+                            - 2 sum_ik S^X_ki (mu_a)_ik   (oo / Pulay response)
+                            + 4 sum_ia U^X_ia (mu_a)_ia   (ov / CPHF response)
 
         .. math::
 
             \begin{aligned}
             \frac{d\mu_\alpha}{dX_{A\beta}}
             &= Z_A\,\delta_{\alpha\beta} && \text{(nuclear)} \\
-            &\quad + 2\sum_i \Big(\tfrac{\partial\mu_\alpha}{\partial X_{A\beta}}\Big)_{ii} && \text{(explicit electronic)} \\
+            &\quad + 2\sum_i (\mu_\alpha)^X_{ii} && \text{(explicit electronic)} \\
             &\quad - 2\sum_{ik} S^X_{ki}\,(\mu_\alpha)_{ik} && \text{(oo / Pulay response)} \\
             &\quad + 4\sum_{ia} U^X_{ia}\,(\mu_\alpha)_{ia} && \text{(ov / CPHF response)}
             \end{aligned}
@@ -243,14 +252,14 @@ class HFwfn(Wavefunction):
         r"""Electronic part of the spin-orbital APT (spin orbitals: one-electron traces carry
         factor 1 and the ov response factor 2, vs 2 and 4 closed-shell), with the spin-orbital
         nuclear CPHF response and dipole derivatives.  :meth:`dipole_derivatives` adds the nuclear
-        ``Z_A delta_ab``.  With x = (A,b)::
+        ``Z_A delta_ab``::
 
-            (d mu_a / d X_Ab)_elec = sum_i (d mu_a / d X_Ab)_ii - sum_ik S^x_ki (mu_a)_ik + 2 sum_ia U^x_ia (mu_a)_ia
+            (d mu_a / d X_Ab)_elec = sum_i (mu_a)^X_ii - sum_ik S^X_ki (mu_a)_ik + 2 sum_ia U^X_ia (mu_a)_ia
 
         .. math::
 
             \begin{aligned}
-            \Big(\frac{d\mu_\alpha}{dX_{A\beta}}\Big)_{\mathrm{elec}} = \sum_i \Big(\frac{\partial\mu_\alpha}{\partial X_{A\beta}}\Big)_{ii} - \sum_{ik} S^x_{ki}\,(\mu_\alpha)_{ik} + 2 \sum_{ia} U^x_{ia}\,(\mu_\alpha)_{ia}
+            \Big(\frac{d\mu_\alpha}{dX_{A\beta}}\Big)_{\mathrm{elec}} = \sum_i (\mu_\alpha)^X_{ii} - \sum_{ik} S^X_{ki}\,(\mu_\alpha)_{ik} + 2 \sum_{ia} U^X_{ia}\,(\mu_\alpha)_{ia}
             \end{aligned}
 
         Valid for UHF and a closed shell forced to spin orbitals; ROHF raises (via
