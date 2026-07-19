@@ -16,8 +16,9 @@ transpose(DIPDER, (1,2,0)).  CFOUR's exact GENBAS "6-31G" is transcribed here (s
 test_084/test_087) so pycc's AO basis matches to all printed digits; pycc then reproduces the
 10-digit DIPDER to ~1e-10, on both the spin-orbital and spatial routes.
 
-Planar HOF (Cs, molecular plane xy) is the off-diagonal case; water/6-31G is the cheaper SO ==
-spatial keystone.
+Planar HOF (Cs, molecular plane xy) is the off-diagonal case; water/6-31G (C2v, plane yz) is the
+cheaper second molecule whose spin-orbital case is fast enough (~5 s) to keep the SO route
+CFOUR-anchored in the default suite; the SO HOF case is marked slow.
 """
 
 import psi4
@@ -147,6 +148,49 @@ CFOUR_APT_HOF_631G_TOTAL_FC = np.array(
       [0.0294148435, 0.0837032595, 0.0],
       [0.0, 0.0, 0.4654363044]]])
 
+# CFOUR CCSD APT oracles (a.u.), water (O, H, H) / CFOUR GENBAS 6-31G, indexed [A, beta, alpha].
+# C2v, molecular plane yz (x perpendicular); the fast SO route anchor.
+CFOUR_APT_WATER_631G = np.array(
+    [[[0.0368350628, 0.0, 0.0],
+      [0.0, 0.1049013758, 0.0],
+      [0.0, 0.0, 0.111175279]],
+     [[-0.0184175315, 0.0, 0.0],
+      [0.0, -0.0524506879, 0.0332568917],
+      [0.0, 0.0263151125, -0.0555876395]],
+     [[-0.0184175315, 0.0, 0.0],
+      [0.0, -0.0524506879, -0.0332568917],
+      [0.0, -0.0263151125, -0.0555876395]]])
+CFOUR_APT_WATER_631G_FC = np.array(
+    [[[0.0369506702, 0.0, 0.0],
+      [0.0, 0.1050980957, 0.0],
+      [0.0, 0.0, 0.1112302379]],
+     [[-0.0184753351, 0.0, 0.0],
+      [0.0, -0.0525490478, 0.0332955133],
+      [0.0, 0.0263464715, -0.055615119]],
+     [[-0.0184753351, 0.0, 0.0],
+      [0.0, -0.0525490478, -0.0332955133],
+      [0.0, -0.0263464715, -0.055615119]]])
+CFOUR_APT_WATER_631G_TOTAL = np.array(
+    [[[-0.8978937423, 0.0, 0.0],
+      [0.0, -0.392987091, 0.0],
+      [0.0, 0.0, -0.2745420927]],
+     [[0.4489468711, 0.0, 0.0],
+      [0.0, 0.1964935455, 0.1316260017],
+      [0.0, 0.1952019257, 0.1372710464]],
+     [[0.4489468711, 0.0, 0.0],
+      [0.0, 0.1964935455, -0.1316260017],
+      [0.0, -0.1952019257, 0.1372710464]]])
+CFOUR_APT_WATER_631G_TOTAL_FC = np.array(
+    [[[-0.8977781349, 0.0, 0.0],
+      [0.0, -0.3927903711, 0.0],
+      [0.0, 0.0, -0.2744871338]],
+     [[0.4488890675, 0.0, 0.0],
+      [0.0, 0.1963951856, 0.1316646233],
+      [0.0, 0.1952332847, 0.1372435669]],
+     [[0.4488890675, 0.0, 0.0],
+      [0.0, 0.1963951856, -0.1316646233],
+      [0.0, -0.1952332847, 0.1372435669]]])
+
 
 def _cfour_wfn(geom, freeze_core):
     """RHF reference in CFOUR's exact GENBAS 6-31G (via basis_helper), for the CFOUR-oracle tests."""
@@ -168,19 +212,22 @@ def _ccsd_apt(geom, freeze_core, orbital_basis):
     return pycc.apt(cc)
 
 
-def _check_hof(r, corr_ref, total_ref):
-    """Shared assertions for an HOF CCSD APT run: correlation and total vs the CFOUR oracle, the
-    facade decomposition (total == nuclear + reference + correlation, nuclear == Z_A delta), the Cs
-    out-of-plane (z) block vanishing, and the translational (acoustic) sum rule."""
+def _check(r, corr_ref, total_ref, Z, perp):
+    """Shared assertions for a planar-molecule CCSD APT run vs the CFOUR oracle: correlation and total
+    tensors, the facade decomposition (total == nuclear + reference + correlation, nuclear == Z_A
+    delta), the out-of-plane block vanishing, and the translational (acoustic) sum rule.  ``Z`` is the
+    nuclear-charge list; ``perp`` is the axis perpendicular to the molecular plane (2/z for HOF in the
+    xy plane, 0/x for water in the yz plane)."""
     corr = np.asarray(r.correlation)
     total = np.asarray(r.total)
     assert np.max(np.abs(corr - corr_ref)) < 1e-9, corr
     assert np.max(np.abs(total - total_ref)) < 1e-9, total
     parts = np.asarray(r.nuclear) + np.asarray(r.reference) + np.asarray(r.correlation)
     assert np.max(np.abs(total - parts)) < 1e-12
-    Z = np.array([8.0, 9.0, 1.0])
-    assert np.max(np.abs(np.asarray(r.nuclear) - Z[:, None, None] * np.eye(3))) < 1e-12
-    assert np.max(np.abs(corr[:, 2, :2])) < 1e-9 and np.max(np.abs(corr[:, :2, 2])) < 1e-9
+    assert np.max(np.abs(np.asarray(r.nuclear) - np.asarray(Z)[:, None, None] * np.eye(3))) < 1e-12
+    other = [a for a in range(3) if a != perp]
+    assert np.max(np.abs(corr[:, other][:, :, perp])) < 1e-9
+    assert np.max(np.abs(corr[:, perp][:, other])) < 1e-9
     assert np.max(np.abs(np.sum(total, axis=0))) < 1e-9
     assert np.max(np.abs(np.sum(corr, axis=0))) < 1e-9
 
@@ -189,8 +236,8 @@ def test_ccsd_apt_cfour_hof_spatial():
     """All-electron spatial (closed-shell RHF) CCSD APT for HOF vs the CFOUR DIPDER oracle -- the
     correlation and total tensors, the exact facade decomposition, the Cs out-of-plane zeros, and the
     translational sum rule."""
-    _check_hof(_ccsd_apt(HOF, 'false', 'spatial'),
-               CFOUR_APT_HOF_631G, CFOUR_APT_HOF_631G_TOTAL)
+    _check(_ccsd_apt(HOF, 'false', 'spatial'),
+           CFOUR_APT_HOF_631G, CFOUR_APT_HOF_631G_TOTAL, [8.0, 9.0, 1.0], perp=2)
     psi4.core.clean()
 
 
@@ -198,37 +245,45 @@ def test_fc_ccsd_apt_cfour_hof_spatial():
     """Frozen-core spatial CCSD APT for HOF vs the CFOUR frozen-core oracle -- exercises the
     frozen-core core<->active response in the perturbed relaxed density; the SCF reference is
     unchanged by freezing, so the oracle subtracts the same all-electron SCF DIPDER."""
-    _check_hof(_ccsd_apt(HOF, 'true', 'spatial'),
-               CFOUR_APT_HOF_631G_FC, CFOUR_APT_HOF_631G_TOTAL_FC)
+    _check(_ccsd_apt(HOF, 'true', 'spatial'),
+           CFOUR_APT_HOF_631G_FC, CFOUR_APT_HOF_631G_TOTAL_FC, [8.0, 9.0, 1.0], perp=2)
+    psi4.core.clean()
+
+
+def test_ccsd_apt_cfour_water_spatial():
+    """All-electron and frozen-core spatial CCSD APT for water/6-31G (C2v, plane yz) vs the CFOUR
+    oracle -- a second molecule/frame for the spatial route, and the spatial half of the fast SO
+    anchor."""
+    _check(_ccsd_apt(WATER, 'false', 'spatial'),
+           CFOUR_APT_WATER_631G, CFOUR_APT_WATER_631G_TOTAL, [8.0, 1.0, 1.0], perp=0)
+    psi4.core.clean()
+    _check(_ccsd_apt(WATER, 'true', 'spatial'),
+           CFOUR_APT_WATER_631G_FC, CFOUR_APT_WATER_631G_TOTAL_FC, [8.0, 1.0, 1.0], perp=0)
+    psi4.core.clean()
+
+
+def test_so_ccsd_apt_cfour_water():
+    """Spin-orbital CCSD APT for water/6-31G vs the CFOUR oracle (all-electron and frozen core) -- the
+    direct SO-vs-CFOUR anchor that runs fast enough for the default suite (C2v water, ~5 s, vs the
+    slow HOF SO case).  Exercises the genuine SO path (SO perturbed amplitudes/Lambda, inline orbital
+    Hessian)."""
+    _check(_ccsd_apt(WATER, 'false', 'spinorbital'),
+           CFOUR_APT_WATER_631G, CFOUR_APT_WATER_631G_TOTAL, [8.0, 1.0, 1.0], perp=0)
+    psi4.core.clean()
+    _check(_ccsd_apt(WATER, 'true', 'spinorbital'),
+           CFOUR_APT_WATER_631G_FC, CFOUR_APT_WATER_631G_TOTAL_FC, [8.0, 1.0, 1.0], perp=0)
     psi4.core.clean()
 
 
 @pytest.mark.slow
 def test_so_ccsd_apt_cfour_hof():
     """Spin-orbital CCSD APT for HOF vs the CFOUR oracle (all-electron and frozen core) -- the
-    genuinely spin-orbital path (SO perturbed amplitudes/Lambda and the inline orbital Hessian);
-    marked slow (the SO HOF solve is the expensive case)."""
-    _check_hof(_ccsd_apt(HOF, 'false', 'spinorbital'),
-               CFOUR_APT_HOF_631G, CFOUR_APT_HOF_631G_TOTAL)
+    off-diagonal (Cs) SO anchor.  Marked slow; the fast SO coverage is test_so_ccsd_apt_cfour_water."""
+    _check(_ccsd_apt(HOF, 'false', 'spinorbital'),
+           CFOUR_APT_HOF_631G, CFOUR_APT_HOF_631G_TOTAL, [8.0, 9.0, 1.0], perp=2)
     psi4.core.clean()
-    _check_hof(_ccsd_apt(HOF, 'true', 'spinorbital'),
-               CFOUR_APT_HOF_631G_FC, CFOUR_APT_HOF_631G_TOTAL_FC)
-    psi4.core.clean()
-
-
-def test_ccsd_apt_so_eq_spatial_keystone_water():
-    """SO == spatial keystone (water/6-31G, all-electron and frozen core): the spin-orbital CCSD
-    correlation APT of an RHF reference forced into the spin-orbital basis reproduces the spatial
-    (closed-shell) value.  Cheaper than HOF and independent of the CFOUR oracle."""
-    for fc in ('false', 'true'):
-        wfn = _cfour_wfn(WATER, fc)
-        cc_sa = pycc.ccwfn(wfn, orbital_basis='spatial')
-        cc_sa.solve_cc(1e-12, 1e-12, 100)
-        P_sa = np.asarray(pycc.CCderiv(cc_sa).dipole_derivatives())
-        cc_so = pycc.ccwfn(wfn, orbital_basis='spinorbital')
-        cc_so.solve_cc(1e-12, 1e-12, 100)
-        P_so = np.asarray(pycc.CCderiv(cc_so).dipole_derivatives())
-        assert np.max(np.abs(P_so - P_sa)) < 1e-10, (fc, np.max(np.abs(P_so - P_sa)))
+    _check(_ccsd_apt(HOF, 'true', 'spinorbital'),
+           CFOUR_APT_HOF_631G_FC, CFOUR_APT_HOF_631G_TOTAL_FC, [8.0, 9.0, 1.0], perp=2)
     psi4.core.clean()
 
 
