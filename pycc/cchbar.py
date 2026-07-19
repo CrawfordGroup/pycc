@@ -103,15 +103,11 @@ class cchbar(object):
     4-index tensors are stored on CPU
     """
 
-    # ------------------------------------------------------------------
-    # Spin-orbital HBAR (open-shell UHF/ROHF references)
-    #
-    # The spatial blocks above ride on the spin-adapted L tensor (no L in spin
-    # orbitals). These siblings build the HBAR blocks directly from the
-    # antisymmetrized ERI = <pq||rs>, ported from ~/src/socc. There is no separate
-    # Hovov block; the spin-orbital Lambda residuals fold it into the antisymmetrized
-    # Hovvo, using an inline Zovov intermediate in Hvvvo/Hovoo.
-    # ------------------------------------------------------------------
+    # Spin-orbital HBAR (open-shell UHF/ROHF references): each _so_build_* sibling sits
+    # immediately after its spatial build_* counterpart and works directly from the
+    # antisymmetrized ERI = <pq||rs> (no spin-adapted L). There is no separate Hovov block
+    # (the spin-orbital Lambda residuals fold it into Hovvo, via the inline Zovov intermediate
+    # used by _so_build_Hvvvo / _so_build_Hovoo).
 
     def _so_build(self, o, v, F, ERI, t1, t2):
         """Build and cache all spin-orbital HBAR blocks (the SO sibling of the spatial
@@ -129,293 +125,6 @@ class cchbar(object):
         self.Hvvvo = self._so_build_Hvvvo(o, v, ERI, self.Hov, self.Hvvvv, Zovov, t1, t2)
         self.Hovoo = self._so_build_Hovoo(o, v, ERI, self.Hov, self.Hoooo, Zovov, t1, t2)
 
-    def _so_build_Hov(self, o, v, F, ERI, t1):
-        r"""Spin-orbital H_me one-body HBAR block (the SO sibling of :meth:`build_Hov`,
-        on antisymmetrized <pq||rs>).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_me = f_me + t_nf <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{me} = f_{me} + t^f_n \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        Hov = clone(F[o,v])
-        Hov = Hov + contract('nf,mnef->me', t1, ERI[o,o,v,v])
-        return Hov
-
-    def _so_build_Hvv(self, o, v, F, ERI, Hov, t1, t2):
-        r"""Spin-orbital H_ae one-body HBAR block (the SO sibling of :meth:`build_Hvv`,
-        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
-        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_ae = f_ae - 1/2 f_me t_ma - 1/2 H_me t_ma + t_mf <am||ef>
-                        - 1/2 taut_mnaf <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m - \tfrac{1}{2} H_{me} t^a_m + t^f_m \langle am||ef \rangle \\
-            &- \tfrac{1}{2} \tilde\tau^{af}_{mn} \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
-        Hvv = clone(F[v,v])
-        Hvv = Hvv - 0.5 * contract('me,ma->ae', F[o,v], t1)
-        Hvv = Hvv - 0.5 * contract('me,ma->ae', Hov, t1)
-        Hvv = Hvv + contract('mf,amef->ae', t1, ERI[v,o,v,v])
-        Hvv = Hvv - 0.5 * contract('mnaf,mnef->ae', taut, ERI[o,o,v,v])
-        return Hvv
-
-    def _so_build_Hoo(self, o, v, F, ERI, Hov, t1, t2):
-        r"""Spin-orbital H_mi one-body HBAR block (the SO sibling of :meth:`build_Hoo`,
-        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
-        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_mi = f_mi + 1/2 f_me t_ie + 1/2 H_me t_ie + t_ne <mn||ie>
-                        + 1/2 taut_inef <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + \tfrac{1}{2} H_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
-            &+ \tfrac{1}{2} \tilde\tau^{ef}_{in} \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
-        Hoo = clone(F[o,o])
-        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, F[o,v])
-        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, Hov)
-        Hoo = Hoo + contract('ne,mnie->mi', t1, ERI[o,o,o,v])
-        Hoo = Hoo + 0.5 * contract('inef,mnef->mi', taut, ERI[o,o,v,v])
-        return Hoo
-
-    def _so_build_Hoooo(self, o, v, ERI, t1, t2):
-        r"""Spin-orbital H_mnij two-body HBAR block (the SO sibling of :meth:`build_Hoooo`,
-        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_mnij = <mn||ij> + t_je <mn||ie> - t_ie <mn||je>
-                             + 1/2 tau_ijef <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
-            &+ \tfrac{1}{2} \tau^{ef}_{ij} \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        tau = self.ccwfn._so_build_tau(t1, t2)
-        Hoooo = clone(ERI[o,o,o,o])
-        Hoooo = Hoooo + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
-                         - contract('ie,mnje->mnij', t1, ERI[o,o,o,v]))
-        Hoooo = Hoooo + 0.5 * contract('ijef,mnef->mnij', tau, ERI[o,o,v,v])
-        return Hoooo
-
-    def _so_build_Hvvvv(self, o, v, ERI, t1, t2):
-        r"""Spin-orbital H_abef two-body HBAR block (the SO sibling of :meth:`build_Hvvvv`,
-        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_abef = <ab||ef> - t_mb <am||ef> + t_ma <bm||ef>
-                             + 1/2 tau_mnab <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
-            &+ \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        tau = self.ccwfn._so_build_tau(t1, t2)
-        Hvvvv = clone(ERI[v,v,v,v])
-        Hvvvv = Hvvvv - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
-                         - contract('ma,bmef->abef', t1, ERI[v,o,v,v]))
-        Hvvvv = Hvvvv + 0.5 * contract('mnab,mnef->abef', tau, ERI[o,o,v,v])
-        return Hvvvv
-
-    def _so_build_Hvovv(self, o, v, ERI, t1):
-        r"""Spin-orbital H_amef two-body HBAR block (the SO sibling of :meth:`build_Hvovv`,
-        on antisymmetrized <pq||rs>).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_amef = <am||ef> - t_na <nm||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        Hvovv = clone(ERI[v,o,v,v])
-        Hvovv = Hvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
-        return Hvovv
-
-    def _so_build_Hooov(self, o, v, ERI, t1):
-        r"""Spin-orbital H_mnie two-body HBAR block (the SO sibling of :meth:`build_Hooov`,
-        on antisymmetrized <pq||rs>).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_mnie = <mn||ie> + t_if <mn||fe>
-
-        .. math::
-
-            \begin{aligned}
-            H_{mnie} = \langle mn||ie \rangle + t^f_i \langle mn||fe \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        Hooov = clone(ERI[o,o,o,v])
-        Hooov = Hooov + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
-        return Hooov
-
-    def _so_build_Hovvo(self, o, v, ERI, t1, t2):
-        r"""Spin-orbital H_mbej two-body HBAR block (the SO sibling of :meth:`build_Hovvo`,
-        on antisymmetrized <pq||rs>).  Here tau = t2 + t1 t1 (the un-antisymmetrized
-        product, as assembled inline).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_mbej = <mb||ej> + t_jf <mb||ef> - t_nb <mn||ej>
-                             - (t2_jnfb + t_jf t_nb) <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            H_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
-            &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        Hovvo = clone(ERI[o,v,v,o])
-        Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
-        Hovvo = Hovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
-        tau = t2 + contract('ia,jb->ijab', t1, t1)
-        Hovvo = Hovvo - contract('jnfb,mnef->mbej', tau, ERI[o,o,v,v])
-        return Hovvo
-
-    def _so_build_Zovov(self, o, v, ERI, t2):
-        r"""Spin-orbital Z_mbie auxiliary intermediate (a T2-dressed <mb||ie> reused by
-        :meth:`_so_build_Hvvvo` and :meth:`_so_build_Hovoo`; the SO analogue of the
-        inline ``tmp`` intermediates in the spatial :meth:`build_Hvvvo`/:meth:`build_Hovoo`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            Z_mbie = <mb||ie> + t2_nibf <mn||ef>
-
-        .. math::
-
-            \begin{aligned}
-            Z_{mbie} = \langle mb||ie \rangle + t^{bf}_{ni} \langle mn||ef \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        return clone(ERI[o,v,o,v]) + contract('nibf,mnef->mbie', t2, ERI[o,o,v,v])
-
-    def _so_build_Hvvvo(self, o, v, ERI, Hov, Hvvvv, Zovov, t1, t2):
-        r"""Spin-orbital H_abei two-body HBAR block (the SO sibling of :meth:`build_Hvvvo`,
-        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
-        H_abef (:meth:`_so_build_Hvvvv`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
-        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The a<->b antisymmetry is
-        carried inline by the explicit +/- term pairs.
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_abei = <ab||ei> - H_me t2_miab + t_if H_abef + 1/2 tau_mnab <mn||ei>
-                            - t2_miaf <mb||ef> + t2_mibf <ma||ef>
-                            + t_ma Z_mbie - t_mb Z_maie
-
-        .. math::
-
-            \begin{aligned}
-            H_{abei} &= \langle ab||ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} + \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ei \rangle \\
-            &\quad - t^{af}_{mi} \langle mb||ef \rangle + t^{bf}_{mi} \langle ma||ef \rangle \\
-            &\quad + t^a_m Z_{mbie} - t^b_m Z_{maie}
-            \end{aligned}
-        """
-        contract = self.contract
-        tau = self.ccwfn._so_build_tau(t1, t2)
-        Hvvvo = clone(ERI[v,v,v,o])
-        Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
-        Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
-        Hvvvo = Hvvvo + 0.5 * contract('mnab,mnei->abei', tau, ERI[o,o,v,o])
-        Hvvvo = Hvvvo - (contract('miaf,mbef->abei', t2, ERI[o,v,v,v])
-                         - contract('mibf,maef->abei', t2, ERI[o,v,v,v]))
-        Hvvvo = Hvvvo + (contract('ma,mbie->abei', t1, Zovov)
-                         - contract('mb,maie->abei', t1, Zovov))
-        return Hvvvo
-
-    def _so_build_Hovoo(self, o, v, ERI, Hov, Hoooo, Zovov, t1, t2):
-        r"""Spin-orbital H_mbij two-body HBAR block (the SO sibling of :meth:`build_Hovoo`,
-        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
-        H_mnij (:meth:`_so_build_Hoooo`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
-        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The i<->j antisymmetry is
-        carried inline by the explicit +/- term pairs.
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            H_mbij = <mb||ij> - H_me t2_ijbe - t_nb H_mnij + 1/2 tau_ijef <mb||ef>
-                            + t2_jnbe <mn||ie> - t2_inbe <mn||je>
-                            - t_ie Z_mbje + t_je Z_mbie
-
-        .. math::
-
-            \begin{aligned}
-            H_{mbij} &= \langle mb||ij \rangle - H_{me} t^{be}_{ij} - t^b_n H_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle mb||ef \rangle \\
-            &\quad + t^{be}_{jn} \langle mn||ie \rangle - t^{be}_{in} \langle mn||je \rangle \\
-            &\quad - t^e_i Z_{mbje} + t^e_j Z_{mbie}
-            \end{aligned}
-        """
-        contract = self.contract
-        tau = self.ccwfn._so_build_tau(t1, t2)
-        Hovoo = clone(ERI[o,v,o,o])
-        Hovoo = Hovoo - contract('me,ijbe->mbij', Hov, t2)
-        Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
-        Hovoo = Hovoo + 0.5 * contract('ijef,mbef->mbij', tau, ERI[o,v,v,v])
-        Hovoo = Hovoo + (contract('jnbe,mnie->mbij', t2, ERI[o,o,o,v])
-                         - contract('inbe,mnje->mbij', t2, ERI[o,o,o,v]))
-        Hovoo = Hovoo - (contract('ie,mbje->mbij', t1, Zovov)
-                         - contract('je,mbie->mbij', t1, Zovov))
-        return Hovoo
     def build_Hov(self, o, v, F, L, t1):
         r"""Build the occupied-virtual block H_me of the one-body HBAR.
 
@@ -444,6 +153,26 @@ class cchbar(object):
             Hov = Hov + contract('nf,mnef->me', t1, L[o,o,v,v])
         return Hov
 
+    def _so_build_Hov(self, o, v, F, ERI, t1):
+        r"""Spin-orbital H_me one-body HBAR block (the SO sibling of :meth:`build_Hov`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_me = f_me + t_nf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{me} = f_{me} + t^f_n \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        Hov = clone(F[o,v])
+        Hov = Hov + contract('nf,mnef->me', t1, ERI[o,o,v,v])
+        return Hov
 
     def build_Hvv(self, o, v, F, L, t1, t2):
         r"""Build the virtual-virtual block H_ae of the one-body HBAR.
@@ -480,6 +209,33 @@ class cchbar(object):
             Hvv = Hvv - contract('mnfa,mnfe->ae', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
         return Hvv
 
+    def _so_build_Hvv(self, o, v, F, ERI, Hov, t1, t2):
+        r"""Spin-orbital H_ae one-body HBAR block (the SO sibling of :meth:`build_Hvv`,
+        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
+        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_ae = f_ae - 1/2 f_me t_ma - 1/2 H_me t_ma + t_mf <am||ef>
+                        - 1/2 taut_mnaf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m - \tfrac{1}{2} H_{me} t^a_m + t^f_m \langle am||ef \rangle \\
+            &- \tfrac{1}{2} \tilde\tau^{af}_{mn} \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
+        Hvv = clone(F[v,v])
+        Hvv = Hvv - 0.5 * contract('me,ma->ae', F[o,v], t1)
+        Hvv = Hvv - 0.5 * contract('me,ma->ae', Hov, t1)
+        Hvv = Hvv + contract('mf,amef->ae', t1, ERI[v,o,v,v])
+        Hvv = Hvv - 0.5 * contract('mnaf,mnef->ae', taut, ERI[o,o,v,v])
+        return Hvv
 
     def build_Hoo(self, o, v, F, L, t1, t2):
         r"""Build the occupied-occupied block H_mi of the one-body HBAR.
@@ -516,6 +272,33 @@ class cchbar(object):
             Hoo = Hoo + contract('inef,mnef->mi', self.ccwfn.build_tau(t1, t2), L[o,o,v,v])
         return Hoo
 
+    def _so_build_Hoo(self, o, v, F, ERI, Hov, t1, t2):
+        r"""Spin-orbital H_mi one-body HBAR block (the SO sibling of :meth:`build_Hoo`,
+        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
+        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mi = f_mi + 1/2 f_me t_ie + 1/2 H_me t_ie + t_ne <mn||ie>
+                        + 1/2 taut_inef <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + \tfrac{1}{2} H_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
+            &+ \tfrac{1}{2} \tilde\tau^{ef}_{in} \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
+        Hoo = clone(F[o,o])
+        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, F[o,v])
+        Hoo = Hoo + 0.5 * contract('ie,me->mi', t1, Hov)
+        Hoo = Hoo + contract('ne,mnie->mi', t1, ERI[o,o,o,v])
+        Hoo = Hoo + 0.5 * contract('inef,mnef->mi', taut, ERI[o,o,v,v])
+        return Hoo
 
     def build_Hoooo(self, o, v, ERI, t1, t2):
         r"""Build the occ-occ-occ-occ block H_mnij of the two-body HBAR.
@@ -555,6 +338,31 @@ class cchbar(object):
 
         return Hoooo
 
+    def _so_build_Hoooo(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_mnij two-body HBAR block (the SO sibling of :meth:`build_Hoooo`,
+        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mnij = <mn||ij> + t_je <mn||ie> - t_ie <mn||je>
+                             + 1/2 tau_ijef <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
+            &+ \tfrac{1}{2} \tau^{ef}_{ij} \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hoooo = clone(ERI[o,o,o,o])
+        Hoooo = Hoooo + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
+                         - contract('ie,mnje->mnij', t1, ERI[o,o,o,v]))
+        Hoooo = Hoooo + 0.5 * contract('ijef,mnef->mnij', tau, ERI[o,o,v,v])
+        return Hoooo
 
     def build_Hvvvv(self, o, v, ERI, t1, t2):
         r"""Build the vir-vir-vir-vir block H_abef of the two-body HBAR.
@@ -594,6 +402,31 @@ class cchbar(object):
 
         return Hvvvv
 
+    def _so_build_Hvvvv(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_abef two-body HBAR block (the SO sibling of :meth:`build_Hvvvv`,
+        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_abef = <ab||ef> - t_mb <am||ef> + t_ma <bm||ef>
+                             + 1/2 tau_mnab <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
+            &+ \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hvvvv = clone(ERI[v,v,v,v])
+        Hvvvv = Hvvvv - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
+                         - contract('ma,bmef->abef', t1, ERI[v,o,v,v]))
+        Hvvvv = Hvvvv + 0.5 * contract('mnab,mnef->abef', tau, ERI[o,o,v,v])
+        return Hvvvv
 
     def build_Hvovv(self, o, v, ERI, t1):
         r"""Build the vir-occ-vir-vir block H_amef of the two-body HBAR.
@@ -624,6 +457,26 @@ class cchbar(object):
 
         return Hvovv
 
+    def _so_build_Hvovv(self, o, v, ERI, t1):
+        r"""Spin-orbital H_amef two-body HBAR block (the SO sibling of :meth:`build_Hvovv`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_amef = <am||ef> - t_na <nm||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        Hvovv = clone(ERI[v,o,v,v])
+        Hvovv = Hvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
+        return Hvovv
 
     def build_Hooov(self, o, v, ERI, t1):
         r"""Build the occ-occ-occ-vir block H_mnie of the two-body HBAR.
@@ -654,6 +507,26 @@ class cchbar(object):
 
         return Hooov
 
+    def _so_build_Hooov(self, o, v, ERI, t1):
+        r"""Spin-orbital H_mnie two-body HBAR block (the SO sibling of :meth:`build_Hooov`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mnie = <mn||ie> + t_if <mn||fe>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnie} = \langle mn||ie \rangle + t^f_i \langle mn||fe \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        Hooov = clone(ERI[o,o,o,v])
+        Hooov = Hooov + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
+        return Hooov
 
     def build_Hovvo(self, o, v, ERI, L, t1, t2):
         r"""Build the occ-vir-vir-occ block H_mbej of the two-body HBAR.
@@ -695,6 +568,32 @@ class cchbar(object):
                 Hovvo = Hovvo + contract('njfb,mnef->mbej', t2, L[o,o,v,v])
         return Hovvo
 
+    def _so_build_Hovvo(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_mbej two-body HBAR block (the SO sibling of :meth:`build_Hovvo`,
+        on antisymmetrized <pq||rs>).  Here tau = t2 + t1 t1 (the un-antisymmetrized
+        product, as assembled inline).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mbej = <mb||ej> + t_jf <mb||ef> - t_nb <mn||ej>
+                             - (t2_jnfb + t_jf t_nb) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
+            &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        Hovvo = clone(ERI[o,v,v,o])
+        Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
+        Hovvo = Hovvo - contract('nb,mnej->mbej', t1, ERI[o,o,v,o])
+        tau = t2 + contract('ia,jb->ijab', t1, t1)
+        Hovvo = Hovvo - contract('jnfb,mnef->mbej', tau, ERI[o,o,v,v])
+        return Hovvo
 
     def build_Hovov(self, o, v, ERI, t1, t2):
         r"""Build the occ-vir-occ-vir block H_mbje of the two-body HBAR.
@@ -729,7 +628,6 @@ class cchbar(object):
             if self.ccwfn.model != 'CC2':
                 Hovov = Hovov - contract('jnfb,nmef->mbje', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
         return Hovov
-
 
     def build_Hvvvo(self, o, v, ERI, L, Hov, Hvvvv, t1, t2):
         r"""Build the vir-vir-vir-occ block H_abei of the two-body HBAR.
@@ -799,6 +697,60 @@ class cchbar(object):
                 del tmp
         return Hvvvo
 
+    def _so_build_Zovov(self, o, v, ERI, t2):
+        r"""Spin-orbital Z_mbie auxiliary intermediate (a T2-dressed <mb||ie> reused by
+        :meth:`_so_build_Hvvvo` and :meth:`_so_build_Hovoo`; the SO analogue of the
+        inline ``tmp`` intermediates in the spatial :meth:`build_Hvvvo`/:meth:`build_Hovoo`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Z_mbie = <mb||ie> + t2_nibf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            Z_{mbie} = \langle mb||ie \rangle + t^{bf}_{ni} \langle mn||ef \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        return clone(ERI[o,v,o,v]) + contract('nibf,mnef->mbie', t2, ERI[o,o,v,v])
+
+    def _so_build_Hvvvo(self, o, v, ERI, Hov, Hvvvv, Zovov, t1, t2):
+        r"""Spin-orbital H_abei two-body HBAR block (the SO sibling of :meth:`build_Hvvvo`,
+        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
+        H_abef (:meth:`_so_build_Hvvvv`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
+        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The a<->b antisymmetry is
+        carried inline by the explicit +/- term pairs.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_abei = <ab||ei> - H_me t2_miab + t_if H_abef + 1/2 tau_mnab <mn||ei>
+                            - t2_miaf <mb||ef> + t2_mibf <ma||ef>
+                            + t_ma Z_mbie - t_mb Z_maie
+
+        .. math::
+
+            \begin{aligned}
+            H_{abei} &= \langle ab||ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} + \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ei \rangle \\
+            &\quad - t^{af}_{mi} \langle mb||ef \rangle + t^{bf}_{mi} \langle ma||ef \rangle \\
+            &\quad + t^a_m Z_{mbie} - t^b_m Z_{maie}
+            \end{aligned}
+        """
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hvvvo = clone(ERI[v,v,v,o])
+        Hvvvo = Hvvvo - contract('me,miab->abei', Hov, t2)
+        Hvvvo = Hvvvo + contract('if,abef->abei', t1, Hvvvv)
+        Hvvvo = Hvvvo + 0.5 * contract('mnab,mnei->abei', tau, ERI[o,o,v,o])
+        Hvvvo = Hvvvo - (contract('miaf,mbef->abei', t2, ERI[o,v,v,v])
+                         - contract('mibf,maef->abei', t2, ERI[o,v,v,v]))
+        Hvvvo = Hvvvo + (contract('ma,mbie->abei', t1, Zovov)
+                         - contract('mb,maie->abei', t1, Zovov))
+        return Hvvvo
 
     def build_Hovoo(self, o, v, ERI, L, Hov, Hoooo, t1, t2):
         r"""Build the occ-vir-occ-occ block H_mbij of the two-body HBAR.
@@ -868,4 +820,39 @@ class cchbar(object):
             
             if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
+        return Hovoo
+
+    def _so_build_Hovoo(self, o, v, ERI, Hov, Hoooo, Zovov, t1, t2):
+        r"""Spin-orbital H_mbij two-body HBAR block (the SO sibling of :meth:`build_Hovoo`,
+        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
+        H_mnij (:meth:`_so_build_Hoooo`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
+        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The i<->j antisymmetry is
+        carried inline by the explicit +/- term pairs.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mbij = <mb||ij> - H_me t2_ijbe - t_nb H_mnij + 1/2 tau_ijef <mb||ef>
+                            + t2_jnbe <mn||ie> - t2_inbe <mn||je>
+                            - t_ie Z_mbje + t_je Z_mbie
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbij} &= \langle mb||ij \rangle - H_{me} t^{be}_{ij} - t^b_n H_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle mb||ef \rangle \\
+            &\quad + t^{be}_{jn} \langle mn||ie \rangle - t^{be}_{in} \langle mn||je \rangle \\
+            &\quad - t^e_i Z_{mbje} + t^e_j Z_{mbie}
+            \end{aligned}
+        """
+        contract = self.contract
+        tau = self.ccwfn._so_build_tau(t1, t2)
+        Hovoo = clone(ERI[o,v,o,o])
+        Hovoo = Hovoo - contract('me,ijbe->mbij', Hov, t2)
+        Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
+        Hovoo = Hovoo + 0.5 * contract('ijef,mbef->mbij', tau, ERI[o,v,v,v])
+        Hovoo = Hovoo + (contract('jnbe,mnie->mbij', t2, ERI[o,o,o,v])
+                         - contract('inbe,mnje->mbij', t2, ERI[o,o,o,v]))
+        Hovoo = Hovoo - (contract('ie,mbje->mbij', t1, Zovov)
+                         - contract('je,mbie->mbij', t1, Zovov))
         return Hovoo
