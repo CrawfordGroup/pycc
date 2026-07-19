@@ -121,102 +121,10 @@ class MPwfn(Wavefunction):
                          + self.contract('ia,ia->', self.H.F[o, v], self.t1))
         return self.emp2
 
-    # ---- unrelaxed correlation-density seeds ----
-    # The unrelaxed one- and two-particle correlation densities (pure functions of the MP2
-    # amplitudes) seed the relaxed densities and orbital response.  They are built here, on the
-    # wavefunction; MPderiv (the derivative driver) consumes them (self.mp._*_corr_opdm / _*_tpdm)
-    # for the Lagrangian, Z-vector, and property derivatives.  The spin-orbital (_so_) and
-    # spin-adapted (closed-shell, unlabeled) paths are paired; the spatial spin sum rides in
-    # l2 = 2(2 t2 - t2.swap) and the spin-adapted L (= H.L).
-
-    def _mp2_corr_opdm(self):
-        r"""Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``, with
-        the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell
-        spin sum)::
-
-            Doo_ij  = -sum_mef t_imef l2_jmef
-            Dvv_ab  =  sum_mne t_mnbe l2_mnae
-            l2_ijab = 2(2 t2_ijab - t2_ijba)
-
-        .. math::
-
-            \begin{aligned}
-            D^{oo}_{ij} &= -\sum_{mef} t_{imef} \lambda_{jmef} \\
-            D^{vv}_{ab} &=  \sum_{mne} t_{mnbe} \lambda_{mnae} \\
-            \lambda_{ijab} &= 2(2 t^{ab}_{ij} - t^{ba}_{ij})
-            \end{aligned}
-        """
-        c = self.contract
-        t2 = self.t2
-        l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
-        Doo = -c('imef,jmef->ij', t2, l2)
-        Dvv = c('mnbe,mnae->ab', t2, l2)
-        return Doo, Dvv
-
-    def _so_mp2_corr_opdm(self):
-        r"""Spin-orbital unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``.
-        The ``1/2`` is the normalization that makes the densities close the energy
-        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)::
-
-            Doo_ij = -1/2 sum_mef t_imef t_jmef
-            Dvv_ab =  1/2 sum_mne t_mnbe t_mnae
-
-        .. math::
-
-            \begin{aligned}
-            D^{oo}_{ij} &= -\tfrac{1}{2} \sum_{mef} t_{imef} t_{jmef} \\
-            D^{vv}_{ab} &=  \tfrac{1}{2} \sum_{mne} t_{mnbe} t_{mnae}
-            \end{aligned}
-        """
-        c = self.contract
-        t2 = self.t2
-        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
-        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
-        return Doo, Dvv
-
-    def _mp2_tpdm(self) -> np.ndarray:
-        r"""Spin-adapted MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks. Built over the full MO
-        space (``self.nmo``); the active ``o``/``v`` slices place the amplitudes, leaving any
-        frozen-core rows/columns zero::
-
-            Gamma_ijab = 2 t2_ijab - t2_ijba
-
-        .. math::
-
-            \begin{aligned}
-            \Gamma_{ijab} = 2 t^{ab}_{ij} - t^{ba}_{ij}
-            \end{aligned}
-        """
-        o, v = self.o, self.v
-        nmo = self.nmo
-        t2 = np.asarray(self.t2)
-        u = 2.0 * t2 - t2.transpose(0, 1, 3, 2)
-        Gam = np.zeros((nmo, nmo, nmo, nmo))
-        Gam[o, o, v, v] = u
-        Gam[v, v, o, o] = u.transpose(2, 3, 0, 1)
-        return Gam
-
-    def _so_mp2_tpdm(self) -> np.ndarray:
-        r"""Spin-orbital MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks -- the only blocks that
-        contribute (determined from the MP2 energy Lagrangian, in which Lambda and T2 enter
-        linearly). Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place
-        the amplitudes::
-
-            Gamma_ijab = 1/4 t2_ijab
-
-        .. math::
-
-            \begin{aligned}
-            \Gamma_{ijab} = \tfrac{1}{4} t^{ab}_{ij}
-            \end{aligned}
-        """
-        o, v = self.o, self.v
-        nmo = self.nmo
-        t2 = np.asarray(self.t2)
-        Gam = np.zeros((nmo, nmo, nmo, nmo))
-        Gam[o, o, v, v] = 0.25 * t2
-        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
-        return Gam
+    # ---- intermediate normalization ----
+    # A wavefunction-level quantity (the norm of the intermediate-normalized MP2 wave function),
+    # kept here on MPwfn.  The derivative driver's AAT / VG-APT overlaps read it via self.mp; the
+    # unrelaxed correlation-density seeds themselves live on MPderiv.
 
     def _mp2_normalization(self) -> float:
         r"""MP2 intermediate normalization (spin-adapted), for the wave-function-overlap AAT
@@ -298,11 +206,6 @@ class MPwfn(Wavefunction):
     def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
         """MP2 correlation AAT -- delegates to :meth:`MPderiv.atomic_axial_tensors`."""
         return self.deriv.atomic_axial_tensors(gauge)
-
-    def _perturbed_unrelaxed_densities(self, pert):
-        """First-order unrelaxed correlation-density response -- delegates to
-        :meth:`MPderiv._perturbed_unrelaxed_densities`."""
-        return self.deriv._perturbed_unrelaxed_densities(pert)
 
     # ---- reference for the total (reference + correlation) properties ----
     # The property methods above are the correlation contribution only.  The full molecular
