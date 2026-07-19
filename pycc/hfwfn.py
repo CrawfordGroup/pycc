@@ -143,6 +143,12 @@ class HFwfn(Wavefunction):
 
             alpha_ab = k sum_ia mu^a_ia U^b_ia
 
+        .. math::
+
+            \begin{aligned}
+            \alpha_{ab} = k \sum_{ia} \mu^{a}_{ia}\, U^{b}_{ia}
+            \end{aligned}
+
         where ``U^b`` solves the ov-block field response ``G U^b = mu^b``.  The prefactor ``k``
         counts the ov + vo response (factor 2) and the orbital occupancy: ``k = 4`` on the spatial
         closed-shell path (double occupancy), ``k = 2`` for singly occupied spin orbitals.
@@ -173,6 +179,16 @@ class HFwfn(Wavefunction):
                             + 2 sum_i (d mu_a / d X_Ab)_ii         (explicit electronic)
                             - 2 sum_ik S^X_ki (mu_a)_ik            (oo / Pulay response)
                             + 4 sum_ia U^X_ia (mu_a)_ia            (ov / CPHF response)
+
+        .. math::
+
+            \begin{aligned}
+            \frac{d\mu_\alpha}{dX_{A\beta}}
+            &= Z_A\,\delta_{\alpha\beta} && \text{(nuclear)} \\
+            &\quad + 2\sum_i \Big(\tfrac{\partial\mu_\alpha}{\partial X_{A\beta}}\Big)_{ii} && \text{(explicit electronic)} \\
+            &\quad - 2\sum_{ik} S^X_{ki}\,(\mu_\alpha)_{ik} && \text{(oo / Pulay response)} \\
+            &\quad + 4\sum_{ia} U^X_{ia}\,(\mu_\alpha)_{ia} && \text{(ov / CPHF response)}
+            \end{aligned}
 
         The spin-orbital path is handled by :meth:`_so_dipole_derivatives_electronic`; the
         nuclear ``Z_A delta`` term is added here and the electronic part comes from
@@ -247,11 +263,23 @@ class HFwfn(Wavefunction):
 
             2 h^{ab}_ii + (2(ii|jj) - (ij|ij))^{ab} - 2 eps_i S^{ab}_ii + V_NN^{ab}
 
+        .. math::
+
+            \begin{aligned}
+            2\,h^{ab}_{ii} + \big(2(ii|jj) - (ij|ij)\big)^{ab} - 2\,\varepsilon_i S^{ab}_{ii} + V_{NN}^{ab}
+            \end{aligned}
+
         and the response + first-derivative product cross terms (x = (A,a), y = (B,b);
         i,j,n,m occupied; spin-adapted ``L`` = H.L)::
 
             -4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
             + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
+
+        .. math::
+
+            \begin{aligned}
+            -4\,U^x_{ai} B^y_{ai} - 2\,S^x_{ij} F^y_{ij} - 2\,S^y_{ij} F^x_{ij} + 4\,\varepsilon_i S^x_{ij} S^y_{ij} + 2\,S^x_{ij} S^y_{nm} L_{imjn}
+            \end{aligned}
 
         where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij``
         the skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
@@ -373,6 +401,12 @@ class HFwfn(Wavefunction):
 
             I^lambda_{alpha,beta} = 2 sum_ia [ U^R_ai U^B_ai + U^B_ai <phi^R_i | phi_a> ]
 
+        .. math::
+
+            \begin{aligned}
+            I^\lambda_{\alpha\beta} = 2 \sum_{ia} \big[\, U^R_{ai} U^B_{ai} + U^B_{ai} \langle \phi^R_i | \phi_a \rangle \,\big]
+            \end{aligned}
+
         with ``U^R`` the nuclear CPHF response (:meth:`CPHF.solve_nuclear`, shared cache),
         ``U^B`` the magnetic-field response (:meth:`CPHF.solve_magnetic`, antisymmetric
         Hessian), and ``<phi^R_i|phi_a>`` the nuclear half-derivative overlap
@@ -409,6 +443,12 @@ class HFwfn(Wavefunction):
 
             I^lam_{a,b} = sum_ia [ U^R_ai U^B_ai + U^B_ai <phi^R_i | phi_a> ]
 
+        .. math::
+
+            \begin{aligned}
+            I^\lambda_{ab} = \sum_{ia} \big[\, U^R_{ai} U^B_{ai} + U^B_{ai} \langle \phi^R_i | \phi_a \rangle \,\big]
+            \end{aligned}
+
         Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals
         (ROHF raises, via :meth:`CPHF.solve`). Note: there is no prior open-shell UHF AAT
         implementation to validate against; the closed-shell keystone (SO-RHF == the
@@ -441,6 +481,14 @@ class HFwfn(Wavefunction):
 
             [P^A_{beta,alpha}]^VG = -4 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}
                                     + Z_A delta_{alpha,beta}
+
+        .. math::
+
+            \begin{aligned}
+            [P^A_{\beta\alpha}]^{\mathrm{VG}} = -4 \sum_{ia}
+            \big( U^R_{ia,\beta} + \langle \phi^R_i | \phi_a \rangle \big) U^A_{ia,\alpha} +
+            Z_A\,\delta_{\alpha\beta}
+            \end{aligned}
 
         the same overlap structure as the AAT (:meth:`atomic_axial_tensors`) with the linear-
         momentum response ``U^A`` (:meth:`CPHF.solve_momentum`, ``dPsi/dA``) in place of the
