@@ -920,11 +920,13 @@ class ccresponse(object):
         """CC3 triples contribution to the LCX term of the symmetric response
         function, <0|(1+L)[Abar,X]|0>. Port of socc LCX_CC3 (store_triples path).
 
-        Returns the sum of the four sub-terms (socc component names in brackets):
+        Returns the sum of the four sub-terms (socc component names in brackets)::
+
           <0|L2[C,X3]|0>        (L2CX3)
           <0|L3[C^,X3]|0>       (L3CX3)
           <0|L3[[C,X1],T3]|0>   (L3CX1T3)
           <0|L3[[C,X2],T2]|0>   (L3CX2T2)
+
         where C = pert (similarity-transformed one-electron operator) and
         X = [X1, X2, X3] the right-hand perturbed wave function."""
         contract = self.contract
