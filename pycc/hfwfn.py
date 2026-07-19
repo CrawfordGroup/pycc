@@ -42,7 +42,7 @@ class HFwfn(Wavefunction):
         # on the base, built lazily (``self.derivatives`` / ``self.cphf``).
 
     def gradient(self) -> np.ndarray:
-        """RHF analytic energy gradient (a.u.), shape (natom, 3).
+        r"""RHF analytic energy gradient (a.u.), shape (natom, 3).
 
         Closed-shell, MO-basis, CPHF-free RHF gradient (i, j over occupied; the
         ``^x`` skeleton derivatives come from :class:`Derivatives`, ``eps_i`` are the
@@ -52,6 +52,12 @@ class HFwfn(Wavefunction):
 
             dE/dX = sum_i 2 h^x_ii + sum_ij (2 (ii|jj)^x - (ij|ij)^x)
                     - sum_i 2 eps_i S^x_ii + dV_NN/dX
+
+        .. math::
+
+            \begin{aligned}
+            \frac{dE}{dX} = \sum_i 2\,h^x_{ii} + \sum_{ij} \big(2(ii|jj)^x - (ij|ij)^x\big) - \sum_i 2\,\varepsilon_i S^x_{ii} + \frac{dV_{NN}}{dX}
+            \end{aligned}
 
         The derivative integrals are transformed with the base's symmetry-handled
         ``self.C`` (single irrep block, global energy order), so this works with
@@ -108,14 +114,21 @@ class HFwfn(Wavefunction):
         return grad
 
     def dipole(self) -> np.ndarray:
-        """Total SCF electric-dipole moment (a.u.), shape ``(3,)``: the nuclear term plus
-        the electronic term, in the molecule's frame (gauge-independent for a neutral system).
+        r"""Total SCF electric-dipole moment (a.u.), shape ``(3,)``: the nuclear term plus
+        the electronic term, in the molecule's frame (gauge-independent for a neutral system)::
 
-        ``mu_a = sum_A Z_A R_Aa  +  k sum_i (mu_a)_ii``, the electronic part being the occupied
-        trace of the MO dipole integrals (``H.mu`` = ``-e r``; same ``Tr(D mu)`` convention as
-        :meth:`MPwfn.relaxed_dipole`, with the SCF density's occupied block). The prefactor is
-        the orbital occupancy: ``k = 2`` on the spatial closed-shell path, ``k = 1`` for singly
-        occupied spin orbitals. Kept separate from the correlation dipole so the total MP2
+            mu_a = sum_A Z_A R_Aa + k sum_i (mu_a)_ii
+
+        .. math::
+
+            \begin{aligned}
+            \mu_a = \sum_A Z_A R_{Aa} + k \sum_i (\mu_a)_{ii}
+            \end{aligned}
+
+        The electronic part is the occupied trace of the MO dipole integrals (``H.mu`` = ``-e r``;
+        same ``Tr(D mu)`` convention as :meth:`MPwfn.relaxed_dipole`, with the SCF density's occupied
+        block). The prefactor is the orbital occupancy: ``k = 2`` on the spatial closed-shell path,
+        ``k = 1`` for spin orbitals. Kept separate from the correlation dipole so the total MP2
         dipole is ``HFwfn.dipole() + MPwfn.relaxed_dipole()`` (mirroring the gradient split).
         Basis-aware. The :func:`pycc.dipole` facade exposes the nuclear/reference/correlation
         pieces as :class:`pycc.PropertyComponents`."""
@@ -151,7 +164,7 @@ class HFwfn(Wavefunction):
 
         where ``U^b`` solves the ov-block field response ``G U^b = mu^b``.  The prefactor ``k``
         counts the ov + vo response (factor 2) and the orbital occupancy: ``k = 4`` on the spatial
-        closed-shell path (double occupancy), ``k = 2`` for singly occupied spin orbitals.
+        closed-shell path (double occupancy), ``k = 2`` for spin orbitals.
         Basis-aware.
         """
         o, v = self.o, self.v
@@ -227,11 +240,21 @@ class HFwfn(Wavefunction):
         return dmu
 
     def _so_dipole_derivatives_electronic(self) -> np.ndarray:
-        """Electronic part of the spin-orbital APT (singly occupied spin orbitals: one-electron
-        traces carry factor 1 and the ov response factor 2, vs 2 and 4 closed-shell), with the
-        spin-orbital nuclear CPHF response and dipole derivatives.  :meth:`dipole_derivatives`
-        adds ``Z_A delta``.  Valid for UHF and a closed shell forced to spin orbitals; ROHF
-        raises (via :meth:`CPHF.solve`)."""
+        r"""Electronic part of the spin-orbital APT (spin orbitals: one-electron traces carry
+        factor 1 and the ov response factor 2, vs 2 and 4 closed-shell), with the spin-orbital
+        nuclear CPHF response and dipole derivatives.  :meth:`dipole_derivatives` adds the nuclear
+        ``Z_A delta_ab``.  With x = (A,b)::
+
+            (d mu_a / d X_Ab)_elec = sum_i (d mu_a / d X_Ab)_ii - sum_ik S^x_ki (mu_a)_ik + 2 sum_ia U^x_ia (mu_a)_ia
+
+        .. math::
+
+            \begin{aligned}
+            \Big(\frac{d\mu_\alpha}{dX_{A\beta}}\Big)_{\mathrm{elec}} = \sum_i \Big(\frac{\partial\mu_\alpha}{\partial X_{A\beta}}\Big)_{ii} - \sum_{ik} S^x_{ki}\,(\mu_\alpha)_{ik} + 2 \sum_{ia} U^x_{ia}\,(\mu_\alpha)_{ia}
+            \end{aligned}
+
+        Valid for UHF and a closed shell forced to spin orbitals; ROHF raises (via
+        :meth:`CPHF.solve`)."""
         o, v = self.o, self.v
         mu = [np.asarray(self.H.mu[a]) for a in range(3)]
         d = self.derivatives
@@ -254,35 +277,24 @@ class HFwfn(Wavefunction):
         ``(3*natom, 3*natom)`` indexed ``(A*3 + a, B*3 + b)`` -- the force-constant
         matrix, matching ``psi4.hessian('scf')`` layout.
 
-        Built from (i) the second-derivative ("skeleton") integral terms -- the
-        gradient's integrals differentiated a second time -- and (ii) the first-order
-        nuclear CPHF response (:meth:`CPHF.solve_nuclear`), taken from the shared cache
-        so the 3*natom solves are reused for free by :meth:`dipole_derivatives` in an IR
-        workflow. The skeleton terms mirror the CPHF-free gradient with the integrals
-        differentiated twice::
+        Built from the second-derivative ("skeleton") integrals and the first-order nuclear CPHF
+        response (:meth:`CPHF.solve_nuclear`, taken from the shared cache so the ``3*natom`` solves
+        are reused for free by :meth:`dipole_derivatives` in an IR workflow).  With x = (A,a),
+        y = (B,b); i,j,n,m occupied; spin-adapted ``L`` = H.L::
 
-            2 h^{ab}_ii + (2(ii|jj) - (ij|ij))^{ab} - 2 eps_i S^{ab}_ii + V_NN^{ab}
-
-        .. math::
-
-            \begin{aligned}
-            2\,h^{ab}_{ii} + \big(2(ii|jj) - (ij|ij)\big)^{ab} - 2\,\varepsilon_i S^{ab}_{ii} + V_{NN}^{ab}
-            \end{aligned}
-
-        and the response + first-derivative product cross terms (x = (A,a), y = (B,b);
-        i,j,n,m occupied; spin-adapted ``L`` = H.L)::
-
-            -4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
-            + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
+            d^2E/dx dy = 2 h^{xy}_ii + (2(ii|jj) - (ij|ij))^{xy} - 2 eps_i S^{xy}_ii + V_NN^{xy}
+                         - 4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
+                         + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
 
         .. math::
 
             \begin{aligned}
-            -4\,U^x_{ai} B^y_{ai} - 2\,S^x_{ij} F^y_{ij} - 2\,S^y_{ij} F^x_{ij} + 4\,\varepsilon_i S^x_{ij} S^y_{ij} + 2\,S^x_{ij} S^y_{nm} L_{imjn}
+            \frac{d^2 E}{dx\,dy} &= 2\,h^{xy}_{ii} + \big(2(ii|jj) - (ij|ij)\big)^{xy} - 2\,\varepsilon_i S^{xy}_{ii} + V_{NN}^{xy} \\
+            &\quad - 4\,U^x_{ai} B^y_{ai} - 2\,S^x_{ij} F^y_{ij} - 2\,S^y_{ij} F^x_{ij} + 4\,\varepsilon_i S^x_{ij} S^y_{ij} + 2\,S^x_{ij} S^y_{nm} L_{imjn}
             \end{aligned}
 
-        where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij``
-        the skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
+        where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij`` the
+        skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
 
         The spin-orbital path is handled by :meth:`_so_hessian_electronic`; the electronic terms
         (:meth:`_hessian_electronic`) and the nuclear-repulsion second derivative are computed
@@ -341,16 +353,23 @@ class HFwfn(Wavefunction):
         return H
 
     def _so_hessian_electronic(self) -> np.ndarray:
-        """Electronic part of the spin-orbital molecular Hessian, shape ``(3*natom, 3*natom)``.
-        The spin-orbital form of :meth:`_hessian_electronic`: singly occupied spin orbitals (the
-        closed-shell prefactors halve) with the antisymmetrized ``<ij||kl>`` and the spin-orbital
-        second-derivative integrals (:meth:`Derivatives.so_core2` / ``so_eri2`` / ``so_overlap2``,
-        occupied block); the nuclear-repulsion second derivative ``V_NN^{ab}`` is added by
-        :meth:`hessian`::
+        r"""Electronic part of the spin-orbital molecular Hessian, shape ``(3*natom, 3*natom)``.
+        The spin-orbital form of :meth:`_hessian_electronic`: spin orbitals (the closed-shell
+        prefactors halve) with the antisymmetrized ``<ij||kl>`` and the spin-orbital second-
+        derivative integrals (:meth:`Derivatives.so_core2` / ``so_eri2`` / ``so_overlap2``, occupied
+        block); the nuclear-repulsion second derivative ``V_NN^{xy}`` is added by :meth:`hessian`.
+        With x = (A,a), y = (B,b); i,j,n,m occupied::
 
-            skeleton:  h^{ab}_ii + 1/2 <ij||ij>^{ab} - eps_i S^{ab}_ii
-            response:  -2 U^x_ai B^y_ai - S^x_ij F^y_ij - S^y_ij F^x_ij
-                       + 2 eps_i S^x_ij S^y_ij + S^x_ij S^y_nm <im||jn>
+            d^2E/dx dy = h^{xy}_ii + 1/2 <ij||ij>^{xy} - eps_i S^{xy}_ii
+                         - 2 U^x_ai B^y_ai - S^x_ij F^y_ij - S^y_ij F^x_ij
+                         + 2 eps_i S^x_ij S^y_ij + S^x_ij S^y_nm <im||jn>
+
+        .. math::
+
+            \begin{aligned}
+            \frac{d^2 E}{dx\,dy} &= h^{xy}_{ii} + \tfrac{1}{2}\langle ij||ij \rangle^{xy} - \varepsilon_i S^{xy}_{ii} \\
+            &\quad - 2\,U^x_{ai} B^y_{ai} - S^x_{ij} F^y_{ij} - S^y_{ij} F^x_{ij} + 2\,\varepsilon_i S^x_{ij} S^y_{ij} + S^x_{ij} S^y_{nm} \langle im||jn \rangle
+            \end{aligned}
 
         Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals;
         ROHF raises (the nuclear response goes through :meth:`CPHF.solve`)."""
@@ -436,7 +455,7 @@ class HFwfn(Wavefunction):
 
     def _so_atomic_axial_tensors(self) -> np.ndarray:
         r"""Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
-        spin-orbital form of :meth:`atomic_axial_tensors`: singly occupied spin orbitals
+        spin-orbital form of :meth:`atomic_axial_tensors`: spin orbitals
         (the closed-shell prefactor 2 -> 1), with the spin-orbital nuclear response
         (:meth:`CPHF.solve_nuclear`), magnetic response (:meth:`CPHF.solve_magnetic`), and
         nuclear half-derivative overlaps (:meth:`Derivatives.so_overlap_half`)::
@@ -532,11 +551,21 @@ class HFwfn(Wavefunction):
         return P
 
     def _so_velocity_dipole_derivatives_electronic(self) -> np.ndarray:
-        """Electronic part of the spin-orbital VG APT: singly occupied spin orbitals halve the
-        closed-shell prefactor (``-4 -> -2``), with the spin-orbital nuclear/momentum responses
+        r"""Electronic part of the spin-orbital VG APT: spin orbitals halve the closed-shell
+        prefactor (``-4 -> -2``), with the spin-orbital nuclear/momentum responses
         (:meth:`CPHF.solve_nuclear`/:meth:`CPHF.solve_momentum`) and half-derivative overlaps
-        (:meth:`Derivatives.so_overlap_half`); :meth:`velocity_dipole_derivatives` adds
-        ``Z_A delta``.  Valid for UHF and a closed shell forced to spin orbitals; ROHF raises
+        (:meth:`Derivatives.so_overlap_half`); :meth:`velocity_dipole_derivatives` adds the nuclear
+        ``Z_A delta_{alpha,beta}``.  With x = (A,beta)::
+
+            [P^A_{beta,alpha}]^VG_elec = -2 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}
+
+        .. math::
+
+            \begin{aligned}
+            [P^A_{\beta\alpha}]^{\mathrm{VG}}_{\mathrm{elec}} = -2 \sum_{ia} \big( U^R_{ia,\beta} + \langle \phi^R_i | \phi_a \rangle \big) U^A_{ia,\alpha}
+            \end{aligned}
+
+        Valid for UHF and a closed shell forced to spin orbitals; ROHF raises
         (via :meth:`CPHF.solve`)."""
         d = self.derivatives
         natom = self.ref.molecule().natom()
