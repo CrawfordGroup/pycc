@@ -129,49 +129,6 @@ class MPwfn(Wavefunction):
     # spin-adapted (closed-shell, unlabeled) paths are paired; the spatial spin sum rides in
     # l2 = 2(2 t2 - t2.swap) and the spin-adapted L (= H.L).
 
-    def _so_mp2_corr_opdm(self):
-        r"""Spin-orbital unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``.
-        The ``1/2`` is the normalization that makes the densities close the energy
-        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)::
-
-            Doo_ij = -1/2 sum_mef t_imef t_jmef
-            Dvv_ab =  1/2 sum_mne t_mnbe t_mnae
-
-        .. math::
-
-            \begin{aligned}
-            D^{oo}_{ij} &= -\tfrac{1}{2} \sum_{mef} t_{imef} t_{jmef} \\
-            D^{vv}_{ab} &=  \tfrac{1}{2} \sum_{mne} t_{mnbe} t_{mnae}
-            \end{aligned}
-        """
-        c = self.contract
-        t2 = self.t2
-        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
-        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
-        return Doo, Dvv
-
-    def _so_mp2_tpdm(self) -> np.ndarray:
-        r"""Spin-orbital MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks -- the only blocks that
-        contribute (determined from the MP2 energy Lagrangian, in which Lambda and T2 enter
-        linearly). Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place
-        the amplitudes::
-
-            Gamma_ijab = 1/4 t2_ijab
-
-        .. math::
-
-            \begin{aligned}
-            \Gamma_{ijab} = \tfrac{1}{4} t^{ab}_{ij}
-            \end{aligned}
-        """
-        o, v = self.o, self.v
-        nmo = self.nmo
-        t2 = np.asarray(self.t2)
-        Gam = np.zeros((nmo, nmo, nmo, nmo))
-        Gam[o, o, v, v] = 0.25 * t2
-        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
-        return Gam
-
     def _mp2_corr_opdm(self):
         r"""Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``, with
         the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell
@@ -196,6 +153,27 @@ class MPwfn(Wavefunction):
         Dvv = c('mnbe,mnae->ab', t2, l2)
         return Doo, Dvv
 
+    def _so_mp2_corr_opdm(self):
+        r"""Spin-orbital unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``.
+        The ``1/2`` is the normalization that makes the densities close the energy
+        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)::
+
+            Doo_ij = -1/2 sum_mef t_imef t_jmef
+            Dvv_ab =  1/2 sum_mne t_mnbe t_mnae
+
+        .. math::
+
+            \begin{aligned}
+            D^{oo}_{ij} &= -\tfrac{1}{2} \sum_{mef} t_{imef} t_{jmef} \\
+            D^{vv}_{ab} &=  \tfrac{1}{2} \sum_{mne} t_{mnbe} t_{mnae}
+            \end{aligned}
+        """
+        c = self.contract
+        t2 = self.t2
+        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
+        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
+        return Doo, Dvv
+
     def _mp2_tpdm(self) -> np.ndarray:
         r"""Spin-adapted MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks. Built over the full MO
         space (``self.nmo``); the active ``o``/``v`` slices place the amplitudes, leaving any
@@ -216,6 +194,28 @@ class MPwfn(Wavefunction):
         Gam = np.zeros((nmo, nmo, nmo, nmo))
         Gam[o, o, v, v] = u
         Gam[v, v, o, o] = u.transpose(2, 3, 0, 1)
+        return Gam
+
+    def _so_mp2_tpdm(self) -> np.ndarray:
+        r"""Spin-orbital MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks -- the only blocks that
+        contribute (determined from the MP2 energy Lagrangian, in which Lambda and T2 enter
+        linearly). Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place
+        the amplitudes::
+
+            Gamma_ijab = 1/4 t2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} = \tfrac{1}{4} t^{ab}_{ij}
+            \end{aligned}
+        """
+        o, v = self.o, self.v
+        nmo = self.nmo
+        t2 = np.asarray(self.t2)
+        Gam = np.zeros((nmo, nmo, nmo, nmo))
+        Gam[o, o, v, v] = 0.25 * t2
+        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
         return Gam
 
     def _mp2_normalization(self) -> float:
@@ -253,17 +253,18 @@ class MPwfn(Wavefunction):
         return 1.0 / np.sqrt(1.0 + norm2)
 
     # ---- analytic derivative-property driver (see pycc.mpderiv.MPderiv) ----
-    # The analytic derivative-property code lives on MPderiv, the MP2 leaf of CorrelatedDerivs.
-    # `deriv` is the cached driver; the thin methods below delegate to it so the historical
-    # `mpwfn.<property>()` call sites keep working, and the pycc property facade routes through
-    # the registry (pycc/__init__.py) to the same driver.
 
     @property
     def deriv(self):
         """The cached :class:`~pycc.mpderiv.MPderiv` derivative-property driver for this
-        wavefunction (built lazily).  A single instance so its ``_full_occ_cphf`` / Z-vector
-        caches are shared across the MP2 property calls and the ``CCderiv`` cross-calls that
-        reach it via ``cc.mp.deriv``."""
+        wavefunction (built lazily).  ``MPderiv`` is the MP2 leaf of
+        :class:`~pycc.correlatedderivs.CorrelatedDerivs` and carries the analytic
+        derivative-property code; the thin property methods below (:meth:`gradient`,
+        :meth:`polarizability`, :meth:`hessian`, ...) delegate to it so the historical
+        ``mpwfn.<property>()`` call sites keep working, and the :mod:`pycc.properties` facade routes
+        through the registry (``pycc/__init__.py``) to the same driver.  A single cached instance,
+        so its ``_full_occ_cphf`` / Z-vector caches are shared across the MP2 property calls and the
+        ``CCderiv`` cross-calls that reach it via ``cc.mp.deriv``."""
         if getattr(self, '_deriv', None) is None:
             from .mpderiv import MPderiv
             self._deriv = MPderiv(self)
