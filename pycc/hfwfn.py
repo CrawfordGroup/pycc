@@ -137,12 +137,16 @@ class HFwfn(Wavefunction):
     def polarizability(self) -> np.ndarray:
         """Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
 
-        The field does not move the basis functions, so there is no overlap/Pulay term:
-        solve the electric-field CPHF response per Cartesian axis (:class:`CPHF`) and contract
-        with the MO dipole integrals, ``alpha_ab = k sum_ia mu^a_ia U^b_ia``, where ``U^b``
-        solves ``G U^b = mu^b`` in the ov block. The prefactor counts the ``ov``+``vo``
-        response (factor 2) and the orbital occupancy: ``k = 4`` on the spatial closed-shell
-        path (double occupancy), ``k = 2`` for singly occupied spin orbitals. Basis-aware.
+        The field does not move the basis functions, so there is no overlap/Pulay term: solve the
+        electric-field CPHF response per Cartesian axis (:class:`CPHF`) and contract with the MO
+        dipole integrals::
+
+            alpha_ab = k sum_ia mu^a_ia U^b_ia
+
+        where ``U^b`` solves the ov-block field response ``G U^b = mu^b``.  The prefactor ``k``
+        counts the ov + vo response (factor 2) and the orbital occupancy: ``k = 4`` on the spatial
+        closed-shell path (double occupancy), ``k = 2`` for singly occupied spin orbitals.
+        Basis-aware.
         """
         o, v = self.o, self.v
         k = 2.0 if self.orbital_basis == 'spinorbital' else 4.0
