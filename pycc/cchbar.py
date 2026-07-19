@@ -142,7 +142,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{me} = f_{me} + t^f_n L_{mnef}
+            \bar{H}_{me} = f_{me} + t^f_n L_{mnef}
             \end{aligned}
         """
         contract = self.contract
@@ -166,7 +166,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{me} = f_{me} + t^f_n \langle mn||ef \rangle
+            \bar{H}_{me} = f_{me} + t^f_n \langle mn||ef \rangle
             \end{aligned}
         """
         contract = self.contract
@@ -193,7 +193,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{ae} = f_{ae} &- f_{me} t^a_m + t^f_m L_{amef} \\
+            \bar{H}_{ae} = f_{ae} &- f_{me} t^a_m + t^f_m L_{amef} \\
             &- \left(t^{fa}_{mn} + t^f_m t^a_n\right) L_{mnfe}
             \end{aligned}
         """
@@ -224,7 +224,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m - \tfrac{1}{2} H_{me} t^a_m + t^f_m \langle am||ef \rangle \\
+            \bar{H}_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m - \tfrac{1}{2} \bar{H}_{me} t^a_m + t^f_m \langle am||ef \rangle \\
             &- \tfrac{1}{2} \tilde\tau^{af}_{mn} \langle mn||ef \rangle
             \end{aligned}
         """
@@ -256,7 +256,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mi} = f_{mi} &+ t^e_i f_{me} + t^e_n L_{mnie} \\
+            \bar{H}_{mi} = f_{mi} &+ t^e_i f_{me} + t^e_n L_{mnie} \\
             &+ \left(t^{ef}_{in} + t^e_i t^f_n\right) L_{mnef}
             \end{aligned}
         """
@@ -287,7 +287,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + \tfrac{1}{2} H_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
+            \bar{H}_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + \tfrac{1}{2} \bar{H}_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
             &+ \tfrac{1}{2} \tilde\tau^{ef}_{in} \langle mn||ef \rangle
             \end{aligned}
         """
@@ -318,7 +318,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mnij} = \langle mn|ij \rangle &+ t^e_j \langle mn|ie \rangle + t^e_i \langle nm|je \rangle \\
+            \bar{H}_{mnij} = \langle mn|ij \rangle &+ t^e_j \langle mn|ie \rangle + t^e_i \langle nm|je \rangle \\
             &+ \left(t^{ef}_{ij} + t^e_i t^f_j\right) \langle mn|ef \rangle
             \end{aligned}
         """
@@ -352,7 +352,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
+            \bar{H}_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
             &+ \tfrac{1}{2} \tau^{ef}_{ij} \langle mn||ef \rangle
             \end{aligned}
         """
@@ -382,7 +382,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{abef} = \langle ab|ef \rangle &- t^b_m \langle am|ef \rangle - t^a_m \langle bm|fe \rangle \\
+            \bar{H}_{abef} = \langle ab|ef \rangle &- t^b_m \langle am|ef \rangle - t^a_m \langle bm|fe \rangle \\
             &+ \left(t^{ab}_{mn} + t^a_m t^b_n\right) \langle mn|ef \rangle
             \end{aligned}
         """
@@ -416,7 +416,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
+            \bar{H}_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
             &+ \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ef \rangle
             \end{aligned}
         """
@@ -445,7 +445,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{amef} = \langle am|ef \rangle - t^a_n \langle nm|ef \rangle
+            \bar{H}_{amef} = \langle am|ef \rangle - t^a_n \langle nm|ef \rangle
             \end{aligned}
         """
         contract = self.contract
@@ -470,7 +470,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
+            \bar{H}_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
             \end{aligned}
         """
         contract = self.contract
@@ -495,7 +495,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mnie} = \langle mn|ie \rangle + t^f_i \langle nm|ef \rangle
+            \bar{H}_{mnie} = \langle mn|ie \rangle + t^f_i \langle nm|ef \rangle
             \end{aligned}
         """
         contract = self.contract
@@ -520,7 +520,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mnie} = \langle mn||ie \rangle + t^f_i \langle mn||fe \rangle
+            \bar{H}_{mnie} = \langle mn||ie \rangle + t^f_i \langle mn||fe \rangle
             \end{aligned}
         """
         contract = self.contract
@@ -547,7 +547,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mbej} = \langle mb|ej \rangle &+ t^f_j \langle mb|ef \rangle - t^b_n \langle mn|ej \rangle \\
+            \bar{H}_{mbej} = \langle mb|ej \rangle &+ t^f_j \langle mb|ef \rangle - t^b_n \langle mn|ej \rangle \\
             &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn|ef \rangle \\
             &+ t^{fb}_{nj} L_{mnef}
             \end{aligned}
@@ -583,7 +583,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
+            \bar{H}_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
             &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn||ef \rangle
             \end{aligned}
         """
@@ -613,7 +613,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mbje} = \langle mb|je \rangle &+ t^f_j \langle bm|ef \rangle - t^b_n \langle mn|je \rangle \\
+            \bar{H}_{mbje} = \langle mb|je \rangle &+ t^f_j \langle bm|ef \rangle - t^b_n \langle mn|je \rangle \\
             &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle nm|ef \rangle
             \end{aligned}
         """
@@ -655,7 +655,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{abei} &= \langle ab|ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} \\
+            \bar{H}_{abei} &= \langle ab|ei \rangle - \bar{H}_{me} t^{ab}_{mi} + t^f_i \bar{H}_{abef} \\
             &\quad + \left(t^{ab}_{mn} + t^a_m t^b_n\right) \langle mn|ei \rangle \\
             &\quad - t^{fa}_{im} \langle bm|fe \rangle - t^{fb}_{im} \langle am|ef \rangle + t^{fb}_{mi} L_{amef} \\
             &\quad - t^b_m \left(\langle am|ei \rangle - t^{fa}_{in} \langle mn|fe \rangle\right) \\
@@ -735,7 +735,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{abei} &= \langle ab||ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} + \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ei \rangle \\
+            \bar{H}_{abei} &= \langle ab||ei \rangle - \bar{H}_{me} t^{ab}_{mi} + t^f_i \bar{H}_{abef} + \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ei \rangle \\
             &\quad - t^{af}_{mi} \langle mb||ef \rangle + t^{bf}_{mi} \langle ma||ef \rangle \\
             &\quad + t^a_m Z_{mbie} - t^b_m Z_{maie}
             \end{aligned}
@@ -778,7 +778,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mbij} &= \langle mb|ij \rangle + H_{me} t^{eb}_{ij} - t^b_n H_{mnij} \\
+            \bar{H}_{mbij} &= \langle mb|ij \rangle + \bar{H}_{me} t^{eb}_{ij} - t^b_n \bar{H}_{mnij} \\
             &\quad + \left(t^{ef}_{ij} + t^e_i t^f_j\right) \langle mb|ef \rangle \\
             &\quad - t^{eb}_{in} \langle nm|je \rangle - t^{eb}_{jn} \langle mn|ie \rangle + t^{eb}_{nj} L_{mnie} \\
             &\quad + t^e_j \left(\langle mb|ie \rangle - t^{fb}_{in} \langle mn|fe \rangle\right) \\
@@ -840,7 +840,7 @@ class cchbar(object):
         .. math::
 
             \begin{aligned}
-            H_{mbij} &= \langle mb||ij \rangle - H_{me} t^{be}_{ij} - t^b_n H_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle mb||ef \rangle \\
+            \bar{H}_{mbij} &= \langle mb||ij \rangle - \bar{H}_{me} t^{be}_{ij} - t^b_n \bar{H}_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle mb||ef \rangle \\
             &\quad + t^{be}_{jn} \langle mn||ie \rangle - t^{be}_{in} \langle mn||je \rangle \\
             &\quad - t^e_i Z_{mbje} + t^e_j Z_{mbie}
             \end{aligned}
