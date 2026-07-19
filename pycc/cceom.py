@@ -23,22 +23,6 @@ class cceom(object):
     ccwfn : PyCC ccwfn object
     D : NumPy array
         orbital energy difference array (only needed for unit-vector guesses)
-
-    Methods
-    -------
-    solve_eom()
-        Solves the right and left-hand EOM-CC eigenvalue problem using the Davidson algorithm
-
-    guess()
-        Generate initial guesses to eigenvalue problem using various single-excitation methods
-    s_r1()
-        Build the singles components of the sigma = HBAR * C vector
-    s_r2()
-        Build the doubles components of the sigma = HBAR * C vector
-    s_l1()
-        Build the singles components of the sigma = C * HBAR vector
-    s_l2()
-        Build the doubles components of the sigma = C * HBAR vector
     """
 
     def __init__(self, ccwfn: "CCwfn", cchbar: "cchbar") -> None:

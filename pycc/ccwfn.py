@@ -64,13 +64,6 @@ class CCwfn(Wavefunction):
         T2 amplitudes
     ecc | float
         the final CC correlation energy
-
-    Methods
-    -------
-    solve_cc()
-        Solves the CC T amplitude equations
-    residuals()
-        Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
     def __init__(self, scf_wfn: Any, **kwargs) -> None:

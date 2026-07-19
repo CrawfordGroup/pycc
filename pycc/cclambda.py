@@ -38,13 +38,6 @@ class cclambda(object):
         L1 amplitudes
     l2 : NumPy array
         L2 amplitudes
-
-    Methods
-    -------
-    solve_lambda()
-        Solves the CC Lambda amplitude equations
-    residuals()
-        Computes the L1 and L2 residuals for a given set of amplitudes and Fock operator
     """
     def __init__(self, ccwfn: "CCwfn", hbar: "cchbar") -> None:
         """

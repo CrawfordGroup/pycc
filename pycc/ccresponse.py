@@ -775,7 +775,7 @@ class ccresponse(object):
     def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
                max_diis=7, start_diis=1):
         """Optical-rotation tensor (length gauge) at frequency omega via the symmetric
-        response function (right-hand perturbed amplitudes only):
+        response function (right-hand perturbed amplitudes only)::
 
             G'_w = <<mu;m>>_w
                  = (1/2) <0|(1+L){ [muBAR,X(m,w)] + [mBAR,X(mu,-w)]

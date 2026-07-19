@@ -58,6 +58,10 @@ autosummary_generate = True
 # guarded by a try/except in the package, so its absence is handled normally.
 autodoc_mock_imports = ['psi4']
 
+# Document members in source order (preserving each module's labeled-section grouping) rather
+# than alphabetically.
+autodoc_member_order = 'bysource'
+
 napoleon_google_docstring = False
 napoleon_use_param = False
 napoleon_use_ivar = True

@@ -1,56 +1,75 @@
 API Documentation
 =================
 
+Every module below is documented from its source docstrings (``automodule`` with
+``:members:``), so each class, method, and function appears with its full docstring.
+
 Core infrastructure
 -------------------
-.. autosummary::
-   :toctree: autosummary
+.. automodule:: pycc.wavefunction
+   :members:
 
-   pycc.wavefunction
-   pycc.hamiltonian
-   pycc.device
+.. automodule:: pycc.hamiltonian
+   :members:
+
+.. automodule:: pycc.device
+   :members:
 
 Wavefunction methods
 --------------------
-.. autosummary::
-   :toctree: autosummary
+.. automodule:: pycc.hfwfn
+   :members:
 
-   pycc.hfwfn
-   pycc.mpwfn
-   pycc.ccwfn
+.. automodule:: pycc.mpwfn
+   :members:
+
+.. automodule:: pycc.ccwfn
+   :members:
 
 Coupled-cluster machinery
 -------------------------
-.. autosummary::
-   :toctree: autosummary
+.. automodule:: pycc.cchbar
+   :members:
 
-   pycc.cchbar
-   pycc.cclambda
-   pycc.ccdensity
-   pycc.cctriples
-   pycc.ccresponse
-   pycc.cceom
+.. automodule:: pycc.cclambda
+   :members:
+
+.. automodule:: pycc.ccdensity
+   :members:
+
+.. automodule:: pycc.cctriples
+   :members:
+
+.. automodule:: pycc.ccresponse
+   :members:
+
+.. automodule:: pycc.cceom
+   :members:
 
 Analytic derivative properties
 ------------------------------
-.. autosummary::
-   :toctree: autosummary
+.. automodule:: pycc.properties
+   :members:
 
-   pycc.properties
-   pycc.derivatives
-   pycc.cphf
+.. automodule:: pycc.correlatedderivs
+   :members:
+
+.. automodule:: pycc.ccderiv
+   :members:
+
+.. automodule:: pycc.mpderiv
+   :members:
+
+.. automodule:: pycc.cideriv
+   :members:
+
+.. automodule:: pycc.derivatives
+   :members:
+
+.. automodule:: pycc.cphf
+   :members:
 
 Real-time CC
 ------------
-.. autosummary::
-   :toctree: autosummary
-
-   pycc.rt.rtcc
-
-Local correlation
------------------
-.. autosummary::
-   :toctree: autosummary
-
-   pycc.local
-   pycc.lccwfn
+.. automodule:: pycc.rt.rtcc
+   :members:

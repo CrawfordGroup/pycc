@@ -53,21 +53,6 @@ class rtcc(object):
         optionally store magnetic dipole integrals (default = False)
     kick: bool or str
         optionally isolate 'x', 'y', or 'z' electric field kick (default = False)
-
-    Methods
-    -------
-    f(): Returns a flattened NumPy array of cluster residuals
-        The ODE defining function (the right-hand-side of a Runge-Kutta solver)
-    collect_amps():
-        Collect the cluster amplitudes and phase into a single vector
-    extract_amps():
-        Separate a flattened array of amplitudes (and phase) into the t1, t2, l1, and l2 components
-    dipole()
-        Compute the electronic or magnetic dipole moment for a given time t
-    energy()
-        Compute the CC correlation energy for a given time t
-    lagrangian()
-        Compute the CC Lagrangian energy for a given time t
     """
     def __init__(self, ccwfn: "CCwfn", cclambda: "cclambda", ccdensity: "ccdensity", V: Tensor, magnetic: bool = False, kick: Any = None) -> None:
         self.ccwfn = ccwfn
