@@ -253,6 +253,320 @@ class cclambda(object):
                                              
         return r1, r2
 
+    def build_Goo(self, t2, l2):
+        r"""Build the G_mi occupied density intermediate (t2-weighted lambda).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no)
+            Indexed [m, i].
+
+        Notes
+        -----
+        Spatial (spin-orbital: 1/2 t2_mnef l2_inef)::
+
+            G_mi = t2_mjab l2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            G_{mi} = t^{ab}_{mj} \lambda^{ab}_{ij}
+            \end{aligned}
+        """
+        contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return 0.5 * contract('mnef,inef->mi', t2, l2)
+        return contract('mjab,ijab->mi', t2, l2)
+
+    def build_Gvv(self, t2, l2):
+        r"""Build the G_ae virtual density intermediate (t2-weighted lambda).
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (nv, nv)
+            Indexed [a, e].
+
+        Notes
+        -----
+        Spatial (spin-orbital: -1/2 t2_mnef l2_mnaf)::
+
+            G_ae = - t2_ijeb l2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            G_{ae} = -\, t^{eb}_{ij} \lambda^{ab}_{ij}
+            \end{aligned}
+        """
+        contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return -0.5 * contract('mnef,mnaf->ae', t2, l2)
+        return -1.0 * contract('ijeb,ijab->ae', t2, l2)
+
+    def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s1=None):
+        r"""Compute the L1 (lambda singles) residual.
+
+        The lambda equations are linear; solve_lambda drives this residual to
+        zero. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
+        Returns zeros for CCD (no singles); CC2 and CCSD(T) modify/extend the
+        terms below.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, nv)
+            L1 residual indexed [i, a].
+
+        Notes
+        -----
+        CCSD form (repeated indices summed)::
+
+            r_l1_ia = 2 H_ia + l1_ie H_ea - l1_ma H_im
+                    + l2_imef H_efam - l2_mnae H_iemn
+                    + l1_me (2 H_ieam - H_iema)
+                    - G_ef (2 H_eifa - H_eiaf)
+                    - G_mn (2 H_mina - H_imna)
+
+        .. math::
+
+            \begin{aligned}
+            r^{l1}_{ia} = 2 \bar{H}_{ia} &+ \lambda^e_i \bar{H}_{ea} - \lambda^a_m \bar{H}_{im} \\
+            &+ \lambda^{ef}_{im} \bar{H}_{efam} - \lambda^{ae}_{mn} \bar{H}_{iemn} \\
+            &+ \lambda^e_m \left(2 \bar{H}_{ieam} - \bar{H}_{iema}\right) \\
+            &- G_{ef} \left(2 \bar{H}_{eifa} - \bar{H}_{eiaf}\right) \\
+            &- G_{mn} \left(2 \bar{H}_{mina} - \bar{H}_{imna}\right)
+            \end{aligned}
+        """
+        contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
+                                          Hovoo, Hvovv, Hooov, Gvv, Goo, s1=s1)
+        if self.ccwfn.model == 'CCD':
+            r_l1 = zeros_like(l1)
+        else:
+            r_l1 = 2.0 * clone(Hov)
+
+            # (T) source, supplied by the caller (cc.S1 unperturbed / dS1 perturbed); None => omit
+            if s1 is not None:
+                r_l1 = r_l1 + s1
+
+            r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
+            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
+            r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
+            r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
+            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            if self.ccwfn.model == 'CC2':
+                tmp = contract('me,nmfe->nf', l1, self.ccwfn.t2)
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.L[o,o,v,v]))
+                tmp = contract('me,mnfe->nf', l1, self.ccwfn.build_tau(self.ccwfn.t1, self.ccwfn.t2))
+                r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
+                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
+            else:
+                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
+                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
+                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
+                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
+        return r_l1
+
+    def _so_r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
+                          Hvovv, Hooov, Gvv, Goo, s1=None):
+        r"""Spin-orbital L1 (lambda singles) residual, built from the antisymmetrized
+        spin-orbital HBAR blocks (no Hovov).  The SO sibling of :meth:`r_L1`; G_* are the
+        t2-weighted lambda densities (:meth:`build_Goo`/:meth:`build_Gvv`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            r_l1_ia = H_ia + l1_ie H_ea - l1_ma H_im
+                    + 1/2 l2_imef H_efam - 1/2 l2_mnae H_iemn
+                    + l1_me H_ieam
+                    - G_ef H_eifa - G_mn H_mina
+
+        .. math::
+
+            \begin{aligned}
+            r^{l1}_{ia} = \bar{H}_{ia} &+ \lambda^e_i \bar{H}_{ea} - \lambda^a_m \bar{H}_{im} \\
+            &+ \tfrac{1}{2} \lambda^{ef}_{im} \bar{H}_{efam} - \tfrac{1}{2} \lambda^{ae}_{mn} \bar{H}_{iemn} \\
+            &+ \lambda^e_m \bar{H}_{ieam} - G_{ef} \bar{H}_{eifa} - G_{mn} \bar{H}_{mina}
+            \end{aligned}
+        """
+        contract = self.contract
+        r_l1 = clone(Hov)
+        if s1 is not None:                              # (T) source (cc.S1 / dS1); None => omit
+            r_l1 = r_l1 + s1
+        r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
+        r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
+        r_l1 = r_l1 + 0.5 * contract('imef,efam->ia', l2, Hvvvo)
+        r_l1 = r_l1 - 0.5 * contract('mnae,iemn->ia', l2, Hovoo)
+        r_l1 = r_l1 + contract('me,ieam->ia', l1, Hovvo)
+        r_l1 = r_l1 - contract('ef,eifa->ia', Gvv, Hvovv)
+        r_l1 = r_l1 - contract('mn,mina->ia', Goo, Hooov)
+        return r_l1
+
+    def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
+        r"""Compute the L2 (lambda doubles) residual.
+
+        The lambda equations are linear; solve_lambda drives this residual to
+        zero. The expression below is symmetrized as r_l2_ijab += r_l2_jiba on
+        return. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
+        CCD drops the l1 terms; CC2 and CCSD(T) modify/extend the terms below.
+
+        Returns
+        -------
+        ndarray or torch.Tensor, shape (no, no, nv, nv)
+            L2 residual indexed [i, j, a, b].
+
+        Notes
+        -----
+        CCSD form, before the i<->j / a<->b symmetrization (repeated indices
+        summed)::
+
+            r_l2_ijab = L_ijab
+                      + 2 l1_ia H_jb - l1_ja H_ib
+                      + 2 l1_ie H_ejab - l1_ie H_ejba
+                      - 2 l1_mb H_jima + l1_mb H_ijma
+                      + l2_ijeb H_ea - l2_mjab H_im
+                      + 1/2 l2_mnab H_ijmn + 1/2 l2_ijef H_efab
+                      + l2_mjeb (2 H_ieam - H_iema)
+                      - l2_mibe H_jema - l2_mieb H_jeam
+                      + G_ae L_ijeb - G_mi L_mjab
+
+        .. math::
+
+            \begin{aligned}
+            r^{l2}_{ijab} &= L_{ijab} \\
+            &\quad + 2 \lambda^a_i \bar{H}_{jb} - \lambda^a_j \bar{H}_{ib} \\
+            &\quad + 2 \lambda^e_i \bar{H}_{ejab} - \lambda^e_i \bar{H}_{ejba} \\
+            &\quad - 2 \lambda^b_m \bar{H}_{jima} + \lambda^b_m \bar{H}_{ijma} \\
+            &\quad + \lambda^{eb}_{ij} \bar{H}_{ea} - \lambda^{ab}_{mj} \bar{H}_{im} \\
+            &\quad + \tfrac{1}{2} \lambda^{ab}_{mn} \bar{H}_{ijmn} + \tfrac{1}{2} \lambda^{ef}_{ij} \bar{H}_{efab} \\
+            &\quad + \lambda^{eb}_{mj} \left(2 \bar{H}_{ieam} - \bar{H}_{iema}\right) \\
+            &\quad - \lambda^{be}_{mi} \bar{H}_{jema} - \lambda^{eb}_{mi} \bar{H}_{jeam} \\
+            &\quad + G_{ae} L_{ijeb} - G_{mi} L_{mjab}
+            \end{aligned}
+        """
+        contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_r_L2(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
+                                          Hoooo, Hvvvv, Hovvo, Hvvvo, Hovoo, Hvovv, Hooov,
+                                          Gvv, Goo, s2=s2)
+        if self.ccwfn.model == 'CCD':
+            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
+
+            r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
+            r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
+            r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+            r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+            r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+            r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
+            r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
+            r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+            r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+        else:
+            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
+
+            # (T) source, supplied by the caller (cc.S2 unperturbed / dS2 perturbed); None => omit.
+            # Added before the final P_ij^ab symmetrization (r_l2 += r_l2.T) so the source is
+            # symmetrized identically in the unperturbed and perturbed paths.
+            if s2 is not None:
+                r_l2 = r_l2 + 0.5 * s2
+
+            r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
+            r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
+            r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
+            r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
+            r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
+            r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
+            if self.ccwfn.model == 'CC2':
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
+            else:
+                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
+                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
+                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
+                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
+                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
+                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
+                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
+
+        r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
+        return r_l2
+
+    def _so_r_L2(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
+                          Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
+        r"""Spin-orbital L2 (lambda doubles) residual. Built as the full residual,
+        already antisymmetric in i<->j and a<->b (no separate symmetrization).  The SO
+        sibling of :meth:`r_L2`; G_* are the t2-weighted lambda densities.  With the
+        permutation operator P(pq) X = X_pq - X_qp (repeated indices summed)::
+
+            r_l2_ijab = <ij||ab>
+                      + P(ij) P(ab) l1_ia H_jb
+                      + P(ab) l2_ijae H_eb - P(ij) l2_imab H_jm
+                      + 1/2 l2_ijef H_efab + 1/2 l2_mnab H_ijmn
+                      + P(ij) l1_ie H_ejab - P(ab) l1_ma H_ijmb
+                      + P(ij) P(ab) l2_imae H_jebm
+                      + P(ab) G_be <ij||ae> - P(ij) G_mj <im||ab>
+
+        .. math::
+
+            \begin{aligned}
+            r^{l2}_{ijab} &= \langle ij||ab \rangle \\
+            &\quad + \mathcal{P}(ij)\,\mathcal{P}(ab)\, \lambda^a_i \bar{H}_{jb} \\
+            &\quad + \mathcal{P}(ab)\, \lambda^{ae}_{ij} \bar{H}_{eb} - \mathcal{P}(ij)\, \lambda^{ab}_{im} \bar{H}_{jm} \\
+            &\quad + \tfrac{1}{2} \lambda^{ef}_{ij} \bar{H}_{efab} + \tfrac{1}{2} \lambda^{ab}_{mn} \bar{H}_{ijmn} \\
+            &\quad + \mathcal{P}(ij)\, \lambda^e_i \bar{H}_{ejab} - \mathcal{P}(ab)\, \lambda^a_m \bar{H}_{ijmb} \\
+            &\quad + \mathcal{P}(ij)\,\mathcal{P}(ab)\, \lambda^{ae}_{im} \bar{H}_{jebm} \\
+            &\quad + \mathcal{P}(ab)\, G_{be} \langle ij||ae \rangle - \mathcal{P}(ij)\, G_{mj} \langle im||ab \rangle
+            \end{aligned}
+        """
+        contract = self.contract
+        r_l2 = clone(ERI[o,o,v,v])
+        if s2 is not None:                              # (T) source (cc.S2 / dS2); None => omit (no 1/2, SO)
+            r_l2 = r_l2 + s2
+        r_l2 = r_l2 + (contract('ia,jb->ijab', l1, Hov) - contract('ja,ib->ijab', l1, Hov))
+        r_l2 = r_l2 + (contract('jb,ia->ijab', l1, Hov) - contract('ib,ja->ijab', l1, Hov))
+        r_l2 = r_l2 + (contract('ijae,eb->ijab', l2, Hvv) - contract('ijbe,ea->ijab', l2, Hvv))
+        r_l2 = r_l2 - (contract('imab,jm->ijab', l2, Hoo) - contract('jmab,im->ijab', l2, Hoo))
+        r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
+        r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
+        r_l2 = r_l2 + (contract('ie,ejab->ijab', l1, Hvovv) - contract('je,eiab->ijab', l1, Hvovv))
+        r_l2 = r_l2 - (contract('ma,ijmb->ijab', l1, Hooov) - contract('mb,ijma->ijab', l1, Hooov))
+        tmp = contract('imae,jebm->ijab', l2, Hovvo)
+        r_l2 = r_l2 + (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3)
+                       + tmp.swapaxes(0,1).swapaxes(2,3))
+        r_l2 = r_l2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v])
+                       - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
+        r_l2 = r_l2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v])
+                       - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
+        return r_l2
+
+    def pseudoenergy(self, o, v, ERI, l2):
+        r"""Compute the CC pseudoenergy from the L2 amplitudes.
+
+        Returns
+        -------
+        float
+            The lambda pseudoenergy.
+
+        Notes
+        -----
+        Spatial (spin-orbital: 1/4 <ij||ab> l2_ijab)::
+
+            E_pseudo = 1/2 <ij|ab> l2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            E_\text{pseudo} = \tfrac{1}{2} \langle ij|ab \rangle \lambda^{ab}_{ij}
+            \end{aligned}
+        """
+        contract = self.contract
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return 0.25 * contract('ijab,ijab->', ERI[o,o,v,v], l2)
+        return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
+
     def _so_build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI):
         r"""Build the T-dependent spin-orbital CC3 intermediates for the Lambda
         equations: the T1-dressed CC3 W-intermediates plus the once-only T3
@@ -488,7 +802,7 @@ class cclambda(object):
         return Y1, Y2
 
     def _build_cc3_lambda_intermediates(self, o, v, t1, t2, F, ERI, L, real_time=False):
-        """Build the T-dependent CC3 intermediates shared by the Lambda equations.
+        r"""Build the T-dependent CC3 intermediates shared by the Lambda equations.
 
         Constructs the CC3 W-intermediates (t3 and l3) and the ``Zmndi``/``Zmdfa``
         triples intermediates. These depend only on the T-amplitudes (not Lambda),
@@ -514,12 +828,24 @@ class cclambda(object):
 
         Notes
         -----
-        The spin-adapted analogue of :meth:`_so_build_cc3_lambda_intermediates`.  ``Fov``
-        is the CCSD H_me (:meth:`~pycc.ccwfn.CCwfn.build_Fme`) and the W-intermediates are
-        the CC3 T1-dressed blocks.  ``Zmndi``/``Zmdfa`` are the once-only (Lambda-
-        independent) ground-state-T3 contractions feeding the <0|L2 [[H~,T3],nu1]|0> -> L1
-        piece (spin-adapted, with L = 2*ERI - ERI.swapaxes; the spin-orbital counterparts
-        are the ``Zijal``/``Ziabd`` of :meth:`_so_build_cc3_lambda_intermediates`).
+        The spin-adapted analogue of :meth:`_so_build_cc3_lambda_intermediates` (closed
+        shell, L = 2*ERI - ERI.swapaxes).  ``Fov`` is the CCSD H_me
+        (:meth:`~pycc.ccwfn.CCwfn.build_Fme`) and the W-intermediates are the CC3
+        T1-dressed blocks.  ``Zmndi``/``Zmdfa`` are the once-only (Lambda-independent)
+        contractions of the ground-state T3 (:func:`~pycc.cctriples.t3c_ijk`, ``t3``) that
+        feed the <0|L2 [[H~,T3],nu1]|0> -> L1 piece; they are the spin-adapted counterparts
+        of the ``Zijal``/``Ziabd`` of :meth:`_so_build_cc3_lambda_intermediates` (repeated
+        indices summed)::
+
+            Zmndi_mndi = sum_lef ( t3_lmndef <il|ef> - t3_lmnfed L_ilef )
+            Zmdfa_mdfa = sum_nle ( t3_lmndef <nl|ea> - t3_lmndfe L_nlea )
+
+        .. math::
+
+            \begin{aligned}
+            Z^{di}_{mn} &= \sum_{lef} \left( t^{def}_{lmn} \langle il|ef \rangle - t^{fed}_{lmn} L_{ilef} \right) \\
+            Z^{dfa}_{m} &= \sum_{nle} \left( t^{def}_{lmn} \langle nl|ea \rangle - t^{dfe}_{lmn} L_{nlea} \right)
+            \end{aligned}
         """
         contract = self.contract
         no = self.ccwfn.no
@@ -533,9 +859,9 @@ class cclambda(object):
         Wvovv = self.ccwfn.build_cc3_Wamef(o, v, ERI, t1)
         Wvvvo = self.ccwfn.build_cc3_Wabei(o, v, ERI, t1)
         # Additional intermediates for l3
-        Wovov = self.build_cc3_Wmbje(o, v, ERI, t1)
-        Wovvo = self.build_cc3_Wmbej(o, v, ERI, t1)
-        Wvvvv = self.build_cc3_Wabef(o, v, ERI, t1)
+        Wovov = self._build_cc3_Wmbje(o, v, ERI, t1)
+        Wovvo = self._build_cc3_Wmbej(o, v, ERI, t1)
+        Wvvvv = self._build_cc3_Wabef(o, v, ERI, t1)
 
         # Building intermediates in t3l1. Zmdfa's second axis is virtual
         # (shape no,nv,nv,nv), so it is allocated directly rather than padded.
@@ -558,7 +884,7 @@ class cclambda(object):
                 'Wvvvv': Wvvvv, 'Zmndi': Zmndi, 'Zmdfa': Zmdfa}
 
     def _cc3_lambda_triples(self, o, v, l1, l2, t2, F, ERI, L, ints, real_time=False):
-        """Compute the CC3 triples contributions (Y1, Y2) to the Lambda residuals.
+        r"""Compute the CC3 triples contributions (Y1, Y2) to the Lambda residuals.
 
         Uses the T-dependent intermediates from
         :meth:`_build_cc3_lambda_intermediates` together with the current
@@ -589,14 +915,45 @@ class cclambda(object):
         Notes
         -----
         The spin-adapted (closed-shell, L = 2*ERI - ERI.swapaxes) analogue of the
-        spin-orbital :meth:`_so_cc3_lambda_triples` -- same connected Lambda-L3 and the
-        same two L1 commutators <0|L2 [[H~,T3],nu1]|0> and <0|L3 [[H~,T2],nu1]|0> plus the
-        L2 piece <0|L3 [H~,nu2]|0> (see :meth:`_so_cc3_lambda_triples_full` for the
-        equations).  Here the ground-state T3 (:func:`~pycc.cctriples.t3c_ijk`) and lambda
-        L3 (:func:`~pycc.cctriples.l3_ijk`) are rebuilt per-(l,m,n)/(i,j,k) and folded
-        through the factored intermediates ``Znf`` (t3.l2), ``Zbide``/``Zblad_{1,2}`` and
-        ``Zjlma``/``Zjlid_{1,2}`` (t2.l3), together with the once-only ``Zmndi``/``Zmdfa``
-        from :meth:`_build_cc3_lambda_intermediates`.
+        spin-orbital :meth:`_so_cc3_lambda_triples`.  The connected ground-state T3
+        (:func:`~pycc.cctriples.t3c_ijk`, ``t3_lmn``) and lambda L3
+        (:func:`~pycc.cctriples.l3_ijk`, ``l3_kij`` for the occupied triple (k,i,j)) are
+        rebuilt per-(l,m,n)/(k,i,j) and folded into the L1/L2 residual contributions Y1, Y2.
+        Y2 is returned before the i<->j / a<->b symmetrization (applied in
+        :meth:`solve_lambda`).  ``W`` are the CC3 T1-dressed intermediates from ``ints``;
+        repeated indices summed.
+
+        <0|L2 [[H~,T3],nu1]|0> -> L1 (with Zmndi/Zmdfa from
+        :meth:`_build_cc3_lambda_intermediates`)::
+
+            Znf_nf = sum_lmde l2_lmde ( t3_lmndef - t3_lmnfed )
+            Y1_ia += l2_imdf Zmdfa_mdfa + L_imaf Znf_mf + l2_mnad Zmndi_mndi
+
+        <0|L3 [H~,nu2]|0> -> L2::
+
+            Y2_ijab = l3_kijdeb Wvvvo_edak - l3_kimdab Wovoo_jdmk
+
+        <0|L3 [[H~,T2],nu1]|0> -> L1, folded through the t2.l3 intermediates (occupied
+        axes follow the build positions: axis 0 is the free t2 index, axes 1/2 the (i,j) of
+        the l3 loop)::
+
+            Zbide_(b,i,d,e)   = t2_jkbc l3_kijcde
+            Zblad1_(b,i,a,d)  = t2_jkbc l3_kijcad,   Zblad2_(b,i,a,d) = t2_jkbc l3_kijcda
+            Zjlma_(n,i,j,a)   = t2_nkbc l3_kijcab
+            Zjlid1_(n,i,j,d)  = t2_nkbc l3_kijcbd,   Zjlid2_(n,i,j,d) = t2_nkbc l3_kijcdb
+
+            Y1_ia += sum_bde  Zbide_(b,i,d,e) Wvvvv_deab
+                   + sum_nlm  Zjlma_(n,l,m,a) Woooo_inlm
+                   - sum_nld  Zjlid1_(n,l,i,d) Wovov_ndla - sum_nld Zjlid2_(n,l,i,d) Wovvo_ndal
+                   - sum_bld  Zblad1_(b,l,a,d) Wovov_idlb - sum_bld Zblad2_(b,l,a,d) Wovvo_idbl
+
+        .. math::
+
+            \begin{aligned}
+            Z^{f}_{n} &= \sum_{lmde} \lambda^{de}_{lm}\left(t^{def}_{lmn} - t^{fed}_{lmn}\right) \\
+            (Y_1)^{a}_{i} &\mathrel{+}= \lambda^{df}_{im} Z^{dfa}_{m} + L_{imaf} Z^{f}_{m} + \lambda^{ad}_{mn} Z^{di}_{mn} \\
+            (Y_2)^{ab}_{ij} &= \lambda^{deb}_{kij} W_{edak} - \lambda^{dab}_{kim} W_{jdmk}
+            \end{aligned}
         """
         contract = self.contract
         no = self.ccwfn.no
@@ -676,215 +1033,9 @@ class cclambda(object):
 
         return Y1, Y2
 
-    def build_Goo(self, t2, l2):
-        r"""Build the G_mi occupied density intermediate (t2-weighted lambda).
-
-        Returns
-        -------
-        ndarray or torch.Tensor, shape (no, no)
-            Indexed [m, i].
-
-        Notes
-        -----
-        Spatial (spin-orbital: 1/2 t2_mnef l2_inef)::
-
-            G_mi = t2_mjab l2_ijab
-
-        .. math::
-
-            \begin{aligned}
-            G_{mi} = t^{ab}_{mj} \lambda^{ab}_{ij}
-            \end{aligned}
-        """
-        contract = self.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return 0.5 * contract('mnef,inef->mi', t2, l2)
-        return contract('mjab,ijab->mi', t2, l2)
-
-
-    def build_Gvv(self, t2, l2):
-        r"""Build the G_ae virtual density intermediate (t2-weighted lambda).
-
-        Returns
-        -------
-        ndarray or torch.Tensor, shape (nv, nv)
-            Indexed [a, e].
-
-        Notes
-        -----
-        Spatial (spin-orbital: -1/2 t2_mnef l2_mnaf)::
-
-            G_ae = - t2_ijeb l2_ijab
-
-        .. math::
-
-            \begin{aligned}
-            G_{ae} = -\, t^{eb}_{ij} \lambda^{ab}_{ij}
-            \end{aligned}
-        """
-        contract = self.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return -0.5 * contract('mnef,mnaf->ae', t2, l2)
-        return -1.0 * contract('ijeb,ijab->ae', t2, l2)
-
-
-    def r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s1=None):
-        r"""Compute the L1 (lambda singles) residual.
-
-        The lambda equations are linear; solve_lambda drives this residual to
-        zero. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
-        Returns zeros for CCD (no singles); CC2 and CCSD(T) modify/extend the
-        terms below.
-
-        Returns
-        -------
-        ndarray or torch.Tensor, shape (no, nv)
-            L1 residual indexed [i, a].
-
-        Notes
-        -----
-        CCSD form (repeated indices summed)::
-
-            r_l1_ia = 2 H_ia + l1_ie H_ea - l1_ma H_im
-                    + l2_imef H_efam - l2_mnae H_iemn
-                    + l1_me (2 H_ieam - H_iema)
-                    - G_ef (2 H_eifa - H_eiaf)
-                    - G_mn (2 H_mina - H_imna)
-
-        .. math::
-
-            \begin{aligned}
-            r^{l1}_{ia} = 2 \bar{H}_{ia} &+ \lambda^e_i \bar{H}_{ea} - \lambda^a_m \bar{H}_{im} \\
-            &+ \lambda^{ef}_{im} \bar{H}_{efam} - \lambda^{ae}_{mn} \bar{H}_{iemn} \\
-            &+ \lambda^e_m \left(2 \bar{H}_{ieam} - \bar{H}_{iema}\right) \\
-            &- G_{ef} \left(2 \bar{H}_{eifa} - \bar{H}_{eiaf}\right) \\
-            &- G_{mn} \left(2 \bar{H}_{mina} - \bar{H}_{imna}\right)
-            \end{aligned}
-        """
-        contract = self.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo,
-                                          Hovoo, Hvovv, Hooov, Gvv, Goo, s1=s1)
-        if self.ccwfn.model == 'CCD':
-            r_l1 = zeros_like(l1)
-        else:
-            r_l1 = 2.0 * clone(Hov)
-
-            # (T) source, supplied by the caller (cc.S1 unperturbed / dS1 perturbed); None => omit
-            if s1 is not None:
-                r_l1 = r_l1 + s1
-
-            r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
-            r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
-            r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
-            r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
-            if self.ccwfn.model == 'CC2':
-                tmp = contract('me,nmfe->nf', l1, self.ccwfn.t2)
-                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.L[o,o,v,v]))
-                tmp = contract('me,mnfe->nf', l1, self.ccwfn.build_tau(self.ccwfn.t1, self.ccwfn.t2))
-                r_l1 = r_l1 - contract('nf,inaf->ia', tmp, (2 * self.ccwfn.H.ERI[o,o,v,v]))
-                r_l1 = r_l1 + contract('nf,inaf->ia', tmp, self.ccwfn.H.ERI[o,o,v,v].swapaxes(2,3))
-            else:
-                r_l1 = r_l1 - 2.0 * contract('ef,eifa->ia', Gvv, Hvovv)
-                r_l1 = r_l1 + contract('ef,eiaf->ia', Gvv, Hvovv)
-                r_l1 = r_l1 - 2.0 * contract('mn,mina->ia', Goo, Hooov)
-                r_l1 = r_l1 + contract('mn,imna->ia', Goo, Hooov)
-        return r_l1
-
-    def r_L2(self, o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
-        r"""Compute the L2 (lambda doubles) residual.
-
-        The lambda equations are linear; solve_lambda drives this residual to
-        zero. The expression below is symmetrized as r_l2_ijab += r_l2_jiba on
-        return. H_* are the HBAR blocks, G_* the t2-weighted lambda densities.
-        CCD drops the l1 terms; CC2 and CCSD(T) modify/extend the terms below.
-
-        Returns
-        -------
-        ndarray or torch.Tensor, shape (no, no, nv, nv)
-            L2 residual indexed [i, j, a, b].
-
-        Notes
-        -----
-        CCSD form, before the i<->j / a<->b symmetrization (repeated indices
-        summed)::
-
-            r_l2_ijab = L_ijab
-                      + 2 l1_ia H_jb - l1_ja H_ib
-                      + 2 l1_ie H_ejab - l1_ie H_ejba
-                      - 2 l1_mb H_jima + l1_mb H_ijma
-                      + l2_ijeb H_ea - l2_mjab H_im
-                      + 1/2 l2_mnab H_ijmn + 1/2 l2_ijef H_efab
-                      + l2_mjeb (2 H_ieam - H_iema)
-                      - l2_mibe H_jema - l2_mieb H_jeam
-                      + G_ae L_ijeb - G_mi L_mjab
-
-        .. math::
-
-            \begin{aligned}
-            r^{l2}_{ijab} &= L_{ijab} \\
-            &\quad + 2 \lambda^a_i \bar{H}_{jb} - \lambda^a_j \bar{H}_{ib} \\
-            &\quad + 2 \lambda^e_i \bar{H}_{ejab} - \lambda^e_i \bar{H}_{ejba} \\
-            &\quad - 2 \lambda^b_m \bar{H}_{jima} + \lambda^b_m \bar{H}_{ijma} \\
-            &\quad + \lambda^{eb}_{ij} \bar{H}_{ea} - \lambda^{ab}_{mj} \bar{H}_{im} \\
-            &\quad + \tfrac{1}{2} \lambda^{ab}_{mn} \bar{H}_{ijmn} + \tfrac{1}{2} \lambda^{ef}_{ij} \bar{H}_{efab} \\
-            &\quad + \lambda^{eb}_{mj} \left(2 \bar{H}_{ieam} - \bar{H}_{iema}\right) \\
-            &\quad - \lambda^{be}_{mi} \bar{H}_{jema} - \lambda^{eb}_{mi} \bar{H}_{jeam} \\
-            &\quad + G_{ae} L_{ijeb} - G_{mi} L_{mjab}
-            \end{aligned}
-        """
-        contract = self.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_r_L2(o, v, l1, l2, self.ccwfn.H.ERI, Hov, Hvv, Hoo,
-                                          Hoooo, Hvvvv, Hovvo, Hvvvo, Hovoo, Hvovv, Hooov,
-                                          Gvv, Goo, s2=s2)
-        if self.ccwfn.model == 'CCD':
-            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
-
-            r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
-            r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
-            r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-            r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
-            r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
-            r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
-            r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
-            r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
-            r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
-        else:
-            r_l2 = clone(L[o,o,v,v], device=self.ccwfn.device1)
-
-            # (T) source, supplied by the caller (cc.S2 unperturbed / dS2 perturbed); None => omit.
-            # Added before the final P_ij^ab symmetrization (r_l2 += r_l2.T) so the source is
-            # symmetrized identically in the unperturbed and perturbed paths.
-            if s2 is not None:
-                r_l2 = r_l2 + 0.5 * s2
-
-            r_l2 = r_l2 + 2.0 * contract('ia,jb->ijab', l1, Hov)
-            r_l2 = r_l2 - contract('ja,ib->ijab', l1, Hov)
-            r_l2 = r_l2 + 2.0 * contract('ie,ejab->ijab', l1, Hvovv)
-            r_l2 = r_l2 - contract('ie,ejba->ijab', l1, Hvovv)
-            r_l2 = r_l2 - 2.0 * contract('mb,jima->ijab', l1, Hooov)
-            r_l2 = r_l2 + contract('mb,ijma->ijab', l1, Hooov)
-            if self.ccwfn.model == 'CC2':
-                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, (self.ccwfn.H.F[v,v] - contract('me,ma->ae', self.ccwfn.H.F[o,v], self.ccwfn.t1)))
-                r_l2 = r_l2 - contract('mjab,im->ijab', l2, (self.ccwfn.H.F[o,o] + contract('ie,me->mi', self.ccwfn.t1, self.ccwfn.H.F[o,v])))
-            else:
-                r_l2 = r_l2 + contract('ijeb,ea->ijab', l2, Hvv)
-                r_l2 = r_l2 - contract('mjab,im->ijab', l2, Hoo)
-                r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-                r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
-                r_l2 = r_l2 + contract('mjeb,ieam->ijab', l2, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
-                r_l2 = r_l2 - contract('mibe,jema->ijab', l2, Hovov)
-                r_l2 = r_l2 - contract('mieb,jeam->ijab', l2, Hovvo)
-                r_l2 = r_l2 + contract('ae,ijeb->ijab', Gvv, L[o,o,v,v])
-                r_l2 = r_l2 - contract('mi,mjab->ijab', Goo, L[o,o,v,v])
-
-        r_l2 = r_l2 + r_l2.swapaxes(0,1).swapaxes(2,3)
-        return r_l2
 
     # Additional intermediates needed for CC3 lambda equations
-    def build_cc3_Wmbje(self, o, v, ERI, t1):
+    def _build_cc3_Wmbje(self, o, v, ERI, t1):
         r"""Build the CC3 W_mbje intermediate (T1-dressed integrals).
 
         Returns
@@ -913,7 +1064,7 @@ class cclambda(object):
         W = W - contract('mnfe,jf,nb->mbje', ERI[o,o,v,v], t1, t1)
         return W
 
-    def build_cc3_Wmbej(self, o, v, ERI, t1):
+    def _build_cc3_Wmbej(self, o, v, ERI, t1):
         r"""Build the CC3 W_mbej intermediate (T1-dressed integrals).
 
         Returns
@@ -942,7 +1093,7 @@ class cclambda(object):
         W = W - contract('mnef,jf,nb->mbej', ERI[o,o,v,v], t1, t1)
         return W
 
-    def build_cc3_Wabef(self, o, v, ERI, t1):
+    def _build_cc3_Wabef(self, o, v, ERI, t1):
         r"""Build the CC3 W_abef intermediate (T1-dressed integrals).
 
         Returns
@@ -970,112 +1121,3 @@ class cclambda(object):
         W = W - tmp - tmp.swapaxes(0,1).swapaxes(2,3)
         W = W + contract('mnef,ma,nb->abef', ERI[o,o,v,v], t1, t1)
         return W
-                                         
-    def _so_r_L1(self, o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hvvvo, Hovoo,
-                          Hvovv, Hooov, Gvv, Goo, s1=None):
-        r"""Spin-orbital L1 (lambda singles) residual, built from the antisymmetrized
-        spin-orbital HBAR blocks (no Hovov).  The SO sibling of :meth:`r_L1`; G_* are the
-        t2-weighted lambda densities (:meth:`build_Goo`/:meth:`build_Gvv`).
-
-        Notes
-        -----
-        Repeated indices summed::
-
-            r_l1_ia = H_ia + l1_ie H_ea - l1_ma H_im
-                    + 1/2 l2_imef H_efam - 1/2 l2_mnae H_iemn
-                    + l1_me H_ieam
-                    - G_ef H_eifa - G_mn H_mina
-
-        .. math::
-
-            \begin{aligned}
-            r^{l1}_{ia} = \bar{H}_{ia} &+ \lambda^e_i \bar{H}_{ea} - \lambda^a_m \bar{H}_{im} \\
-            &+ \tfrac{1}{2} \lambda^{ef}_{im} \bar{H}_{efam} - \tfrac{1}{2} \lambda^{ae}_{mn} \bar{H}_{iemn} \\
-            &+ \lambda^e_m \bar{H}_{ieam} - G_{ef} \bar{H}_{eifa} - G_{mn} \bar{H}_{mina}
-            \end{aligned}
-        """
-        contract = self.contract
-        r_l1 = clone(Hov)
-        if s1 is not None:                              # (T) source (cc.S1 / dS1); None => omit
-            r_l1 = r_l1 + s1
-        r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-        r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
-        r_l1 = r_l1 + 0.5 * contract('imef,efam->ia', l2, Hvvvo)
-        r_l1 = r_l1 - 0.5 * contract('mnae,iemn->ia', l2, Hovoo)
-        r_l1 = r_l1 + contract('me,ieam->ia', l1, Hovvo)
-        r_l1 = r_l1 - contract('ef,eifa->ia', Gvv, Hvovv)
-        r_l1 = r_l1 - contract('mn,mina->ia', Goo, Hooov)
-        return r_l1
-
-    def _so_r_L2(self, o, v, l1, l2, ERI, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo,
-                          Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=None):
-        r"""Spin-orbital L2 (lambda doubles) residual. Built as the full residual,
-        already antisymmetric in i<->j and a<->b (no separate symmetrization).  The SO
-        sibling of :meth:`r_L2`; G_* are the t2-weighted lambda densities.  With the
-        permutation operator P(pq) X = X_pq - X_qp (repeated indices summed)::
-
-            r_l2_ijab = <ij||ab>
-                      + P(ij) P(ab) l1_ia H_jb
-                      + P(ab) l2_ijae H_eb - P(ij) l2_imab H_jm
-                      + 1/2 l2_ijef H_efab + 1/2 l2_mnab H_ijmn
-                      + P(ij) l1_ie H_ejab - P(ab) l1_ma H_ijmb
-                      + P(ij) P(ab) l2_imae H_jebm
-                      + P(ab) G_be <ij||ae> - P(ij) G_mj <im||ab>
-
-        .. math::
-
-            \begin{aligned}
-            r^{l2}_{ijab} &= \langle ij||ab \rangle \\
-            &\quad + \mathcal{P}(ij)\,\mathcal{P}(ab)\, \lambda^a_i \bar{H}_{jb} \\
-            &\quad + \mathcal{P}(ab)\, \lambda^{ae}_{ij} \bar{H}_{eb} - \mathcal{P}(ij)\, \lambda^{ab}_{im} \bar{H}_{jm} \\
-            &\quad + \tfrac{1}{2} \lambda^{ef}_{ij} \bar{H}_{efab} + \tfrac{1}{2} \lambda^{ab}_{mn} \bar{H}_{ijmn} \\
-            &\quad + \mathcal{P}(ij)\, \lambda^e_i \bar{H}_{ejab} - \mathcal{P}(ab)\, \lambda^a_m \bar{H}_{ijmb} \\
-            &\quad + \mathcal{P}(ij)\,\mathcal{P}(ab)\, \lambda^{ae}_{im} \bar{H}_{jebm} \\
-            &\quad + \mathcal{P}(ab)\, G_{be} \langle ij||ae \rangle - \mathcal{P}(ij)\, G_{mj} \langle im||ab \rangle
-            \end{aligned}
-        """
-        contract = self.contract
-        r_l2 = clone(ERI[o,o,v,v])
-        if s2 is not None:                              # (T) source (cc.S2 / dS2); None => omit (no 1/2, SO)
-            r_l2 = r_l2 + s2
-        r_l2 = r_l2 + (contract('ia,jb->ijab', l1, Hov) - contract('ja,ib->ijab', l1, Hov))
-        r_l2 = r_l2 + (contract('jb,ia->ijab', l1, Hov) - contract('ib,ja->ijab', l1, Hov))
-        r_l2 = r_l2 + (contract('ijae,eb->ijab', l2, Hvv) - contract('ijbe,ea->ijab', l2, Hvv))
-        r_l2 = r_l2 - (contract('imab,jm->ijab', l2, Hoo) - contract('jmab,im->ijab', l2, Hoo))
-        r_l2 = r_l2 + 0.5 * contract('ijef,efab->ijab', l2, Hvvvv)
-        r_l2 = r_l2 + 0.5 * contract('mnab,ijmn->ijab', l2, Hoooo)
-        r_l2 = r_l2 + (contract('ie,ejab->ijab', l1, Hvovv) - contract('je,eiab->ijab', l1, Hvovv))
-        r_l2 = r_l2 - (contract('ma,ijmb->ijab', l1, Hooov) - contract('mb,ijma->ijab', l1, Hooov))
-        tmp = contract('imae,jebm->ijab', l2, Hovvo)
-        r_l2 = r_l2 + (tmp - tmp.swapaxes(0,1) - tmp.swapaxes(2,3)
-                       + tmp.swapaxes(0,1).swapaxes(2,3))
-        r_l2 = r_l2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v])
-                       - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
-        r_l2 = r_l2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v])
-                       - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
-        return r_l2
-
-    def pseudoenergy(self, o, v, ERI, l2):
-        r"""Compute the CC pseudoenergy from the L2 amplitudes.
-
-        Returns
-        -------
-        float
-            The lambda pseudoenergy.
-
-        Notes
-        -----
-        Spatial (spin-orbital: 1/4 <ij||ab> l2_ijab)::
-
-            E_pseudo = 1/2 <ij|ab> l2_ijab
-
-        .. math::
-
-            \begin{aligned}
-            E_\text{pseudo} = \tfrac{1}{2} \langle ij|ab \rangle \lambda^{ab}_{ij}
-            \end{aligned}
-        """
-        contract = self.contract
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return 0.25 * contract('ijab,ijab->', ERI[o,o,v,v], l2)
-        return 0.5 * contract('ijab,ijab->',ERI[o,o,v,v], l2)
