@@ -41,6 +41,11 @@ Coupled cluster (CCwfn)
 .. automodule:: pycc.ccwfn
    :members:
 
+Configuration interaction (CIwfn)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. automodule:: pycc.ciwfn
+   :members:
+
 Coupled-cluster machinery
 -------------------------
 
