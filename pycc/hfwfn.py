@@ -50,13 +50,13 @@ class HFwfn(Wavefunction):
         energy-weighted-density / orbital-response contribution that makes the HF
         gradient CPHF-free)::
 
-            dE/dX = sum_i 2 h^x_ii + sum_ij (2 (ii|jj)^x - (ij|ij)^x)
-                    - sum_i 2 eps_i S^x_ii + dV_NN/dX
+            dE/dX = 2 sum_i h^x_ii + 2 sum_ij (ii|jj)^x - sum_ij (ij|ij)^x
+                    - 2 sum_i eps_i S^x_ii + dV_NN/dX
 
         .. math::
 
             \begin{aligned}
-            \frac{dE}{dX} = \sum_i 2\,h^x_{ii} + \sum_{ij} \big(2(ii|jj)^x - (ij|ij)^x\big) - \sum_i 2\,\varepsilon_i S^x_{ii} + \frac{dV_{NN}}{dX}
+            \frac{dE}{dX} = 2\sum_i h^x_{ii} + 2\sum_{ij} (ii|jj)^x - \sum_{ij} (ij|ij)^x - 2\sum_i \varepsilon_i S^x_{ii} + \frac{dV_{NN}}{dX}
             \end{aligned}
 
         The derivative integrals are transformed with the base's symmetry-handled
@@ -291,15 +291,16 @@ class HFwfn(Wavefunction):
         are reused for free by :meth:`dipole_derivatives` in an IR workflow).  With x = (A,a),
         y = (B,b); i,j,n,m occupied; spin-adapted ``L`` = H.L::
 
-            d^2E/dx dy = 2 h^{xy}_ii + (2(ii|jj) - (ij|ij))^{xy} - 2 eps_i S^{xy}_ii + V_NN^{xy}
-                         - 4 U^x_ai B^y_ai - 2 S^x_ij F^y_ij - 2 S^y_ij F^x_ij
-                         + 4 eps_i S^x_ij S^y_ij + 2 S^x_ij S^y_nm L_imjn
+            d^2E/dx dy = 2 sum_i h^{xy}_ii + 2 sum_ij (ii|jj)^{xy} - sum_ij (ij|ij)^{xy}
+                         - 2 sum_i eps_i S^{xy}_ii + V_NN^{xy}
+                         - 4 sum_ia U^x_ai B^y_ai - 2 sum_ij S^x_ij F^y_ij - 2 sum_ij S^y_ij F^x_ij
+                         + 4 sum_ij eps_i S^x_ij S^y_ij + 2 sum_ijnm S^x_ij S^y_nm L_imjn
 
         .. math::
 
             \begin{aligned}
-            \frac{d^2 E}{dx\,dy} &= 2\,h^{xy}_{ii} + \big(2(ii|jj) - (ij|ij)\big)^{xy} - 2\,\varepsilon_i S^{xy}_{ii} + V_{NN}^{xy} \\
-            &\quad - 4\,U^x_{ai} B^y_{ai} - 2\,S^x_{ij} F^y_{ij} - 2\,S^y_{ij} F^x_{ij} + 4\,\varepsilon_i S^x_{ij} S^y_{ij} + 2\,S^x_{ij} S^y_{nm} L_{imjn}
+            \frac{d^2 E}{dx\,dy} &= 2\sum_i h^{xy}_{ii} + 2\sum_{ij} (ii|jj)^{xy} - \sum_{ij} (ij|ij)^{xy} - 2\sum_i \varepsilon_i S^{xy}_{ii} + V_{NN}^{xy} \\
+            &\quad - 4\sum_{ia} U^x_{ai} B^y_{ai} - 2\sum_{ij} S^x_{ij} F^y_{ij} - 2\sum_{ij} S^y_{ij} F^x_{ij} + 4\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + 2\sum_{ijnm} S^x_{ij} S^y_{nm} L_{imjn}
             \end{aligned}
 
         where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij`` the
@@ -369,15 +370,15 @@ class HFwfn(Wavefunction):
         block); the nuclear-repulsion second derivative ``V_NN^{xy}`` is added by :meth:`hessian`.
         With x = (A,a), y = (B,b); i,j,n,m occupied::
 
-            d^2E/dx dy = h^{xy}_ii + 1/2 <ij||ij>^{xy} - eps_i S^{xy}_ii
-                         - 2 U^x_ai B^y_ai - S^x_ij F^y_ij - S^y_ij F^x_ij
-                         + 2 eps_i S^x_ij S^y_ij + S^x_ij S^y_nm <im||jn>
+            d^2E/dx dy = sum_i h^{xy}_ii + 1/2 sum_ij <ij||ij>^{xy} - sum_i eps_i S^{xy}_ii
+                         - 2 sum_ia U^x_ai B^y_ai - sum_ij S^x_ij F^y_ij - sum_ij S^y_ij F^x_ij
+                         + 2 sum_ij eps_i S^x_ij S^y_ij + sum_ijnm S^x_ij S^y_nm <im||jn>
 
         .. math::
 
             \begin{aligned}
-            \frac{d^2 E}{dx\,dy} &= h^{xy}_{ii} + \tfrac{1}{2}\langle ij||ij \rangle^{xy} - \varepsilon_i S^{xy}_{ii} \\
-            &\quad - 2\,U^x_{ai} B^y_{ai} - S^x_{ij} F^y_{ij} - S^y_{ij} F^x_{ij} + 2\,\varepsilon_i S^x_{ij} S^y_{ij} + S^x_{ij} S^y_{nm} \langle im||jn \rangle
+            \frac{d^2 E}{dx\,dy} &= \sum_i h^{xy}_{ii} + \tfrac{1}{2}\sum_{ij} \langle ij||ij \rangle^{xy} - \sum_i \varepsilon_i S^{xy}_{ii} \\
+            &\quad - 2\sum_{ia} U^x_{ai} B^y_{ai} - \sum_{ij} S^x_{ij} F^y_{ij} - \sum_{ij} S^y_{ij} F^x_{ij} + 2\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + \sum_{ijnm} S^x_{ij} S^y_{nm} \langle im||jn \rangle
             \end{aligned}
 
         Valid for UHF as well as a closed-shell RHF reference forced to spin orbitals;
