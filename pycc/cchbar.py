@@ -114,6 +114,9 @@ class cchbar(object):
     # ------------------------------------------------------------------
 
     def _so_build(self, o, v, F, ERI, t1, t2):
+        """Build and cache all spin-orbital HBAR blocks (the SO sibling of the spatial
+        ``build`` path), on the antisymmetrized ERI = <pq||rs>.  Selected by
+        ``orbital_basis == 'spinorbital'``."""
         self.Hov = self._so_build_Hov(o, v, F, ERI, t1)
         self.Hvv = self._so_build_Hvv(o, v, F, ERI, self.Hov, t1, t2)
         self.Hoo = self._so_build_Hoo(o, v, F, ERI, self.Hov, t1, t2)
@@ -127,12 +130,45 @@ class cchbar(object):
         self.Hovoo = self._so_build_Hovoo(o, v, ERI, self.Hov, self.Hoooo, Zovov, t1, t2)
 
     def _so_build_Hov(self, o, v, F, ERI, t1):
+        r"""Spin-orbital H_me one-body HBAR block (the SO sibling of :meth:`build_Hov`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_me = f_me + t_nf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{me} = f_{me} + t^f_n \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Hov = clone(F[o,v])
         Hov = Hov + contract('nf,mnef->me', t1, ERI[o,o,v,v])
         return Hov
 
     def _so_build_Hvv(self, o, v, F, ERI, Hov, t1, t2):
+        r"""Spin-orbital H_ae one-body HBAR block (the SO sibling of :meth:`build_Hvv`,
+        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
+        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_ae = f_ae - 1/2 f_me t_ma - 1/2 H_me t_ma + t_mf <am||ef>
+                        - 1/2 taut_mnaf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m - \tfrac{1}{2} H_{me} t^a_m + t^f_m \langle am||ef \rangle \\
+            &- \tfrac{1}{2} \tilde\tau^{af}_{mn} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
         Hvv = clone(F[v,v])
@@ -143,6 +179,24 @@ class cchbar(object):
         return Hvv
 
     def _so_build_Hoo(self, o, v, F, ERI, Hov, t1, t2):
+        r"""Spin-orbital H_mi one-body HBAR block (the SO sibling of :meth:`build_Hoo`,
+        on antisymmetrized <pq||rs>; taut is :meth:`~pycc.ccwfn.CCwfn._so_build_tau` with
+        fact2=1/2, and H_me is the already-built :meth:`_so_build_Hov`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mi = f_mi + 1/2 f_me t_ie + 1/2 H_me t_ie + t_ne <mn||ie>
+                        + 1/2 taut_inef <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + \tfrac{1}{2} H_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
+            &+ \tfrac{1}{2} \tilde\tau^{ef}_{in} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         taut = self.ccwfn._so_build_tau(t1, t2, 1.0, 0.5)
         Hoo = clone(F[o,o])
@@ -153,6 +207,23 @@ class cchbar(object):
         return Hoo
 
     def _so_build_Hoooo(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_mnij two-body HBAR block (the SO sibling of :meth:`build_Hoooo`,
+        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mnij = <mn||ij> + t_je <mn||ie> - t_ie <mn||je>
+                             + 1/2 tau_ijef <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
+            &+ \tfrac{1}{2} \tau^{ef}_{ij} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         tau = self.ccwfn._so_build_tau(t1, t2)
         Hoooo = clone(ERI[o,o,o,o])
@@ -162,6 +233,23 @@ class cchbar(object):
         return Hoooo
 
     def _so_build_Hvvvv(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_abef two-body HBAR block (the SO sibling of :meth:`build_Hvvvv`,
+        on antisymmetrized <pq||rs>; tau is :meth:`~pycc.ccwfn.CCwfn._so_build_tau`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_abef = <ab||ef> - t_mb <am||ef> + t_ma <bm||ef>
+                             + 1/2 tau_mnab <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
+            &+ \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         tau = self.ccwfn._so_build_tau(t1, t2)
         Hvvvv = clone(ERI[v,v,v,v])
@@ -171,18 +259,66 @@ class cchbar(object):
         return Hvvvv
 
     def _so_build_Hvovv(self, o, v, ERI, t1):
+        r"""Spin-orbital H_amef two-body HBAR block (the SO sibling of :meth:`build_Hvovv`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_amef = <am||ef> - t_na <nm||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Hvovv = clone(ERI[v,o,v,v])
         Hvovv = Hvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
         return Hvovv
 
     def _so_build_Hooov(self, o, v, ERI, t1):
+        r"""Spin-orbital H_mnie two-body HBAR block (the SO sibling of :meth:`build_Hooov`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mnie = <mn||ie> + t_if <mn||fe>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnie} = \langle mn||ie \rangle + t^f_i \langle mn||fe \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Hooov = clone(ERI[o,o,o,v])
         Hooov = Hooov + contract('if,mnfe->mnie', t1, ERI[o,o,v,v])
         return Hooov
 
     def _so_build_Hovvo(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital H_mbej two-body HBAR block (the SO sibling of :meth:`build_Hovvo`,
+        on antisymmetrized <pq||rs>).  Here tau = t2 + t1 t1 (the un-antisymmetrized
+        product, as assembled inline).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mbej = <mb||ej> + t_jf <mb||ef> - t_nb <mn||ej>
+                             - (t2_jnfb + t_jf t_nb) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
+            &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Hovvo = clone(ERI[o,v,v,o])
         Hovvo = Hovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
@@ -192,10 +328,48 @@ class cchbar(object):
         return Hovvo
 
     def _so_build_Zovov(self, o, v, ERI, t2):
+        r"""Spin-orbital Z_mbie auxiliary intermediate (a T2-dressed <mb||ie> reused by
+        :meth:`_so_build_Hvvvo` and :meth:`_so_build_Hovoo`; the SO analogue of the
+        inline ``tmp`` intermediates in the spatial :meth:`build_Hvvvo`/:meth:`build_Hovoo`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Z_mbie = <mb||ie> + t2_nibf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            Z_{mbie} = \langle mb||ie \rangle + t^{bf}_{ni} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         return clone(ERI[o,v,o,v]) + contract('nibf,mnef->mbie', t2, ERI[o,o,v,v])
 
     def _so_build_Hvvvo(self, o, v, ERI, Hov, Hvvvv, Zovov, t1, t2):
+        r"""Spin-orbital H_abei two-body HBAR block (the SO sibling of :meth:`build_Hvvvo`,
+        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
+        H_abef (:meth:`_so_build_Hvvvv`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
+        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The a<->b antisymmetry is
+        carried inline by the explicit +/- term pairs.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_abei = <ab||ei> - H_me t2_miab + t_if H_abef + 1/2 tau_mnab <mn||ei>
+                            - t2_miaf <mb||ef> + t2_mibf <ma||ef>
+                            + t_ma Z_mbie - t_mb Z_maie
+
+        .. math::
+
+            \begin{aligned}
+            H_{abei} &= \langle ab||ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} + \tfrac{1}{2} \tau^{ab}_{mn} \langle mn||ei \rangle \\
+            &\quad - t^{af}_{mi} \langle mb||ef \rangle + t^{bf}_{mi} \langle ma||ef \rangle \\
+            &\quad + t^a_m Z_{mbie} - t^b_m Z_{maie}
+            \end{aligned}
+        """
         contract = self.contract
         tau = self.ccwfn._so_build_tau(t1, t2)
         Hvvvo = clone(ERI[v,v,v,o])
@@ -209,6 +383,28 @@ class cchbar(object):
         return Hvvvo
 
     def _so_build_Hovoo(self, o, v, ERI, Hov, Hoooo, Zovov, t1, t2):
+        r"""Spin-orbital H_mbij two-body HBAR block (the SO sibling of :meth:`build_Hovoo`,
+        on antisymmetrized <pq||rs>).  Reuses the one-body H_me (:meth:`_so_build_Hov`),
+        H_mnij (:meth:`_so_build_Hoooo`), the Z_mbie auxiliary (:meth:`_so_build_Zovov`),
+        and tau = :meth:`~pycc.ccwfn.CCwfn._so_build_tau`.  The i<->j antisymmetry is
+        carried inline by the explicit +/- term pairs.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            H_mbij = <mb||ij> - H_me t2_ijbe - t_nb H_mnij + 1/2 tau_ijef <mb||ef>
+                            + t2_jnbe <mn||ie> - t2_inbe <mn||je>
+                            - t_ie Z_mbje + t_je Z_mbie
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbij} &= \langle mb||ij \rangle - H_{me} t^{be}_{ij} - t^b_n H_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle mb||ef \rangle \\
+            &\quad + t^{be}_{jn} \langle mn||ie \rangle - t^{be}_{in} \langle mn||je \rangle \\
+            &\quad - t^e_i Z_{mbje} + t^e_j Z_{mbie}
+            \end{aligned}
+        """
         contract = self.contract
         tau = self.ccwfn._so_build_tau(t1, t2)
         Hovoo = clone(ERI[o,v,o,o])
@@ -221,7 +417,7 @@ class cchbar(object):
                          - contract('je,mbie->mbij', t1, Zovov))
         return Hovoo
     def build_Hov(self, o, v, F, L, t1):
-        """Build the occupied-virtual block H_me of the one-body HBAR.
+        r"""Build the occupied-virtual block H_me of the one-body HBAR.
 
         Returns
         -------
@@ -233,6 +429,12 @@ class cchbar(object):
         CCSD form (repeated indices summed)::
 
             H_me = f_me + t_nf L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            H_{me} = f_{me} + t^f_n L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -244,7 +446,7 @@ class cchbar(object):
 
 
     def build_Hvv(self, o, v, F, L, t1, t2):
-        """Build the virtual-virtual block H_ae of the one-body HBAR.
+        r"""Build the virtual-virtual block H_ae of the one-body HBAR.
 
         Returns
         -------
@@ -258,6 +460,13 @@ class cchbar(object):
 
             H_ae = f_ae - f_me t_ma + t_mf L_amef
                         - (t2_mnfa + t_mf t_na) L_mnfe
+
+        .. math::
+
+            \begin{aligned}
+            H_{ae} = f_{ae} &- f_{me} t^a_m + t^f_m L_{amef} \\
+            &- \left(t^{fa}_{mn} + t^f_m t^a_n\right) L_{mnfe}
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -273,7 +482,7 @@ class cchbar(object):
 
 
     def build_Hoo(self, o, v, F, L, t1, t2):
-        """Build the occupied-occupied block H_mi of the one-body HBAR.
+        r"""Build the occupied-occupied block H_mi of the one-body HBAR.
 
         Returns
         -------
@@ -287,6 +496,13 @@ class cchbar(object):
 
             H_mi = f_mi + t_ie f_me + t_ne L_mnie
                         + (t2_inef + t_ie t_nf) L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            H_{mi} = f_{mi} &+ t^e_i f_{me} + t^e_n L_{mnie} \\
+            &+ \left(t^{ef}_{in} + t^e_i t^f_n\right) L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -302,7 +518,7 @@ class cchbar(object):
 
 
     def build_Hoooo(self, o, v, ERI, t1, t2):
-        """Build the occ-occ-occ-occ block H_mnij of the two-body HBAR.
+        r"""Build the occ-occ-occ-occ block H_mnij of the two-body HBAR.
 
         Returns
         -------
@@ -315,6 +531,13 @@ class cchbar(object):
 
             H_mnij = <mn|ij> + t_je <mn|ie> + t_ie <nm|je>
                             + (t2_ijef + t_ie t_jf) <mn|ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnij} = \langle mn|ij \rangle &+ t^e_j \langle mn|ie \rangle + t^e_i \langle nm|je \rangle \\
+            &+ \left(t^{ef}_{ij} + t^e_i t^f_j\right) \langle mn|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -334,7 +557,7 @@ class cchbar(object):
 
 
     def build_Hvvvv(self, o, v, ERI, t1, t2):
-        """Build the vir-vir-vir-vir block H_abef of the two-body HBAR.
+        r"""Build the vir-vir-vir-vir block H_abef of the two-body HBAR.
 
         Returns
         -------
@@ -347,6 +570,13 @@ class cchbar(object):
 
             H_abef = <ab|ef> - t_mb <am|ef> - t_ma <bm|fe>
                             + (t2_mnab + t_ma t_nb) <mn|ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{abef} = \langle ab|ef \rangle &- t^b_m \langle am|ef \rangle - t^a_m \langle bm|fe \rangle \\
+            &+ \left(t^{ab}_{mn} + t^a_m t^b_n\right) \langle mn|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -366,7 +596,7 @@ class cchbar(object):
 
 
     def build_Hvovv(self, o, v, ERI, t1):
-        """Build the vir-occ-vir-vir block H_amef of the two-body HBAR.
+        r"""Build the vir-occ-vir-vir block H_amef of the two-body HBAR.
 
         Returns
         -------
@@ -378,6 +608,12 @@ class cchbar(object):
         CCSD form (repeated indices summed)::
 
             H_amef = <am|ef> - t_na <nm|ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{amef} = \langle am|ef \rangle - t^a_n \langle nm|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -390,7 +626,7 @@ class cchbar(object):
 
 
     def build_Hooov(self, o, v, ERI, t1):
-        """Build the occ-occ-occ-vir block H_mnie of the two-body HBAR.
+        r"""Build the occ-occ-occ-vir block H_mnie of the two-body HBAR.
 
         Returns
         -------
@@ -402,6 +638,12 @@ class cchbar(object):
         CCSD form (repeated indices summed)::
 
             H_mnie = <mn|ie> + t_if <nm|ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mnie} = \langle mn|ie \rangle + t^f_i \langle nm|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -414,7 +656,7 @@ class cchbar(object):
 
 
     def build_Hovvo(self, o, v, ERI, L, t1, t2):
-        """Build the occ-vir-vir-occ block H_mbej of the two-body HBAR.
+        r"""Build the occ-vir-vir-occ block H_mbej of the two-body HBAR.
 
         Returns
         -------
@@ -428,6 +670,14 @@ class cchbar(object):
             H_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
                             - (t2_jnfb + t_jf t_nb) <mn|ef>
                             + t2_njfb L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbej} = \langle mb|ej \rangle &+ t^f_j \langle mb|ef \rangle - t^b_n \langle mn|ej \rangle \\
+            &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn|ef \rangle \\
+            &+ t^{fb}_{nj} L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -447,7 +697,7 @@ class cchbar(object):
 
 
     def build_Hovov(self, o, v, ERI, t1, t2):
-        """Build the occ-vir-occ-vir block H_mbje of the two-body HBAR.
+        r"""Build the occ-vir-occ-vir block H_mbje of the two-body HBAR.
 
         Returns
         -------
@@ -460,6 +710,13 @@ class cchbar(object):
 
             H_mbje = <mb|je> + t_jf <bm|ef> - t_nb <mn|je>
                             - (t2_jnfb + t_jf t_nb) <nm|ef>
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbje} = \langle mb|je \rangle &+ t^f_j \langle bm|ef \rangle - t^b_n \langle mn|je \rangle \\
+            &- \left(t^{fb}_{jn} + t^f_j t^b_n\right) \langle nm|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -475,7 +732,7 @@ class cchbar(object):
 
 
     def build_Hvvvo(self, o, v, ERI, L, Hov, Hvvvv, t1, t2):
-        """Build the vir-vir-vir-occ block H_abei of the two-body HBAR.
+        r"""Build the vir-vir-vir-occ block H_abei of the two-body HBAR.
 
         Reuses the already-built Hov and Hvvvv blocks.
 
@@ -496,6 +753,16 @@ class cchbar(object):
                             - t_mb ( <am|ei> - t2_infa <mn|fe> )
                             - t_ma ( <bm|ie> - t2_infb <mn|ef>
                                               + t2_nifb L_mnef )
+
+        .. math::
+
+            \begin{aligned}
+            H_{abei} &= \langle ab|ei \rangle - H_{me} t^{ab}_{mi} + t^f_i H_{abef} \\
+            &\quad + \left(t^{ab}_{mn} + t^a_m t^b_n\right) \langle mn|ei \rangle \\
+            &\quad - t^{fa}_{im} \langle bm|fe \rangle - t^{fb}_{im} \langle am|ef \rangle + t^{fb}_{mi} L_{amef} \\
+            &\quad - t^b_m \left(\langle am|ei \rangle - t^{fa}_{in} \langle mn|fe \rangle\right) \\
+            &\quad - t^a_m \left(\langle bm|ie \rangle - t^{fb}_{in} \langle mn|ef \rangle + t^{fb}_{ni} L_{mnef}\right)
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
@@ -534,7 +801,7 @@ class cchbar(object):
 
 
     def build_Hovoo(self, o, v, ERI, L, Hov, Hoooo, t1, t2):
-        """Build the occ-vir-occ-occ block H_mbij of the two-body HBAR.
+        r"""Build the occ-vir-occ-occ block H_mbij of the two-body HBAR.
 
         Reuses the already-built Hov and Hoooo blocks.
 
@@ -555,6 +822,16 @@ class cchbar(object):
                             + t_je ( <mb|ie> - t2_infb <mn|fe> )
                             + t_ie ( <bm|je> - t2_jnfb <mn|ef>
                                               + t2_njfb L_mnef )
+
+        .. math::
+
+            \begin{aligned}
+            H_{mbij} &= \langle mb|ij \rangle + H_{me} t^{eb}_{ij} - t^b_n H_{mnij} \\
+            &\quad + \left(t^{ef}_{ij} + t^e_i t^f_j\right) \langle mb|ef \rangle \\
+            &\quad - t^{eb}_{in} \langle nm|je \rangle - t^{eb}_{jn} \langle mn|ie \rangle + t^{eb}_{nj} L_{mnie} \\
+            &\quad + t^e_j \left(\langle mb|ie \rangle - t^{fb}_{in} \langle mn|fe \rangle\right) \\
+            &\quad + t^e_i \left(\langle bm|je \rangle - t^{fb}_{jn} \langle mn|ef \rangle + t^{fb}_{nj} L_{mnef}\right)
+            \end{aligned}
         """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
