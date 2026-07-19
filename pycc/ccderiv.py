@@ -139,6 +139,32 @@ class CCderiv(CorrelatedDerivs):
                              "build the wavefunction with make_t3_density=True.")
         return super().dipole_derivatives(route)    # shared 2n+1 assembly (SO/spatial dispatch in the base)
 
+    def hessian(self, route: str = '2n+1') -> np.ndarray:
+        """CCSD/CCSD(T) **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
+        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
+        nuclear-nuclear analog of :meth:`polarizability` / :meth:`dipole_derivatives`.
+
+        ``route`` accepts only ``'2n+1'`` (``3N`` nuclear perturbed solves).  The nuclear-repulsion
+        second derivative and the SCF reference Hessian are kept separate
+        (:meth:`HFwfn.hessian` / :meth:`Derivatives.nuclear_repulsion2`) and summed with this
+        correlation part by :func:`pycc.hessian`.
+
+        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
+        core.  As for the APT, the (T) contribution enters entirely through the (T)-aware relaxed and
+        perturbed densities the shared base already builds (no Hessian-specific (T) code); validated
+        against a CFOUR FCMFINAL oracle (``FCMFINAL(CCSD(T)) - FCMFINAL(SCF)``, see
+        ``test_089_ccsdt_hessian``).
+
+        Overrides :meth:`CorrelatedDerivs.hessian` only to add the CC method-specific guards
+        (supported model, (T) density intermediates); the shared 2n+1 assembly runs via ``super()``."""
+        cc = self.ccwfn
+        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
+            raise NotImplementedError(f"CC hessian: only CCSD and CCSD(T) are implemented (not {cc.model}).")
+        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
+            raise ValueError("CCSD(T) hessian requires the (T) density intermediates; "
+                             "build the wavefunction with make_t3_density=True.")
+        return super().hessian(route)               # shared 2n+1 assembly (SO/spatial dispatch in the base)
+
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """CC perturbed unrelaxed densities ``(d_x gamma, d_x Gamma)`` -- the base
         :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook.  Runs the iterative perturbed
