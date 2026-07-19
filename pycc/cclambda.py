@@ -745,7 +745,11 @@ class cclambda(object):
             \begin{aligned}
             D^{abc}_{ijk}\, \lambda^{abc}_{ijk} &= \mathcal{P}(i/jk)\,\mathcal{P}(a/bc)\left(\lambda^a_i \langle jk||bc \rangle + F_{ia} \lambda^{bc}_{jk}\right) \\
             &\quad + \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, \lambda^{ad}_{ij} W_{dkbc} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\, \lambda^{ab}_{il} W_{jklc} \\
-            (Y_2)^{ab}_{ij} &= \tfrac{1}{2}\mathcal{P}(ab)\, \lambda^{acd}_{ijk} W_{cdbk} - \tfrac{1}{2}\mathcal{P}(ij)\, \lambda^{abc}_{imn} W_{jcmn}
+            (Y_2)^{ab}_{ij} &= \tfrac{1}{2}\mathcal{P}(ab)\, \lambda^{acd}_{ijk} W_{cdbk} - \tfrac{1}{2}\mathcal{P}(ij)\, \lambda^{abc}_{imn} W_{jcmn} \\
+            Z_{ia} &= \tfrac{1}{4}\, t^{abc}_{ijk}\, \lambda^{bc}_{jk} \\
+            Y_1 &= Z_{ia}\, \langle li||da \rangle + \tfrac{1}{2}\, Z_{ijal}\, \lambda^{ad}_{ij} + \tfrac{1}{2}\, Z_{iabd}\, \lambda^{ab}_{il} \\
+            &\quad + \tfrac{1}{2}\, \lambda^{abc}_{ijk}\, t^{ec}_{jk}\, W_{abde} + \tfrac{1}{2}\, \lambda^{abc}_{ijk}\, t^{bc}_{mk}\, W_{lmij} \\
+            &\quad - \tfrac{1}{2}\, \lambda^{abc}_{ijk}\, t^{dc}_{ik}\, W_{lbdj} - \tfrac{1}{2}\, \lambda^{abc}_{ijk}\, t^{ac}_{lk}\, W_{lbdj}
             \end{aligned}
         """
         contract = self.contract
@@ -952,6 +956,10 @@ class cclambda(object):
             \begin{aligned}
             Z^{f}_{n} &= \sum_{lmde} \lambda^{de}_{lm}\left(t^{def}_{lmn} - t^{fed}_{lmn}\right) \\
             (Y_1)^{a}_{i} &\mathrel{+}= \lambda^{df}_{im} Z^{dfa}_{m} + L_{imaf} Z^{f}_{m} + \lambda^{ad}_{mn} Z^{di}_{mn} \\
+            Z_{bide} &= t^{bc}_{jk}\lambda^{cde}_{kij}, \quad Z^{(1)}_{blad} = t^{bc}_{jk}\lambda^{cad}_{klj}, \quad Z^{(2)}_{blad} = t^{bc}_{jk}\lambda^{cda}_{klj} \\
+            Z_{nlma} &= t^{bc}_{nk}\lambda^{cab}_{klm}, \quad Z^{(1)}_{nlid} = t^{bc}_{nk}\lambda^{cbd}_{kli}, \quad Z^{(2)}_{nlid} = t^{bc}_{nk}\lambda^{cdb}_{kli} \\
+            (Y_1)^{a}_{i} &\mathrel{+}= Z_{bide} W_{deab} + Z_{nlma} W_{inlm} \\
+            &\quad - Z^{(1)}_{nlid} W_{ndla} - Z^{(2)}_{nlid} W_{ndal} - Z^{(1)}_{blad} W_{idlb} - Z^{(2)}_{blad} W_{idbl} \\
             (Y_2)^{ab}_{ij} &= \lambda^{deb}_{kij} W_{edak} - \lambda^{dab}_{kim} W_{jdmk}
             \end{aligned}
         """
