@@ -135,7 +135,7 @@ class HFwfn(Wavefunction):
         return np.array([k * np.trace(np.asarray(self.H.mu[a])[o, o]) for a in range(3)])
 
     def polarizability(self) -> np.ndarray:
-        """Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
+        r"""Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
 
         The field does not move the basis functions, so there is no overlap/Pulay term: solve the
         electric-field CPHF response per Cartesian axis (:class:`CPHF`) and contract with the MO
@@ -166,7 +166,7 @@ class HFwfn(Wavefunction):
         return self.alpha
 
     def dipole_derivatives(self) -> np.ndarray:
-        """Analytic nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.),
+        r"""Analytic nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.),
         shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` -- the atomic polar
         tensors (APTs), transposed.
 
@@ -250,7 +250,7 @@ class HFwfn(Wavefunction):
         return dmu
 
     def hessian(self) -> np.ndarray:
-        """RHF nuclear (molecular) Hessian ``d^2 E / dX_Aa dX_Bb`` (a.u.), shape
+        r"""RHF nuclear (molecular) Hessian ``d^2 E / dX_Aa dX_Bb`` (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3 + a, B*3 + b)`` -- the force-constant
         matrix, matching ``psi4.hessian('scf')`` layout.
 
@@ -392,7 +392,7 @@ class HFwfn(Wavefunction):
         return H
 
     def atomic_axial_tensors(self) -> np.ndarray:
-        """RHF atomic axial tensors (AATs) ``I^lambda_{alpha,beta}`` (a.u.), shape
+        r"""RHF atomic axial tensors (AATs) ``I^lambda_{alpha,beta}`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[lambda, alpha, beta]`` -- the electronic part of
         the magnetic-dipole vibrational transition moment (common gauge origin), for VCD.
 
@@ -435,7 +435,7 @@ class HFwfn(Wavefunction):
         return self.aat
 
     def _so_atomic_axial_tensors(self) -> np.ndarray:
-        """Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
+        r"""Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
         spin-orbital form of :meth:`atomic_axial_tensors`: singly occupied spin orbitals
         (the closed-shell prefactor 2 -> 1), with the spin-orbital nuclear response
         (:meth:`CPHF.solve_nuclear`), magnetic response (:meth:`CPHF.solve_magnetic`), and
@@ -471,7 +471,7 @@ class HFwfn(Wavefunction):
         return self.aat
 
     def velocity_dipole_derivatives(self) -> np.ndarray:
-        """Velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
+        r"""Velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
         momentum-form APT, an alternative to the length-gauge :meth:`dipole_derivatives`.
 
