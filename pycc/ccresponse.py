@@ -215,6 +215,41 @@ class ccresponse(object):
 
 
     def solve_right(self, pertbar: "pertbar", omega: float, e_conv: float = 1e-12, r_conv: float = 1e-12, maxiter: int = 200, max_diis: int = 7, start_diis: int = 1):
+        """Iteratively solve the right-hand (ket) first-order perturbed amplitudes
+        X1, X2 at frequency ``omega`` for the perturbation ``pertbar`` (Abar).
+
+        The perturbed amplitudes satisfy the CC response (Jacobian) equation
+        projected onto singles and doubles,
+
+            (Hbar - w) X = -Abar,
+
+        solved by Jacobi iteration with a DIIS accelerator. Starting from the
+        first-order guess X1 = Abar_ai/(D_ia + w) and X2 = Abar_ijab/(D_ijab + w),
+        each iteration forms the residuals r_X1 = r_X1(pertbar, w) and
+        r_X2 = r_X2(pertbar, w) (for CC3, plus the triples corrections z1, z2 from
+        _so_cc3_iter[_full]) and applies the update X += r/(D + w). Convergence is
+        monitored on the pseudoresponse (see pseudoresponse) and the residual rms.
+        For CC3 the converged triples X3 are reconstructed (store_triples=False) or
+        returned from storage and appended.
+
+        Parameters
+        ----------
+        pertbar : pertbar
+            The similarity-transformed perturbation operator Abar (see _build_pertbar).
+        omega : float
+            The response frequency w.
+        e_conv, r_conv : float
+            Pseudoresponse and residual-rms convergence thresholds.
+        maxiter, max_diis, start_diis : int
+            Iteration cap and DIIS controls.
+
+        Returns
+        -------
+        list of ndarray
+            [X1, X2] (or [X1, X2, X3] for CC3), the converged perturbed amplitudes.
+        pseudo : float
+            The converged pseudoresponse.
+        """
         solver_start = time.time()
 
         Dia = self.Dia
@@ -288,6 +323,36 @@ class ccresponse(object):
                 self.X1, self.X2 = diis.extrapolate(self.X1, self.X2)
 
     def r_X1(self, pertbar, omega):
+        r"""Right-hand perturbed singles residual r_X1 (the CC response equation
+        (Hbar - w) X = -Abar projected onto singles; solve_right drives r_X1 -> 0
+        via X1 += r_X1/(D_ia + w)). Abar is the similarity-transformed perturbation,
+        Hbar_* the hbar blocks, w the frequency.
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed)::
+
+            r_X1_ia = Abar_ai - w X1_ia
+                    + X1_ie Hbar_ae - X1_ma Hbar_mi
+                    + X1_me (2 Hbar_maei - Hbar_maie)
+                    + Hbar_me (2 X2_miea - X2_imea)
+                    + X2_imef (2 Hbar_amef - Hbar_amfe)
+                    - X2_mnae (2 Hbar_mnie - Hbar_nmie)
+
+        .. math::
+
+            \begin{aligned}
+            r^{a}_{i} &= \bar{A}^{a}_{i} - \omega\, X^{a}_{i}
+                + X^{e}_{i}\bar{H}_{ae} - X^{a}_{m}\bar{H}_{mi}
+                + X^{e}_{m}(2\bar{H}_{maei} - \bar{H}_{maie}) \\
+            &\quad + \bar{H}_{me}(2 X^{ea}_{mi} - X^{ea}_{im})
+                + X^{ef}_{im}(2\bar{H}_{amef} - \bar{H}_{amfe})
+                - X^{ae}_{mn}(2\bar{H}_{mnie} - \bar{H}_{nmie})
+            \end{aligned}
+
+        The spin-orbital form drops the L-combinations (the antisymmetrized ERIs
+        already carry them): each ``2 O - O'`` collapses to a single block.
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -317,6 +382,45 @@ class ccresponse(object):
         return r_X1
 
     def r_X2(self, pertbar, omega):
+        r"""Right-hand perturbed doubles residual r_X2 (the CC response equation
+        (Hbar - w) X = -Abar projected onto doubles; solve_right drives r_X2 -> 0
+        via X2 += r_X2/(D_ijab + w)). P(ij,ab) f_ijab = f_ijab + f_jiba is the
+        permutation that restores the ijab<->jiba symmetry.
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); Abar is the
+        similarity-transformed perturbation, L_mnef = 2<mn|ef> - <mn|fe>, and
+        Zae/Zmi are the X1/X2-dressed vv/oo intermediates::
+
+            Zae = (2 Hbar_amef - Hbar_amfe) X1_mf - L_mnef X2_mnaf
+            Zmi = -(2 Hbar_mnie - Hbar_nmie) X1_ne - L_mnef X2_inef
+            r_X2_ijab = P(ij,ab)[ 1/2 (Abar_ijab - w X2_ijab)
+                      + X1_ie Hbar_abej - X1_ma Hbar_mbij
+                      + Zmi t2_mjab + Zae t2_ijeb
+                      + X2_ijeb Hbar_ae - X2_mjab Hbar_mi
+                      + 1/2 X2_mnab Hbar_mnij + 1/2 X2_ijef Hbar_abef
+                      - X2_imeb Hbar_maje - X2_imea Hbar_mbej
+                      + 2 X2_miea Hbar_mbej - X2_miea Hbar_mbje ]
+
+        .. math::
+
+            \begin{aligned}
+            Z_{ae} &= (2\bar{H}_{amef} - \bar{H}_{amfe}) X^{f}_{m} - L_{mnef} X^{af}_{mn},
+                \qquad Z_{mi} = -(2\bar{H}_{mnie} - \bar{H}_{nmie}) X^{e}_{n} - L_{mnef} X^{ef}_{in} \\
+            r^{ab}_{ij} &= \mathcal{P}(ij,ab)\Big[ \tfrac{1}{2}(\bar{A}^{ab}_{ij} - \omega X^{ab}_{ij})
+                + X^{e}_{i}\bar{H}_{abej} - X^{a}_{m}\bar{H}_{mbij}
+                + Z_{mi} t^{ab}_{mj} + Z_{ae} t^{eb}_{ij} \\
+            &\quad + X^{eb}_{ij}\bar{H}_{ae} - X^{ab}_{mj}\bar{H}_{mi}
+                + \tfrac{1}{2} X^{ab}_{mn}\bar{H}_{mnij} + \tfrac{1}{2} X^{ef}_{ij}\bar{H}_{abef} \\
+            &\quad - X^{eb}_{im}\bar{H}_{maje} - X^{ea}_{im}\bar{H}_{mbej}
+                + 2 X^{ea}_{mi}\bar{H}_{mbej} - X^{ea}_{mi}\bar{H}_{mbje} \Big]
+            \end{aligned}
+
+        with :math:`\mathcal{P}(ij,ab) f_{ijab} = f_{ijab} + f_{jiba}`. The
+        spin-orbital form (returned early) replaces the L-combinations by the
+        antisymmetrized ERIs and applies the full P(ij) P(ab) antisymmetrizer.
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -372,6 +476,24 @@ class ccresponse(object):
         return r_X2
 
     def pseudoresponse(self, pertbar: "pertbar", X1: Tensor, X2: Tensor):
+        r"""Pseudoresponse used to monitor solve_right convergence: the contraction
+        of the (conjugated) perturbation Abar with the current perturbed amplitudes.
+        Its iteration-to-iteration change is an inexpensive convergence measure.
+
+        Notes
+        -----
+        Spin-adapted (spatial) form::
+
+            P = -2 [ 2 Abar*_ai X1_ia + Abar*_ijab (2 X2_ijab - X2_ijba) ]
+
+        .. math::
+
+            P = -2\big[\, 2\,\bar{A}^{*a}_{i} X^{a}_{i}
+                + \bar{A}^{*ab}_{ij}\,(2 X^{ab}_{ij} - X^{ba}_{ij}) \,\big]
+
+        The spin-orbital branch uses the antisymmetrized form
+        :math:`P = -2\,[\bar{A}^{a}_{i} X^{a}_{i} + \tfrac{1}{4}\bar{A}^{ab}_{ij} X^{ab}_{ij}]`.
+        """
         contract = self.ccwfn.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             polar1 = contract('ai,ia->', pertbar.Avo, X1)
@@ -381,6 +503,643 @@ class ccresponse(object):
         polar2 = contract('ijab,ijab->', np.conj(pertbar.Avvoo), (2.0*X2 - X2.swapaxes(2,3)))
 
         return -2.0*(polar1 + polar2)
+
+    # ==================================================================
+    # Symmetric linear response -- the X-only formulation: only the
+    # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
+    # Top-level entry points polarizability() and optrot() dispatch the
+    # basis-specific assembly through linresp_sym(). The asymmetric (X and Y)
+    # machinery is retained, deprecated for linear response, at the bottom of
+    # the class for the future quadratic response function.
+    #
+    # The linear response function <<A;B>>_w generally requires the following
+    # right-hand perturbed wave functions and frequencies:
+    #     A(-w), A*(w), B(w), B*(-w)
+    # If the external field is static (w=0), then we need:
+    #     A(0), A*(0), B(0), B*(0)
+    # If the perturbation A is real and B is pure imaginary:
+    #     A(-w), A(w), B(w), B*(-w)
+    # or vice versa:
+    #     A(-w), A*(w), B(w), B(-w)
+    # If the perturbations are both real and the field is static:
+    #     A(0), B(0)
+    # If the perturbations are identical then:
+    #     A(w), A*(-w)  or  A(0), A*(0)
+    # If the perturbations are identical, the field is dynamic and the operator
+    # is real:
+    #     A(-w), A(w)
+    # If the perturbations are identical, the field is static and the operator
+    # is real:
+    #     A(0)
+    # ==================================================================
+
+    def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+                       max_diis=7, start_diis=1):
+        r"""Dipole polarizability tensor (length gauge) at frequency omega via the
+        symmetric response function (right-hand perturbed amplitudes only)::
+
+            alpha_w = -<<mu;mu>>_w
+                    = -<0|(1+L){ [muBAR,X(mu,-w)] + [muBAR,X(mu,w)]
+                                 + [[HBAR,X(mu,-w)],X(mu,w)] }|0>
+
+        .. math::
+
+            \begin{aligned}
+            \alpha_\omega = -\langle\langle \mu; \mu \rangle\rangle_\omega
+            &= -\langle 0|(1+\Lambda)\left( [\bar\mu, X(\mu,-\omega)] + [\bar\mu, X(\mu,\omega)] + [[\bar H, X(\mu,-\omega)], X(\mu,\omega)] \right)|0\rangle
+            \end{aligned}
+
+        assembled from the right-hand perturbed amplitudes X(mu,-w) and X(mu,+w).
+        Returns a 3x3 array. Basis-agnostic: all basis-specific work lives in
+        solve_right and linresp_sym.
+        """
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+        Xp, Xm = [], []
+        # solve_right returns (X, pseudo) where X is the list [X1, X2] (CCSD) or
+        # [X1, X2, X3] (CC3); the CC3 terms in linresp_sym pick up X[2].
+        for axis in range(3):
+            A = self.pertbar["MU_" + self.cart[axis]]
+            X, _ = self.solve_right(A, omega, *args)
+            Xp.append([a.copy() for a in X])
+            if omega == 0.0:
+                Xm.append([a.copy() for a in X])
+            else:
+                X, _ = self.solve_right(A, -omega, *args)
+                Xm.append([a.copy() for a in X])
+
+        polar = np.zeros((3, 3))
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["MU_" + self.cart[b]]
+                polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
+        return polar
+
+    def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
+               max_diis=7, start_diis=1):
+        r"""Optical-rotation tensor (length gauge) at frequency omega via the symmetric
+        response function (right-hand perturbed amplitudes only)::
+
+            G'_w = <<mu;m>>_w
+                 = (1/2) <0|(1+L){ [muBAR,X(m,w)] + [mBAR,X(mu,-w)]
+                                   + [[HBAR,X(mu,-w)],X(m,w)] }|0>
+                 + (1/2) <0|(1+L){ [muBAR,X(m*,-w)] + [m*BAR,X(mu,w)]
+                                   + [[HBAR,X(m*,-w)],X(mu,w)] }|0>
+
+        .. math::
+
+            \begin{aligned}
+            G'_\omega = \langle\langle \mu; m \rangle\rangle_\omega
+            &= \tfrac{1}{2}\langle 0|(1+\Lambda)\left( [\bar\mu, X(m,\omega)] + [\bar m, X(\mu,-\omega)] + [[\bar H, X(\mu,-\omega)], X(m,\omega)] \right)|0\rangle \\
+            &+ \tfrac{1}{2}\langle 0|(1+\Lambda)\left( [\bar\mu, X(m^*,-\omega)] + [\bar{m}^*, X(\mu,\omega)] + [[\bar H, X(m^*,-\omega)], X(\mu,\omega)] \right)|0\rangle
+            \end{aligned}
+
+        assembled from the right-hand perturbed amplitudes X(mu,-w), X(m,+w),
+        X(mu,+w), X(m*,-w). Returns a 3x3 array. Basis-agnostic: all basis-specific
+        work lives in solve_right and linresp_sym.
+        """
+        if omega == 0.0:
+            raise ValueError("Optical rotation requires a nonzero field frequency.")
+        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
+
+        Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
+        # solve_right returns (X, pseudo) where X is [X1, X2(, X3)] (see
+        # polarizability).
+        for axis in range(3):
+            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
+            Xmu_p.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
+            Xmu_m.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
+            Xm_p.append([a.copy() for a in X])
+            X, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
+            Xmstar_m.append([a.copy() for a in X])
+
+        tensor = np.zeros((3, 3))
+        # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M_" + self.cart[b]]
+                tensor[a, b] = 0.5 * self.linresp_sym(A, Xmu_m[a], B, Xm_p[b])
+        # (1/2) <<mu; m*>>_{-omega}  with X(mu,+omega) and X(m*,-omega)
+        for a in range(3):
+            A = self.pertbar["MU_" + self.cart[a]]
+            for b in range(3):
+                B = self.pertbar["M*_" + self.cart[b]]
+                tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
+        return tensor
+
+    # ------------------------------------------------------------------
+    # Symmetric linear-response assembly. Each component dispatches on
+    # orbital_basis: the spin-orbital form (_so_*) is implemented;
+    # the spin-adapted (spatial) form is phase 9a-ii (stubbed). The call
+    # structure (linresp_sym -> LCX / LHX1Y1 / LHX2Y2 / LHX1Y2) is identical
+    # for both bases; only the tensor contractions differ.
+    # ------------------------------------------------------------------
+
+    def linresp_sym(self, A, X_A, B, X_B):
+        r"""Half of the symmetric CC linear-response function for one-electron
+        perturbations A and B at frequency omega (w)::
+
+            <<A;B>>_w = (1/2) <0|(1+L){ [ABAR,X(B,w)] + [BBAR,X(A,-w)]
+                                        + [[HBAR,X(A,-w)],X(B,w)] }|0>
+
+        The other half -- using the complex conjugates of the operators and the
+        swapped frequencies -- comes from a separate call (see optrot; for the real,
+        symmetric polarizability the two halves are equal). This is for specific
+        Cartesian components: both the perturbed wave functions (X_A, X_B) and the
+        similarity-transformed operators (A, B) are built by the caller.
+
+        Parameters
+        ----------
+        A, B : pertbar
+            Similarity-transformed left- (A) and right-hand (B) perturbation operators.
+        X_A, X_B : [singles, doubles]
+            Right-hand perturbed wave functions for A (at -w) and B (at +w).
+
+        Returns
+        -------
+        float
+            The requested component of the linear-response tensor (sum of the LCX,
+            HXY, LHX1Y1, LHX2Y2, and LHX1Y2 contributions).
+
+        Notes
+        -----
+        Spin-adapted (spatial) assembly (the spin-orbital path has the same
+        structure; each component dispatches to its own basis-specific code). The
+        only explicit contraction is the HXY direct term: spin-summing the
+        antisymmetrized <ij||ab> X_A1_ia X_B1_jb over the (sigma_i, sigma_j) spin
+        cases gives 4<ij|ab> - 2<ij|ba> = 2 L_ijab (L = 2<ij|ab> - <ij|ba>) -- the
+        direct integral survives all four spin combinations, the exchange only the
+        two with sigma_i == sigma_j::
+
+            <<A;B>>_w = LCX(A, X_B) + LCX(B, X_A)              (LCX)
+                      + 2 L_ijab X_A1_ia X_B1_jb               (HXY)
+                      + LHX1Y1(X_A, X_B)                       (LHX1Y1)
+                      + LHX2Y2(X_A, X_B)                       (LHX2Y2)
+                      + LHX1Y2(X_A, X_B) + LHX1Y2(X_B, X_A)    (LHX1Y2)
+
+        .. math::
+
+            \begin{aligned}
+            \langle\langle A;B \rangle\rangle_\omega &= \mathrm{LCX}(A, X_B) + \mathrm{LCX}(B, X_A) + 2 L_{ijab}\, X^{A,a}_i X^{B,b}_j \\
+            &\quad + \mathrm{LHX1Y1}(X_A, X_B) + \mathrm{LHX2Y2}(X_A, X_B) + \mathrm{LHX1Y2}(X_A, X_B) + \mathrm{LHX1Y2}(X_B, X_A)
+            \end{aligned}
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_linresp_sym(A, X_A, B, X_B)
+        # spin-adapted (spatial) assembly. Identical in structure to the spin-orbital
+        # path: LCX/LHX1Y1/LHX2Y2/LHX1Y2 each dispatch to their own spatial code. The
+        # only basis-specific piece is the HXY direct term. Spin-summing the
+        # antisymmetrized <ij||ab> X_A[ia] X_B[jb] over the (sigma_i, sigma_j) spin
+        # cases gives 4<ij|ab> - 2<ij|ba> = 2*L (L = 2<ij|ab> - <ij|ba> = self.H.L):
+        # the direct integral survives all four spin combinations, the exchange only
+        # the two with sigma_i == sigma_j.
+        o, v = self.ccwfn.o, self.ccwfn.v
+        contract = self.contract
+        L = self.H.L
+        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
+        polar += 2.0 * contract('ijab,ia,jb->', L[o,o,v,v], X_A[0], X_B[0])
+        polar += self.LHX1Y1(X_A, X_B)
+        polar += self.LHX2Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_A, X_B)
+        polar += self.LHX1Y2(X_B, X_A)
+        return polar
+
+    def _so_linresp_sym(self, A, X_A, B, X_B):
+        """Spin-orbital form of the symmetric linear-response function. See
+        linresp_sym for the response-function expression; this dispatches to the
+        spin-orbital LCX and LHX1Y1/LHX2Y2/LHX1Y2 building blocks (and, for CC3,
+        the _so_*_CC3 triples terms).
+        """
+        o, v = self.ccwfn.o, self.ccwfn.v
+        contract = self.contract
+        ERI = self.H.ERI
+        # <0|(1+L)[ABAR,X_B]|0> + <0|(1+L)[BBAR,X_A]|0>
+        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
+        # <0|[[HBAR,X1_A],X1_B]|0>
+        polar += contract('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])
+        # <0|L[[HBAR,X1_A],X1_B]|0>
+        polar += self.LHX1Y1(X_A, X_B)
+        # <0|L[[HBAR,X2_A],X2_B]|0>
+        polar += self.LHX2Y2(X_A, X_B)
+        # <0|L[[HBAR,X1_A],X2_B]|0>
+        polar += self.LHX1Y2(X_A, X_B)
+        # <0|L[[HBAR,X1_B],X2_A]|0>
+        polar += self.LHX1Y2(X_B, X_A)
+
+        if self.ccwfn.model == 'CC3':
+            # CC3 connected-triples contributions to the symmetric response
+            # function (X3 = X[2] is the perturbed triples). socc linresp CC3 block.
+            polar += self._so_LCX_CC3(A, X_B) + self._so_LCX_CC3(B, X_A)
+            polar += self._so_L2HX1Y3_CC3(X_A, X_B) + self._so_L2HX1Y3_CC3(X_B, X_A)
+            polar += self._so_L3HX1Y2_CC3(X_A, X_B) + self._so_L3HX1Y2_CC3(X_B, X_A)
+            polar += self._so_L3HX1Y1T2_CC3(X_A, X_B)
+
+        return polar
+
+    def LCX(self, pert, X):
+        r"""One-particle-density (LCX) term of the symmetric response function:
+        <0|(1+L)[Abar, X]|0>. (Diagram labels match _so_LCX; this is the same
+        quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). ``A`` = ``Abar`` is the
+        similarity-transformed perturbation (blocks pert.Aov / Avv / Aoo / Avvvo / Aovoo);
+        l1/l2 the Lambda amplitudes, X1/X2 the right perturbed amplitudes::
+
+            LCX = 2 A_ia X1_ia                                         (diagram 1)
+                + l1_ia X1_ic A_ac - l1_ia X1_ka A_ki                  (diagrams 2, 3)
+                + l1_ia A_jb (2 X2_ijab - X2_ijba)                     (diagram 8)
+                + l2_ijbc A_bcaj X1_ia                                 (diagram 4)
+                - 1/2 l2_ijab A_kbij X1_ka - 1/2 l2_ijab A_kaji X1_kb  (diagram 5)
+                + 1/2 l2_ijab X2_ijac A_bc + 1/2 l2_ijab X2_ijcb A_ac  (diagram 6)
+                - 1/2 l2_ijab X2_kjab A_ki - 1/2 l2_ijab X2_kiba A_kj  (diagram 7)
+
+        .. math::
+
+            \begin{aligned}
+            \mathrm{LCX} &= 2 \bar{A}_{ia} X^a_i + \lambda^a_i X^c_i \bar{A}_{ac} - \lambda^a_i X^a_k \bar{A}_{ki} + \lambda^a_i \bar{A}_{jb}\left(2 X^{ab}_{ij} - X^{ba}_{ij}\right) \\
+            &\quad + \lambda^{bc}_{ij} \bar{A}_{bcaj} X^a_i - \tfrac{1}{2} \lambda^{ab}_{ij} \bar{A}_{kbij} X^a_k - \tfrac{1}{2} \lambda^{ab}_{ij} \bar{A}_{kaji} X^b_k \\
+            &\quad + \tfrac{1}{2} \lambda^{ab}_{ij} X^{ac}_{ij} \bar{A}_{bc} + \tfrac{1}{2} \lambda^{ab}_{ij} X^{cb}_{ij} \bar{A}_{ac} - \tfrac{1}{2} \lambda^{ab}_{ij} X^{ab}_{kj} \bar{A}_{ki} - \tfrac{1}{2} \lambda^{ab}_{ij} X^{ba}_{ki} \bar{A}_{kj}
+            \end{aligned}
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_LCX(pert, X)
+        # spin-adapted (spatial) LCX
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        X1, X2 = X[0], X[1]
+        # <0|[Abar, X1]|0>                                          (diagram 1)
+        polar = 2.0 * contract('ia,ia->', pert.Aov, X1)
+        # <0|L1[Abar, X1]|0>                                        (diagrams 2, 3)
+        tmp = contract('ia,ic->ac', l1, X1)
+        polar += contract('ac,ac->', tmp, pert.Avv)
+        tmp = contract('ia,ka->ik', l1, X1)
+        polar -= contract('ik,ki->', tmp, pert.Aoo)
+        # <0|L1[Abar, X2]|0>                                        (diagram 8)
+        tmp = contract('ia,jb->ijab', l1, pert.Aov)
+        polar += 2.0 * contract('ijab,ijab->', tmp, X2)
+        polar -= contract('ijab,ijba->', tmp, X2)
+        # <0|L2[Abar, X1]|0>                                        (diagrams 4, 5)
+        tmp = contract('ijbc,bcaj->ia', l2, pert.Avvvo)
+        polar += contract('ia,ia->', tmp, X1)
+        tmp = contract('ijab,kbij->ak', l2, pert.Aovoo)
+        polar -= 0.5 * contract('ak,ka->', tmp, X1)
+        tmp = contract('ijab,kaji->bk', l2, pert.Aovoo)
+        polar -= 0.5 * contract('bk,kb->', tmp, X1)
+        # <0|L2[Abar, X2]|0>                                        (diagrams 6, 7)
+        tmp = contract('ijab,kjab->ik', l2, X2)
+        polar -= 0.5 * contract('ik,ki->', tmp, pert.Aoo)
+        tmp = contract('ijab,kiba->jk', l2, X2)
+        polar -= 0.5 * contract('jk,kj->', tmp, pert.Aoo)
+        tmp = contract('ijab,ijac->bc', l2, X2)
+        polar += 0.5 * contract('bc,bc->', tmp, pert.Avv)
+        tmp = contract('ijab,ijcb->ac', l2, X2)
+        polar += 0.5 * contract('ac,ac->', tmp, pert.Avv)
+        return polar
+
+    def _so_LCX(self, pert, X):
+        """Spin-orbital form of the LCX term <0|(1+L)[Abar, X]|0>. See LCX for
+        the equation; here the antisymmetrized <pq||rs> ERIs carry the
+        spin-adaptation implicitly.
+        """
+        contract = self.contract
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        X1, X2 = X[0], X[1]
+        polar = contract('ia,ia->', pert.Aov, X1)              # diagram 1
+        tmp = contract('ae,ie->ia', pert.Avv, X1)              # diagram 2
+        tmp -= contract('mi,ma->ia', pert.Aoo, X1)             # diagram 3
+        tmp += contract('me,imae->ia', pert.Aov, X2)           # diagram 8
+        polar += contract('ia,ia->', l1, tmp)
+        tmp = contract('abej,ie->ijab', pert.Avvvo, X1)        # diagram 4
+        tmp -= contract('mbij,ma->ijab', pert.Aovoo, X1)       # diagram 5
+        tmp += contract('be,ijae->ijab', pert.Avv, X2)         # diagram 6
+        tmp -= contract('mj,imab->ijab', pert.Aoo, X2)         # diagram 7
+        polar += 0.5 * contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX1Y1(self, X, Y):
+        r"""X1*Y1 (LHX1Y1) term of the symmetric response function:
+        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _so_LHX1Y1.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). H_* are hbar blocks
+        (H_me = H_ov, H_amef = H_vovv, H_mnie = H_ooov, H_mnij = H_oooo,
+        H_abef = H_vvvv, H_mbej = H_ovvo, H_maje = H_ovov); L_mnef = 2<mn|ef> -
+        <mn|fe>; HvL_amef = 2 H_amef - H_amfe and HoL_mnie = 2 H_mnie - H_nmie are
+        the L-combinations of H_vovv / H_ooov. The singles enter through
+        tau_ijab = X1_ia Y1_jb + Y1_ia X1_jb (both orderings, since X1 != Y1)::
+
+            # l1-part (diagrams 1, 2, 7-10)
+            tmp_ia = -H_me tau_imea + HvL_amef tau_imef - HoL_mnie tau_mnae
+            # l2-part (diagrams 3-6, 11-14)
+            Z_fb   = 1/2 L_mnef tau_mneb
+            Z_nj   = 1/2 L_mnef tau_mjef
+            ring   = -tau_imea H_mbej - tau_imeb H_maje               (diagrams 5, 6)
+            tmp_ijab = 1/2 H_mnij X1_ma Y1_nb + 1/2 H_abef X1_ie Y1_jf
+                     - t2_ijaf Z_fb - t2_inab Z_nj + 1/2 ring_ijab
+            LHX1Y1 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \tau^{ab}_{ij} &= X^a_i Y^b_j + Y^a_i X^b_j, \qquad \bar{H}^L_{amef} = 2\bar{H}_{amef} - \bar{H}_{amfe}, \quad \bar{H}^L_{mnie} = 2\bar{H}_{mnie} - \bar{H}_{nmie} \\
+            \text{tmp}_{ia} &= -\bar{H}_{me}\tau^{ea}_{im} + \bar{H}^L_{amef}\tau^{ef}_{im} - \bar{H}^L_{mnie}\tau^{ae}_{mn} \\
+            Z_{fb} &= \tfrac{1}{2} L_{mnef}\tau^{eb}_{mn}, \qquad Z_{nj} = \tfrac{1}{2} L_{mnef}\tau^{ef}_{mj} \\
+            \text{ring}_{ijab} &= -\tau^{ea}_{im}\bar{H}_{mbej} - \tau^{eb}_{im}\bar{H}_{maje} \\
+            \text{tmp}_{ijab} &= \tfrac{1}{2}\bar{H}_{mnij} X^a_m Y^b_n + \tfrac{1}{2}\bar{H}_{abef} X^e_i Y^f_j - t^{af}_{ij} Z_{fb} - t^{ab}_{in} Z_{nj} + \tfrac{1}{2}\text{ring}_{ijab} \\
+            \mathrm{LHX1Y1} &= \lambda^a_i \text{tmp}_{ia} + 2 \lambda^{ab}_{ij} \text{tmp}_{ijab}
+            \end{aligned}
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_LHX1Y1(X, Y)
+        # spin-adapted (spatial) LHX1Y1
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        L = self.H.L
+        X1, Y1 = X[0], Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
+        # L1 part (diagrams 1-2, 7-10): naive Hov, L-combinations on Hvovv/Hooov
+        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2,3)
+        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0,1)
+        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)
+        tmp += contract('amef,imef->ia', HvL, tau)
+        tmp -= contract('mnie,mnae->ia', HoL, tau)
+        polar = contract('ia,ia->', l1, tmp)
+        # L2 part (diagrams 3-6, 11-14). The ring (diagrams 5,6) follows the
+        # _r_T2_ccsd t1*t1 disconnected ring, but with both singles orderings
+        # (X1(x)Y1 and Y1(x)X1, here folded into tau) since X1 != Y1 in general.
+        Zvv = 0.5 * contract('mnef,mneb->fb', L[o,o,v,v], tau)
+        Zoo = 0.5 * contract('mnef,mjef->nj', L[o,o,v,v], tau)
+        ring = (-contract('imea,mbej->ijab', tau, hbar.Hovvo)
+                - contract('imeb,maje->ijab', tau, hbar.Hovov))
+        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)
+        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)
+        tmp -= contract('ijaf,fb->ijab', t2, Zvv)
+        tmp -= contract('inab,nj->ijab', t2, Zoo)
+        tmp += 0.5 * ring
+        polar += 2.0 * contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def _so_LHX1Y1(self, X, Y):
+        """Spin-orbital form of the LHX1Y1 term <0|L[[Hbar,X1],Y1]|0>. See
+        LHX1Y1 for the diagram-by-diagram equation.
+        """
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        t2 = self.ccwfn.t2
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y1 = X[0], Y[0]
+        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
+        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)        # diagrams 1 and 2
+        tmp += contract('amef,imef->ia', hbar.Hvovv, tau)          # diagrams 7 and 8
+        tmp -= contract('mnie,mnae->ia', hbar.Hooov, tau)          # diagrams 9 and 10
+        polar = contract('ia,ia->', l1, tmp)
+        Zvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], tau)
+        Zoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], tau)
+        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)   # diagram 3
+        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)  # diagram 4
+        tmp -= contract('mbej,imea->ijab', hbar.Hovvo, tau)        # diagrams 5 and 6
+        tmp -= contract('ijaf,fb->ijab', t2, Zvv)                  # diagrams 11 and 12
+        tmp -= contract('inab,nj->ijab', t2, Zoo)                  # diagrams 13 and 14
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    def LHX2Y2(self, X, Y):
+        r"""X2*Y2 (LHX2Y2) term of the symmetric response function:
+        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _so_LHX2Y2.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). <mn|ef> = ERI[o,o,v,v],
+        L_mnef = 2<mn|ef> - <mn|fe>; W_mbje[e<->j] swaps the last two axes; W_mbie is
+        W_mbje with j -> i. Diagram 1 is the particle-hole ring (the 1/2-weighted
+        W_mbej / W_mbje built from Y2, contracted with X2 through the _r_T2_ccsd
+        three-term ring); diagrams 2-7 are the oo/vv ladders, symmetrized over the X2/Y2
+        interchange (W_mbie is W_mbje with j -> i; the summation convention handles the e/j
+        placement, so no explicit swap is written in the math form)::
+
+            W_mbej = -1/2 Y2_jnfb <mn|ef> + 1/2 Y2_njfb L_mnef
+            W_mbje =  1/2 Y2_jnfb <mn|fe>
+            tmp_ijab = (X2_imae - X2_imea) W_mbej + X2_imae (W_mbej + W_mbje[e<->j])
+                     + X2_mjae W_mbie                                   (diagram 1)
+                     + 1/2 (1/2 <mn|ef> X2_ijef) Y2_mnab
+                     + 1/2 (1/2 <mn|ef> Y2_ijef) X2_mnab               (diagrams 2, 3)
+                     + 1/2 (-L_mnef Y2_mnbf) X2_ijae
+                     + 1/2 (-L_mnef X2_mnbf) Y2_ijae                   (diagrams 4, 6)
+                     + 1/2 (-L_mnef Y2_jnef) X2_imab
+                     + 1/2 (-L_mnef X2_jnef) Y2_imab                   (diagrams 5, 7)
+            LHX2Y2 = 2 l2_ijab tmp_ijab
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbej} &= -\tfrac{1}{2} Y^{fb}_{jn}\langle mn\vert ef\rangle + \tfrac{1}{2} Y^{fb}_{nj} L_{mnef}, \qquad W_{mbje} = \tfrac{1}{2} Y^{fb}_{jn}\langle mn\vert fe\rangle \\
+            \text{tmp}_{ijab} &= (X^{ae}_{im} - X^{ea}_{im}) W_{mbej} + X^{ae}_{im}(W_{mbej} + W_{mbje}) + X^{ae}_{mj} W_{mbie} \\
+            &\quad + \tfrac{1}{4}\langle mn\vert ef\rangle X^{ef}_{ij} Y^{ab}_{mn} + \tfrac{1}{4}\langle mn\vert ef\rangle Y^{ef}_{ij} X^{ab}_{mn} \\
+            &\quad - \tfrac{1}{2} L_{mnef} Y^{bf}_{mn} X^{ae}_{ij} - \tfrac{1}{2} L_{mnef} X^{bf}_{mn} Y^{ae}_{ij} \\
+            &\quad - \tfrac{1}{2} L_{mnef} Y^{ef}_{jn} X^{ab}_{im} - \tfrac{1}{2} L_{mnef} X^{ef}_{jn} Y^{ab}_{im} \\
+            \mathrm{LHX2Y2} &= 2 \lambda^{ab}_{ij}\,\text{tmp}_{ijab}
+            \end{aligned}
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_LHX2Y2(X, Y)
+        # spin-adapted (spatial) LHX2Y2
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l2 = self.cclambda.l2
+        ERI = self.H.ERI[o, o, v, v]
+        L = self.H.L[o, o, v, v]
+        X2, Y2 = X[1], Y[1]
+        # diagram 1 (ph-ring): the T2-equation Wmbej/Wmbje intermediates (the 1/2-
+        # weighted ones from build_Wmbej/build_Wmbje) built from Y2, contracted with X2
+        # via the three-term _r_T2_ccsd ring.
+        Wmbej = -0.5 * contract('jnfb,mnef->mbej', Y2, ERI) + 0.5 * contract('njfb,mnef->mbej', Y2, L)
+        Wmbje = 0.5 * contract('jnfb,mnfe->mbje', Y2, ERI)
+        tmp = contract('imae,mbej->ijab', X2 - X2.swapaxes(2,3), Wmbej)
+        tmp += contract('imae,mbej->ijab', X2, Wmbej + Wmbje.swapaxes(2,3))
+        tmp += contract('mjae,mbie->ijab', X2, Wmbje)
+        # diagrams 2,3 (oo ladder)
+        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, X2), Y2)
+        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, Y2), X2)
+        # diagrams 4,6 (vv ladder)
+        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, Y2), X2)
+        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, X2), Y2)
+        # diagrams 5,7 (oo ladder)
+        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, Y2), X2)
+        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, X2), Y2)
+        return 2.0 * contract('ijab,ijab->', l2, tmp)
+
+    def _so_LHX2Y2(self, X, Y):
+        """Spin-orbital form of the LHX2Y2 term <0|L[[Hbar,X2],Y2]|0>. See
+        LHX2Y2 for the diagram-by-diagram equation (the Z-intermediates here
+        mirror the spatial W-intermediates).
+        """
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l2 = self.cclambda.l2
+        ERI = self.H.ERI
+        X2, Y2 = X[1], Y[1]
+        Zovvo = contract('mnef,njfb->mbej', ERI[o,o,v,v], Y2)
+        Zoooo_A = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], X2)
+        Zoooo_B = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], Y2)
+        Zvv_A = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], Y2)
+        Zvv_B = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], X2)
+        Zoo_A = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], Y2)
+        Zoo_B = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], X2)
+        tmp = contract('mbej,imae->ijab', Zovvo, X2)              # diagram 1
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_A, Y2)    # diagram 2
+        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_B, X2)    # diagram 3
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_A, X2)         # diagram 4
+        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_B, Y2)         # diagram 6
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_A, X2)         # diagram 5
+        tmp += 0.5 * contract('mj,imab->ijab', Zoo_B, Y2)         # diagram 7
+        return contract('ijab,ijab->', l2, tmp)
+
+    def LHX1Y2(self, X, Y):
+        r"""X1*Y2 (LHX1Y2) term of the symmetric response function:
+        <0|L[[HBAR,X1],Y2]|0>. (Diagram labels match _so_LHX1Y2.)
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed). X1 = X[0], Y2 = Y[1];
+        H_me = H_ov, and H_bmfe / H_bmef are the H_vovv block while H_nmje / H_mnje /
+        H_mnie are the H_ooov block (read with the index slots shown); L_mnef =
+        2<mn|ef> - <mn|fe>; HvL_amef = 2 H_amef - H_amfe, HoL_mnie = 2 H_mnie -
+        H_nmie, Y2L_ijab = 2 Y2_ijab - Y2_ijba. The l2-part voov ring (diagrams 6, 8)
+        is the _r_T2_ccsd three-term ring with X1-dressed ph intermediates W_mbej /
+        W_mbje (W_mbje[e<->j] swaps the last two axes; W_mbie is W_mbje with j -> i)
+        and Y2 as the external doubles (Y2L_ijab = 2 Y2_ijab - Y2_ijba; the summation convention
+        handles the e/j placement, so no explicit swap is written in the math form)::
+
+            # l1-part
+            Z_nf  = L_mnef X1_me
+            Z_ea  = -L_mnef Y2_mnaf
+            Z_mi  = -L_mnef Y2_inef
+            tmp_ia = Z_nf Y2L_nifa + Z_ea X1_ie + Z_mi X1_ma           (diagrams 3, 4, 5)
+            # l2-part
+            Z_mi   = H_me X1_ie + HoL_mnie X1_ne
+            Z_ea   = H_me X1_ma - HvL_amef X1_mf
+            Z_mnij = H_mnie X1_je
+            Z_ijam = H_amef Y2_ijef
+            tmp_ijab = -1/2 Z_mi Y2_mjab - 1/2 Z_ea Y2_ijeb           (diagrams 1/7, 2/9)
+                     + 1/2 Z_mnij Y2_mnab - 1/2 Z_ijam X1_mb          (diagrams 10, 11)
+            W_mbej =  X1_jf H_bmfe - X1_nb H_nmje
+            W_mbje = -X1_jf H_bmef + X1_nb H_mnje
+            ring = (Y2_imae - Y2_imea) W_mbej + Y2_imae (W_mbej + W_mbje[e<->j])
+                 + Y2_mjae W_mbie                                      (diagrams 6, 8)
+            tmp_ijab += 1/2 ring_ijab
+            LHX1Y2 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \text{l1: }\ & Z_{nf} = L_{mnef} X^e_m, \quad Z_{ea} = -L_{mnef} Y^{af}_{mn}, \quad Z_{mi} = -L_{mnef} Y^{ef}_{in} \\
+            & \text{tmp}_{ia} = Z_{nf} Y^{L,fa}_{ni} + Z_{ea} X^e_i + Z_{mi} X^a_m \\
+            \text{l2: }\ & Z_{mi} = \bar{H}_{me} X^e_i + \bar{H}^L_{mnie} X^e_n, \quad Z_{ea} = \bar{H}_{me} X^a_m - \bar{H}^L_{amef} X^f_m \\
+            & Z_{mnij} = \bar{H}_{mnie} X^e_j, \quad Z_{ijam} = \bar{H}_{amef} Y^{ef}_{ij} \\
+            & \text{tmp}_{ijab} = -\tfrac{1}{2} Z_{mi} Y^{ab}_{mj} - \tfrac{1}{2} Z_{ea} Y^{eb}_{ij} + \tfrac{1}{2} Z_{mnij} Y^{ab}_{mn} - \tfrac{1}{2} Z_{ijam} X^b_m \\
+            & W_{mbej} = X^f_j \bar{H}_{bmfe} - X^b_n \bar{H}_{nmje}, \quad W_{mbje} = -X^f_j \bar{H}_{bmef} + X^b_n \bar{H}_{mnje} \\
+            & \text{ring}_{ijab} = (Y^{ae}_{im} - Y^{ea}_{im}) W_{mbej} + Y^{ae}_{im}(W_{mbej} + W_{mbje}) + Y^{ae}_{mj} W_{mbie} \\
+            & \text{tmp}_{ijab} \mathrel{+}= \tfrac{1}{2}\,\text{ring}_{ijab} \\
+            \mathrm{LHX1Y2} &= \lambda^a_i \text{tmp}_{ia} + 2 \lambda^{ab}_{ij}\, \text{tmp}_{ijab}
+            \end{aligned}
+        """
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            return self._so_LHX1Y2(X, Y)
+        # spin-adapted (spatial) LHX1Y2
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        L = self.H.L[o, o, v, v]
+        X1, Y2 = X[0], Y[1]
+        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)
+        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0, 1)
+        Y2L = 2.0 * Y2 - Y2.swapaxes(2, 3)
+        # l1-part (diagrams 3,4,5)
+        Zov = contract('mnef,me->nf', L, X1)                       # L3
+        tmp1 = contract('nf,nifa->ia', Zov, Y2L)
+        Zvv = -contract('mnef,mnaf->ea', L, Y2)                    # L4
+        tmp1 += contract('ea,ie->ia', Zvv, X1)
+        Zoo = -contract('mnef,inef->mi', L, Y2)                    # L5
+        tmp1 += contract('mi,ma->ia', Zoo, X1)
+        polar = contract('ia,ia->', l1, tmp1)
+        # l2-part (diagrams 1,2,6,7,8,9,10,11)
+        Zoo = contract('me,ie->mi', hbar.Hov, X1) + contract('mnie,ne->mi', HoL, X1)
+        tmp2 = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)          # L1_7
+        Zvv = contract('me,ma->ea', hbar.Hov, X1) - contract('amef,mf->ea', HvL, X1)
+        tmp2 += -0.5 * contract('ea,ijeb->ijab', Zvv, Y2)        # L2_9
+        Zoooo = contract('mnie,je->mnij', hbar.Hooov, X1)         # L10
+        tmp2 += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)
+        Zoovo = contract('amef,ijef->ijam', hbar.Hvovv, Y2)       # L11
+        tmp2 += -0.5 * contract('ijam,mb->ijab', Zoovo, X1)
+        # L6_8 (voov ring, diagrams 6,8): one ph ring, structurally the LHX2Y2-D1
+        # three-term ring with the X1-dressed ph intermediate (both Hvovv and Hooov
+        # dressings, mirroring build_Hovvo/build_Hovov) and Y2 as external doubles.
+        Wmbej = contract('jf,bmfe->mbej', X1, hbar.Hvovv) - contract('nb,nmje->mbej', X1, hbar.Hooov)
+        Wmbje = -contract('jf,bmef->mbje', X1, hbar.Hvovv) + contract('nb,mnje->mbje', X1, hbar.Hooov)
+        ring = contract('imae,mbej->ijab', Y2 - Y2.swapaxes(2, 3), Wmbej)
+        ring += contract('imae,mbej->ijab', Y2, Wmbej + Wmbje.swapaxes(2, 3))
+        ring += contract('mjae,mbie->ijab', Y2, Wmbje)
+        tmp2 += 0.5 * ring
+        polar += 2.0 * contract('ijab,ijab->', l2, tmp2)
+        return polar
+
+    def _so_LHX1Y2(self, X, Y):
+        """Spin-orbital form of the LHX1Y2 term <0|L[[Hbar,X1],Y2]|0>. See
+        LHX1Y2 for the diagram-by-diagram equation.
+        """
+        contract = self.contract
+        o, v = self.ccwfn.o, self.ccwfn.v
+        l1 = self.cclambda.l1
+        l2 = self.cclambda.l2
+        hbar = self.hbar
+        ERI = self.H.ERI
+        X1, Y2 = X[0], Y[1]
+        Zov = contract('mnef,me->nf', ERI[o,o,v,v], X1)
+        Zvv = -0.5 * contract('mnef,mnaf->ea', ERI[o,o,v,v], Y2)
+        Zoo = -0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], Y2)
+        tmp = contract('nf,nifa->ia', Zov, Y2)                    # diagram 3
+        tmp += contract('ea,ie->ia', Zvv, X1)                     # diagram 4
+        tmp += contract('mi,ma->ia', Zoo, X1)                     # diagram 5
+        polar = contract('ia,ia->', l1, tmp)
+        Zoo = contract('me,ie->mi', hbar.Hov, X1)
+        Zoo += contract('mnie,ne->mi', hbar.Hooov, X1)
+        Zvv = contract('me,ma->ea', hbar.Hov, X1)
+        Zvv -= contract('amef,mf->ea', hbar.Hvovv, X1)
+        Zvoov = contract('anfe,if->anie', hbar.Hvovv, X1)
+        Zvoov -= contract('mnie,ma->anie', hbar.Hooov, X1)
+        Zoooo = 0.5 * contract('mnie,je->mnij', hbar.Hooov, X1)
+        Zoovo = 0.5 * contract('amef,ijef->ijam', hbar.Hvovv, Y2)
+        tmp = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)           # diagrams 1 and 7
+        tmp -= 0.5 * contract('ea,ijeb->ijab', Zvv, Y2)           # diagrams 2 and 9
+        tmp += contract('anie,njeb->ijab', Zvoov, Y2)             # diagrams 6 and 8
+        tmp += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)       # diagram 10
+        tmp -= 0.5 * contract('ijam,mb->ijab', Zoovo, X1)         # diagram 11
+        polar += contract('ijab,ijab->', l2, tmp)
+        return polar
+
+    # ==================================================================
+    # CC3 response machinery (spin-orbital only): the T1-dressed
+    # W-intermediates, the per-iteration triples contributions z1/z2 to
+    # solve_right, the converged perturbed X3, and the CC3-specific
+    # response-function terms (_so_*_CC3) used by linresp_sym.
+    # ==================================================================
 
     def _so_cc3_response_setup(self, pertbar):
         """Build the T-dependent spin-orbital CC3 response intermediates that are
@@ -710,214 +1469,8 @@ class ccresponse(object):
         self._cc3_t3, self._cc3_l3 = t3, l3
         return t3, l3
 
-    # ==================================================================
-    # Symmetric linear response -- the X-only formulation: only the
-    # right-hand perturbed amplitudes X(P,+/-w) are solved (no left-hand Y).
-    # Top-level entry points polarizability() and optrot() dispatch the
-    # basis-specific assembly through linresp_sym(). The asymmetric (X and Y)
-    # machinery is retained, deprecated for linear response, at the bottom of
-    # the class for the future quadratic response function.
-    #
-    # The linear response function <<A;B>>_w generally requires the following
-    # right-hand perturbed wave functions and frequencies:
-    #     A(-w), A*(w), B(w), B*(-w)
-    # If the external field is static (w=0), then we need:
-    #     A(0), A*(0), B(0), B*(0)
-    # If the perturbation A is real and B is pure imaginary:
-    #     A(-w), A(w), B(w), B*(-w)
-    # or vice versa:
-    #     A(-w), A*(w), B(w), B(-w)
-    # If the perturbations are both real and the field is static:
-    #     A(0), B(0)
-    # If the perturbations are identical then:
-    #     A(w), A*(-w)  or  A(0), A*(0)
-    # If the perturbations are identical, the field is dynamic and the operator
-    # is real:
-    #     A(-w), A(w)
-    # If the perturbations are identical, the field is static and the operator
-    # is real:
-    #     A(0)
-    # ==================================================================
-
-    def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-                       max_diis=7, start_diis=1):
-        """Dipole polarizability tensor (length gauge) at frequency omega via the
-        symmetric response function (right-hand perturbed amplitudes only):
-
-            alpha_w = -<<mu;mu>>_w
-                    = -<0|(1+L){ [muBAR,X(mu,-w)] + [muBAR,X(mu,w)]
-                                 + [[HBAR,X(mu,-w)],X(mu,w)] }|0>
-
-        Returns a 3x3 array. Basis-agnostic: all basis-specific work lives in
-        solve_right and linresp_sym."""
-        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
-        Xp, Xm = [], []
-        # solve_right returns (X, pseudo) where X is the list [X1, X2] (CCSD) or
-        # [X1, X2, X3] (CC3); the CC3 terms in linresp_sym pick up X[2].
-        for axis in range(3):
-            A = self.pertbar["MU_" + self.cart[axis]]
-            X, _ = self.solve_right(A, omega, *args)
-            Xp.append([a.copy() for a in X])
-            if omega == 0.0:
-                Xm.append([a.copy() for a in X])
-            else:
-                X, _ = self.solve_right(A, -omega, *args)
-                Xm.append([a.copy() for a in X])
-
-        polar = np.zeros((3, 3))
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["MU_" + self.cart[b]]
-                polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
-        return polar
-
-    def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-               max_diis=7, start_diis=1):
-        """Optical-rotation tensor (length gauge) at frequency omega via the symmetric
-        response function (right-hand perturbed amplitudes only)::
-
-            G'_w = <<mu;m>>_w
-                 = (1/2) <0|(1+L){ [muBAR,X(m,w)] + [mBAR,X(mu,-w)]
-                                   + [[HBAR,X(mu,-w)],X(m,w)] }|0>
-                 + (1/2) <0|(1+L){ [muBAR,X(m*,-w)] + [m*BAR,X(mu,w)]
-                                   + [[HBAR,X(m*,-w)],X(mu,w)] }|0>
-
-        assembled from the right-hand perturbed amplitudes X(mu,-w), X(m,+w),
-        X(mu,+w), X(m*,-w). Returns a 3x3 array. Basis-agnostic: all basis-specific
-        work lives in solve_right and linresp_sym.
-        """
-        if omega == 0.0:
-            raise ValueError("Optical rotation requires a nonzero field frequency.")
-        args = (e_conv, r_conv, maxiter, max_diis, start_diis)
-
-        Xmu_p, Xmu_m, Xm_p, Xmstar_m = [], [], [], []
-        # solve_right returns (X, pseudo) where X is [X1, X2(, X3)] (see
-        # polarizability).
-        for axis in range(3):
-            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], omega, *args)
-            Xmu_p.append([a.copy() for a in X])
-            X, _ = self.solve_right(self.pertbar["MU_" + self.cart[axis]], -omega, *args)
-            Xmu_m.append([a.copy() for a in X])
-            X, _ = self.solve_right(self.pertbar["M_" + self.cart[axis]], omega, *args)
-            Xm_p.append([a.copy() for a in X])
-            X, _ = self.solve_right(self.pertbar["M*_" + self.cart[axis]], -omega, *args)
-            Xmstar_m.append([a.copy() for a in X])
-
-        tensor = np.zeros((3, 3))
-        # (1/2) <<mu; m>>_omega  with X(mu,-omega) and X(m,+omega)
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["M_" + self.cart[b]]
-                tensor[a, b] = 0.5 * self.linresp_sym(A, Xmu_m[a], B, Xm_p[b])
-        # (1/2) <<mu; m*>>_{-omega}  with X(mu,+omega) and X(m*,-omega)
-        for a in range(3):
-            A = self.pertbar["MU_" + self.cart[a]]
-            for b in range(3):
-                B = self.pertbar["M*_" + self.cart[b]]
-                tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
-        return tensor
-
-    # ------------------------------------------------------------------
-    # Symmetric linear-response assembly. Each component dispatches on
-    # orbital_basis: the spin-orbital form (_so_*) is implemented;
-    # the spin-adapted (spatial) form is phase 9a-ii (stubbed). The call
-    # structure (linresp_sym -> LCX / LHX1Y1 / LHX2Y2 / LHX1Y2) is identical
-    # for both bases; only the tensor contractions differ.
-    # ------------------------------------------------------------------
-
-    def linresp_sym(self, A, X_A, B, X_B):
-        """Half of the symmetric CC linear-response function for one-electron
-        perturbations A and B at frequency omega (w):
-
-            <<A;B>>_w = (1/2) <0|(1+L){ [ABAR,X(B,w)] + [BBAR,X(A,-w)]
-                                        + [[HBAR,X(A,-w)],X(B,w)] }|0>
-
-        The other half -- using the complex conjugates of the operators and the
-        swapped frequencies -- comes from a separate call (see optrot; for the real,
-        symmetric polarizability the two halves are equal). This is for specific
-        Cartesian components: both the perturbed wave functions (X_A, X_B) and the
-        similarity-transformed operators (A, B) are built by the caller.
-
-        Parameters
-        ----------
-        A, B : pertbar
-            Similarity-transformed left- (A) and right-hand (B) perturbation operators.
-        X_A, X_B : [singles, doubles]
-            Right-hand perturbed wave functions for A (at -w) and B (at +w).
-
-        Returns
-        -------
-        float
-            The requested component of the linear-response tensor (sum of the LCX,
-            HXY, LHX1Y1, LHX2Y2, and LHX1Y2 contributions).
-
-        Notes
-        -----
-        Spin-adapted (spatial) assembly (the spin-orbital path has the same
-        structure; each component dispatches to its own basis-specific code). The
-        only explicit contraction is the HXY direct term: spin-summing the
-        antisymmetrized <ij||ab> X_A1_ia X_B1_jb over the (sigma_i, sigma_j) spin
-        cases gives 4<ij|ab> - 2<ij|ba> = 2 L_ijab (L = 2<ij|ab> - <ij|ba>) -- the
-        direct integral survives all four spin combinations, the exchange only the
-        two with sigma_i == sigma_j::
-
-            <<A;B>>_w = LCX(A, X_B) + LCX(B, X_A)              (LCX)
-                      + 2 L_ijab X_A1_ia X_B1_jb               (HXY)
-                      + LHX1Y1(X_A, X_B)                       (LHX1Y1)
-                      + LHX2Y2(X_A, X_B)                       (LHX2Y2)
-                      + LHX1Y2(X_A, X_B) + LHX1Y2(X_B, X_A)    (LHX1Y2)
-        """
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_linresp_sym(A, X_A, B, X_B)
-        # spin-adapted (spatial) assembly. Identical in structure to the spin-orbital
-        # path: LCX/LHX1Y1/LHX2Y2/LHX1Y2 each dispatch to their own spatial code. The
-        # only basis-specific piece is the HXY direct term. Spin-summing the
-        # antisymmetrized <ij||ab> X_A[ia] X_B[jb] over the (sigma_i, sigma_j) spin
-        # cases gives 4<ij|ab> - 2<ij|ba> = 2*L (L = 2<ij|ab> - <ij|ba> = self.H.L):
-        # the direct integral survives all four spin combinations, the exchange only
-        # the two with sigma_i == sigma_j.
-        o, v = self.ccwfn.o, self.ccwfn.v
-        contract = self.contract
-        L = self.H.L
-        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
-        polar += 2.0 * contract('ijab,ia,jb->', L[o,o,v,v], X_A[0], X_B[0])
-        polar += self.LHX1Y1(X_A, X_B)
-        polar += self.LHX2Y2(X_A, X_B)
-        polar += self.LHX1Y2(X_A, X_B)
-        polar += self.LHX1Y2(X_B, X_A)
-        return polar
-
-    def _so_linresp_sym(self, A, X_A, B, X_B):
-        o, v = self.ccwfn.o, self.ccwfn.v
-        contract = self.contract
-        ERI = self.H.ERI
-        # <0|(1+L)[ABAR,X_B]|0> + <0|(1+L)[BBAR,X_A]|0>
-        polar = self.LCX(A, X_B) + self.LCX(B, X_A)
-        # <0|[[HBAR,X1_A],X1_B]|0>
-        polar += contract('ijab,ia,jb->', ERI[o,o,v,v], X_A[0], X_B[0])
-        # <0|L[[HBAR,X1_A],X1_B]|0>
-        polar += self.LHX1Y1(X_A, X_B)
-        # <0|L[[HBAR,X2_A],X2_B]|0>
-        polar += self.LHX2Y2(X_A, X_B)
-        # <0|L[[HBAR,X1_A],X2_B]|0>
-        polar += self.LHX1Y2(X_A, X_B)
-        # <0|L[[HBAR,X1_B],X2_A]|0>
-        polar += self.LHX1Y2(X_B, X_A)
-
-        if self.ccwfn.model == 'CC3':
-            # CC3 connected-triples contributions to the symmetric response
-            # function (X3 = X[2] is the perturbed triples). socc linresp CC3 block.
-            polar += self._so_LCX_CC3(A, X_B) + self._so_LCX_CC3(B, X_A)
-            polar += self._so_L2HX1Y3_CC3(X_A, X_B) + self._so_L2HX1Y3_CC3(X_B, X_A)
-            polar += self._so_L3HX1Y2_CC3(X_A, X_B) + self._so_L3HX1Y2_CC3(X_B, X_A)
-            polar += self._so_L3HX1Y1T2_CC3(X_A, X_B)
-
-        return polar
-
     def _so_LCX_CC3(self, pert, X):
-        """CC3 triples contribution to the LCX term of the symmetric response
+        r"""CC3 triples contribution to the LCX term of the symmetric response
         function, <0|(1+L)[Abar,X]|0>. Port of socc LCX_CC3 (store_triples path).
 
         Returns the sum of the four sub-terms (socc component names in brackets)::
@@ -926,6 +1479,13 @@ class ccresponse(object):
           <0|L3[C^,X3]|0>       (L3CX3)
           <0|L3[[C,X1],T3]|0>   (L3CX1T3)
           <0|L3[[C,X2],T2]|0>   (L3CX2T2)
+
+        .. math::
+
+            \begin{aligned}
+            \mathrm{LCX}^{\mathrm{CC3}} &= \langle 0|\Lambda_2 [C, X_3]|0\rangle + \langle 0|\Lambda_3 [\bar C, X_3]|0\rangle \\
+            &\quad + \langle 0|\Lambda_3 [[C, X_1], T_3]|0\rangle + \langle 0|\Lambda_3 [[C, X_2], T_2]|0\rangle
+            \end{aligned}
 
         where C = pert (similarity-transformed one-electron operator) and
         X = [X1, X2, X3] the right-hand perturbed wave function."""
@@ -1054,341 +1614,6 @@ class ccresponse(object):
         tmp = contract('ijkabc,abie->jkec', l3, tmp)
         polar += 0.5 * contract('jkec,jkec->', t2, tmp)
 
-        return polar
-
-    def LCX(self, pert, X):
-        """One-particle-density (LCX) term of the symmetric response function:
-        <0|(1+L)[Abar, X]|0>. (Diagram labels match _so_LCX; this is the same
-        quantity as the <0|(1+L)[Abar,X(B)]|0> contribution of linresp_asym (polar2).)
-
-        Notes
-        -----
-        Spin-adapted (spatial) form (repeated indices summed). A_* are the
-        similarity-transformed perturbation blocks (pert.Aov / Avv / Aoo / Avvvo /
-        Aovoo)::
-
-            LCX = 2 A_ia X1_ia                                         (diagram 1)
-                + l1_ia X1_ic A_ac - l1_ia X1_ka A_ki                  (diagrams 2, 3)
-                + l1_ia A_jb (2 X2_ijab - X2_ijba)                     (diagram 8)
-                + l2_ijbc A_bcaj X1_ia                                 (diagram 4)
-                - 1/2 l2_ijab A_kbij X1_ka - 1/2 l2_ijab A_kaji X1_kb  (diagram 5)
-                + 1/2 l2_ijab X2_ijac A_bc + 1/2 l2_ijab X2_ijcb A_ac  (diagram 6)
-                - 1/2 l2_ijab X2_kjab A_ki - 1/2 l2_ijab X2_kiba A_kj  (diagram 7)
-        """
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_LCX(pert, X)
-        # spin-adapted (spatial) LCX
-        contract = self.contract
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        X1, X2 = X[0], X[1]
-        # <0|[Abar, X1]|0>                                          (diagram 1)
-        polar = 2.0 * contract('ia,ia->', pert.Aov, X1)
-        # <0|L1[Abar, X1]|0>                                        (diagrams 2, 3)
-        tmp = contract('ia,ic->ac', l1, X1)
-        polar += contract('ac,ac->', tmp, pert.Avv)
-        tmp = contract('ia,ka->ik', l1, X1)
-        polar -= contract('ik,ki->', tmp, pert.Aoo)
-        # <0|L1[Abar, X2]|0>                                        (diagram 8)
-        tmp = contract('ia,jb->ijab', l1, pert.Aov)
-        polar += 2.0 * contract('ijab,ijab->', tmp, X2)
-        polar -= contract('ijab,ijba->', tmp, X2)
-        # <0|L2[Abar, X1]|0>                                        (diagrams 4, 5)
-        tmp = contract('ijbc,bcaj->ia', l2, pert.Avvvo)
-        polar += contract('ia,ia->', tmp, X1)
-        tmp = contract('ijab,kbij->ak', l2, pert.Aovoo)
-        polar -= 0.5 * contract('ak,ka->', tmp, X1)
-        tmp = contract('ijab,kaji->bk', l2, pert.Aovoo)
-        polar -= 0.5 * contract('bk,kb->', tmp, X1)
-        # <0|L2[Abar, X2]|0>                                        (diagrams 6, 7)
-        tmp = contract('ijab,kjab->ik', l2, X2)
-        polar -= 0.5 * contract('ik,ki->', tmp, pert.Aoo)
-        tmp = contract('ijab,kiba->jk', l2, X2)
-        polar -= 0.5 * contract('jk,kj->', tmp, pert.Aoo)
-        tmp = contract('ijab,ijac->bc', l2, X2)
-        polar += 0.5 * contract('bc,bc->', tmp, pert.Avv)
-        tmp = contract('ijab,ijcb->ac', l2, X2)
-        polar += 0.5 * contract('ac,ac->', tmp, pert.Avv)
-        return polar
-
-    def _so_LCX(self, pert, X):
-        contract = self.contract
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        X1, X2 = X[0], X[1]
-        polar = contract('ia,ia->', pert.Aov, X1)              # diagram 1
-        tmp = contract('ae,ie->ia', pert.Avv, X1)              # diagram 2
-        tmp -= contract('mi,ma->ia', pert.Aoo, X1)             # diagram 3
-        tmp += contract('me,imae->ia', pert.Aov, X2)           # diagram 8
-        polar += contract('ia,ia->', l1, tmp)
-        tmp = contract('abej,ie->ijab', pert.Avvvo, X1)        # diagram 4
-        tmp -= contract('mbij,ma->ijab', pert.Aovoo, X1)       # diagram 5
-        tmp += contract('be,ijae->ijab', pert.Avv, X2)         # diagram 6
-        tmp -= contract('mj,imab->ijab', pert.Aoo, X2)         # diagram 7
-        polar += 0.5 * contract('ijab,ijab->', l2, tmp)
-        return polar
-
-    def LHX1Y1(self, X, Y):
-        """X1*Y1 (LHX1Y1) term of the symmetric response function:
-        <0|L[[HBAR,X1],Y1]|0>. (Diagram labels match _so_LHX1Y1.)
-
-        Notes
-        -----
-        Spin-adapted (spatial) form (repeated indices summed). H_* are hbar blocks
-        (H_me = H_ov, H_amef = H_vovv, H_mnie = H_ooov, H_mnij = H_oooo,
-        H_abef = H_vvvv, H_mbej = H_ovvo, H_maje = H_ovov); L_mnef = 2<mn|ef> -
-        <mn|fe>; HvL_amef = 2 H_amef - H_amfe and HoL_mnie = 2 H_mnie - H_nmie are
-        the L-combinations of H_vovv / H_ooov. The singles enter through
-        tau_ijab = X1_ia Y1_jb + Y1_ia X1_jb (both orderings, since X1 != Y1)::
-
-            # l1-part (diagrams 1, 2, 7-10)
-            tmp_ia = -H_me tau_imea + HvL_amef tau_imef - HoL_mnie tau_mnae
-            # l2-part (diagrams 3-6, 11-14)
-            Z_fb   = 1/2 L_mnef tau_mneb
-            Z_nj   = 1/2 L_mnef tau_mjef
-            ring   = -tau_imea H_mbej - tau_imeb H_maje               (diagrams 5, 6)
-            tmp_ijab = 1/2 H_mnij X1_ma Y1_nb + 1/2 H_abef X1_ie Y1_jf
-                     - t2_ijaf Z_fb - t2_inab Z_nj + 1/2 ring_ijab
-            LHX1Y1 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
-        """
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_LHX1Y1(X, Y)
-        # spin-adapted (spatial) LHX1Y1
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        t2 = self.ccwfn.t2
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        L = self.H.L
-        X1, Y1 = X[0], Y[0]
-        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
-        # L1 part (diagrams 1-2, 7-10): naive Hov, L-combinations on Hvovv/Hooov
-        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2,3)
-        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0,1)
-        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)
-        tmp += contract('amef,imef->ia', HvL, tau)
-        tmp -= contract('mnie,mnae->ia', HoL, tau)
-        polar = contract('ia,ia->', l1, tmp)
-        # L2 part (diagrams 3-6, 11-14). The ring (diagrams 5,6) follows the
-        # _r_T2_ccsd t1*t1 disconnected ring, but with both singles orderings
-        # (X1(x)Y1 and Y1(x)X1, here folded into tau) since X1 != Y1 in general.
-        Zvv = 0.5 * contract('mnef,mneb->fb', L[o,o,v,v], tau)
-        Zoo = 0.5 * contract('mnef,mjef->nj', L[o,o,v,v], tau)
-        ring = (-contract('imea,mbej->ijab', tau, hbar.Hovvo)
-                - contract('imeb,maje->ijab', tau, hbar.Hovov))
-        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)
-        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)
-        tmp -= contract('ijaf,fb->ijab', t2, Zvv)
-        tmp -= contract('inab,nj->ijab', t2, Zoo)
-        tmp += 0.5 * ring
-        polar += 2.0 * contract('ijab,ijab->', l2, tmp)
-        return polar
-
-    def _so_LHX1Y1(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        t2 = self.ccwfn.t2
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        ERI = self.H.ERI
-        X1, Y1 = X[0], Y[0]
-        tau = contract('ia,jb->ijab', X1, Y1) + contract('ia,jb->ijab', Y1, X1)
-        tmp = -1.0 * contract('me,imea->ia', hbar.Hov, tau)        # diagrams 1 and 2
-        tmp += contract('amef,imef->ia', hbar.Hvovv, tau)          # diagrams 7 and 8
-        tmp -= contract('mnie,mnae->ia', hbar.Hooov, tau)          # diagrams 9 and 10
-        polar = contract('ia,ia->', l1, tmp)
-        Zvv = 0.5 * contract('mnef,mneb->fb', ERI[o,o,v,v], tau)
-        Zoo = 0.5 * contract('mnef,mjef->nj', ERI[o,o,v,v], tau)
-        tmp = 0.5 * contract('mnij,ma,nb->ijab', hbar.Hoooo, X1, Y1)   # diagram 3
-        tmp += 0.5 * contract('abef,ie,jf->ijab', hbar.Hvvvv, X1, Y1)  # diagram 4
-        tmp -= contract('mbej,imea->ijab', hbar.Hovvo, tau)        # diagrams 5 and 6
-        tmp -= contract('ijaf,fb->ijab', t2, Zvv)                  # diagrams 11 and 12
-        tmp -= contract('inab,nj->ijab', t2, Zoo)                  # diagrams 13 and 14
-        polar += contract('ijab,ijab->', l2, tmp)
-        return polar
-
-    def LHX2Y2(self, X, Y):
-        """X2*Y2 (LHX2Y2) term of the symmetric response function:
-        <0|L[[HBAR,X2],Y2]|0>. (Diagram labels match _so_LHX2Y2.)
-
-        Notes
-        -----
-        Spin-adapted (spatial) form (repeated indices summed). <mn|ef> = ERI[o,o,v,v],
-        L_mnef = 2<mn|ef> - <mn|fe>; W_mbje[e<->j] swaps the last two axes; W_mbie is
-        W_mbje with j -> i. Diagram 1 is the particle-hole ring (the 1/2-weighted
-        W_mbej / W_mbje built from Y2, contracted with X2 through the _r_T2_ccsd
-        three-term ring); diagrams 2-7 are the oo/vv ladders, symmetrized over
-        X2 <-> Y2::
-
-            W_mbej = -1/2 Y2_jnfb <mn|ef> + 1/2 Y2_njfb L_mnef
-            W_mbje =  1/2 Y2_jnfb <mn|fe>
-            tmp_ijab = (X2_imae - X2_imea) W_mbej + X2_imae (W_mbej + W_mbje[e<->j])
-                     + X2_mjae W_mbie                                   (diagram 1)
-                     + 1/2 (1/2 <mn|ef> X2_ijef) Y2_mnab
-                     + 1/2 (1/2 <mn|ef> Y2_ijef) X2_mnab               (diagrams 2, 3)
-                     + 1/2 (-L_mnef Y2_mnbf) X2_ijae
-                     + 1/2 (-L_mnef X2_mnbf) Y2_ijae                   (diagrams 4, 6)
-                     + 1/2 (-L_mnef Y2_jnef) X2_imab
-                     + 1/2 (-L_mnef X2_jnef) Y2_imab                   (diagrams 5, 7)
-            LHX2Y2 = 2 l2_ijab tmp_ijab
-        """
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_LHX2Y2(X, Y)
-        # spin-adapted (spatial) LHX2Y2
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l2 = self.cclambda.l2
-        ERI = self.H.ERI[o, o, v, v]
-        L = self.H.L[o, o, v, v]
-        X2, Y2 = X[1], Y[1]
-        # diagram 1 (ph-ring): the T2-equation Wmbej/Wmbje intermediates (the 1/2-
-        # weighted ones from build_Wmbej/build_Wmbje) built from Y2, contracted with X2
-        # via the three-term _r_T2_ccsd ring.
-        Wmbej = -0.5 * contract('jnfb,mnef->mbej', Y2, ERI) + 0.5 * contract('njfb,mnef->mbej', Y2, L)
-        Wmbje = 0.5 * contract('jnfb,mnfe->mbje', Y2, ERI)
-        tmp = contract('imae,mbej->ijab', X2 - X2.swapaxes(2,3), Wmbej)
-        tmp += contract('imae,mbej->ijab', X2, Wmbej + Wmbje.swapaxes(2,3))
-        tmp += contract('mjae,mbie->ijab', X2, Wmbje)
-        # diagrams 2,3 (oo ladder)
-        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, X2), Y2)
-        tmp += 0.5 * contract('mnij,mnab->ijab', 0.5 * contract('mnef,ijef->mnij', ERI, Y2), X2)
-        # diagrams 4,6 (vv ladder)
-        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, Y2), X2)
-        tmp += 0.5 * contract('eb,ijae->ijab', -contract('mnef,mnbf->eb', L, X2), Y2)
-        # diagrams 5,7 (oo ladder)
-        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, Y2), X2)
-        tmp += 0.5 * contract('mj,imab->ijab', -contract('mnef,jnef->mj', L, X2), Y2)
-        return 2.0 * contract('ijab,ijab->', l2, tmp)
-
-    def _so_LHX2Y2(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l2 = self.cclambda.l2
-        ERI = self.H.ERI
-        X2, Y2 = X[1], Y[1]
-        Zovvo = contract('mnef,njfb->mbej', ERI[o,o,v,v], Y2)
-        Zoooo_A = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], X2)
-        Zoooo_B = 0.25 * contract('mnef,ijef->mnij', ERI[o,o,v,v], Y2)
-        Zvv_A = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], Y2)
-        Zvv_B = -0.5 * contract('mnef,mnbf->eb', ERI[o,o,v,v], X2)
-        Zoo_A = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], Y2)
-        Zoo_B = -0.5 * contract('mnef,jnef->mj', ERI[o,o,v,v], X2)
-        tmp = contract('mbej,imae->ijab', Zovvo, X2)              # diagram 1
-        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_A, Y2)    # diagram 2
-        tmp += 0.25 * contract('mnij,mnab->ijab', Zoooo_B, X2)    # diagram 3
-        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_A, X2)         # diagram 4
-        tmp += 0.5 * contract('eb,ijae->ijab', Zvv_B, Y2)         # diagram 6
-        tmp += 0.5 * contract('mj,imab->ijab', Zoo_A, X2)         # diagram 5
-        tmp += 0.5 * contract('mj,imab->ijab', Zoo_B, Y2)         # diagram 7
-        return contract('ijab,ijab->', l2, tmp)
-
-    def LHX1Y2(self, X, Y):
-        """X1*Y2 (LHX1Y2) term of the symmetric response function:
-        <0|L[[HBAR,X1],Y2]|0>. (Diagram labels match _so_LHX1Y2.)
-
-        Notes
-        -----
-        Spin-adapted (spatial) form (repeated indices summed). X1 = X[0], Y2 = Y[1];
-        H_me = H_ov, and H_bmfe / H_bmef are the H_vovv block while H_nmje / H_mnje /
-        H_mnie are the H_ooov block (read with the index slots shown); L_mnef =
-        2<mn|ef> - <mn|fe>; HvL_amef = 2 H_amef - H_amfe, HoL_mnie = 2 H_mnie -
-        H_nmie, Y2L_ijab = 2 Y2_ijab - Y2_ijba. The l2-part voov ring (diagrams 6, 8)
-        is the _r_T2_ccsd three-term ring with X1-dressed ph intermediates W_mbej /
-        W_mbje (W_mbje[e<->j] swaps the last two axes; W_mbie is W_mbje with j -> i)
-        and Y2 as the external doubles::
-
-            # l1-part
-            Z_nf  = L_mnef X1_me
-            Z_ea  = -L_mnef Y2_mnaf
-            Z_mi  = -L_mnef Y2_inef
-            tmp_ia = Z_nf Y2L_nifa + Z_ea X1_ie + Z_mi X1_ma           (diagrams 3, 4, 5)
-            # l2-part
-            Z_mi   = H_me X1_ie + HoL_mnie X1_ne
-            Z_ea   = H_me X1_ma - HvL_amef X1_mf
-            Z_mnij = H_mnie X1_je
-            Z_ijam = H_amef Y2_ijef
-            tmp_ijab = -1/2 Z_mi Y2_mjab - 1/2 Z_ea Y2_ijeb           (diagrams 1/7, 2/9)
-                     + 1/2 Z_mnij Y2_mnab - 1/2 Z_ijam X1_mb          (diagrams 10, 11)
-            W_mbej =  X1_jf H_bmfe - X1_nb H_nmje
-            W_mbje = -X1_jf H_bmef + X1_nb H_mnje
-            ring = (Y2_imae - Y2_imea) W_mbej + Y2_imae (W_mbej + W_mbje[e<->j])
-                 + Y2_mjae W_mbie                                      (diagrams 6, 8)
-            tmp_ijab += 1/2 ring_ijab
-            LHX1Y2 = l1_ia tmp_ia + 2 l2_ijab tmp_ijab
-        """
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            return self._so_LHX1Y2(X, Y)
-        # spin-adapted (spatial) LHX1Y2
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        L = self.H.L[o, o, v, v]
-        X1, Y2 = X[0], Y[1]
-        HvL = 2.0 * hbar.Hvovv - hbar.Hvovv.swapaxes(2, 3)
-        HoL = 2.0 * hbar.Hooov - hbar.Hooov.swapaxes(0, 1)
-        Y2L = 2.0 * Y2 - Y2.swapaxes(2, 3)
-        # l1-part (diagrams 3,4,5)
-        Zov = contract('mnef,me->nf', L, X1)                       # L3
-        tmp1 = contract('nf,nifa->ia', Zov, Y2L)
-        Zvv = -contract('mnef,mnaf->ea', L, Y2)                    # L4
-        tmp1 += contract('ea,ie->ia', Zvv, X1)
-        Zoo = -contract('mnef,inef->mi', L, Y2)                    # L5
-        tmp1 += contract('mi,ma->ia', Zoo, X1)
-        polar = contract('ia,ia->', l1, tmp1)
-        # l2-part (diagrams 1,2,6,7,8,9,10,11)
-        Zoo = contract('me,ie->mi', hbar.Hov, X1) + contract('mnie,ne->mi', HoL, X1)
-        tmp2 = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)          # L1_7
-        Zvv = contract('me,ma->ea', hbar.Hov, X1) - contract('amef,mf->ea', HvL, X1)
-        tmp2 += -0.5 * contract('ea,ijeb->ijab', Zvv, Y2)        # L2_9
-        Zoooo = contract('mnie,je->mnij', hbar.Hooov, X1)         # L10
-        tmp2 += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)
-        Zoovo = contract('amef,ijef->ijam', hbar.Hvovv, Y2)       # L11
-        tmp2 += -0.5 * contract('ijam,mb->ijab', Zoovo, X1)
-        # L6_8 (voov ring, diagrams 6,8): one ph ring, structurally the LHX2Y2-D1
-        # three-term ring with the X1-dressed ph intermediate (both Hvovv and Hooov
-        # dressings, mirroring build_Hovvo/build_Hovov) and Y2 as external doubles.
-        Wmbej = contract('jf,bmfe->mbej', X1, hbar.Hvovv) - contract('nb,nmje->mbej', X1, hbar.Hooov)
-        Wmbje = -contract('jf,bmef->mbje', X1, hbar.Hvovv) + contract('nb,mnje->mbje', X1, hbar.Hooov)
-        ring = contract('imae,mbej->ijab', Y2 - Y2.swapaxes(2, 3), Wmbej)
-        ring += contract('imae,mbej->ijab', Y2, Wmbej + Wmbje.swapaxes(2, 3))
-        ring += contract('mjae,mbie->ijab', Y2, Wmbje)
-        tmp2 += 0.5 * ring
-        polar += 2.0 * contract('ijab,ijab->', l2, tmp2)
-        return polar
-
-    def _so_LHX1Y2(self, X, Y):
-        contract = self.contract
-        o, v = self.ccwfn.o, self.ccwfn.v
-        l1 = self.cclambda.l1
-        l2 = self.cclambda.l2
-        hbar = self.hbar
-        ERI = self.H.ERI
-        X1, Y2 = X[0], Y[1]
-        Zov = contract('mnef,me->nf', ERI[o,o,v,v], X1)
-        Zvv = -0.5 * contract('mnef,mnaf->ea', ERI[o,o,v,v], Y2)
-        Zoo = -0.5 * contract('mnef,inef->mi', ERI[o,o,v,v], Y2)
-        tmp = contract('nf,nifa->ia', Zov, Y2)                    # diagram 3
-        tmp += contract('ea,ie->ia', Zvv, X1)                     # diagram 4
-        tmp += contract('mi,ma->ia', Zoo, X1)                     # diagram 5
-        polar = contract('ia,ia->', l1, tmp)
-        Zoo = contract('me,ie->mi', hbar.Hov, X1)
-        Zoo += contract('mnie,ne->mi', hbar.Hooov, X1)
-        Zvv = contract('me,ma->ea', hbar.Hov, X1)
-        Zvv -= contract('amef,mf->ea', hbar.Hvovv, X1)
-        Zvoov = contract('anfe,if->anie', hbar.Hvovv, X1)
-        Zvoov -= contract('mnie,ma->anie', hbar.Hooov, X1)
-        Zoooo = 0.5 * contract('mnie,je->mnij', hbar.Hooov, X1)
-        Zoovo = 0.5 * contract('amef,ijef->ijam', hbar.Hvovv, Y2)
-        tmp = -0.5 * contract('mi,mjab->ijab', Zoo, Y2)           # diagrams 1 and 7
-        tmp -= 0.5 * contract('ea,ijeb->ijab', Zvv, Y2)           # diagrams 2 and 9
-        tmp += contract('anie,njeb->ijab', Zvoov, Y2)             # diagrams 6 and 8
-        tmp += 0.5 * contract('mnij,mnab->ijab', Zoooo, Y2)       # diagram 10
-        tmp -= 0.5 * contract('ijam,mb->ijab', Zoovo, X1)         # diagram 11
-        polar += contract('ijab,ijab->', l2, tmp)
         return polar
 
     # ==================================================================
@@ -1532,6 +1757,37 @@ class ccresponse(object):
                 self.Y1, self.Y2 = diis.extrapolate(self.Y1, self.Y2)
 
     def in_Y1(self, pertbar, X1, X2):
+        r"""Inhomogeneous (frequency-independent) source im_Y1 for the left-hand
+        perturbed singles equation (RHF/spatial). Built once per perturbation from
+        the ground-state Lambda (l1, l2), the similarity-transformed perturbation
+        Abar (pertbar), and the converged right-hand amplitudes X1, X2; r_Y1 then
+        adds the homogeneous Hbar . Y part each iteration.
+
+        Notes
+        -----
+        im_Y1 is the projection onto singles of (1 + Lambda) acting on the perturbed
+        Hamiltonian, organized as the sum of eight connected matrix elements (the
+        groupings that label the code below)::
+
+            im_Y1_ia = <0|Abar|phi^a_i>              (bare perturbation, 2 Abar_ia)
+                     + <0|L1|Abar|phi^a_i>           (Aoo, Avv contracted with l1)
+                     + <0|L2|Abar|phi^a_i>           (Avvvo, Aovoo contracted with l2)
+                     + <0|[Hbar,X1]|phi^a_i>         (2 L_imae X1_me)
+                     + <0|L1|[Hbar,X1]|phi^a_i>      (Hov/Hooov/Hvovv . l1 . X1)
+                     + <0|L1|[Hbar,X2]|phi^a_i>      (L_oovv . l1 . X2, with Goo/Gvv)
+                     + <0|L2|[Hbar,X1]|phi^a_i>      (Hovov/Hovvo/Hvvvv/Hoooo . l2 . X1)
+                     + <0|L2|[Hbar,X2]|phi^a_i>      (Hov/Hvovv/Hooov . l2 . X2, Goo/Gvv)
+
+        .. math::
+
+            \Xi^{a}_{i} = \langle\Phi^{a}_{i}|(1+\Lambda)\,\bar{A}|0\rangle
+                + \langle\Phi^{a}_{i}|(1+\Lambda)\,[\bar{H}, X]|0\rangle,
+                \qquad X = X_1 + X_2
+
+        The explicit spin-adapted contractions for each block are in the body
+        (grouped by the comments above); build_Goo/build_Gvv are the lambda
+        intermediates.
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -1541,7 +1797,7 @@ class ccresponse(object):
         t2 = self.ccwfn.t2
         hbar = self.hbar
         L = self.H.L
- 
+
         # <O|A_bar|phi^a_i> good
         r_Y1 = 2.0 * pertbar.Aov.copy()
         # <O|L1(0)|A_bar|phi^a_i> good
@@ -1650,10 +1906,42 @@ class ccresponse(object):
         return r_Y1
 
     def r_Y1(self, pertbar, omega):
+        r"""Left-hand (bra) perturbed singles residual r_Y1 (RHF/spatial). The
+        left-response solver drives r_Y1 -> 0 via Y1 += r_Y1/(D_ia + w). The
+        frequency-independent inhomogeneous source im_Y1 is built once by in_Y1;
+        the remaining terms are the homogeneous Hbar . Y contribution. Gvv/Goo
+        are the lambda intermediates build_Gvv(t2, Y2), build_Goo(t2, Y2).
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); im_Y1 denotes the
+        inhomogeneous source, Hbar_* the hbar blocks, w the frequency::
+
+            r_Y1_ia = im_Y1_ia + w Y1_ia
+                    + Y1_ie Hbar_ea - Hbar_im Y1_ma
+                    + 2 Hbar_ieam Y1_me - Hbar_iema Y1_me
+                    + Y2_imef Hbar_efam - Hbar_iemn Y2_mnae
+                    - (2 Hbar_eifa - Hbar_eiaf) Gvv_ef
+                    - (2 Hbar_mina - Hbar_imna) Goo_mn
+
+        .. math::
+
+            \begin{aligned}
+            r^{a}_{i} &= \Xi^{a}_{i} + \omega Y^{a}_{i}
+                + Y^{e}_{i}\bar{H}_{ea} - \bar{H}_{im} Y^{a}_{m}
+                + 2\bar{H}_{ieam} Y^{e}_{m} - \bar{H}_{iema} Y^{e}_{m} \\
+            &\quad + Y^{ef}_{im}\bar{H}_{efam} - \bar{H}_{iemn} Y^{ae}_{mn}
+                - (2\bar{H}_{eifa} - \bar{H}_{eiaf}) G_{ef}
+                - (2\bar{H}_{mina} - \bar{H}_{imna}) G_{mn}
+            \end{aligned}
+
+        where :math:`\Xi^{a}_{i}` = im_Y1 and :math:`G_{ef}` = build_Gvv(t2, Y2),
+        :math:`G_{mn}` = build_Goo(t2, Y2).
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
-        Y1 = self.Y1 
+        Y1 = self.Y1
         Y2 = self.Y2
         l2 = self.cclambda.l2
         cclambda = self.cclambda
@@ -1683,6 +1971,35 @@ class ccresponse(object):
         return r_Y1
 
     def in_Y2(self, pertbar, X1, X2):
+        r"""Inhomogeneous (frequency-independent) source im_Y2 for the left-hand
+        perturbed doubles equation (RHF/spatial). Built once per perturbation from
+        the ground-state Lambda (l1, l2), the similarity-transformed perturbation
+        Abar (pertbar), and the converged right-hand amplitudes X1, X2. It is
+        stored unsymmetrized; r_Y2 adds the homogeneous part and applies the
+        P(ij,ab) symmetrizer.
+
+        Notes
+        -----
+        im_Y2 is the projection onto doubles of Lambda acting on the perturbed
+        Hamiltonian (the bare-reference contribution vanishes on double
+        projection), organized as five connected matrix elements (the groupings
+        that label the code below)::
+
+            im_Y2_ijab = <0|L1|Abar|phi^ab_ij>          (2 l1_ia Abar_jb - l1_ja Abar_ib)
+                       + <0|L2|Abar|phi^ab_ij>          (l2 . Avv, Aoo . l2)
+                       + <0|L1|[Hbar,X1]|phi^ab_ij>     (L_oovv . l1 . X1)
+                       + <0|L2|[Hbar,X1]|phi^ab_ij>     (Hov/Hvovv/Hooov . l2 . X1)
+                       + <0|L2|[Hbar,X2]|phi^ab_ij>     (ERI/L . l2 . X2, with Goo/Gvv)
+
+        .. math::
+
+            \Xi^{ab}_{ij} = \langle\Phi^{ab}_{ij}|\Lambda\big(\bar{A} + [\bar{H}, X]\big)|0\rangle,
+                \qquad X = X_1 + X_2
+
+        The explicit spin-adapted contractions for each block are in the body
+        (grouped by the comments above); build_Goo/build_Gvv are the lambda
+        intermediates.
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -1783,6 +2100,45 @@ class ccresponse(object):
         return r_Y2
 
     def r_Y2(self, pertbar, omega):
+        r"""Left-hand (bra) perturbed doubles residual r_Y2 (RHF/spatial). The
+        left-response solver drives r_Y2 -> 0 via Y2 += r_Y2/(D_ijab + w).
+        P(ij,ab) f_ijab = f_ijab + f_jiba restores the ijab<->jiba symmetry; the
+        w term carries a factor 1/2 because Y2_ijab = Y2_jiba is imposed by that
+        symmetrization. im_Y2 is the inhomogeneous source (built once by in_Y2).
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); L_mjab = 2<mj|ab> -
+        <mj|ba>, Gvv/Goo are build_Gvv(t2, Y2)/build_Goo(t2, Y2)::
+
+            r_Y2_ijab = P(ij,ab)[ im_Y2_ijab + 1/2 w Y2_ijab
+                      + 2 Y1_ia Hbar_jb - Y1_ja Hbar_ib
+                      + Y2_ijeb Hbar_ea - Hbar_im Y2_mjab
+                      + 1/2 Hbar_ijmn Y2_mnab + 1/2 Y2_ijef Hbar_efab
+                      + 2 Y1_ie Hbar_ejab - Y1_ie Hbar_ejba
+                      - 2 Y1_mb Hbar_jima + Y1_mb Hbar_ijma
+                      + 2 Hbar_ieam Y2_mjeb - Hbar_iema Y2_mjeb
+                      - Y2_mibe Hbar_jema - Y2_mieb Hbar_jeam
+                      + L_ijeb Gvv_ae - Goo_mi L_mjab ]
+
+        .. math::
+
+            \begin{aligned}
+            r^{ab}_{ij} &= \mathcal{P}(ij,ab)\Big[ \Xi^{ab}_{ij} + \tfrac{1}{2}\omega Y^{ab}_{ij}
+                + 2 Y^{a}_{i}\bar{H}_{jb} - Y^{a}_{j}\bar{H}_{ib}
+                + Y^{eb}_{ij}\bar{H}_{ea} - \bar{H}_{im} Y^{ab}_{mj} \\
+            &\quad + \tfrac{1}{2}\bar{H}_{ijmn} Y^{ab}_{mn} + \tfrac{1}{2} Y^{ef}_{ij}\bar{H}_{efab}
+                + 2 Y^{e}_{i}\bar{H}_{ejab} - Y^{e}_{i}\bar{H}_{ejba}
+                - 2 Y^{b}_{m}\bar{H}_{jima} + Y^{b}_{m}\bar{H}_{ijma} \\
+            &\quad + 2\bar{H}_{ieam} Y^{eb}_{mj} - \bar{H}_{iema} Y^{eb}_{mj}
+                - Y^{be}_{mi}\bar{H}_{jema} - Y^{eb}_{mi}\bar{H}_{jeam}
+                + L_{ijeb} G_{ae} - G_{mi} L_{mjab} \Big]
+            \end{aligned}
+
+        where :math:`\Xi^{ab}_{ij}` = im_Y2, :math:`\mathcal{P}(ij,ab) f_{ijab} =
+        f_{ijab} + f_{jiba}`, and :math:`G_{ae}` = build_Gvv(t2, Y2),
+        :math:`G_{mi}` = build_Goo(t2, Y2).
+        """
         contract = self.contract
         o = self.ccwfn.o
         v = self.ccwfn.v
@@ -1826,6 +2182,40 @@ class ccresponse(object):
 
 
 class pertbar(object):
+    r"""Similarity-transformed one-electron perturbation Abar = e^{-T} A e^{T}
+    (connected), stored block by block for use as the source in the perturbed
+    CC response equations (solve_right, in_Y1/in_Y2).
+
+    Notes
+    -----
+    Spin-adapted (spatial, RHF) form below; the spin-orbital branch drops the
+    RHF combination (2 t2 - t2') -> t2 and stores the fully antisymmetric
+    Avvoo directly::
+
+        Aov_ia     = A_ia
+        Aoo_mi     = A_mi + t_ie A_me
+        Avv_ae     = A_ae - t_ma A_me
+        Avo_ai     = A_ai + t_ie A_ae - t_ma A_mi
+                   + (2 t2_miea - t2_miae) A_me - t_ie t_ma A_me
+        Aovoo_mbij = t2_ijeb A_me
+        Avvvo_abei = -t2_miab A_me
+        Avvoo_ijab = P(ij,ab)[ t2_ijeb Avv_ae - t2_mjab Aoo_mi ]
+
+    .. math::
+
+        \begin{aligned}
+        \bar{A}_{ia} &= A_{ia}, \qquad \bar{A}_{mi} = A_{mi} + t^{e}_{i} A_{me},
+            \qquad \bar{A}_{ae} = A_{ae} - t^{a}_{m} A_{me} \\
+        \bar{A}_{ai} &= A_{ai} + t^{e}_{i} A_{ae} - t^{a}_{m} A_{mi}
+            + (2 t^{ea}_{mi} - t^{ae}_{mi}) A_{me} - t^{e}_{i} t^{a}_{m} A_{me} \\
+        \bar{A}_{mbij} &= t^{eb}_{ij} A_{me}, \qquad \bar{A}_{abei} = -t^{ab}_{mi} A_{me} \\
+        \bar{A}^{ab}_{ij} &= \mathcal{P}(ij,ab)\big[ t^{eb}_{ij}\bar{A}_{ae}
+            - t^{ab}_{mj}\bar{A}_{mi} \big]
+        \end{aligned}
+
+    where :math:`\mathcal{P}(ij,ab) f_{ijab} = f_{ijab} + f_{jiba}`. For CC3 the
+    ground-state T3 adds :math:`t^{abc}_{ijk} A_{kc}` to Avvoo.
+    """
     def __init__(self, pert: Tensor, ccwfn: "CCwfn") -> None:
         o = ccwfn.o
         v = ccwfn.v
@@ -1900,10 +2290,13 @@ class _PertbarCache(dict):
     pertbar construction so a response function only builds the operators it uses,
     instead of building all of them (MU, M, M*, P, P*, Q) in the constructor."""
     def __init__(self, owner):
+        """Initialize an empty cache bound to its owning ccresponse instance."""
         super().__init__()
         self._owner = owner
 
     def __missing__(self, key):
+        """Build the requested pertbar on first access via the owner's
+        _build_pertbar, cache it under ``key``, and return it."""
         value = self._owner._build_pertbar(key)
         self[key] = value
         return value
