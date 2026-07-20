@@ -431,21 +431,30 @@ class rtcc(object):
 
     def autocorrelation(self, y_left: Tensor, y_right: Tensor):
         r"""Autocorrelation function ``A(t1, t2) = <Psi(t1)|Psi(t2)>``, Eq. (18) of J. Chem. Phys.
-        150, 144106 (2019).  Symmetrized over the two time points as ``1/2 A + 1/2 conj(B)``, where
-        ``B`` is ``A`` with the left/right amplitudes swapped; ``A`` is (repeated indices summed)::
+        150, 144106 (2019), symmetrized over the two time points as ``1/2 A + 1/2 conj(B)`` (repeated
+        indices summed; ``(l)``/``(r)`` label the left/right time points)::
 
             A = [ 1 + l1_l (t1_r - t1_l) + 1/2 l2_l (t2_r - t2_l)
-                    + 1/2 l2_l t1_l t1_l + 1/2 l2_l t1_r t1_r - l2_l t1_l t1_r ]
-                * exp(-phase_l) exp(phase_r)
+                    + 1/2 l2_l t1_l t1_l + 1/2 l2_l t1_r t1_r - l2_l t1_l t1_r ] exp(-phase_l) exp(phase_r)
+            B = [ 1 - l1_r (t1_r - t1_l) - 1/2 l2_r (t2_r - t2_l)
+                    + 1/2 l2_r t1_r t1_r + 1/2 l2_r t1_l t1_l - l2_r t1_l t1_r ] exp(-phase_r) exp(phase_l)
+            A(t1,t2) = 1/2 A + 1/2 conj(B)
 
         .. math::
 
-            A = \Big[ 1 + \lambda^{(l)}_{ia}(t^{(r)}_{ia} - t^{(l)}_{ia})
-                + \tfrac{1}{2}\lambda^{(l)}_{ijab}(t^{(r)}_{ijab} - t^{(l)}_{ijab})
-                + \tfrac{1}{2}\lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(l)}_{jb}
+            \begin{aligned}
+            A &= \Big[ 1 + \lambda^{(l)}_{ia}(t^{(r)}_{ia} - t^{(l)}_{ia})
+                + \tfrac{1}{2}\lambda^{(l)}_{ijab}(t^{(r)}_{ijab} - t^{(l)}_{ijab}) \\
+              &\qquad + \tfrac{1}{2}\lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(l)}_{jb}
                 + \tfrac{1}{2}\lambda^{(l)}_{ijab} t^{(r)}_{ia} t^{(r)}_{jb}
-                - \lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(r)}_{jb} \Big]\,
-                e^{-\phi_l}\, e^{\phi_r}
+                - \lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(r)}_{jb} \Big]\, e^{-\phi_l} e^{\phi_r} \\
+            B &= \Big[ 1 - \lambda^{(r)}_{ia}(t^{(r)}_{ia} - t^{(l)}_{ia})
+                - \tfrac{1}{2}\lambda^{(r)}_{ijab}(t^{(r)}_{ijab} - t^{(l)}_{ijab}) \\
+              &\qquad + \tfrac{1}{2}\lambda^{(r)}_{ijab} t^{(r)}_{ia} t^{(r)}_{jb}
+                + \tfrac{1}{2}\lambda^{(r)}_{ijab} t^{(l)}_{ia} t^{(l)}_{jb}
+                - \lambda^{(r)}_{ijab} t^{(l)}_{ia} t^{(r)}_{jb} \Big]\, e^{-\phi_r} e^{\phi_l} \\
+            A(t_1,t_2) &= \tfrac{1}{2} A + \tfrac{1}{2}\,\overline{B}
+            \end{aligned}
 
         Parameters
         ----------
