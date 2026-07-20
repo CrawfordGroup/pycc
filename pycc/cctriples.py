@@ -646,10 +646,11 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
 # Useful for RT-CC3
 # Additional term in T3 equation when an external perturbation is present
 def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
-    r"""Field / real-time perturbation coupling of the T3 amplitudes (the ``[V,T2].T2`` term),
-    fixed i,j,k.  In the field-perturbed / real-time (T) the connected T3 is corrected by this
-    contribution (``t3 -= t3_pert``); ``V`` is the (dipole) perturbation operator.  Divided by
-    the orbital-energy denominator D_ijkabc::
+    r"""Perturbation coupling of the T3 amplitudes (the ``[V,T2].T2`` term), fixed i,j,k.  Valid
+    for any real (Hermitian) one-electron perturbation ``V`` -- electric field, nuclear
+    displacement, etc. -- not electric fields specifically.  In the perturbed / real-time (T)
+    the connected T3 is corrected by this contribution (``t3 -= t3_pert``).  Divided by the
+    orbital-energy denominator D_ijkabc::
 
         t3_ijkabc = V_ld t2_ijad t2_klcb
 
@@ -1019,11 +1020,48 @@ def t_invariant_so(o, v, t1, t2, F, ERI, contract, e_conv=1e-11, maxiter=100):
 # delegates and caches the returned intermediates on the wfn for cclambda/ccdensity.
 
 def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
-    """(T) density/Lambda intermediates, spatial-orbital spin-adapted closed-shell RHF.
+    r"""(T) density/Lambda intermediates, spatial-orbital spin-adapted closed-shell RHF.
 
     Returns (ET, intermediates), where ET is the (T) energy correction and
     intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
     Gvvvo, S1, S2} that the caller caches on the wavefunction.
+
+    Notes
+    -----
+    Built per-(i,j,k) from the connected T3 ``M3`` (:func:`t3c_ijk`) and disconnected T3 ``N3``
+    (:func:`t3d_ijk`), with the spin-adapted symmetrizers below (a,b,c the three virtual axes;
+    repeated indices summed over the i,j,k loop).  Full derivation in
+    ``docs/ccsdt_t_density.tex`` and the appendix Table:ccsdt_1pdm/2pdm of
+    ``docs/cc_gradients_orbital_response.tex``::
+
+        sym(A)_abc = 8 A_abc - 4 A_bac - 4 A_acb - 4 A_cba + 2 A_bca + 2 A_cab
+        X3 = sym(M3),  Y3 = sym(N3)
+        Z3_abc = 2 (M3_abc - M3_acb) - (M3_bac - M3_cab)
+
+        # one-particle (T) increments (Doo/Dvv diagonal in the canonical basis)
+        Dvv_aa =  1/2 M3_acd (X3+Y3)_acd
+        Doo_ii = -1/2 M3_abc (X3+Y3)_abc
+        Dov_ia = (M3_abc - M3_cba) (4 t2_jkbc - 2 t2_jkcb)
+
+        # two-particle (T) increments
+        Goovv_ijab = 4 t1_kc Z3_abc
+        Gooov_jila = -(2 X3 + Y3)_abc t2_lkbc
+        Gvvvo_abdj = (2 X3 + Y3)_abc t2_kicd
+
+        # Lambda-1/2 (T) sources (S2 antisymmetrized S2 += S2.T afterward) and (T) energy
+        S1_ia   = 2 (M3_abc - M3_bac) L_jkbc
+        S2_ilab = -(2 X3 + Y3)_abc <jk|lc> + (2 X3 + Y3)_abc <dk|cb>
+        ET      = t1_ia S1_ia + (4 t2 - 2 t2.swap)_ijab X2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        \mathrm{sym}(A)_{abc} &= 8 A_{abc} - 4 A_{bac} - 4 A_{acb} - 4 A_{cba} + 2 A_{bca} + 2 A_{cab},\quad X_3 = \mathrm{sym}(M_3),\ Y_3 = \mathrm{sym}(N_3) \\
+        D^{(T)}_{aa} &= \tfrac{1}{2} M_{3,acd}(X_3+Y_3)_{acd}, \qquad D^{(T)}_{ii} = -\tfrac{1}{2} M_{3,abc}(X_3+Y_3)_{abc} \\
+        D^{(T)}_{ia} &= (M_{3,abc} - M_{3,cba})(4 t^{bc}_{jk} - 2 t^{cb}_{jk}) \\
+        \Gamma^{(T)}_{ijab} &= 4\, t^c_k Z_{3,abc}, \quad \Gamma^{(T)}_{jila} = -(2X_3+Y_3)_{abc} t^{bc}_{lk}, \quad \Gamma^{(T)}_{abdj} = (2X_3+Y_3)_{abc} t^{cd}_{ki} \\
+        S^a_i &= 2 (M_{3,abc} - M_{3,bac}) L_{jkbc}
+        \end{aligned}
     """
     dvv = np.zeros(nv, dtype=t2.dtype)   # diagonal of the (T) vir-vir 1-PDM (see below)
     doo = np.zeros(no, dtype=t2.dtype)   # diagonal of the (T) occ-occ 1-PDM; dtype-propagating for complex-step
@@ -1087,11 +1125,34 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
 
 
 def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract):
-    """Analytic field response of the spatial (closed-shell RHF) (T) intermediates -- the
-    product-rule derivative of :func:`t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``
-    with **canonical** perturbed orbitals.  Returns ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}``
+    r"""Analytic response of the spatial (closed-shell RHF) (T) intermediates to any real
+    (Hermitian) perturbation (electric field, nuclear displacement, etc.) -- the product-rule
+    derivative of :func:`t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)`` with
+    **canonical** perturbed orbitals.  Returns ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}``
     (the spatial route has no ``Gvovv``/``Govoo``).  Verified to ~1e-16 against a complex-step
-    derivative of :func:`t3_density`."""
+    derivative of :func:`t3_density`.
+
+    Notes
+    -----
+    Every :func:`t3_density` contraction is differentiated by the product rule.  The perturbed
+    T3 batches use the differentiated numerators ``dNc``/``dNd`` (each contract of the
+    :func:`t3c_ijk`/:func:`t3d_ijk` numerators with one factor replaced by its response, e.g.
+    dW.t2 + W.dt2) and the differentiated denominator ``ddenom = d_x(f_ii+f_jj+f_kk -
+    f_aa-f_bb-f_cc)``::
+
+        dM3 = (dNc - M3 . ddenom) / D_ijkabc
+        dN3 = (dNd - N3 . ddenom) / D_ijkabc
+
+    .. math::
+
+        \begin{aligned}
+        dM_3 &= \left(dN^{c}_{ijk} - M_3\, d D^{abc}_{ijk}\right) / D^{abc}_{ijk}, \qquad
+        dN_3 = \left(dN^{d}_{ijk} - N_3\, d D^{abc}_{ijk}\right) / D^{abc}_{ijk}
+        \end{aligned}
+
+    each intermediate of :func:`t3_density` then following as ``d(A B) = (dA) B + A (dB)`` with
+    ``dX3 = sym(dM3)``, ``dY3 = sym(dN3)``.
+    """
     ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
     dDov = np.zeros((no,nv), dtype=t2.dtype)
     dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
@@ -1149,11 +1210,47 @@ def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contrac
 
 
 def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
-    """(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
+    r"""(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
 
     Returns (ET, intermediates), where ET is the (T) energy correction and
     intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
     Gvovv, Govoo, Gvvvo, S1, S2} that the caller caches on the wavefunction.
+
+    Notes
+    -----
+    Built per-(i,j,k) from the connected T3 ``t3c`` (:func:`t3c_ijk_so`) and disconnected T3
+    ``t3d`` (:func:`t3d_ijk_so`); a,b,c/d,e are virtual, repeated indices summed over the
+    i,j,k loop.  The doubles intermediates ``x2``/``S2`` are antisymmetrized P(ij)P(ab) after
+    the loop.  Full derivation in ``docs/ccsdt_t_density.tex`` and the appendix
+    Table:ccsdt_1pdm/2pdm of ``docs/cc_gradients_orbital_response.tex``::
+
+        # one-particle (T) increments (Doo/Dvv diagonal in the canonical basis)
+        Dvv_aa =  1/12 (t3c + t3d)_abc t3c_abc
+        Doo_ii = -1/12 t3c_abc (t3c + t3d)_abc
+        Dov_ia =  1/4  t3c_ade t2_jkde
+
+        # two-particle (T) increments
+        Goovv_ijab =  t3c_abc t1_kc
+        Gooov_ijla = -1/2 t2_klbc t3c_abc
+        Gvovv_ciab =  1/2 t2_jkec t3c_abe
+        Govoo_laij = -1/2 t2_klbc (t3c + t3d)_abc
+        Gvvvo_abci =  1/2 (t3c + t3d)_abe t2_jkec
+
+        # Lambda-1/2 (T) sources (S2 antisymmetrized P(ij)P(ab) afterward) and (T) energy
+        S1_ia   = 1/4 t3c_abc <jk||bc>
+        S2_ijab = P(ij) P(ab) [ -1/4 <jk||md> (2 t3c + t3d)_abd + 1/4 (2 t3c + t3d)_ade <bk||de> ]
+        ET      = t1_ia S1_ia + 1/4 t2_ijab x2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        D^{(T)}_{aa} &= \tfrac{1}{12}\, (t_{3c}+t_{3d})_{abc}\, t_{3c,abc}, \qquad
+        D^{(T)}_{ii} = -\tfrac{1}{12}\, t_{3c,abc}\, (t_{3c}+t_{3d})_{abc} \\
+        D^{(T)}_{ia} &= \tfrac{1}{4}\, t_{3c,ade}\, t^{de}_{jk} \\
+        \Gamma^{(T)}_{ijab} &= t_{3c,abc}\, t^c_k, \quad \Gamma^{(T)}_{ijla} = -\tfrac{1}{2}\, t^{bc}_{kl}\, t_{3c,abc}, \quad \Gamma^{(T)}_{ciab} = \tfrac{1}{2}\, t^{ec}_{jk}\, t_{3c,abe} \\
+        \Gamma^{(T)}_{laij} &= -\tfrac{1}{2}\, t^{bc}_{kl}\, (t_{3c}+t_{3d})_{abc}, \quad \Gamma^{(T)}_{abci} = \tfrac{1}{2}\, (t_{3c}+t_{3d})_{abe}\, t^{ec}_{jk} \\
+        S^a_i &= \tfrac{1}{4}\, t_{3c,abc}\, \langle jk||bc \rangle
+        \end{aligned}
     """
     x2 = np.zeros_like(t2)
     dvv = np.zeros(nv, dtype=t2.dtype)          # dtype-propagating so complex-step works
@@ -1232,12 +1329,30 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
 
 
 def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
-    """Analytic field response of the spin-orbital (T) intermediates -- the product-rule
+    r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
+    perturbation (electric field, nuclear displacement, etc.) -- the product-rule
     derivative of :func:`so_t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri)`` with **canonical**
     perturbed orbitals (so the batched diagonal denominator's response is ``diag(df)``).  Returns
     ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvovv,Govoo,Gvvvo,S1,S2}``.  Each per-ijk triple response is
     ``dt3 = (dN - t3 dD)/D``; every intermediate is then the product rule of its contraction.
-    Verified to ~1e-16 against a complex-step derivative of :func:`so_t3_density`."""
+    Verified to ~1e-16 against a complex-step derivative of :func:`so_t3_density`.
+
+    Notes
+    -----
+    The perturbed connected/disconnected T3 batches (dN = the numerator of
+    :func:`t3c_ijk_so`/:func:`t3d_ijk_so` differentiated by the product rule, one factor at a
+    time; dD = the denominator response ``d_x(f_ii+f_jj+f_kk - f_aa-f_bb-f_cc) = diag(df)``)::
+
+        dt3 = (dN - t3 dD) / D_ijkabc
+
+    .. math::
+
+        \begin{aligned}
+        dt_3 = \left(dN_{ijk} - t_3\, dD^{abc}_{ijk}\right) / D^{abc}_{ijk}
+        \end{aligned}
+
+    and every :func:`so_t3_density` intermediate follows as ``d(A B) = (dA) B + A (dB)``.
+    """
     ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
     dDov = np.zeros((no,nv), dtype=t2.dtype)
     dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
