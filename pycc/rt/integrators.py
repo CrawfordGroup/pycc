@@ -1,5 +1,24 @@
-"""
-integrators.py: various ordinary differential equation solvers for time-domain propagation
+r"""
+integrators.py: one-step ODE integrators for real-time (time-domain) CC propagation.
+
+Each integrator is a callable object ``ODE = integrator(h)`` (``h`` = timestep) that advances the
+state one step, ``y_{n+1} = ODE(f, t_n, y_n)``, with ``f(t, y) = dy/dt`` supplied by
+:meth:`pycc.rt.rtcc.rtcc.f`.  The explicit members are Runge-Kutta methods -- one step evaluates a
+few stage derivatives and combines them with the method's Butcher coefficients::
+
+    k_i     = f(t + c_i h, y + h sum_j a_ij k_j)
+    y_{n+1} = y_n + h sum_i b_i k_i
+
+.. math::
+
+    k_i = f\Big(t + c_i h,\; y + h\textstyle\sum_j a_{ij} k_j\Big), \qquad
+    y_{n+1} = y_n + h\,\textstyle\sum_i b_i k_i
+
+with the nodes/weights ``(a_ij, b_i, c_i)`` fixed by each method (adaptive/embedded members carry a
+second weight set for error estimation; implicit members give the tableau but leave the per-step
+nonlinear solve to the caller).  Explicit, adaptive, and implicit families are provided (categorized
+below); ``rk4`` and ``ck`` (Cash-Karp) are the tested defaults for explicit and adaptive RT
+propagation.
 """
 
 __all__ = ['euler', 'midpoint', 'heun', 'rk2', 'rk3', 'rk38', 'rk4', 'hr', 'fehlberg', 'bs', 'ck', 'DOPRI5',
@@ -142,8 +161,22 @@ class rk3(object):
         return y_new
 
 class rk4(object):
-    """
-    Integrator object for Runge-Kutta 4th-order Runge-Kutta ODE propagation.
+    r"""Classical 4th-order Runge-Kutta integrator (the default RT propagator).  One step, with
+    ``f(t, y) = dy/dt`` and timestep ``h``::
+
+        k1 = f(t, y)
+        k2 = f(t + h/2, y + h/2 k1)
+        k3 = f(t + h/2, y + h/2 k2)
+        k4 = f(t + h,   y + h k3)
+        y_{n+1} = y_n + (h/6)(k1 + 2 k2 + 2 k3 + k4)
+
+    .. math::
+
+        \begin{aligned}
+        k_1 &= f(t, y), & k_2 &= f(t + \tfrac{h}{2},\, y + \tfrac{h}{2} k_1) \\
+        k_3 &= f(t + \tfrac{h}{2},\, y + \tfrac{h}{2} k_2), & k_4 &= f(t + h,\, y + h k_3) \\
+        y_{n+1} &= y_n + \tfrac{h}{6}(k_1 + 2 k_2 + 2 k_3 + k_4)
+        \end{aligned}
     """
     def __init__(self, h):
         self.h = float(h)

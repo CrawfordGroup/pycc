@@ -1,3 +1,7 @@
+"""rt/utils.py: signal-processing helpers for real-time CC spectra -- the discrete Fourier transform
+(:func:`FT`), time-domain denoising (:func:`denoise`) and damping (:func:`damp`), full-width
+half-max (:func:`FWHM`), and Pade approximants (:class:`Pade`) to the Fourier transform.
+"""
 import numpy as np
 from scipy.linalg import solve,toeplitz
 from scipy.fft import fft,fftfreq,ifft
@@ -6,8 +10,14 @@ from scipy.signal import find_peaks, peak_widths
 
 
 def FT(data,dt=1,norm=False,n=None):
-    """
-    Fast discrete Fourier transform through scipy's FFTPACK
+    r"""Fast discrete Fourier transform through scipy's FFTPACK (returns the positive-frequency
+    half; ``freq`` = ``fftfreq * 2 pi / dt``)::
+
+        F(omega) = sum_t f(t) exp(-i omega t)
+
+    .. math::
+
+        F(\omega) = \sum_t f(t)\, e^{-i \omega t}
 
     Parameters
     ----------
@@ -50,8 +60,16 @@ def FT(data,dt=1,norm=False,n=None):
 
 
 def denoise(f, filter_level, timestep):
-    """
-    Denoise a given signal in the time domain using fast fourier transform
+    r"""Denoise a time-domain signal via an FFT power-spectrum threshold: transform, zero the
+    frequency components whose power ``|fhat|^2 / N`` does not exceed ``filter_level``, then
+    inverse-transform::
+
+        fhat -> fhat * [ |fhat|^2 / N > filter_level ],   denoised = Re(IFFT(fhat))
+
+    .. math::
+
+        \hat{f} \to \hat{f}\,\big[\, |\hat{f}|^2/N > \mathrm{filter\_level} \,\big], \qquad
+        f_\mathrm{denoised} = \mathrm{Re}\,[\mathrm{IFFT}(\hat{f})]
 
     Parameters
     ----------
@@ -80,9 +98,13 @@ def denoise(f, filter_level, timestep):
 
 
 def damp(f, timestep, Tau):
-    """
-    Dampen a given signal in the time domain using the
-    equation: f*e^(-t*Tau), where t is the time domain.
+    r"""Dampen a time-domain signal by an exponential envelope::
+
+        damped(t) = f(t) exp(-t / Tau)
+
+    .. math::
+
+        \tilde{f}(t) = f(t)\, e^{-t / \tau}
 
     Parameters
     ----------
@@ -225,8 +247,14 @@ class Pade():
 
 
     def approx(self,o,norm=False):
-        """
-        approximate spectrum in range o (Eq29)
+        r"""Approximate the spectrum at frequencies ``o`` (Eq. 29) as the ratio of the two
+        polynomials built by :meth:`build`, evaluated at ``z = exp(-i o dt)``::
+
+            F(o) = P(z) / Q(z),   z = exp(-i o dt)
+
+        .. math::
+
+            F(\omega) = \frac{P(z)}{Q(z)}, \qquad z = e^{-i \omega\, dt}
 
         Parameters
         ----------
