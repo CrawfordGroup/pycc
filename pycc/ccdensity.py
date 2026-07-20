@@ -112,7 +112,7 @@ class ccdensity(object):
         print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
 
     def compute_energy(self) -> float:
-        """
+        r"""
         Compute the CC energy from the density.  If only onepdm is available, just compute the one-electron energy.
 
         Parameters
@@ -123,6 +123,31 @@ class ccdensity(object):
         -------
         ecc | float
             CC correlation energy computed using the one- and two-electron densities
+
+        Notes
+        -----
+        The correlation energy is the one- and two-particle densities contracted with the
+        MO-basis Fock matrix and two-electron integrals.  The one-electron term assumes the
+        Brillouin condition (canonical HF, so the ov Fock block drops); the two-particle term
+        uses the spin-adapted six-block spatial form or the antisymmetric ``1/4`` spin-orbital
+        form (repeated indices summed)::
+
+            E1 = F_ij D_ij + F_ab D_ab
+            E2 (spatial) = 1/2 <ij|kl> Gamma_ijkl + 1/2 <ab|cd> Gamma_abcd
+                         + <ij|ka> Gamma_ijka + <ab|ci> Gamma_abci
+                         + <ia|jb> Gamma_iajb + 1/2 <ij|ab> Gamma_ijab
+            E2 (so) = 1/4 <pq||rs> Gamma_pqrs
+            E_corr = E1 + E2
+
+        .. math::
+
+            \begin{aligned}
+            E_1 &= F_{ij} D_{ij} + F_{ab} D_{ab} \\
+            E_2^{\text{spatial}} &= \tfrac{1}{2}\langle ij|kl \rangle \Gamma_{ijkl} + \tfrac{1}{2}\langle ab|cd \rangle \Gamma_{abcd} + \langle ij|ka \rangle \Gamma_{ijka} \\
+            &\quad + \langle ab|ci \rangle \Gamma_{abci} + \langle ia|jb \rangle \Gamma_{iajb} + \tfrac{1}{2}\langle ij|ab \rangle \Gamma_{ijab} \\
+            E_2^{\text{so}} &= \tfrac{1}{4}\langle pq||rs \rangle \Gamma_{pqrs} \\
+            E_{\text{corr}} &= E_1 + E_2
+            \end{aligned}
         """
 
         o = self.ccwfn.o
