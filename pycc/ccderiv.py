@@ -286,20 +286,22 @@ class CCderiv(CorrelatedDerivs):
 
     def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=None, rconv=None):
         r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
-        equation ``R(t; H) = 0`` at fixed ``t`` gives a linear equation: the RHS ``B`` is the
-        field-derivative of the residual (just ``residuals(df, t1, t2)`` with the perturbed
-        two-electron integrals swapped in, since ``R`` is linear in ``H``; the CPHF-folded
-        ``deri``/``dL`` carry the orbital relaxation), and the LHS is the CCSD Jacobian
-        (:meth:`_ccsd_jacobian`); iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like
-        :meth:`ccresponse.solve_right`::
+        equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation at fixed ``t`` gives a
+        linear equation: the RHS ``B`` is the perturbation-derivative of the residual,
+        ``B_mu = <mu| d_x HBAR |0>``, and the LHS is the CCSD Jacobian (:meth:`_ccsd_jacobian`);
+        iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like :meth:`ccresponse.solve_right`::
 
-            (HBAR . dt) = -B,   B = residual(df, t1, t2)   [perturbed deri/dL swapped in]
+            (HBAR . dt) = -B,   B_mu = <mu| d_x HBAR |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B, \qquad B = R(\partial_x H;\, t)
+            \bar{H}\,\partial_x t = -B, \qquad B_\mu = \langle\mu|\,\partial_x \bar{H}\,|0\rangle
 
-        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
+        Because the residual is linear in the bare integrals, ``d_x HBAR`` is obtained by evaluating
+        ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
+        ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation) -- NOT by feeding it
+        ``d HBAR``, which would re-apply the similarity transform.  ``maxiter``/``rconv`` default to
+        the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
@@ -332,13 +334,15 @@ class CCderiv(CorrelatedDerivs):
         :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
         no 0.5 / no final symmetrization, matching ``ccresponse.solve_right``)::
 
-            (HBAR . dt) = -B,   B = residual(df, t1, t2)   [perturbed deri swapped in]
+            (HBAR . dt) = -B,   B_mu = <mu| d_x HBAR |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B, \qquad B = R(\partial_x H;\, t)
+            \bar{H}\,\partial_x t = -B, \qquad B_\mu = \langle\mu|\,\partial_x \bar{H}\,|0\rangle
 
-        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
+        ``B`` is ``cc.residuals`` evaluated with the perturbed **bare** integrals (``df``, ``deri``
+        swapped in), not with ``d HBAR``.  ``maxiter``/``rconv`` default to the wavefunction's
+        convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
@@ -534,9 +538,9 @@ class CCderiv(CorrelatedDerivs):
         return d
 
     def _perturbed_t3_intermediates(self, df, deri, dL, dt1, dt2):
-        r"""Field response of the (T) intermediates ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}/dx``:
+        r"""First-order response of the (T) intermediates ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}/dx``:
         the analytic product/quotient-rule derivative of the T3 amplitudes
-        (:func:`cctriples.dt3_density`) along the **canonical** field path
+        (:func:`cctriples.dt3_density`) along the **canonical** perturbation path
         ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``::
 
             dt3 = (dN - t3 dD) / D
@@ -556,9 +560,9 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
 
     def _so_perturbed_t3_intermediates(self, df, deri, dt1, dt2):
-        """Spin-orbital field response of the (T) intermediates: the analytic product-rule derivative
-        :func:`cctriples.so_dt3_density` along the canonical path (no ``L``); see
-        :meth:`_perturbed_t3_intermediates`."""
+        """Spin-orbital first-order response of the (T) intermediates: the analytic product-rule
+        derivative :func:`cctriples.so_dt3_density` along the canonical perturbation path (no
+        ``L``); see :meth:`_perturbed_t3_intermediates`."""
         from . import cctriples
         cc = self.ccwfn
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
@@ -567,10 +571,13 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
-        r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear), staying in ``cclambda`` (no
-        ``Y1/Y2``).  Differentiating the Lambda equation gives a linear equation with the same
-        Lambda-Jacobian (its action is ``r_L(dLambda) - r_L(0)``, since ``r_L`` is affine in Lambda)
-        and an inhomogeneity ``B`` = ``r_L`` evaluated with the perturbed HBAR + ``dL`` (unperturbed
+        r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear), solved with ``cclambda``'s
+        ground-state Lambda residual ``r_L`` reused as the operator -- NOT the ``ccresponse``
+        ``Y1``/``Y2`` perturbed-multiplier equations (hence "no Y1/Y2").  Differentiating the Lambda
+        equation gives a linear equation with the same Lambda-Jacobian: its action is
+        ``r_L(dLambda) - r_L(0)`` -- since ``r_L`` is affine in Lambda (linear plus a
+        Lambda-independent constant), the subtraction cancels the constant and leaves the pure linear
+        Jacobian action -- and an inhomogeneity ``B`` = ``r_L`` evaluated with the perturbed HBAR + ``dL`` (unperturbed
         ``G``) plus the explicit ``dG.H``/``dG.L`` product-rule halves; iterate
         ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`::
 
@@ -703,8 +710,9 @@ class CCderiv(CorrelatedDerivs):
         return dl1, dl2
 
     def _perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        r"""Field response ``(dD, dGamma)`` of the unrelaxed CC correlation densities: the analytic
-        product-rule (chain-rule) derivative of the density builders in the amplitudes/multipliers::
+        r"""First-order response ``(dD, dGamma)`` of the unrelaxed CC correlation densities: the
+        analytic product-rule (chain-rule) derivative of the density builders in the
+        amplitudes/multipliers::
 
             dD     = (dD/dt) dt + (dD/dl) dl
             dGamma = (dGamma/dt) dt + (dGamma/dl) dl
@@ -724,7 +732,7 @@ class CCderiv(CorrelatedDerivs):
         return self._spatial_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3)
 
     def _so_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
+        """Analytic first-order response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
         correlation densities: the product-rule derivative of the raw density builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and :meth:`ccdensity.build_so_twopdm`),
         i.e. Appendix C of ``docs/cc_gradients_orbital_response.tex``.  Replaces the 5-point stencil
@@ -838,7 +846,7 @@ class CCderiv(CorrelatedDerivs):
         return dD, 0.25 * dGam
 
     def _spatial_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
+        """Analytic first-order response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
         CCSD** correlation densities: the product-rule derivative of the ccdensity builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and ``Doooo``/``Dvvvv``/``Dooov``/
         ``Dvvvo``/``Dovov``/``Doovv``), placed and symmetrized exactly as
