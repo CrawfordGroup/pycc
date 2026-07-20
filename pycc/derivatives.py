@@ -57,18 +57,18 @@ class Derivatives(object):
     ``cart1*3 + cart2``) for an ``(atom1, atom2)`` pair. Block labels ('o'/'v'/'all',
     default 'all') select the MO block(s) to transform into.
 
-    A superscript ``X`` (a nuclear Cartesian) denotes the *skeleton* derivative -- the
-    partial derivative of the integral at *fixed* MO coefficients -- transformed into the
-    requested MO block(s)::
+    A parenthesized superscript ``(X)`` (``X`` a nuclear Cartesian) denotes the *skeleton*
+    derivative -- the partial derivative of the integral at *fixed* MO coefficients --
+    transformed into the requested MO block(s)::
 
-        A^X_pq... = C_mu,p C_nu,q ... (d A_mu,nu... / dX)
+        A^(X)_pq... = C_mu,p C_nu,q ... (d A_mu,nu... / dX)
 
     .. math::
 
-        A^{X}_{pq\cdots} = C^{\mu}_{p} C^{\nu}_{q}\cdots\,\frac{\partial A_{\mu\nu\cdots}}{\partial X}
+        A^{(X)}_{pq\cdots} = C^{\mu}_{p} C^{\nu}_{q}\cdots\,\frac{\partial A_{\mu\nu\cdots}}{\partial X}
 
     The orbital-response (CPHF) contribution is added downstream by the caller, not here.
-    Second derivatives ``A^{XY}`` replace the single partial by :math:`\partial^2/\partial X\,\partial Y`.
+    Second derivatives ``A^{(XY)}`` replace the single partial by :math:`\partial^2/\partial X\,\partial Y`.
     """
 
     def __init__(self, wfn: Any) -> None:
@@ -118,27 +118,27 @@ class Derivatives(object):
     # ---- spatial one-electron ----
 
     def overlap(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Overlap (S^X) skeleton derivatives for ``atom``: 3 (x, y, z) arrays,
+        r"""Overlap (S^(X)) skeleton derivatives for ``atom``: 3 (x, y, z) arrays,
         transformed into MO blocks (b1, b2)::
 
-            S^X_pq = C_mu,p (dS_mu,nu / dX) C_nu,q
+            S^(X)_pq = C_mu,p (dS_mu,nu / dX) C_nu,q
 
         .. math::
 
-            S^{X}_{pq} = C^{\mu}_{p}\,\frac{\partial S_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
+            S^{(X)}_{pq} = C^{\mu}_{p}\,\frac{\partial S_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
         """
         return [np.asarray(m) for m in
                 self.mints.mo_oei_deriv1("OVERLAP", atom, self._mo(b1), self._mo(b2))]
 
     def core(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Core one-electron (kinetic + potential) ``h^X`` skeleton derivatives for
+        r"""Core one-electron (kinetic + potential) ``h^(X)`` skeleton derivatives for
         ``atom``: 3 (x, y, z) arrays::
 
-            h^X_pq = C_mu,p (d(T+V)_mu,nu / dX) C_nu,q
+            h^(X)_pq = C_mu,p (d(T+V)_mu,nu / dX) C_nu,q
 
         .. math::
 
-            h^{X}_{pq} = C^{\mu}_{p}\,\frac{\partial (T+V)_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
+            h^{(X)}_{pq} = C^{\mu}_{p}\,\frac{\partial (T+V)_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
         """
         C1, C2 = self._mo(b1), self._mo(b2)
         T = self.mints.mo_oei_deriv1("KINETIC", atom, C1, C2)
@@ -151,9 +151,9 @@ class Derivatives(object):
         Only the bra (``side='LEFT'``) or ket AO basis function is differentiated -- the MO
         coefficients and the other side are held fixed -- so the result is not symmetric in
         p, q and the two halves sum to the full overlap derivative,
-        S^X_pq = S^X(LEFT)_pq + S^X(RIGHT)_pq. Used by the AAT machinery::
+        S^(X)_pq = S^(X)(LEFT)_pq + S^(X)(RIGHT)_pq. Used by the AAT machinery::
 
-            S^X(LEFT)_pq = C_mu,p <d chi_mu / dX | chi_nu> C_nu,q
+            S^(X)(LEFT)_pq = C_mu,p <d chi_mu / dX | chi_nu> C_nu,q
 
         .. math::
 
@@ -172,7 +172,7 @@ class Derivatives(object):
 
         .. math::
 
-            \mu^{X_\beta}_{pq,\alpha} = C^{\mu}_{p}\,
+            \mu^{(X_\beta)}_{pq,\alpha} = C^{\mu}_{p}\,
                 \frac{\partial (\mu_\alpha)_{\mu\nu}}{\partial X_\beta}\,C^{\nu}_{q}
 
         The AO-basis derivatives (``ao_elec_dip_deriv1``) are transformed into the MO
@@ -186,13 +186,13 @@ class Derivatives(object):
     def eri(self, atom: int, b1: str = 'all', b2: str = 'all',
             b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         r"""Two-electron (ERI) skeleton derivatives for ``atom``: 3 (x, y, z) arrays, in
-        chemist notation ``(pq|rs)^X``::
+        chemist notation ``(pq|rs)^(X)``::
 
-            (pq|rs)^X = C_mu,p C_nu,q (d(mu,nu|lam,sig) / dX) C_lam,r C_sig,s
+            (pq|rs)^(X) = C_mu,p C_nu,q (d(mu,nu|lam,sig) / dX) C_lam,r C_sig,s
 
         .. math::
 
-            (pq|rs)^{X} = C^{\mu}_{p} C^{\nu}_{q}\,
+            (pq|rs)^{(X)} = C^{\mu}_{p} C^{\nu}_{q}\,
                 \frac{\partial (\mu\nu|\lambda\sigma)}{\partial X}\,C^{\lambda}_{r} C^{\sigma}_{s}
 
         Cached one atom at a time (:meth:`_eri_cached`) so an atom-outer sweep never holds
@@ -213,28 +213,28 @@ class Derivatives(object):
 
     def overlap2(self, atom1: int, atom2: int, b1: str = 'all',
                  b2: str = 'all') -> List[np.ndarray]:
-        r"""Second overlap skeleton derivatives ``S^{XY}`` for the ``(atom1, atom2)`` pair:
+        r"""Second overlap skeleton derivatives ``S^{(XY)}`` for the ``(atom1, atom2)`` pair:
         9 arrays, the (cart1, cart2) blocks indexed ``cart1*3 + cart2``::
 
-            S^XY_pq = C_mu,p (d2 S_mu,nu / dX dY) C_nu,q
+            S^(XY)_pq = C_mu,p (d2 S_mu,nu / dX dY) C_nu,q
 
         .. math::
 
-            S^{XY}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 S_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
+            S^{(XY)}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 S_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
         """
         return [np.asarray(m) for m in
                 self.mints.mo_oei_deriv2("OVERLAP", atom1, atom2, self._mo(b1), self._mo(b2))]
 
     def core2(self, atom1: int, atom2: int, b1: str = 'all',
               b2: str = 'all') -> List[np.ndarray]:
-        r"""Second core one-electron (kinetic + potential) derivatives ``h^{XY}`` for the
+        r"""Second core one-electron (kinetic + potential) derivatives ``h^{(XY)}`` for the
         ``(atom1, atom2)`` pair: 9 arrays, indexed ``cart1*3 + cart2``::
 
-            h^XY_pq = C_mu,p (d2(T+V)_mu,nu / dX dY) C_nu,q
+            h^(XY)_pq = C_mu,p (d2(T+V)_mu,nu / dX dY) C_nu,q
 
         .. math::
 
-            h^{XY}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 (T+V)_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
+            h^{(XY)}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 (T+V)_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
         """
         C1, C2 = self._mo(b1), self._mo(b2)
         T = self.mints.mo_oei_deriv2("KINETIC", atom1, atom2, C1, C2)
@@ -246,11 +246,11 @@ class Derivatives(object):
         r"""Second two-electron (ERI) derivatives for the ``(atom1, atom2)`` pair: 9 arrays,
         indexed ``cart1*3 + cart2``, in chemist notation::
 
-            (pq|rs)^XY = C_mu,p C_nu,q (d2(mu,nu|lam,sig) / dX dY) C_lam,r C_sig,s
+            (pq|rs)^(XY) = C_mu,p C_nu,q (d2(mu,nu|lam,sig) / dX dY) C_lam,r C_sig,s
 
         .. math::
 
-            (pq|rs)^{XY} = C^{\mu}_{p} C^{\nu}_{q}\,
+            (pq|rs)^{(XY)} = C^{\mu}_{p} C^{\nu}_{q}\,
                 \frac{\partial^2 (\mu\nu|\lambda\sigma)}{\partial X\,\partial Y}\,C^{\lambda}_{r} C^{\sigma}_{s}
 
         The Hessian skeleton needs only the occupied block, so callers pass ``'o'``
@@ -261,14 +261,14 @@ class Derivatives(object):
     # ---- spin-orbital one-electron (spin-blocked from the spatial MO derivatives) ----
 
     def so_overlap(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital overlap ``S^X`` derivatives for ``atom``: 3 (x, y, z) arrays.
+        r"""Spin-orbital overlap ``S^(X)`` derivatives for ``atom``: 3 (x, y, z) arrays.
         Block-diagonal in spin (OVERLAP via :meth:`so_oei`)::
 
-            S^X_pq = delta(spin_p, spin_q) C_mu,pbar (dS_mu,nu / dX) C_nu,qbar
+            S^(X)_pq = delta(spin_p, spin_q) C_mu,pbar (dS_mu,nu / dX) C_nu,qbar
 
         .. math::
 
-            S^{X}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            S^{(X)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial S_{\mu\nu}}{\partial X}\,C^{\nu}_{\bar q}
         """
         return self.so_oei(atom, "OVERLAP", b1, b2)
@@ -281,11 +281,11 @@ class Derivatives(object):
         the derivative is block-diagonal: each same-spin block is the spatial MO derivative
         (in the semicanonical alpha/beta gauge), placed at that spin's positions::
 
-            A^X_pq = delta(spin_p, spin_q) C_mu,pbar (dA_mu,nu / dX) C_nu,qbar
+            A^(X)_pq = delta(spin_p, spin_q) C_mu,pbar (dA_mu,nu / dX) C_nu,qbar
 
         .. math::
 
-            A^{X}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            A^{(X)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial A_{\mu\nu}}{\partial X}\,C^{\nu}_{\bar q}
 
         with :math:`\sigma_p` the spin of spin-orbital p and :math:`\bar p` its spatial
@@ -304,14 +304,14 @@ class Derivatives(object):
         return out
 
     def so_core(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital core (kinetic + potential) ``h^X`` derivatives for ``atom``: 3
+        r"""Spin-orbital core (kinetic + potential) ``h^(X)`` derivatives for ``atom``: 3
         (x, y, z) arrays. Block-diagonal in spin (KINETIC + POTENTIAL via :meth:`so_oei`)::
 
-            h^X_pq = delta(spin_p, spin_q) C_mu,pbar (d(T+V)_mu,nu / dX) C_nu,qbar
+            h^(X)_pq = delta(spin_p, spin_q) C_mu,pbar (d(T+V)_mu,nu / dX) C_nu,qbar
 
         .. math::
 
-            h^{X}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            h^{(X)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial (T+V)_{\mu\nu}}{\partial X}\,C^{\nu}_{\bar q}
         """
         T = self.so_oei(atom, "KINETIC", b1, b2)
@@ -320,11 +320,11 @@ class Derivatives(object):
 
     def so_overlap_half(self, atom: int, b1: str = 'all', b2: str = 'all',
                         side: str = "LEFT") -> List[np.ndarray]:
-        r"""Spin-orbital overlap half-derivatives ``<phi^X_p | phi_q>`` (block-diagonal in
+        r"""Spin-orbital overlap half-derivatives ``<phi^(X)_p | phi_q>`` (block-diagonal in
         spin): 3 arrays. Bra perturbed, ket unperturbed (``side='LEFT'``); not symmetric.
         Used by the spin-orbital AAT machinery::
 
-            S^X(LEFT)_pq = delta(spin_p, spin_q) C_mu,pbar <d chi_mu / dX | chi_nu> C_nu,qbar
+            S^(X)(LEFT)_pq = delta(spin_p, spin_q) C_mu,pbar <d chi_mu / dX | chi_nu> C_nu,qbar
 
         .. math::
 
@@ -352,7 +352,7 @@ class Derivatives(object):
 
         .. math::
 
-            \mu^{X_\beta}_{pq,\alpha} = \delta_{\sigma_p \sigma_q}\,
+            \mu^{(X_\beta)}_{pq,\alpha} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial (\mu_\alpha)_{\mu\nu}}{\partial X_\beta}\,C^{\nu}_{\bar q}
         """
         n1, a1, b1p, Ca1, Cb1 = self._so_mo(b1)
@@ -382,18 +382,18 @@ class Derivatives(object):
 
     def so_eri(self, atom: int, b1: str = 'all', b2: str = 'all',
                b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital antisymmetrized two-electron derivatives ``<pq||rs>^X`` for
+        r"""Spin-orbital antisymmetrized two-electron derivatives ``<pq||rs>^(X)`` for
         ``atom``: 3 (x, y, z) arrays. Spin-blocks the spatial chemist derivative integrals
         over the spin-conserving combinations ``(s12, s34)``, converts to physicist
         notation (``<pq|rs> = (pr|qs)``, the ``swapaxes(1,2)``), and antisymmetrizes over
         the ket (the ``phys - phys.swapaxes(2,3)``)::
 
-            <pq||rs>^X = <pq|rs>^X - <pq|sr>^X,   <pq|rs>^X = (pr|qs)^X  (chemist)
+            <pq||rs>^(X) = <pq|rs>^(X) - <pq|sr>^(X),   <pq|rs>^(X) = (pr|qs)^(X)  (chemist)
 
         .. math::
 
-            \langle pq\Vert rs\rangle^{X} = \langle pq|rs\rangle^{X} - \langle pq|sr\rangle^{X},
-            \qquad \langle pq|rs\rangle^{X} = (pr|qs)^{X}
+            \langle pq\Vert rs\rangle^{(X)} = \langle pq|rs\rangle^{(X)} - \langle pq|sr\rangle^{(X)},
+            \qquad \langle pq|rs\rangle^{(X)} = (pr|qs)^{(X)}
 
         Cached one atom at a time (:meth:`_eri_cached`): the four spin-block
         ``mo_tei_deriv1`` transforms are the dominant cost and are otherwise re-run by every
@@ -424,14 +424,14 @@ class Derivatives(object):
     # ---- spin-orbital second derivatives ----
 
     def so_overlap2(self, atom1: int, atom2: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital second overlap derivatives ``S^{XY}`` for the ``(atom1, atom2)``
+        r"""Spin-orbital second overlap derivatives ``S^{(XY)}`` for the ``(atom1, atom2)``
         pair: 9 arrays. Block-diagonal in spin (OVERLAP via :meth:`so_oei2`)::
 
-            S^XY_pq = delta(spin_p, spin_q) C_mu,pbar (d2 S_mu,nu / dX dY) C_nu,qbar
+            S^(XY)_pq = delta(spin_p, spin_q) C_mu,pbar (d2 S_mu,nu / dX dY) C_nu,qbar
 
         .. math::
 
-            S^{XY}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            S^{(XY)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial^2 S_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{\bar q}
         """
         return self.so_oei2(atom1, atom2, "OVERLAP", b1, b2)
@@ -441,11 +441,11 @@ class Derivatives(object):
         r"""Spin-orbital one-electron *second* derivative (block-diagonal in spin) for the
         ``(atom1, atom2)`` pair: 9 arrays indexed ``cart1*3 + cart2``::
 
-            A^XY_pq = delta(spin_p, spin_q) C_mu,pbar (d2 A_mu,nu / dX dY) C_nu,qbar
+            A^(XY)_pq = delta(spin_p, spin_q) C_mu,pbar (d2 A_mu,nu / dX dY) C_nu,qbar
 
         .. math::
 
-            A^{XY}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            A^{(XY)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial^2 A_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{\bar q}
 
         (:meth:`so_core2` = KINETIC + POTENTIAL; :meth:`so_overlap2` = OVERLAP.)
@@ -463,15 +463,15 @@ class Derivatives(object):
         return out
 
     def so_core2(self, atom1: int, atom2: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital second core (kinetic + potential) derivatives ``h^{XY}`` for the
+        r"""Spin-orbital second core (kinetic + potential) derivatives ``h^{(XY)}`` for the
         ``(atom1, atom2)`` pair: 9 arrays. Block-diagonal in spin (KINETIC + POTENTIAL via
         :meth:`so_oei2`)::
 
-            h^XY_pq = delta(spin_p, spin_q) C_mu,pbar (d2(T+V)_mu,nu / dX dY) C_nu,qbar
+            h^(XY)_pq = delta(spin_p, spin_q) C_mu,pbar (d2(T+V)_mu,nu / dX dY) C_nu,qbar
 
         .. math::
 
-            h^{XY}_{pq} = \delta_{\sigma_p \sigma_q}\,
+            h^{(XY)}_{pq} = \delta_{\sigma_p \sigma_q}\,
                 C^{\mu}_{\bar p}\,\frac{\partial^2 (T+V)_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{\bar q}
         """
         T = self.so_oei2(atom1, atom2, "KINETIC", b1, b2)
@@ -480,15 +480,15 @@ class Derivatives(object):
 
     def so_eri2(self, atom1: int, atom2: int, b1: str = 'all', b2: str = 'all',
                 b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
-        r"""Spin-orbital antisymmetrized two-electron *second* derivatives ``<pq||rs>^{XY}``
+        r"""Spin-orbital antisymmetrized two-electron *second* derivatives ``<pq||rs>^{(XY)}``
         for the ``(atom1, atom2)`` pair: 9 arrays indexed ``cart1*3 + cart2``::
 
-            <pq||rs>^XY = <pq|rs>^XY - <pq|sr>^XY,   <pq|rs>^XY = (pr|qs)^XY  (chemist)
+            <pq||rs>^(XY) = <pq|rs>^(XY) - <pq|sr>^(XY),   <pq|rs>^(XY) = (pr|qs)^(XY)  (chemist)
 
         .. math::
 
-            \langle pq\Vert rs\rangle^{XY} = \langle pq|rs\rangle^{XY} - \langle pq|sr\rangle^{XY},
-            \qquad \langle pq|rs\rangle^{XY} = (pr|qs)^{XY}
+            \langle pq\Vert rs\rangle^{(XY)} = \langle pq|rs\rangle^{(XY)} - \langle pq|sr\rangle^{(XY)},
+            \qquad \langle pq|rs\rangle^{(XY)} = (pr|qs)^{(XY)}
 
         Psi4's ``mo_tei_deriv2(A, B)`` does not satisfy the integral's electron-exchange
         symmetry ``(pq|rs) = (rs|pq)`` term by term -- a single (A, B) call is one ordering
