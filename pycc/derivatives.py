@@ -186,20 +186,27 @@ class Derivatives(object):
     def eri(self, atom: int, b1: str = 'all', b2: str = 'all',
             b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         r"""Two-electron (ERI) skeleton derivatives for ``atom``: 3 (x, y, z) arrays, in
-        chemist notation ``(pq|rs)^(X)``::
+        physicist notation ``<pq|rs>^(X)`` (matching the stored integrals and
+        :meth:`so_eri`, so callers need no transpose)::
 
-            (pq|rs)^(X) = C_mu,p C_nu,q (d(mu,nu|lam,sig) / dX) C_lam,r C_sig,s
+            <pq|rs>^(X) = (pr|qs)^(X),
+            (pr|qs)^(X) = C_mu,p C_nu,r (d(mu,nu|lam,sig) / dX) C_lam,q C_sig,s
 
         .. math::
 
-            (pq|rs)^{(X)} = C^{\mu}_{p} C^{\nu}_{q}\,
-                \frac{\partial (\mu\nu|\lambda\sigma)}{\partial X}\,C^{\lambda}_{r} C^{\sigma}_{s}
+            \langle pq|rs\rangle^{(X)} = (pr|qs)^{(X)}
+                = C^{\mu}_{p} C^{\nu}_{r}\,
+                \frac{\partial (\mu\nu|\lambda\sigma)}{\partial X}\,C^{\lambda}_{q} C^{\sigma}_{s}
+
+        Psi4's ``mo_tei_deriv1`` returns the chemist integral ``(pq|rs)^(X)``; the
+        ``swapaxes(1, 2)`` converts it to physicist order (as in :meth:`so_eri`, minus the
+        spin-orbital antisymmetrization).
 
         Cached one atom at a time (:meth:`_eri_cached`) so an atom-outer sweep never holds
         more than one atom's block yet reuses the dominant ``nmo^4`` transform across the
         atom's Cartesians and its several callers."""
         return self._eri_cached(atom, ('eri', b1, b2, b3, b4), lambda: [
-            np.asarray(m) for m in self.mints.mo_tei_deriv1(
+            np.asarray(m).swapaxes(1, 2) for m in self.mints.mo_tei_deriv1(
                 atom, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))])
 
     def iter_eri(self, b1: str = 'all', b2: str = 'all', b3: str = 'all',
@@ -244,18 +251,26 @@ class Derivatives(object):
     def eri2(self, atom1: int, atom2: int, b1: str = 'all', b2: str = 'all',
              b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         r"""Second two-electron (ERI) derivatives for the ``(atom1, atom2)`` pair: 9 arrays,
-        indexed ``cart1*3 + cart2``, in chemist notation::
+        indexed ``cart1*3 + cart2``, in physicist notation ``<pq|rs>^(XY)`` (matching the
+        stored integrals and :meth:`so_eri2`, so callers need no transpose)::
 
-            (pq|rs)^(XY) = C_mu,p C_nu,q (d2(mu,nu|lam,sig) / dX dY) C_lam,r C_sig,s
+            <pq|rs>^(XY) = (pr|qs)^(XY),
+            (pr|qs)^(XY) = C_mu,p C_nu,r (d2(mu,nu|lam,sig) / dX dY) C_lam,q C_sig,s
 
         .. math::
 
-            (pq|rs)^{(XY)} = C^{\mu}_{p} C^{\nu}_{q}\,
-                \frac{\partial^2 (\mu\nu|\lambda\sigma)}{\partial X\,\partial Y}\,C^{\lambda}_{r} C^{\sigma}_{s}
+            \langle pq|rs\rangle^{(XY)} = (pr|qs)^{(XY)}
+                = C^{\mu}_{p} C^{\nu}_{r}\,
+                \frac{\partial^2 (\mu\nu|\lambda\sigma)}{\partial X\,\partial Y}\,C^{\lambda}_{q} C^{\sigma}_{s}
+
+        The ``swapaxes(1, 2)`` converts Psi4's chemist ``mo_tei_deriv2`` to physicist order.
+        Unlike :meth:`so_eri2`, the bra<->ket symmetrization ``<pq|rs> = <qp|sr>`` (needed
+        because a single ``mo_tei_deriv2(A, B)`` is one ordering of ``d^2/dXA dXB``) is NOT
+        applied here; a caller that needs it (e.g. :mod:`~pycc.cphf`) enforces it itself.
 
         The Hessian skeleton needs only the occupied block, so callers pass ``'o'``
         (n_occ**4 per pair)."""
-        return [np.asarray(m) for m in self.mints.mo_tei_deriv2(
+        return [np.asarray(m).swapaxes(1, 2) for m in self.mints.mo_tei_deriv2(
             atom1, atom2, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))]
 
     # ---- spin-orbital one-electron (spin-blocked from the spatial MO derivatives) ----

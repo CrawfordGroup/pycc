@@ -313,7 +313,7 @@ class CPHF(object):
             else:
                 hx = np.asarray(d.core(atom)[cart])
                 Sx = np.asarray(d.overlap(atom)[cart])
-                gx = np.asarray(d.eri(atom)[cart]).swapaxes(1, 2)  # chemist -> physicist <pq|rs>^(x)
+                gx = np.asarray(d.eri(atom)[cart])                 # physicist <pq|rs>^(x)
                 w = 2.0 * gx - gx.swapaxes(2, 3)              # spin-adapted L^(x)
             fx = hx + self.contract('pmqm->pq', w[:, o, :, o])   # skeleton Fock derivative
         else:
@@ -545,10 +545,11 @@ class CPHF(object):
                 core = [np.asarray(m) for m in d.core2(a1, a2)]
                 overlap = [np.asarray(m) for m in d.overlap2(a1, a2)]
                 eri = []
-                for ch in d.eri2(a1, a2):                            # chemist (pq|rs)^{XY}
-                    ch = np.asarray(ch)
-                    ch = 0.5 * (ch + ch.transpose(2, 3, 0, 1))       # enforce (pq|rs)=(rs|pq)
-                    eri.append(ch.swapaxes(1, 2))                    # -> physicist <pq|rs>^{XY}
+                for ph in d.eri2(a1, a2):                            # physicist <pq|rs>^{XY}
+                    ph = np.asarray(ph)
+                    # eri2 does not symmetrize a single (A, B) ordering; enforce the
+                    # electron-swap symmetry <pq|rs> = <qp|sr> (chemist (pq|rs) = (rs|pq)).
+                    eri.append(0.5 * (ph + ph.transpose(1, 0, 3, 2)))
             self._d2int[key] = {'core': core, 'overlap': overlap, 'eri': eri}
         return self._d2int[key]
 

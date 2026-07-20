@@ -87,11 +87,11 @@ class HFwfn(Wavefunction):
         for atom in range(d.natom):
             Sx = d.overlap(atom, 'o', 'o')
             hx = d.core(atom, 'o', 'o')
-            erix = d.eri(atom, 'o', 'o', 'o', 'o')
+            erix = d.eri(atom, 'o', 'o', 'o', 'o')   # physicist <ij|kl>^X (2J - K)
             for c in range(3):
                 grad[atom, c] = (2.0 * np.trace(hx[c])
-                                 + 2.0 * self.contract('iijj->', erix[c])
-                                 - self.contract('ijij->', erix[c])
+                                 + 2.0 * self.contract('ijij->', erix[c])
+                                 - self.contract('iijj->', erix[c])
                                  - 2.0 * self.contract('i,ii->', eps, Sx[c]))
         return grad
 
@@ -340,7 +340,7 @@ class HFwfn(Wavefunction):
             for Bat in range(natom):
                 S2 = d.overlap2(A, Bat, 'o', 'o')                 # 9 x (no,no)
                 h2 = d.core2(A, Bat, 'o', 'o')                    # 9 x (no,no)
-                g2 = d.eri2(A, Bat, 'o', 'o', 'o', 'o')           # 9 x (no,no,no,no) chemist
+                g2 = d.eri2(A, Bat, 'o', 'o', 'o', 'o')           # 9 x (no,no,no,no) physicist
                 for a in range(3):
                     for b in range(3):
                         c = a * 3 + b
@@ -350,8 +350,8 @@ class HFwfn(Wavefunction):
                         Fx, Fy = Foo[A][a], Foo[Bat][b]
                         # --- skeleton (second-derivative integrals), as in the gradient ---
                         skel = (2.0 * np.trace(h2[c])
-                                + 2.0 * self.contract('iijj->', g2[c])
-                                - self.contract('ijij->', g2[c])
+                                + 2.0 * self.contract('ijij->', g2[c])
+                                - self.contract('iijj->', g2[c])
                                 - 2.0 * self.contract('i,ii->', eps_o, S2[c]))
                         # --- first-order CPHF response + first-derivative cross terms ---
                         resp = (-4.0 * self.contract('ia,ia->', Ux, By)
