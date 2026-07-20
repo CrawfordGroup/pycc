@@ -197,11 +197,11 @@ class CorrelatedDerivs:
         .. math::
 
             \begin{aligned}
-            \mathrm{d}I'_{pq} = -\tfrac{1}{2}\big[ &(\mathrm{d}f\,(D + D^{T}))_{pq}
-                + f_{pp}(\mathrm{d}D_{pq} + \mathrm{d}D_{qp}) \\
-            &+ \delta_{q\in o_\mathrm{full}}(\mathrm{d}D_{rs} L_{rpsq} + D_{rs}\,\mathrm{d}L_{rpsq}
-                + \mathrm{d}D_{rs} L_{rqsp} + D_{rs}\,\mathrm{d}L_{rqsp}) \\
-            &+ 4(\mathrm{d}\langle pr|st\rangle\,\Gamma_{qrst} + \langle pr|st\rangle\,\mathrm{d}\Gamma_{qrst}) \big]
+            \partial_x I'_{pq} = -\tfrac{1}{2}\big[ &(\partial_x f\,(D + D^{T}))_{pq}
+                + f_{pp}(\partial_x D_{pq} + \partial_x D_{qp}) \\
+            &+ \delta_{q\in o_\mathrm{full}}(\partial_x D_{rs} L_{rpsq} + D_{rs}\,\partial_x L_{rpsq}
+                + \partial_x D_{rs} L_{rqsp} + D_{rs}\,\partial_x L_{rqsp}) \\
+            &+ 4(\partial_x \langle pr|st\rangle\,\Gamma_{qrst} + \langle pr|st\rangle\,\partial_x \Gamma_{qrst}) \big]
             \end{aligned}
 
         with ``L`` (= ``H.L``) and its derivative ``dL`` in the 1-PDM term, and ``<pr|st>`` (= ``H.ERI``)
@@ -220,9 +220,25 @@ class CorrelatedDerivs:
         return -0.5 * (dA + dB + dC)
 
     def _so_perturbed_lagrangian(self, df, deri, D, dD, Gam, dGam) -> np.ndarray:
-        """Spin-orbital first-order response ``dI'`` -- the antisymmetrized-integral analogue of
-        :meth:`_perturbed_lagrangian` (the ``<pq||rs>`` derivative ``deri`` in the 1-PDM term
-        in place of ``L``/``dL``)."""
+        r"""Spin-orbital first-order response ``dI'`` -- the antisymmetrized-integral analogue of
+        :meth:`_perturbed_lagrangian` (the ``<pq||rs>`` derivative ``deri`` in the 1-PDM term in
+        place of ``L``/``dL``); ``d`` = the full ``d/dx`` derivative, repeated indices summed::
+
+            dI'_pq = -1/2 [ df @ (D + D.T) + eps_p (dD_pq + dD_qp)
+                            + delta_{q in ofull} ( dD_rs <rp||sq> + D_rs deri_rpsq
+                                                   + dD_rs <rq||sp> + D_rs deri_rqsp )
+                            + 4 ( deri_prst Gamma_qrst + <pr||st> dGamma_qrst ) ]
+
+        .. math::
+
+            \begin{aligned}
+            \partial_x I'_{pq} = -\tfrac{1}{2}\big[ &(\partial_x f\,(D + D^{T}))_{pq}
+                + f_{pp}(\partial_x D_{pq} + \partial_x D_{qp}) \\
+            &+ \delta_{q\in o_\mathrm{full}}(\partial_x D_{rs}\langle rp\Vert sq\rangle + D_{rs}\,\partial_x \langle rp\Vert sq\rangle
+                + \partial_x D_{rs}\langle rq\Vert sp\rangle + D_{rs}\,\partial_x \langle rq\Vert sp\rangle) \\
+            &+ 4(\partial_x \langle pr\Vert st\rangle\,\Gamma_{qrst} + \langle pr\Vert st\rangle\,\partial_x \Gamma_{qrst}) \big]
+            \end{aligned}
+        """
         nmo, ofull = self.wfn.nmo, slice(0, self.wfn.o.stop)
         ERI = np.asarray(self.wfn.H.ERI)
         eps = np.diag(np.asarray(self.wfn.H.F))
@@ -423,7 +439,7 @@ class CorrelatedDerivs:
 
             \partial_x D^\mathrm{rel} = \partial_x D + \partial_x P_\mathrm{co}
                 + \partial_x P_\mathrm{oo} + \partial_x P_\mathrm{vv} - z^{x},
-            \qquad A z^{x} = \mathrm{d}X - A^{x} z
+            \qquad A z^{x} = \partial_x X - A^{x} z
 
         with the perturbed unrelaxed density ``d_x D`` (:meth:`_perturbed_unrelaxed_densities`), the
         perturbed Lagrangian ``dI'`` (:meth:`_perturbed_lagrangian`) giving the perturbed
@@ -604,9 +620,19 @@ class CorrelatedDerivs:
         return grad
 
     def _so_gradient(self) -> np.ndarray:
-        """Spin-orbital correlation gradient -- the spin-orbital analogue of :meth:`gradient` with
-        the antisymmetrized ``<pq||rs>^(X)`` from ``wfn.derivatives.so_*`` and ``f^(X) = h^(X) +
-        <pm||qm>^(X)`` (``m`` over the full occupied space)."""
+        r"""Spin-orbital correlation gradient -- the spin-orbital analogue of :meth:`gradient`
+        with the antisymmetrized ``<pq||rs>^(X)`` from ``wfn.derivatives.so_*`` (``m`` over the
+        full occupied space; repeated indices summed)::
+
+            dE_corr/dX = Drel_pq f^(X)_pq + Gamma_pqrs <pq||rs>^(X) + W_pq S^(X)_pq,
+            f^(X) = h^(X) + <pm||qm>^(X)
+
+        .. math::
+
+            \frac{\partial E_\mathrm{corr}}{\partial X} = D^\mathrm{rel}_{pq}\,f^{(X)}_{pq}
+                + \Gamma_{pqrs}\,\langle pq\Vert rs\rangle^{(X)} + W_{pq}\,S^{(X)}_{pq},
+            \qquad f^{(X)}_{pq} = h^{(X)}_{pq} + \langle pm\Vert qm\rangle^{(X)}
+        """
         ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
         Drel, Gam = self._so_relaxed_density()
         W = self._lagrangian(Drel, Gam)
@@ -932,8 +958,8 @@ class CorrelatedDerivs:
 
         .. math::
 
-            \mathrm{d}P_{mn} = \frac{\mathrm{d}I'_{mn} - \mathrm{d}I'_{nm}}{\epsilon_m - \epsilon_n}
-                - P^{0}_{mn}\,\frac{\mathrm{d}f_{mm} - \mathrm{d}f_{nn}}{\epsilon_m - \epsilon_n}
+            \partial_x P_{mn} = \frac{\partial_x I'_{mn} - \partial_x I'_{nm}}{\epsilon_m - \epsilon_n}
+                - P^{0}_{mn}\,\frac{\partial_x f_{mm} - \partial_x f_{nn}}{\epsilon_m - \epsilon_n}
 
         The second term is the canonical-``df``-diagonal denominator derivative, using the unperturbed
         ``Pblock0``.  Gated on ``|eps_m - eps_n| > thresh`` (diagonal + near-degenerate -> 0)."""
