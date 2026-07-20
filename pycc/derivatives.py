@@ -86,18 +86,18 @@ class Derivatives(object):
         self._d1_cache: dict = {}
 
     # ---- MO block selection ----
-    def _mo(self, block: str) -> np.ndarray:
-        """Spatial MO coefficients (AO x block, NumPy) for a block label."""
+    def _mo(self, block: str, as_array: bool = False):
+        """Spatial MO coefficients (AO x block) for a block label ('o'/'v'/'all').
+        Returns a Psi4 ``Matrix`` (what the mints deriv routines expect) by default, or the
+        raw NumPy array when ``as_array=True`` (used by :meth:`dipole` for its AO->MO
+        matmul)."""
         C = np.asarray(self.wfn.C)
         if block == 'o':
-            return C[:, :self.wfn.no]
-        if block == 'v':
-            return C[:, self.wfn.no:]
-        return C  # 'all'
-
-    def _moM(self, block: str):
-        """Spatial MO block as a Psi4 Matrix (for the mints deriv routines)."""
-        return psi4.core.Matrix.from_array(self._mo(block))
+            C = C[:, :self.wfn.no]
+        elif block == 'v':
+            C = C[:, self.wfn.no:]
+        # 'all' -> the full C
+        return C if as_array else psi4.core.Matrix.from_array(C)
 
     def _so_mo(self, block: str):
         """For a spin-orbital block label, return ``(n, a, b, Ca, Cb)``: the block size,
@@ -128,7 +128,7 @@ class Derivatives(object):
             S^{X}_{pq} = C^{\mu}_{p}\,\frac{\partial S_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
         """
         return [np.asarray(m) for m in
-                self.mints.mo_oei_deriv1("OVERLAP", atom, self._moM(b1), self._moM(b2))]
+                self.mints.mo_oei_deriv1("OVERLAP", atom, self._mo(b1), self._mo(b2))]
 
     def core(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
         r"""Core one-electron (kinetic + potential) ``h^X`` skeleton derivatives for
@@ -140,7 +140,7 @@ class Derivatives(object):
 
             h^{X}_{pq} = C^{\mu}_{p}\,\frac{\partial (T+V)_{\mu\nu}}{\partial X}\,C^{\nu}_{q}
         """
-        C1, C2 = self._moM(b1), self._moM(b2)
+        C1, C2 = self._mo(b1), self._mo(b2)
         T = self.mints.mo_oei_deriv1("KINETIC", atom, C1, C2)
         V = self.mints.mo_oei_deriv1("POTENTIAL", atom, C1, C2)
         return [np.asarray(t) + np.asarray(v) for t, v in zip(T, V)]
@@ -161,7 +161,7 @@ class Derivatives(object):
                 \Big\langle \tfrac{\partial \chi_\mu}{\partial X}\,\Big|\,\chi_\nu \Big\rangle\,C^{\nu}_{q}
         """
         return [np.asarray(m) for m in
-                self.mints.mo_overlap_half_deriv1(side, atom, self._moM(b1), self._moM(b2))]
+                self.mints.mo_overlap_half_deriv1(side, atom, self._mo(b1), self._mo(b2))]
 
     def dipole(self, atom: int, b1: str = 'all', b2: str = 'all') -> List[np.ndarray]:
         r"""Electric-dipole skeleton derivatives for ``atom``: 9 arrays, the
@@ -178,7 +178,7 @@ class Derivatives(object):
         The AO-basis derivatives (``ao_elec_dip_deriv1``) are transformed into the MO
         block here rather than via ``mo_elec_dip_deriv1`` -- the latter segfaults on the
         linux build of Psi4 1.10.1 (the mo_oei/mo_tei deriv routines are unaffected)."""
-        C1, C2 = self._mo(b1), self._mo(b2)
+        C1, C2 = self._mo(b1, as_array=True), self._mo(b2, as_array=True)
         return [C1.T @ np.asarray(m) @ C2 for m in self.mints.ao_elec_dip_deriv1(atom)]
 
     # ---- spatial two-electron (heavy: lazy, one-atom cache) ----
@@ -213,7 +213,7 @@ class Derivatives(object):
         atom's Cartesians and its several callers."""
         return self._tei1_cached(atom, ('eri', b1, b2, b3, b4), lambda: [
             np.asarray(m) for m in self.mints.mo_tei_deriv1(
-                atom, self._moM(b1), self._moM(b2), self._moM(b3), self._moM(b4))])
+                atom, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))])
 
     def iter_eri(self, b1: str = 'all', b2: str = 'all', b3: str = 'all',
                  b4: str = 'all') -> Iterator[Tuple[int, List[np.ndarray]]]:
@@ -235,7 +235,7 @@ class Derivatives(object):
             S^{XY}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 S_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
         """
         return [np.asarray(m) for m in
-                self.mints.mo_oei_deriv2("OVERLAP", atom1, atom2, self._moM(b1), self._moM(b2))]
+                self.mints.mo_oei_deriv2("OVERLAP", atom1, atom2, self._mo(b1), self._mo(b2))]
 
     def core2(self, atom1: int, atom2: int, b1: str = 'all',
               b2: str = 'all') -> List[np.ndarray]:
@@ -248,7 +248,7 @@ class Derivatives(object):
 
             h^{XY}_{pq} = C^{\mu}_{p}\,\frac{\partial^2 (T+V)_{\mu\nu}}{\partial X\,\partial Y}\,C^{\nu}_{q}
         """
-        C1, C2 = self._moM(b1), self._moM(b2)
+        C1, C2 = self._mo(b1), self._mo(b2)
         T = self.mints.mo_oei_deriv2("KINETIC", atom1, atom2, C1, C2)
         V = self.mints.mo_oei_deriv2("POTENTIAL", atom1, atom2, C1, C2)
         return [np.asarray(t) + np.asarray(v) for t, v in zip(T, V)]
@@ -268,7 +268,7 @@ class Derivatives(object):
         The Hessian skeleton needs only the occupied block, so callers pass ``'o'``
         (n_occ**4 per pair)."""
         return [np.asarray(m) for m in self.mints.mo_tei_deriv2(
-            atom1, atom2, self._moM(b1), self._moM(b2), self._moM(b3), self._moM(b4))]
+            atom1, atom2, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))]
 
     def nuclear_repulsion2(self) -> np.ndarray:
         r"""Nuclear-repulsion-energy Hessian, shape ``(3*natom, 3*natom)`` indexed
