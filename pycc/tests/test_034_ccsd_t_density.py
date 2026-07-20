@@ -114,7 +114,8 @@ def test_ccsd_t_dipole(rhf_wfn):
     cclambda.solve_lambda(1e-12, 1e-12)
     ccdensity = pycc.ccdensity(cc, cclambda)
     ccdensity.compute_energy()
-    mu_analytic = ccdensity.dipole(cc.t1, cc.t2, cclambda.l1, cclambda.l2)[2]
+    opdm = ccdensity.compute_onepdm(cc.t1, cc.t2, cclambda.l1, cclambda.l2)
+    mu_analytic = cc.contract('pq,pq->', cc.H.mu[2], opdm)
     # frozen ref is the analytic dipole itself (matched the Fock-perturbation FD to 1.9e-13); the
     # deterministic recomputation reproduces it to ~3e-15, so 1e-11 is a tight, robust guard.
     assert abs(mu_analytic - T_DIPOLE_Z_REF) < 1e-11, mu_analytic

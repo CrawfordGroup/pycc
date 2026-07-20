@@ -1,6 +1,7 @@
 """
 Test CCSD electric and magnetic dipole on H2 dimer (spatial RHF), and the
-spin-orbital (UHF/ROHF) CC dipole from ccdensity.dipole
+spin-orbital (UHF/ROHF) unrelaxed CC dipole from the correlation one-particle
+density (ccdensity.compute_onepdm contracted with the dipole integrals)
 (docs/archive/ENHANCEMENT_PLAN_2026-06.md).
 """
 
@@ -35,7 +36,10 @@ def _cc_dipole(wfn, **cckwargs):
     hbar = pycc.cchbar(cc)
     lam = pycc.cclambda(cc, hbar); lam.solve_lambda(e_conv=1e-11, r_conv=1e-11)
     dens = pycc.ccdensity(cc, lam, onlyone=True)
-    return np.array(dens.dipole(cc.t1, cc.t2, lam.l1, lam.l2), dtype=float)
+    # unrelaxed CC electronic dipole = Tr(mu . D) with the correlation one-particle density
+    opdm = dens.compute_onepdm(cc.t1, cc.t2, lam.l1, lam.l2)
+    mu = cc.H.mu
+    return np.array([cc.contract('pq,pq->', mu[ax], opdm) for ax in range(3)], dtype=float)
 
 
 def test_so_dipole_equals_spatial_rhf(rhf_wfn):

@@ -332,21 +332,6 @@ class ccdensity(object):
         G = 0.25 * (G + G.transpose(1, 0, 3, 2) + G.transpose(2, 3, 0, 1) + G.transpose(3, 2, 1, 0))
         return D, G
 
-    def dipole(self, t1, t2, l1, l2):
-        """Correlated (CC) contribution to the electric dipole moment.
-
-        Returns the three Cartesian components of ``mu_axis = sum_pq mu_pq D_pq`` --
-        the CC one-particle (correlation) density contracted with the MO-basis dipole
-        integrals (``H.mu``). The reference (SCF) and nuclear dipole are NOT included;
-        add them separately for the total molecular dipole. CCSD/CCD only -- the CC3
-        dipole (T1-transformed integrals) is handled by ``rtcc.dipole``.
-        """
-        if self.ccwfn.model == 'CC3':
-            raise NotImplementedError("CC3 dipole: use rtcc.dipole.")
-        contract = self.contract
-        opdm = self.compute_onepdm(t1, t2, l1, l2)
-        mu = self.ccwfn.H.mu
-        return [contract('pq,pq->', mu[axis], opdm) for axis in range(3)]
 
     def build_Doo(self, t1, t2, l1, l2):  # complete
         r"""Occupied-occupied block D_ij of the CC one-particle correlation density
@@ -1064,41 +1049,5 @@ class ccdensity(object):
         Gam[v, o, o, v] = ib.transpose(1, 0, 3, 2)
         return Gam
 
-    # T1-transformed dipole integrals needed in CC3
-    def build_Moo(self, no, nv, ints, t1):
-        r"""Occupied-occupied block of a T1-transformed one-electron (dipole) integral ``ints``,
-        used in the CC3 density.  Repeated indices summed::
-
-            Moo_mi = M_mi + M_ma t_ia
-
-        .. math::
-
-            \begin{aligned}
-            M_{mi} = M_{mi} + M_{ma} t^a_i
-            \end{aligned}
-        """
-        contract = self.contract
-        Moo = clone(ints[:no,:no])
-        Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
-
-        return Moo
-
-    def build_Mvv(self, no, nv, ints, t1):
-        r"""Virtual-virtual block of a T1-transformed one-electron (dipole) integral ``ints``,
-        used in the CC3 density.  Repeated indices summed::
-
-            Mvv_ae = M_ae - M_ie t_ia
-
-        .. math::
-
-            \begin{aligned}
-            M_{ae} = M_{ae} - M_{ie} t^a_i
-            \end{aligned}
-        """
-        contract = self.contract
-        Mvv = clone(ints[-nv:,-nv:])
-        Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
-
-        return Mvv
 
    

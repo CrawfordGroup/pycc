@@ -233,8 +233,8 @@ class rtcc(object):
                     ints_cc3 = ints_cc3.type_as(t1)
                 else:
                     ints_cc3 = ints_cc3.astype(t1.dtype)
-                ints_cc3[i][:no,:no] = self.ccdensity.build_Moo(no, nv, ints[i], t1)     
-                ints_cc3[i][-nv:,-nv:] = self.ccdensity.build_Mvv(no, nv, ints[i], t1)      
+                ints_cc3[i][:no,:no] = self._build_Moo(no, nv, ints[i], t1)
+                ints_cc3[i][-nv:,-nv:] = self._build_Mvv(no, nv, ints[i], t1)
      
             x = dot(ints[0].flatten(), opdm.flatten())
             y = dot(ints[1].flatten(), opdm.flatten())
@@ -251,8 +251,43 @@ class rtcc(object):
             y = dot(ints[1].flatten(), opdm.flatten())
             z = dot(ints[2].flatten(), opdm.flatten())
 
-            return x, y, z    
-    
+            return x, y, z
+
+    # T1-transformed one-electron (dipole/magnetic) integrals for the CC3 dipole
+    def _build_Moo(self, no, nv, ints, t1):
+        r"""Occupied-occupied block of a T1-transformed one-electron property integral ``ints``,
+        used in the CC3 dipole.  Repeated indices summed::
+
+            Moo_mi = M_mi + M_ma t_ia
+
+        .. math::
+
+            \begin{aligned}
+            M_{mi} = M_{mi} + M_{ma} t^a_i
+            \end{aligned}
+        """
+        contract = self.contract
+        Moo = clone(ints[:no,:no])
+        Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
+        return Moo
+
+    def _build_Mvv(self, no, nv, ints, t1):
+        r"""Virtual-virtual block of a T1-transformed one-electron property integral ``ints``,
+        used in the CC3 dipole.  Repeated indices summed::
+
+            Mvv_ae = M_ae - M_ie t_ia
+
+        .. math::
+
+            \begin{aligned}
+            M_{ae} = M_{ae} - M_{ie} t^a_i
+            \end{aligned}
+        """
+        contract = self.contract
+        Mvv = clone(ints[-nv:,-nv:])
+        Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
+        return Mvv
+
     def lagrangian(self, t, t1, t2, l1, l2):
         """
         Parameters
