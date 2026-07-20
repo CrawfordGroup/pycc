@@ -174,13 +174,19 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the efficient formulation by Rendell
-    and Lee, Chem. Phys. Lett. 178, 462-470 (1991).
+    """Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) using the
+    efficient formulation of Lee and Rendell, Chem. Phys. Lett. 178, 462-470 (1991).
+
+    Returns the same E(T) as :func:`t_vikings` / :func:`t_vikings_inverted`, but via the
+    Lee-Rendell factorization: the connected T3 batch ``W3`` (:func:`t3c_ijk`) and the full
+    numerator ``V3 = W3 + t3d`` are combined into the ``X3``/``Y3``/``Z3`` symmetry
+    intermediates and summed over the *triangular* ranges i>=j>=k and a>=b>=c with the
+    corresponding permutation multiplicity weights -- about a factor of 6 fewer batch
+    contractions than the full-loop viking algorithm.
 
     Returns
     -------
     float
-
     """
     contract = ccwfn.contract
 
@@ -234,15 +240,35 @@ def t_tjl(ccwfn: "CCwfn") -> float:
 
 # Vikings' formulation
 def t_vikings(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the formulation by Helgaker,
-    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
-    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
-    batches triples oveer fixed i,j,k indices.
+    r"""Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) using the
+    Helgaker-Jorgensen-Olsen "vikings" formulation (Molecular Electronic Structure Theory,
+    Wiley, 2000, Ch. 14, pp. 794-795, Eqs. (14.6.62)-(14.6.64)), batching the triples over
+    fixed i,j,k indices.
 
     Returns
     -------
     float
 
+    Notes
+    -----
+    Occupied-batched: the connected T3 ``t3`` (:func:`t3c_ijk`, canonical denominator) is built
+    per-(i,j,k) and contracted into the X1/X2 intermediates -- the full T3 is never stored.
+    ``L = 2 ERI - ERI.swap``; ``t3_cba`` etc. are index permutations of ``t3``; the f_kc term is
+    nonzero only for a non-canonical reference.  Repeated indices summed::
+
+        X1_ia = (t3_abc - t3_cba) L_jkbc
+        X2_ijab += (t3_abc - t3_cba) f_kc
+                +  (2 t3_aef - t3_afe - t3_fea) <bk|ef>
+                -  (2 t3_imkabc - t3_imkacb - t3_imkcba) <mk|jc>
+        E(T) = 2 t1_ia X1_ia + (4 t2 - 2 t2.swap)_ijab X2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        (X_1)^a_i &= (t^{abc}_{ijk} - t^{cba}_{ijk}) L_{jkbc} \\
+        (X_2)^{ab}_{ij} &\mathrel{+}= (t^{abc}_{ijk} - t^{cba}_{ijk}) F_{kc} + (2 t^{aef}_{ijk} - t^{afe}_{ijk} - t^{fea}_{ijk}) \langle bk|ef \rangle - (2 t^{abc}_{imk} - t^{acb}_{imk} - t^{cba}_{imk}) \langle mk|jc \rangle \\
+        E^{(T)} &= 2 t^a_i (X_1)^a_i + (4 t^{ab}_{ij} - 2 t^{ba}_{ij}) (X_2)^{ab}_{ij}
+        \end{aligned}
     """
     contract = ccwfn.contract
 
@@ -282,15 +308,14 @@ def t_vikings(ccwfn: "CCwfn") -> float:
 
 # Vikings' formulation – inverted algorithm
 def t_vikings_inverted(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the formulation by Helgaker,
-    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
-    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
-    batches triples oveer fixed a,b,c indices.
+    """Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) via the
+    Helgaker-Jorgensen-Olsen "vikings" formulation -- the virtual-batched (fixed a,b,c) form of
+    :func:`t_vikings` (same E(T) and X1/X2 expressions; see there), building the connected T3
+    with :func:`t3c_abc`.
 
     Returns
     -------
     float
-
     """
     contract = ccwfn.contract
 
@@ -883,11 +908,32 @@ def t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=T
     return t3
 
 def t_vikings_so(o, v, t1, t2, F, ERI, contract):
-    """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
+    r"""Spin-orbital (T) energy via the occupied-batched ("viking") algorithm -- the
+    spin-orbital counterpart of :func:`t_vikings`.
 
-    Builds the connected T3 in (i,j,k) batches and contracts each batch into the
-    disconnected (x1) and connected (x2) intermediates, then E(T) = t1.x1 +
-    1/4 t2.x2. The spatial RHF (T) drivers (t_tjl/t_vikings) are not used here.
+    Builds the connected T3 in (i,j,k) batches (:func:`t3c_ijk_so`, canonical denominator) and
+    contracts each batch into the disconnected (x1) and connected (x2) intermediates -- the full
+    T3 is **never materialized** (O(v^3) memory).  Contrast :func:`_t_energy_from_t3_so`, which
+    evaluates the *same* E(T) as whole-array einsums from a **pre-built** O(o^3 v^3) T3 (used by
+    the iterated :func:`t_invariant_so`).  The spatial RHF drivers (:func:`t_tjl`/:func:`t_vikings`)
+    are not used here.
+
+    Notes
+    -----
+    With P(pq) X = X - X_swap (the doubles x2 antisymmetrized P(ij)P(ab) after the loop; the
+    f_kc term is nonzero only for a non-canonical reference; repeated indices summed)::
+
+        x1_ia   = 1/4 t3_ijkabc <jk||bc>
+        x2_ijab = P(ij) P(ab) [ 1/4 t3_ijkabc f_kc + 1/4 t3_ijkaef <bk||ef> - 1/4 t3_inlabd <nl||jd> ]
+        E(T)    = t1_ia x1_ia + 1/4 t2_ijab x2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        (x_1)^a_i &= \tfrac{1}{4}\, t^{abc}_{ijk} \langle jk||bc \rangle \\
+        (x_2)^{ab}_{ij} &= \mathcal{P}(ij)\,\mathcal{P}(ab)\left( \tfrac{1}{4}\, t^{abc}_{ijk} F_{kc} + \tfrac{1}{4}\, t^{aef}_{ijk} \langle bk||ef \rangle - \tfrac{1}{4}\, t^{abd}_{inl} \langle nl||jd \rangle \right) \\
+        E^{(T)} &= t^a_i (x_1)^a_i + \tfrac{1}{4}\, t^{ab}_{ij} (x_2)^{ab}_{ij}
+        \end{aligned}
     """
     x1 = zeros_like(t1)
     x2 = zeros_like(t2)
@@ -925,29 +971,13 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
 
 
 def _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract):
-    r"""Spin-orbital (T) energy from a pre-built connected T3, via the "viking"
-    contraction of :func:`t_vikings_so` written in full-array form (no per-(i,j,k)
-    batching).  ``E(T) = <t1|x1> + 1/4 <t2|x2>`` with the disconnected (x1) and
-    connected (x2) intermediates built from the whole T3.  Factored out so both the
-    canonical check and the invariant driver share one energy expression.
-
-    Notes
-    -----
-    With the permutation operator P(pq) X = X - X_swap (repeated indices summed; the ``f_kc``
-    term contributes only for a non-canonical / Brillouin-violating reference)::
-
-        x1_ia   = 1/4 t3_ijkabc <jk||bc>
-        x2_ijab = P(ij) P(ab) [ 1/4 t3_ijkabc f_kc + 1/4 t3_ijkaef <bk||ef> - 1/4 t3_inlabd <nl||jd> ]
-        E(T)    = t1_ia x1_ia + 1/4 t2_ijab x2_ijab
-
-    .. math::
-
-        \begin{aligned}
-        (x_1)^a_i &= \tfrac{1}{4}\, t^{abc}_{ijk} \langle jk||bc \rangle \\
-        (x_2)^{ab}_{ij} &= \mathcal{P}(ij)\,\mathcal{P}(ab)\left( \tfrac{1}{4}\, t^{abc}_{ijk} F_{kc} + \tfrac{1}{4}\, t^{aef}_{ijk} \langle bk||ef \rangle - \tfrac{1}{4}\, t^{abd}_{inl} \langle nl||jd \rangle \right) \\
-        E^{(T)} &= t^a_i (x_1)^a_i + \tfrac{1}{4}\, t^{ab}_{ij} (x_2)^{ab}_{ij}
-        \end{aligned}
-    """
+    """Spin-orbital (T) energy from a **pre-built, whole-array** connected T3 (``t3`` passed in,
+    O(o^3 v^3) stored) -- the full-array form of the :func:`t_vikings_so` contraction (same
+    ``E(T) = t1.x1 + 1/4 t2.x2``; see there for the x1/x2 expressions).  Where
+    :func:`t_vikings_so` builds the T3 batch-by-batch and never stores it, this consumes a T3
+    built elsewhere, so the iterated :func:`t_invariant_so` (whose T3 carries the
+    off-diagonal-Fock coupling) and the canonical whole-array cross-check can share one energy
+    expression."""
     Fov = F[o,v]
     x1 = 0.25 * contract('ijkabc,jkbc->ia', t3, ERI[o,o,v,v])
     x2 = 0.25 * contract('ijkabc,kc->ijab', t3, Fov)                 # f_kc (non-Brillouin only)
