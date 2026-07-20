@@ -1,10 +1,14 @@
 """Shared base for correlated analytic-derivative property drivers (MP2, CC; CI to follow).
 
-`CorrelatedDerivs` owns the method-agnostic orbital-response and assembly machinery -- the pieces
-that depend only on the reduced densities and the SCF reference, not on how the correlated
-wavefunction was obtained.  Method-specific subclasses (`MPderiv`, `CCderiv`) supply the reduced
-densities and their first-order responses.  See docs/DERIVATIVES_PLAN_2026-06.md section 9 for the
-base/leaf split and the phased plan; more machinery moves here in later phases.
+`CorrelatedDerivs` owns the orbital-response and assembly machinery shared across methods.  Most of
+it depends only on the reduced densities and the SCF reference; the one method-dependent choice --
+the perturbed-MO gauge (:attr:`CorrelatedDerivs.perturbed_mo_gauge`, ``'canonical'`` for CCSD(T) and
+``'non-canonical'`` otherwise) -- is encapsulated here and selects the orbital-response variant.
+The canonical gauge carries the extra oo/vv dependent-pair rotations, so the CCSD(T) orbital
+response (and hence its gradient) is genuinely not the same computation as CCSD's -- the machinery
+is shared, but it is not method-*agnostic*.  Method-specific subclasses (`MPderiv`, `CCderiv`)
+supply the reduced densities and their first-order responses.  See docs/DERIVATIVES_PLAN_2026-06.md
+section 9 for the base/leaf split and the phased plan; more machinery moves here in later phases.
 """
 
 from __future__ import annotations
@@ -34,9 +38,11 @@ PerturbedResponse = namedtuple('PerturbedResponse', 'dDrel dGam dW')
 class CorrelatedDerivs:
     """Base class for correlated derivative-property drivers.
 
-    Holds the correlated wavefunction and the method-agnostic derivative machinery.  A subclass
-    (`MPderiv`, `CCderiv`) is constructed from a converged correlated wavefunction and supplies the
-    method-specific reduced densities and their perturbed responses.
+    Holds the correlated wavefunction and the shared derivative machinery, parameterized by the
+    method-determined perturbed-MO gauge (:attr:`perturbed_mo_gauge`; canonical for CCSD(T), which
+    changes the orbital response).  A subclass (`MPderiv`, `CCderiv`) is constructed from a converged
+    correlated wavefunction and supplies the method-specific reduced densities and their perturbed
+    responses.
     """
 
     def __init__(self, wfn) -> None:
@@ -414,7 +420,8 @@ class CorrelatedDerivs:
 
     # ---- first-order response of the relaxed density (perturbed Z-vector) ----
     # d_x Drel differentiates the relaxed-density build once more.  Given the leaf's perturbed
-    # unrelaxed densities (dDg, dGam), the assembly is method-agnostic: the perturbed Lagrangian dI'
+    # unrelaxed densities (dDg, dGam), the assembly is shared across methods (gauge-parameterized,
+    # so CCSD(T)'s canonical oo/vv pairs enter but the code is common): the perturbed Lagrangian dI'
     # (with the perturbed integrals df/deri/dL), the perturbed frozen-core divide d_x P_co (a
     # Sylvester relation), the perturbed canonical-MO oo/vv rotations d_x P_oo/d_x P_vv (gauge-gated),
     # and the perturbed ov Z-vector z^x = A^{-1}(dX - A^x z) reusing the unperturbed orbital Hessian A
