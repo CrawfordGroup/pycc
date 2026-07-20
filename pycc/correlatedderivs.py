@@ -616,9 +616,9 @@ class CorrelatedDerivs:
         d = self.wfn.derivatives
         grad = np.zeros((d.natom, 3))
         for atom in range(d.natom):
-            hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)   # chemist (pq|rs)^X
+            hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)   # physicist <pq|rs>^(X)
             for cart in range(3):
-                phys = ERIx[cart].transpose(0, 2, 1, 3)                   # -> physicist <pq|rs>^(X)
+                phys = ERIx[cart]
                 Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
                 fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])     # skeleton Fock deriv (full occ)
                 grad[atom, cart] = (c('pq,pq->', Drel, fx)
@@ -811,7 +811,7 @@ class CorrelatedDerivs:
                 eriF = [np.asarray(e) for e in d.so_eri(A)]          # <pq||rs>^(X) (Fock and Gamma)
                 gamX = eriF
             else:
-                phys = [np.asarray(ch).transpose(0, 2, 1, 3) for ch in d.eri(A)]  # <pq|rs>^(X) (Gamma)
+                phys = [np.asarray(ch) for ch in d.eri(A)]                        # <pq|rs>^(X) (Gamma)
                 eriF = [2.0 * p - p.transpose(0, 1, 3, 2) for p in phys]          # L^X (Fock)
                 gamX = phys
             for beta in range(3):
@@ -907,7 +907,7 @@ class CorrelatedDerivs:
                 eF = np.asarray(d.so_eri(A)[ct])
                 gm = eF
             else:
-                ph = np.asarray(d.eri(A)[ct]).transpose(0, 2, 1, 3)     # <pq|rs>^(X) (Gamma)
+                ph = np.asarray(d.eri(A)[ct])                           # <pq|rs>^(X) (Gamma)
                 eF = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
                 gm = ph
             fX.append(hx + c('pmqm->pq', eF[:, ofull, :, ofull]))
