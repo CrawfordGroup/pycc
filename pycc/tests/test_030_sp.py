@@ -7,7 +7,7 @@ import psi4
 import numpy as np
 import pycc
 import pytest
-from pycc.rt.integrators import rk4 
+from pycc.rt.integrators import rk4
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
 
@@ -25,16 +25,16 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     # Default: 'DP'
     cc = pycc.ccwfn(wfn, precision='SP')
     ecc = cc.solve_cc(e_conv, r_conv)
-    
+
     # Check CCSD energy
     epsi4 = -0.223910018703551
-    assert (abs(epsi4 - ecc) < 1e-7)    
-    
+    assert (abs(epsi4 - ecc) < 1e-7)
+
     hbar = pycc.cchbar(cc)
 
     cclambda = pycc.cclambda(cc, hbar)
     lecc = cclambda.solve_lambda(e_conv, r_conv)
-    
+
     # Check CCSD pseudo energy
     lepsi4 = -0.219688229733875
     assert (abs(lepsi4 - lecc) < 1e-7)
@@ -61,21 +61,21 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     t1, t2, l1, l2, phase = rtcc.extract_amps(y0)
     mu0_x, mu0_y, mu0_z = rtcc.dipole(t1, t2, l1, l2)
     ecc0 = rtcc.lagrangian(t0, t1, t2, l1, l2)
-   
-    # Check dipole moment 
+
+    # Check dipole moment
     mu0_z_ref = -0.0780069121607703 # computed by removing SCF from original ref
     assert(abs(mu0_z_ref - mu0_z) < 1e-6)
-    
+
     while t < tf:
         y = ODE(rtcc.f, t, y)
-        t += h 
+        t += h
         t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
-        
+
     print(mu_z)
-   
+
     # Check the dipole value at time step 1
     mu_z_ref = -0.0780069121607703 # computed by removing SCF from original ref
-    assert (abs(mu_z_ref - mu_z.real) < 1e-6)    
+    assert (abs(mu_z_ref - mu_z.real) < 1e-6)
 

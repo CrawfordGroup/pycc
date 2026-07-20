@@ -16,7 +16,7 @@ Runge-Kutta family of integrators for ODE propagaton.
    1st-order: Euler;
    2nd-order: Midpoint, Heun, Runge-Kutta 2nd order(Ralston);
    3rd-order: Runge-Kutta 3rd order;
-   4th-order: Runge-Kutta 4th order, 
+   4th-order: Runge-Kutta 4th order,
               Runge-Kutta 4th order with 3/8 rule;
 
 2. Adaptive (embeded) integrators:
@@ -33,23 +33,23 @@ Runge-Kutta family of integrators for ODE propagaton.
    4th-order: SDIRK5 (singly diagonally implicit method),
               Gauss-Legendre 4th order method;
    5th-order: Radau_IA5, Radau_IIA5;
-   6th-order: Gauss-Legendre 6th order method.     
+   6th-order: Gauss-Legendre 6th order method.
 """
 
 """
 Note:
 1. All the explicit integrators were coded up to be compatible
    with PyCC, while not all of them will give a stable real-time
-   simulation. The Runge-Kutta 4th order integrator (rk4) is 
+   simulation. The Runge-Kutta 4th order integrator (rk4) is
    tested to be the default option.
-2. All the adaptive integrators are compatible with PyCC. The 
-   parameters for the error evaluation step may be customized.The 
+2. All the adaptive integrators are compatible with PyCC. The
+   parameters for the error evaluation step may be customized.The
    Cash-Karp integrator is the default adaptive integrator for
-   real-time simulation and tested to be valid. 
-3. For the implicit integrators, the explicit implementation are 
+   real-time simulation and tested to be valid.
+3. For the implicit integrators, the explicit implementation are
    not incluted with their Buther tableau in this file. Choices
-   of the algorithms for iteratively solving the results at each 
-   time step may be manually added for the case of interest 
+   of the algorithms for iteratively solving the results at each
+   time step may be manually added for the case of interest
    if needed.
 --Zhe
 """
@@ -67,7 +67,7 @@ class euler(object):
     def __call__(self, f, t, y):
         # time step i
         k1 = f(t, y)
-        
+
         # time step i+1
         y_new = y + self.h * k1
 
@@ -83,10 +83,10 @@ class midpoint(object):
         # time step i
         k1 = f(t, y)
         k2 = f(t + 0.5 * self.h, y + 0.5 * self.h * k1)
-        
+
         # time step i+1
         y_new = y + self.h * k2
-        
+
         return y_new
 
 class heun(object):
@@ -95,7 +95,7 @@ class heun(object):
     """
     def __init__(self, h):
         self.h = float(h)
-    
+
     def __call__(self, f, t, y):
         # time step i
         k1 = f(t, y)
@@ -176,7 +176,7 @@ class rk38(object):
 
         # time step i + h
         y_new = y + self.h * (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
-    
+
         return y_new
 
 """
@@ -189,7 +189,7 @@ class hr(object):
     """
     def __init__(self, h):
         self.h = float(h)
-    
+
     def __call__(self, f, t, y):
         k1 = f(t, y)
         # 1st-order solution
@@ -210,7 +210,7 @@ class hr(object):
         if (i == self.maxiter - 1):
             print("y did not converge with in %d iterations \n" % maxiter)
             return (y_new1, h, h_new)
-            
+
         # Update h for the next iteration.
         h_new = 0.84 * h * pow((self.yconv / err), 0.25)
         h = h_new
@@ -226,14 +226,14 @@ class fehlberg(object):
     def __call__(self, f, t, y):
         k1 = f(t, y)
         k2 = f(t + self.h * 0.5, y + self.h * 0.5 * k1)
-        
-        # 2nd-order solution 
+
+        # 2nd-order solution
         y_new1 = y + self.h * (k1 + 255 * k2) / 256
-        
+
         k3 = f(t + self.h, y_new1)
         # 3rd-order solution for adjusting the step-size
         y_new2 = y + self.h * (k1 + 510 * k2 + k3) / 512
-        
+
         # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
         err = np.linalg.norm(y_new1 - y_new2)
 
@@ -245,7 +245,7 @@ class fehlberg(object):
         if (i == self.maxiter - 1):
             print("y did not converge with in %d iterations \n" % maxiter)
             return (y_new1, h, h_new)
-            
+
         # Update h for the next iteration.
         h_new = 0.84 * h * pow((self.yconv / err), 0.25)
         h = h_new
@@ -257,18 +257,18 @@ class bs(object):
     """
     def __init__(self, h):
         self.h = float(h)
-    
+
     def __call__(self, f, t, y):
         k1 = f(t, y)
         k2 = f(t + 0.5 * self.h. y + 0.5 * self.h * k1)
         k3 = f(t + 0.75 * self.h, y + 0.75 * self.h * k2)
         # 3rd-order solution
-        y_new1 = y + self.h * (2 * k1 + 3 * k2 + 4 * k3) / 9.0 
+        y_new1 = y + self.h * (2 * k1 + 3 * k2 + 4 * k3) / 9.0
 
         k4 = f(t + self.h, y_new)
         # 4th-order solution for adjusting the step-size
         y_new2 = y + self.h * (7 * k1 + 6 * k2 + 8 * k3 + 3 * k4) / 24.0
-     
+
         # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
         err = np.linalg.norm(y_new1 - y_new2)
 
@@ -280,7 +280,7 @@ class bs(object):
         if (i == self.maxiter - 1):
             print("y did not converge with in %d iterations \n" % maxiter)
             return (y_new1, h, h_new)
-            
+
         # Update h for the next iteration.
         h_new = 0.84 * h * pow((self.yconv / err), 0.25)
         h = h_new
@@ -310,7 +310,7 @@ class ck(object):
             y_new1 = y + h * (37 / 378 * k1 + 250 / 621 * k3 + 125 / 594 * k4 + 512 / 1771 * k6)
             # Fifth-order solution
             y_new2 = y + h * (2825 / 27648 * k1 + 18575 / 48384 * k3 + 13525 / 55296 * k4 + 277 / 14336 * k5 + k6 / 4)
-         
+
             # For the adaptive time step, the difference b/t the fourth- and fifth-order solutions will be needed
             err = np.linalg.norm(y_new1 - y_new2)
 
@@ -322,7 +322,7 @@ class ck(object):
             if (i == self.maxiter - 1):
                 print("y did not converge with in %d iterations \n" % maxiter)
                 return (y_new1, h, h_new)
-            
+
             # Update h for the next iteration.
             h_new = 0.84 * h * pow((self.yconv / err), 0.25)
             h = h_new
@@ -339,7 +339,7 @@ class DOPRI5(object):
     def __call__(self, f, t, y, h0):
         h = float(h0)
         k1 = f(t, y)
-        for i in range(maxiter):            
+        for i in range(maxiter):
             k2 = f(t + 0.2 * h, y + h * 0.2 * k1)
             k3 = f(t + 0.3 * h, y + h * (3 * k1 + 9 * k2) / 40)
             k4 = f(t + 0.8 * h, y + h * (44 * k1 - 168 * k2 + 160 * k3) / 45)
@@ -364,26 +364,26 @@ class DOPRI5(object):
             if (i == self.maxiter - 1):
                 print("y did not converge with in %d iterations \n" % maxiter)
                 return (y_new1, h, h_new)
-            
+
             # Update h for the next iteration.
             h_new = 0.84 * h * pow((self.yconv / err), 0.25)
             h = h_new
 
 """
 Implicit integrators
-"""     
+"""
 class euler_I(object):
     """
     Integrator object for Euler implicit ODE propagation.
     """
     def __init__(self, h):
         self.h = float(h)
-  
+
     def __call__(self, f, t, h):
         # order 1
         A = np.asarray([1])
         b = [1]
-        c = [1] 
+        c = [1]
         pass
 
 class midpoint_I(object):
@@ -392,7 +392,7 @@ class midpoint_I(object):
     """
     def __init__(self, h):
         self.h = float(h)
-    
+
     def __init__(self, f, t, y):
         # order 2
         A = np.asarray([0.5])
@@ -406,7 +406,7 @@ class SDIRK5(object):
     """
     def __init__(self, h):
         self.h = float(h)
-   
+
     def __call__(self, f, t, y):
         A = np.asarray([
             [1/4,0,0,0,0],
@@ -415,8 +415,8 @@ class SDIRK5(object):
             [371/1630,-137/2720,15/544,1/4,0],
             [25/24,-49/48,125/16,-85/12,1/4]])
         b = [25/24,-49/48,125/16,-85/12,1/4]
-        c = [1/4,3/4,11/20,1/2,1] 
-        pass  
+        c = [1/4,3/4,11/20,1/2,1]
+        pass
 
 class radau_IA3(object):
     """
@@ -426,7 +426,7 @@ class radau_IA3(object):
         self.h = float(h)
 
     def __call__(self, f, t, y):
-        # order 3 
+        # order 3
         A = np.asarray([[1/4,-1/4],[1/4,5/12]])
         b = [1/4,3/4]
         c = [0,2/3]
@@ -488,7 +488,7 @@ class gl4(object):
     def __init__(self, h, Z_conv=1e-7):
         self.h = float(h)
         self.Z_conv = float(Z_conv)
-    
+
     def __call__(self, f, t, y):
         # Order 2s = 4
         s = 2
@@ -562,14 +562,14 @@ class gl6(object):
     def __call__(self, f, t, y):
         # Order 2s = 6
         s = 3
-    
+
         # input coefficients
         A = np.array([[5 / 36, 2 / 9 - np.sqrt(15) / 15, 5 / 36 - np.sqrt(15) / 30],
                       [5 / 36 + np.sqrt(15) / 24, 2 / 9, 5 / 36 - np.sqrt(15) / 24],
                       [5 / 36 + np.sqrt(15) / 30, 2 / 9 + np.sqrt(15) / 15, 5 / 36]])
         B = np.array([5 / 18, 4 / 9, 5 / 18])
         C = np.array([1 / 2 - np.sqrt(15) / 10, 1 / 2, 1 / 2 + np.sqrt(15) / 10])
-    
+
         # check the coeffecients
         """
         a = [0, 0, 0]
@@ -617,13 +617,13 @@ class gl6(object):
                 break
             else:
                 Z = Z_new
-    
+
         if k == nk - 1:
             print("Z has not convered in %d iterations, please choose a larger nk." % nk)
 
         # time step i + h
         y_new = y + self.h * np.dot(B, F)
-    
+
         return y_new
 
 

@@ -1,5 +1,5 @@
 """
-Test electric field generation 
+Test electric field generation
 """
 
 # Import package, test suite, and other packages as needed

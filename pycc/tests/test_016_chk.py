@@ -26,7 +26,7 @@ def test_chk(datadir):
                       'diis': 8})
     mol = psi4.geometry(moldict["H2"])
 
-    # pull ref wfn, psi4 is picky about strings 
+    # pull ref wfn, psi4 is picky about strings
     rhf_dir = str(datadir.join(f"ref_wfn.npy"))
     rhf_wfn = psi4.core.Wavefunction.from_file(rhf_dir)
 
@@ -73,7 +73,7 @@ def test_chk(datadir):
     reft_file = datadir.join(f"t_out_full.pk")
     with open(reft_file,'rb') as ampf:
         ref_t = pk.load(ampf)
-        
+
     # check properties
     pchk = ['ecc','mu_x','mu_y','mu_z','m_x','m_y','m_z']
     for k in ref_p.keys():

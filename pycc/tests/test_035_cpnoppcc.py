@@ -20,17 +20,17 @@ def test_cpnopp_ccsd(rhf_wfn):
                   e_convergence=1e-13, d_convergence=1e-13, r_convergence=1e-13)
     ccsd = pycc.ccwfn(wfn, local='CPNO++', local_cutoff=1e-7, it2_opt=False)
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter)
-    
+
     hbar = pycc.cchbar(ccsd)
     cclambda = pycc.cclambda(ccsd, hbar)
     lccsd = cclambda.solve_lambda(e_conv, r_conv, maxiter, max_diis)
-    
-    #Ruhee's ccsd_lpno code 
+
+    #Ruhee's ccsd_lpno code
     esim = -0.22303320613504354
     lsim = -0.21890326836263854
-   
+
     assert (abs(esim - eccsd) < 1e-7)
-    assert (abs(lsim - lccsd) < 1e-7)   
+    assert (abs(lsim - lccsd) < 1e-7)
 
 def test_pnopp_ccsd_opt(rhf_wfn):
     """H2O CPNO++-CCSD with Optimized Initial T2 Amplitudes"""
@@ -48,9 +48,9 @@ def test_pnopp_ccsd_opt(rhf_wfn):
     cclambda = pycc.cclambda(ccsd, hbar)
     lccsd = cclambda.solve_lambda(e_conv, r_conv, maxiter, max_diis)
 
-    #Comparing against simulation code 
-    esim = -0.223866820104919 
-    lsim = -0.21966259490352782 
- 
+    #Comparing against simulation code
+    esim = -0.223866820104919
+    lsim = -0.21966259490352782
+
     assert (abs(esim - eccsd) < 1e-7)
     assert (abs(lsim - lccsd) < 1e-7)

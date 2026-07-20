@@ -199,7 +199,7 @@ class helper_diis(object):
         self.oldt2 = clone(t2)
 
     def extrapolate(self, t1, t2):
-        
+
         if (self.max_diis == 0):
             return t1, t2
 

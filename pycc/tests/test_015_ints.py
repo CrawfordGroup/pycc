@@ -1,7 +1,7 @@
 """
 Test integrators with simple ODE
 dx/dy = 3x^2y given x0 = 1, y0 = 2
-ANALYTIC SOLUTION: 
+ANALYTIC SOLUTION:
 y = e^{x^3 + c}, c = ln(2) - 1
 y(1,1.1,1.2,1.3,1.4) = [2,2.78471958461639,4.141869187709196,6.6203429951303265,11.440356871885081]
 """
@@ -20,7 +20,7 @@ def chk_ode(ode):
     ODE = ode(h)
     t0 = 1
     y0 = 2
-    
+
     y1 = ODE(f,t0,y0)
     y2 = ODE(f,t0+h,y1)
     y3 = ODE(f,t0+2*h,y2)

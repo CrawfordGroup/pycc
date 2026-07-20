@@ -7,7 +7,7 @@ import psi4
 import numpy as np
 import pycc
 import pytest
-from pycc.rt.integrators import rk4 
+from pycc.rt.integrators import rk4
 from pycc.rt.lasers import gaussian_laser
 from ..data.molecules import *
 
@@ -61,10 +61,10 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
     dip_z.append(mu0_z)
     time_points.append(t)
     """
-    
+
     while t < tf:
         y = ODE(rtcc.f, t, y)
-        t += h 
+        t += h
         t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2)
         ecc = rtcc.lagrangian(t, t1, t2, l1, l2)
@@ -74,11 +74,11 @@ def test_rtcc_water_cc_pvdz(rhf_wfn):
         dip_z.append(mu_z)
         time_points.append(t)
         """
-        
+
     print(mu_z)
     mu_z_ref = -0.0780067603267549 # computed by removing SCF from original ref
     assert (abs(mu_z_ref - mu_z.real) < 1e-4)
-    
+
     #return (dip_x, dip_y, dip_z, time_points)
 
 #dip = test_rtcc_water_cc_pvdz()

@@ -64,10 +64,10 @@ class cchbar(object):
         """
 
         time_init = time.time()
-  
+
         self.ccwfn = ccwfn
         self.contract = self.ccwfn.contract
- 
+
         F = ccwfn.H.F
         ERI = ccwfn.H.ERI
         L = ccwfn.H.L if ccwfn.orbital_basis == 'spatial' else None  # no L in spin orbitals
@@ -94,7 +94,7 @@ class cchbar(object):
         self.Hovov = self.build_Hovov(o, v, ERI, t1, t2)
         self.Hvvvo = self.build_Hvvvo(o, v, ERI, L, self.Hov, self.Hvvvv, t1, t2)
         self.Hovoo = self.build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
-    
+
         print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
 
     """
@@ -334,7 +334,7 @@ class cchbar(object):
             if self.ccwfn.model == 'CC2':
                 Hoooo = Hoooo + contract('jf,mnif->mnij', t1, contract('ie,mnef->mnif', t1, ERI[o,o,v,v]))
             else:
-                Hoooo = Hoooo + contract('ijef,mnef->mnij', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v]) 
+                Hoooo = Hoooo + contract('ijef,mnef->mnij', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,v])
 
         return Hoooo
 
@@ -685,7 +685,7 @@ class cchbar(object):
             Hvvvo = Hvvvo + contract('mnab,mnei->abei', self.ccwfn.build_tau(t1, t2), ERI[o,o,v,o])
             Hvvvo = Hvvvo - contract('imfa,bmfe->abei', t2, ERI[v,o,v,v])
             Hvvvo = Hvvvo - contract('imfb,amef->abei', t2, ERI[v,o,v,v])
-            Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])   
+            Hvvvo = Hvvvo + contract('mifb,amef->abei', t2, L[v,o,v,v])
             tmp = clone(ERI[v,o,v,o], device=self.ccwfn.device1)
             tmp = tmp - contract('infa,mnfe->amei', t2, ERI[o,o,v,v])
             Hvvvo = Hvvvo - contract('mb,amei->abei', t1, tmp)
@@ -800,8 +800,8 @@ class cchbar(object):
             Hovoo = Hovoo - contract('nb,mnij->mbij', t1, Hoooo)
             Hovoo = Hovoo + contract('jf,mbif->mbij', t1, contract('ie,mbef->mbif', t1, ERI[o,v,v,v]))
             Hovoo = Hovoo + contract('je,mbie->mbij', t1, ERI[o,v,o,v])
-            Hovoo = Hovoo + contract('ie,bmje->mbij', t1, ERI[v,o,o,v])     
-  
+            Hovoo = Hovoo + contract('ie,bmje->mbij', t1, ERI[v,o,o,v])
+
         else:
             Hovoo = clone(ERI[o,v,o,o], device=self.ccwfn.device1)
             Hovoo = Hovoo + contract('me,ijeb->mbij', Hov, t2)
@@ -817,7 +817,7 @@ class cchbar(object):
             tmp = tmp - contract('jnfb,mnef->bmje', t2, ERI[o,o,v,v])
             tmp = tmp + contract('njfb,mnef->bmje', t2, L[o,o,v,v])
             Hovoo = Hovoo + contract('ie,bmje->mbij', t1, tmp)
-            
+
             if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
         return Hovoo

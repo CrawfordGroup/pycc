@@ -23,9 +23,9 @@ def test_pno_ccsd(rhf_wfn):
 
     #pno-ccsd
     lccsd = pycc.ccwfn(wfn,model='CCSD', local='PNO', local_cutoff=1e-5,it2_opt=False)
-    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter) 
+    elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccsd_sim - elccsd) < 1e-12) 
+    assert(abs(eccsd_sim - elccsd) < 1e-12)
 
 @pytest.mark.slow
 def test_pnopp_ccsd(rhf_wfn):
@@ -45,7 +45,7 @@ def test_pnopp_ccsd(rhf_wfn):
     lccsd = pycc.ccwfn(wfn,model='CCSD', local='PNO++', local_cutoff=1e-7,it2_opt=False)
     elccsd = lccsd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccsd_sim - elccsd) < 1e-12) 
+    assert(abs(eccsd_sim - elccsd) < 1e-12)
 
 @pytest.mark.slow
 def test_pno_ccsd_opt(rhf_wfn):

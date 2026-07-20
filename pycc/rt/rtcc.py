@@ -64,7 +64,7 @@ class rtcc(object):
         self.ccdensity = ccdensity
         self.contract = self.ccwfn.contract
         self.V = V
-         
+
         # Grab the requested dipole integrals from the Hamiltonian
         self.mu = self.ccwfn.H.mu
         if self.ccwfn.precision == 'SP':
@@ -75,13 +75,13 @@ class rtcc(object):
             self.mu_tot = self.mu[s_to_i[kick.lower()]]
         else:
             self.mu_tot = sum(self.mu)/np.sqrt(3.0)  # isotropic field
-  
+
         if HAS_TORCH and isinstance(self.ccwfn.t1, torch.Tensor):
             if self.ccwfn.precision == 'DP':
                 self.mu = torch.tensor(self.mu, dtype=torch.complex128, device=self.ccwfn.device1)
             elif self.ccwfn.precision == 'SP':
                 self.mu = torch.tensor(self.mu, dtype=torch.complex64, device=self.ccwfn.device1)
-            
+
             if kick:
                 s_to_i = {"x":0, "y":1, "z":2}
                 self.mu_tot = self.mu[s_to_i[kick.lower()]]
@@ -253,18 +253,18 @@ class rtcc(object):
             ints = self.mu
 
         if self.ccwfn.model == 'CC3':
-            # Calculating T1-transformed dipole integral  
+            # Calculating T1-transformed dipole integral
             no = self.ccwfn.no
             nv = self.ccwfn.nv
             ints_cc3 = zeros_like(ints)
             for i in range(3):
-                if HAS_TORCH and isinstance(t1, torch.Tensor):                    
+                if HAS_TORCH and isinstance(t1, torch.Tensor):
                     ints_cc3 = ints_cc3.type_as(t1)
                 else:
                     ints_cc3 = ints_cc3.astype(t1.dtype)
                 ints_cc3[i][:no,:no] = self._build_Moo(no, nv, ints[i], t1)
                 ints_cc3[i][-nv:,-nv:] = self._build_Mvv(no, nv, ints[i], t1)
-     
+
             x = dot(ints[0].flatten(), opdm.flatten())
             y = dot(ints[1].flatten(), opdm.flatten())
             z = dot(ints[2].flatten(), opdm.flatten())
@@ -272,7 +272,7 @@ class rtcc(object):
             x += dot(ints_cc3[0].flatten(), opdm_cc3.flatten())
             y += dot(ints_cc3[1].flatten(), opdm_cc3.flatten())
             z += dot(ints_cc3[2].flatten(), opdm_cc3.flatten())
-            
+
             return x, y, z
 
         else:
@@ -345,7 +345,7 @@ class rtcc(object):
         if self.ccwfn.model == 'CC3':
             (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
             opdm = opdm + opdm_cc3
-        else:            
+        else:
             opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
         Doooo = self.ccdensity.build_Doooo(t1, t2, l2)
         Dvvvv = self.ccdensity.build_Dvvvv(t1, t2, l2)
@@ -354,7 +354,7 @@ class rtcc(object):
         Dovov = self.ccdensity.build_Dovov(t1, t2, l1, l2)
         Doovv = self.ccdensity.build_Doovv(t1, t2, l1, l2)
         contract = self.contract
-        
+
         F = clone(self.ccwfn.H.F) + self.mu_tot * self.V(t)
         eref = self._eref(F)
 
@@ -486,7 +486,7 @@ class rtcc(object):
         B += 0.5*contract("ijab,ia,jb->", l2_r, t1_l, t1_l)
         B -= contract("ijab,ia,jb->", l2_r, t1_l, t1_r)
         B *= np.exp(-phase_r) * np.exp(phase_l)
-        
+
         return 0.5*A + 0.5*conj(B)
 
     def step(self,ODE,yi,t,ref=False):
@@ -568,7 +568,7 @@ class rtcc(object):
         """
         # setup
         point = 0
-        key = '%.*f' % (k,ti) 
+        key = '%.*f' % (k,ti)
 
         # pull previous chkpt or properties?
         if chk:
@@ -620,7 +620,7 @@ class rtcc(object):
             point += 1
             y,props = self.step(ODE,yi,t,ref)
             t += ODE.h
-            key = '%.*f' % (k,t) 
+            key = '%.*f' % (k,t)
             ret[key] = props
             yi = y
 

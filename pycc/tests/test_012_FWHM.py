@@ -17,7 +17,7 @@ def test_FWHM():
 
     valid_FWHM = 6.30807298
     return test_FWHM
-    assert valid_FWHM != None, "The function does not return anything" 
+    assert valid_FWHM != None, "The function does not return anything"
     assert valid_FWHM == test_FWHM, "Function does not return the right FWHM"
 
 

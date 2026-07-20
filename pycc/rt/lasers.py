@@ -67,7 +67,7 @@ class lrcw_laser:
         self.nr = nr
     def __call__(self, t):
         tc = 2 * np.pi / self.omega * self.nr
-        if t <= tc:            
+        if t <= tc:
             pulse = t / tc * self.F_str * np.cos(self.omega * t)
         else:
             pulse = self.F_str * np.cos(self.omega * t)
@@ -80,7 +80,7 @@ class qrcw_laser:
         self.nr = nr
     def __call__(self, t):
         tc = 2 * np.pi / self.omega * self.nr
-        if t <= 0.5 * tc:            
+        if t <= 0.5 * tc:
             pulse = 2 * t ** 2 / tc ** 2 * self.F_str * np.cos(self.omega * t)
         elif t <= tc:
             pulse = (1 - 2 * (t - tc) ** 2 / tc ** 2)* self.F_str * np.cos(self.omega * t)

@@ -201,12 +201,12 @@ class lccwfn(object):
         Wmbej = self.build_Wmbej(Wmbej, ERI, L, self.Local.ERIoovo, self.Local.Sijnn, self.Local.Sijnj, self.Local.Sijjn, t1, t2)
         Wmbje, Wmbie = self.build_Wmbje(Wmbje, Wmbie, ERI, self.Local.ERIooov, self.Local.Sijnn, self.Local.Sijin, self.Local.Sijjn, t1, t2)
 
-        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Sijmm, self.Local.Sijim, self.Local.Sijmn,  
+        r1 = self.r_T1(r1, self.Local.Fov , ERI, L, self.Local.Loovo, self.Local.Sijmm, self.Local.Sijim, self.Local.Sijmn,
         t1, t2, Fae, Fmi, Fme)
-        r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim, 
+        r2 = self.r_T2(r2, ERI, self.Local.ERIoovv, self.Local.ERIvvvv, self.Local.ERIovoo, self.Local.Sijmm, self.Local.Sijim,
         self.Local.Sijmj, self.Local.Sijnn, self.Local.Sijmn, t1, t2, Fae ,Fmi, Fme, Wmnij, Zmbij, Wmbej, Wmbje, Wmbie)
 
-        return r1, r2   
+        return r1, r2
 
     def build_Fae(self, Fae_ij, L, Fvv, Fov, Sijmm, Sijmn, t1, t2):
         """Build the local F_ae one-body intermediate, one block per pair.
@@ -250,7 +250,7 @@ class lccwfn(object):
                         Fae -= tmp @ tmp1.T
 
                 Fae_ij.append(Fae)
-        else:     
+        else:
             for ij in range(self.no*self.no):
                 i = ij // self.no
                 j = ij % self.no
@@ -356,7 +356,7 @@ class lccwfn(object):
         v = self.v
 
         if self.model == 'CCD':
-            return 
+            return
         else:
             for ij in range(self.no*self.no):
 
@@ -736,7 +736,7 @@ class lccwfn(object):
                     mi = m*self.no + i
                     iim = ii*(self.no) + m
 
-                    tmp = Sijmm[iim] @ t1[m] 
+                    tmp = Sijmm[iim] @ t1[m]
                     r1 -= tmp * Fmi[m,i]
 
                     tmp1 = Sijim[iim] @ (2*t2[im] - t2[im].swapaxes(0,1))
@@ -758,8 +758,8 @@ class lccwfn(object):
                     m = mn // self.no
                     n = mn % self.no
                     imn = i*(self.no**2) + mn
-                    iimn =ii*(self.no**2) + mn 
-             
+                    iimn =ii*(self.no**2) + mn
+
                     tmp4 = Sijmn[iimn] @ t2[mn]
                     r1 -= contract('aE,E->a',tmp4,Loovo[mn][n,m,:,i])
 
@@ -892,7 +892,7 @@ class lccwfn(object):
 
                     tmp5 = Sijim[ijm] @ (t2[im] - t2[im].swapaxes(0,1))
                     r2 += tmp5 @ Wmbej[ijm].T
-   
+
                     tmp6 = Sijim[ijm] @ t2[im]
                     tmp7 = Wmbej[ijm] + Wmbje[ijm]
                     r2 += tmp6 @ tmp7.T
@@ -923,7 +923,7 @@ class lccwfn(object):
                         r2 += 0.5 * tmp12 * Wmnij[m,n,i,j]
                         r2 += 0.5 * contract('a,b->ab',tmp2_0, tmp13) * Wmnij[m,n,i,j]
 
-                nr2.append(r2) 
+                nr2.append(r2)
 
         for i in range(self.no):
             for j in range(self.no):

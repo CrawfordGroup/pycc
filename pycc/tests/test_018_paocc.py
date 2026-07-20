@@ -26,9 +26,9 @@ def test_pao_H8(rhf_wfn):
         """
     wfn = rhf_wfn(geom, "DZ", freeze_core="False", guess="core", diis=8)
     ccsd = pycc.ccwfn(wfn, local='PAO', local_cutoff=2e-2)
-    
+
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
-    
+
     # (H2)_4 REFERENCE:
     psi3_ref = -0.108914240219735
 
@@ -44,9 +44,9 @@ def test_pao_h2o(rhf_wfn):
     wfn = rhf_wfn("H2O_Teach", "6-31g", geom_extra="\nnoreorient\nnocom\nsymmetry c1",
                   freeze_core="False", guess="core", diis=8)
     ccsd = pycc.ccwfn(wfn, local='PAO', local_cutoff=2e-2)
-    
+
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
-    
+
     # NOTE: the following reference was generated with a custom build of Psi3
     # which removed PAOs based on their norm EVEN IF freeze_core = false
     psi3_ref = -0.149361947815815
@@ -66,9 +66,9 @@ def test_pao_h2o_frzc(rhf_wfn):
     wfn = rhf_wfn("H2O_Teach", "6-31g", geom_extra="\nnoreorient\nnocom\nsymmetry c1",
                   freeze_core="True", guess="core", diis=8)
     ccsd = pycc.ccwfn(wfn, local='PAO', local_cutoff=2e-2)
-    
+
     eccsd = ccsd.solve_cc(e_conv, r_conv, maxiter, max_diis)
-    
+
     psi3_ref = -0.148485522656349
 
     assert (abs(psi3_ref - eccsd) < 1e-7)

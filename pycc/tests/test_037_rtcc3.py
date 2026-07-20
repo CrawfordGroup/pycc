@@ -52,7 +52,7 @@ def test_rtcc_he_cc_pvdz(rhf_wfn):
         t += h
         t1, t2, l1, l2, phase = rtcc.extract_amps(y)
         mu_x, mu_y, mu_z = rtcc.dipole(t1, t2, l1, l2, real_time=True)
-        
+
     print(mu_z)
     assert (abs(mu_z_ref - mu_z.real) < 1e-10)
 

@@ -1629,12 +1629,12 @@ class ccresponse(object):
 	Calculate the CC linear response function for polarizability at field-frequency omega(w1).
 
 	The linear response function, <<A;B(w1)>> generally reuires the following perturbed wave functions and frequencies:
-	
+
 	Parameters
 	----------
 	pertkey_a: string
 		String identifying the one-electron perturbation, A along a cartesian axis
-	
+
 
 	Return
 	------
@@ -1696,10 +1696,10 @@ class ccresponse(object):
 	Notes
 	-----
 	The first-order lambda equations are partition into two expressions: inhomogeneous (in_Y1 and in_Y2) and homogeneous terms (r_Y1 and r_Y2),
-	the inhomogeneous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations. 
+	the inhomogeneous terms contains only terms that are not changing over the iterative process of obtaining the solutions for these equations.
 	Therefore, it is computed only once and is called when solving for the homogeneous terms.
         """
- 
+
         solver_start = time.time()
 
         Dia = self.Dia
@@ -1712,46 +1712,46 @@ class ccresponse(object):
         # initial guess
         Y1 = 2.0 * X1_guess.copy()
         Y2 = 4.0 * X2_guess.copy()
-        Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)              
+        Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)
 
         # need to understand this
         pseudo = self.pseudoresponse(pertbar, Y1, Y2)
         print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
-        
+
         diis = helper_diis(Y1, Y2, max_diis)
         contract = self.ccwfn.contract
 
         self.Y1 = Y1
-        self.Y2 = Y2 
-        
+        self.Y2 = Y2
+
         # uses updated X1 and X2
         self.im_Y1 = self.in_Y1(pertbar, self.X1, self.X2)
         self.im_Y2 = self.in_Y2(pertbar, self.X1, self.X2)
 
         for niter in range(1, maxiter+1):
             pseudo_last = pseudo
-            
+
             Y1 = self.Y1
             Y2 = self.Y2
-            
+
             r1 = self.r_Y1(pertbar, omega)
             r2 = self.r_Y2(pertbar, omega)
-            
+
             self.Y1 += r1/(Dia + omega)
             self.Y2 += r2/(Dijab + omega)
-            
+
             rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
             rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
             rms = np.sqrt(rms)
-            
+
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
             print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
-                
+
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
                 print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
                 return self.Y1, self.Y2 , pseudo
-            
+
             diis.add_error_vector(self.Y1, self.Y2)
             if niter >= start_diis:
                 self.Y1, self.Y2 = diis.extrapolate(self.Y1, self.Y2)
@@ -1805,7 +1805,7 @@ class ccresponse(object):
         r_Y1 += contract('ie,ea->ia', l1, pertbar.Avv)
         # <O|L2(0)|A_bar|phi^a_i>
         r_Y1 += contract('imfe,feam->ia', l2, pertbar.Avvvo)
-   
+
         # can combine the next two to swapaxes type contraction
         r_Y1 -= 0.5 * contract('ienm,mnea->ia', pertbar.Aovoo, l2)
         r_Y1 -= 0.5 * contract('iemn,mnae->ia', pertbar.Aovoo, l2)
@@ -1901,7 +1901,7 @@ class ccresponse(object):
         #can combine the next two to swapaxes type contraction
         tmp   = -2.0 * contract('imoe,mnef->ionf', hbar.Hooov, X2)
         tmp  += contract('mioe,mnef->ionf', hbar.Hooov, X2)
-        r_Y1 += contract('ionf,nofa->ia', tmp, l2) 
+        r_Y1 += contract('ionf,nofa->ia', tmp, l2)
 
         return r_Y1
 
@@ -2036,7 +2036,7 @@ class ccresponse(object):
         tmp   = 2.0 *contract('me,jb->mejb', X1, l1)
         r_Y2 += contract('imae,mejb->ijab', L[o,o,v,v], tmp)
 
-        # <O|L2(0)|[Hbar(0), X1]|phi^ab_ij> 
+        # <O|L2(0)|[Hbar(0), X1]|phi^ab_ij>
         tmp   = contract('me,ma->ea', X1, hbar.Hov)
         r_Y2 -= contract('ijeb,ea->ijab', l2, tmp)
         tmp   = contract('me,ie->mi', X1, hbar.Hov)

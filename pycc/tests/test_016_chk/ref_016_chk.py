@@ -5,7 +5,7 @@ the "full" propagation reference data
 
 To re-generate reference data, first run full = True, then full = False
 """
-full = False 
+full = False
 
 # Import package, test suite, and other packages as needed
 import psi4

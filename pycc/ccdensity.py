@@ -155,7 +155,7 @@ class ccdensity(object):
         F = self.ccwfn.H.F
         ERI = self.ccwfn.H.ERI
 
-        contract = self.contract 
+        contract = self.contract
 
         # We assume here that the Brillouin condition holds
         oo_energy = contract('ij,ij->', F[o,o], self.Doo)
@@ -491,8 +491,8 @@ class ccdensity(object):
         Zlmdi = zeros_like(t2[:,:,:,:no])
         for i in range(no):
             for j in range(no):
-                for k in range(no):                    
-                    l3 = l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)  
+                for k in range(no):
+                    l3 = l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
                     # Intermediate for Dov_2
                     Zlmdi[i,j] += contract('def,ife->di', l3, t2[k])
                     # Dov_1
@@ -505,7 +505,7 @@ class ccdensity(object):
         Dov -= contract('lmdi, lmda->ia', Zlmdi, t2)
 
         return Dov
-                                    
+
     def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         r"""CC3 connected-triples contribution to the occupied-occupied 1-PDM block D_ij, built
         per-(b,c) from the fixed-virtual T3 (:func:`~pycc.cctriples.t3c_bc`) and L3
@@ -528,9 +528,9 @@ class ccdensity(object):
                     V = F - clone(self.ccwfn.H.F)
                     t3 -= t3_pert_bc(o, v, b, c, t2, V, F, contract)
                 l3 = l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract)
-                Doo -= 0.5 * contract('lmia,lmja->ij', t3, l3)        
+                Doo -= 0.5 * contract('lmia,lmja->ij', t3, l3)
 
-        return Doo        
+        return Doo
 
     def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
         r"""CC3 connected-triples contribution to the virtual-virtual 1-PDM block D_ab, built
@@ -662,7 +662,7 @@ class ccdensity(object):
                 Dooov += contract('jake,ie->ijka', tmp, t1)
                 tmp = contract('imea,kmef->iakf', t2, l2)
                 Dooov += contract('iakf,jf->ijka', tmp, t1)
-	
+
                 if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, Goo
 
@@ -673,7 +673,7 @@ class ccdensity(object):
             # (T) contributions to twopdm computed in ccwfn.t3_density()
             if self.ccwfn.model == 'CCSD(T)':
                 Dooov += self.ccwfn.Gooov
-            
+
             if HAS_TORCH and isinstance(tmp, torch.Tensor):
                 del tmp
 
@@ -713,13 +713,13 @@ class ccdensity(object):
             no = self.ccwfn.no
             nv = self.ccwfn.nv
             Dvvvo = zeros((nv,nv,nv,no), like=t1)
-        else: 
+        else:
             tmp = 2.0 * self.ccwfn.build_tau(t1, t2) - self.ccwfn.build_tau(t1, t2).swapaxes(2, 3)
             Dvvvo = contract('mc,miab->abci', l1, tmp)
             Dvvvo += contract('ma,imbc->abci', t1, l2)
 
             if self.ccwfn.model != 'CC2':
-                
+
                 Gvv = self.cclambda.build_Gvv(t2, l2)
                 Dvvvo -= 2.0 * contract('ca,ib->abci', Gvv, t1)
                 Dvvvo += contract('cb,ia->abci', Gvv, t1)
@@ -733,20 +733,20 @@ class ccdensity(object):
                 Dvvvo -= contract('iamc,mb->abci', tmp, t1)
                 tmp = contract('mibe,nmce->ibnc', t2, l2)
                 Dvvvo -= contract('ibnc,na->abci', tmp, t1)
-		
+
                 if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, Gvv
 
             tmp = contract('nmce,ie->nmci', l2, t1)
             tmp = contract('nmci,na->amci', tmp, t1)
             Dvvvo -= contract('amci,mb->abci', tmp, t1)
- 
+
             # (T) contributions to twopdm computed in ccwfn.t3_density()
             if self.ccwfn.model == 'CCSD(T)':
                 Dvvvo += self.ccwfn.Gvvvo
 
             if HAS_TORCH and isinstance(tmp, torch.Tensor):
-                del tmp               
+                del tmp
 
         return Dvvvo
 
@@ -853,7 +853,7 @@ class ccdensity(object):
             Doovv += 2.0 * contract('ibme,mjae->ijab', tmp1, tau)
             Doovv += 4.0 * contract('jbme,imae->ijab', tmp1, t2)
             Doovv -= 2.0 * contract('jame,imbe->ijab', tmp1, t2)
-            
+
             if HAS_TORCH and isinstance(tmp1, torch.Tensor):
                 del tmp_oooo, tmp1, Gvv, Goo
 
@@ -913,7 +913,7 @@ class ccdensity(object):
                 tmp = contract('if,mnef->mnei', t1, l2)
                 tmp = contract('mnei,njae->mija', tmp, t2)
                 Doovv += contract('mb,mija->ijab', t1, tmp)
-		
+
                 if HAS_TORCH and isinstance(tmp, torch.Tensor):
                     del tmp, tmp1, tmp2, Goo, Gvv
 
@@ -921,7 +921,7 @@ class ccdensity(object):
             tmp = contract('ie,mnej->mnij', t1, tmp)
             tmp = contract('nb,mnij->mbij', t1, tmp)
             Doovv += contract('ma,mbij->ijab', t1, tmp)
- 
+
             # (T) contributions to twopdm computed in ccwfn.t3_density()
             if self.ccwfn.model == 'CCSD(T)':
                 Doovv += self.ccwfn.Goovv
@@ -1050,4 +1050,4 @@ class ccdensity(object):
         return Gam
 
 
-   
+

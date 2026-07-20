@@ -44,7 +44,7 @@ class cceom(object):
         hbar_vir = np.diag(cchbar.Hvv)
 
         Dia = hbar_occ.reshape(-1,1) - hbar_vir
-        Dijab = (hbar_occ.reshape(-1,1,1,1) + hbar_occ.reshape(-1,1,1) - 
+        Dijab = (hbar_occ.reshape(-1,1,1,1) + hbar_occ.reshape(-1,1,1) -
                 hbar_vir.reshape(-1,1) - hbar_vir)
         self.D = np.hstack((Dia.flatten(), Dijab.flatten()))
 
