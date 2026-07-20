@@ -1,3 +1,10 @@
+"""Backend-aware (NumPy / torch) tensor helpers and a DIIS extrapolator, shared across pycc.
+
+The free functions dispatch on the argument's runtime type -- a ``torch.Tensor`` routes to the torch
+op, anything else to the NumPy op -- so the wavefunction / response / real-time code runs unchanged
+on either backend, carrying the dtype/precision and (for torch) the device along automatically.
+:class:`helper_diis` accelerates the amplitude iterations (CC, Lambda, response) with Pulay's DIIS.
+"""
 import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
@@ -17,15 +24,21 @@ def zeros_like(a):
 
 
 def permute_triples(ijkabc, perm_ijk, perm_abc):
-    """Antisymmetric permutation operator P(perm_ijk) P(perm_abc) on a connected
-    six-index triples tensor ``ijkabc``.
+    r"""Antisymmetric permutation operator ``P(perm_ijk) P(perm_abc)`` on a connected six-index
+    triples tensor ``ijkabc`` -- e.g. ``P(k/ij) P(a/bc)`` expanded to nine signed swapaxes terms::
 
-    ``perm_ijk``/``perm_abc`` are strings like ``'k/ij'`` / ``'a/bc'`` denoting the
-    one-vs-pair antisymmetrizers P(k/ij) = 1 - P(ik) - P(jk) and
-    P(a/bc) = 1 - P(ab) - P(ac); the product expands to nine signed swapaxes
-    terms. Backend-agnostic (only ``swapaxes``). Used by the full-array (store_triples)
-    CC3 T3/L3/X3 builds; the batched per-ijk builders fold this antisymmetry into
-    their explicit index terms instead. Port of socc utils.permute_triples."""
+        P(k/ij) = 1 - P(ik) - P(jk),   P(a/bc) = 1 - P(ab) - P(ac)
+        result  = P(k/ij) P(a/bc) . ijkabc
+
+    .. math::
+
+        \mathcal{P}(k/ij) = 1 - P(ik) - P(jk), \qquad \mathcal{P}(a/bc) = 1 - P(ab) - P(ac),
+        \qquad t' = \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, t
+
+    ``perm_ijk``/``perm_abc`` are strings like ``'k/ij'`` / ``'a/bc'`` denoting the one-vs-pair
+    antisymmetrizers.  Backend-agnostic (only ``swapaxes``).  Used by the full-array (store_triples)
+    CC3 T3/L3/X3 builds; the batched per-ijk builders fold this antisymmetry into their explicit
+    index terms instead. Port of socc utils.permute_triples."""
     idx = {'i': 0, 'j': 1, 'k': 2, 'a': 3, 'b': 4, 'c': 5}
 
     char_list = list(perm_ijk)
@@ -176,7 +189,22 @@ def concatenate(arrays):
 
 
 class helper_diis(object):
+    r"""DIIS (Pulay direct inversion of the iterative subspace) extrapolator for the CC / Lambda /
+    response amplitude iterations.  Keeps a rolling window (``max_diis``) of amplitude iterates and
+    their error vectors ``e_n = t_n - t_{n-1}``, and replaces the current amplitudes by the subspace
+    combination that minimizes the residual.
+
+    Parameters
+    ----------
+    t1, t2 : tensors
+        the initial amplitude pair (seeds the iterate history)
+    max_diis : int
+        maximum subspace size (0 disables extrapolation)
+    precision : str
+        'DP' or 'SP' (default 'DP')
+    """
     def __init__(self, t1, t2, max_diis, precision='DP'):
+        """Seed the iterate and error-vector history from the initial amplitudes ``t1``/``t2``."""
         self.oldt1 = clone(t1)
         self.oldt2 = clone(t2)
         self.diis_vals_t1 = [clone(t1)]
@@ -188,6 +216,8 @@ class helper_diis(object):
         self.precision = precision
 
     def add_error_vector(self, t1, t2):
+        r"""Append the current amplitudes ``t1``/``t2`` to the history and record their error vector
+        ``e = (t - t_prev)`` (flattened, ``t1`` and ``t2`` concatenated)."""
         # Add DIIS vectors
         self.diis_vals_t1.append(clone(t1))
         self.diis_vals_t2.append(clone(t2))
@@ -199,7 +229,21 @@ class helper_diis(object):
         self.oldt2 = clone(t2)
 
     def extrapolate(self, t1, t2):
+        r"""Extrapolate the amplitudes from the stored subspace: build the bordered error-overlap
+        matrix ``B``, solve the Pulay equations for the coefficients ``c``, and form the new
+        amplitudes ``sum_i c_i t_i`` (returns ``t1, t2`` unchanged if ``max_diis == 0``)::
 
+            [ B   -1 ] [ c      ]   [ 0  ]        B_mn = <e_m | e_n>
+            [ -1   0 ] [ lambda ] = [ -1 ]
+            t_new = sum_i c_i t_i
+
+        .. math::
+
+            \begin{pmatrix} B & -\mathbf{1} \\ -\mathbf{1}^{T} & 0 \end{pmatrix}
+            \begin{pmatrix} c \\ \lambda \end{pmatrix}
+            = \begin{pmatrix} \mathbf{0} \\ -1 \end{pmatrix},
+            \qquad B_{mn} = \langle e_m | e_n\rangle, \qquad t^\mathrm{new} = \sum_i c_i\, t_i
+        """
         if (self.max_diis == 0):
             return t1, t2
 
