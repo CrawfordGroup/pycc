@@ -213,9 +213,8 @@ class CCderiv(CorrelatedDerivs):
 
     def _ccsd_jacobian(self, X1, X2, hbar):
         r"""The CCSD Jacobian applied to an amplitude pair -- ``(HBAR . X)`` projected onto singles
-        and doubles (doubles un-symmetrized).  Method-agnostic (the same contraction pattern as
-        ``ccresponse.r_X1``/``r_X2``, built from ``cchbar`` -- not a ccresponse dependency; see those
-        for the term-by-term expansion)::
+        and doubles (doubles un-symmetrized), i.e. the singles/doubles action ``<mu|[HBAR, X]|0>``
+        built from ``cchbar``::
 
             sigma1_ia   = (HBAR . X)_ia
             sigma2_ijab = (HBAR . X)_ijab
@@ -246,9 +245,8 @@ class CCderiv(CorrelatedDerivs):
         return r1, r2
 
     def _so_ccsd_jacobian(self, X1, X2, hbar):
-        r"""Spin-orbital CCSD Jacobian ``(HBAR . X)`` -- the SO ``ccresponse.r_X1``/``r_X2``
-        contraction pattern (antisymmetrized; the P(ij)P(ab) is built in, so no final
-        symmetrization)::
+        r"""Spin-orbital CCSD Jacobian ``(HBAR . X)`` -- the antisymmetrized singles/doubles action
+        ``<mu|[HBAR, X]|0>`` (the P(ij)P(ab) is built in, so no final symmetrization)::
 
             sigma1_ia   = (HBAR . X)_ia
             sigma2_ijab = (HBAR . X)_ijab
@@ -286,22 +284,24 @@ class CCderiv(CorrelatedDerivs):
 
     def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=None, rconv=None):
         r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
-        equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation at fixed ``t`` gives a
-        linear equation: the RHS ``B`` is the perturbation-derivative of the residual,
-        ``B_mu = <mu| d_x HBAR |0>``, and the LHS is the CCSD Jacobian (:meth:`_ccsd_jacobian`);
-        iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like :meth:`ccresponse.solve_right`::
+        equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation ``x`` splits into the
+        ``d_x t`` part (the CCSD Jacobian :meth:`_ccsd_jacobian`, ``<mu|[HBAR, d_x t]|0>``) and the
+        fixed-``t`` part -- the perturbation-dependent inhomogeneity ``B^x``, the derivative of the
+        **bare** Hamiltonian similarity-transformed at fixed ``t``::
 
-            (HBAR . dt) = -B,   B_mu = <mu| d_x HBAR |0>
+            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B, \qquad B_\mu = \langle\mu|\,\partial_x \bar{H}\,|0\rangle
+            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
-        Because the residual is linear in the bare integrals, ``d_x HBAR`` is obtained by evaluating
-        ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
-        ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation) -- NOT by feeding it
-        ``d HBAR``, which would re-apply the similarity transform.  ``maxiter``/``rconv`` default to
-        the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
+        (Note ``B^x`` differentiates only the integrals -- ``t`` is held fixed -- so it is NOT
+        ``d_x HBAR``, whose ``[HBAR, d_x t]`` piece is the Jacobian LHS.)  ``B^x`` is computed by
+        evaluating ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
+        ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation), the residual formula
+        supplying the ``e^-T ( ) e^T`` transform.  Iterate ``dt += (B + HBAR.dt)/D`` with DIIS.
+        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
@@ -332,16 +332,17 @@ class CCderiv(CorrelatedDerivs):
     def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=None, rconv=None):
         r"""Spin-orbital perturbed CCSD amplitudes ``dt/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
-        no 0.5 / no final symmetrization, matching ``ccresponse.solve_right``)::
+        no 0.5 and no final symmetrization)::
 
-            (HBAR . dt) = -B,   B_mu = <mu| d_x HBAR |0>
+            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B, \qquad B_\mu = \langle\mu|\,\partial_x \bar{H}\,|0\rangle
+            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
-        ``B`` is ``cc.residuals`` evaluated with the perturbed **bare** integrals (``df``, ``deri``
-        swapped in), not with ``d HBAR``.  ``maxiter``/``rconv`` default to the wavefunction's
+        ``B^x`` (fixed-``t``) is ``cc.residuals`` evaluated with the perturbed **bare** integrals
+        (``df``, ``deri`` swapped in).  ``maxiter``/``rconv`` default to the wavefunction's
         convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
@@ -571,9 +572,9 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
-        r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear), solved with ``cclambda``'s
-        ground-state Lambda residual ``r_L`` reused as the operator -- NOT the ``ccresponse``
-        ``Y1``/``Y2`` perturbed-multiplier equations (hence "no Y1/Y2").  Differentiating the Lambda
+        r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear): a single inhomogeneous linear solve
+        that reuses ``cclambda``'s ground-state Lambda residual ``r_L`` as the operator (no separate
+        perturbed-multiplier amplitudes).  Differentiating the Lambda
         equation gives a linear equation with the same Lambda-Jacobian: its action is
         ``r_L(dLambda) - r_L(0)`` -- since ``r_L`` is affine in Lambda (linear plus a
         Lambda-independent constant), the subtraction cancels the constant and leaves the pure linear
