@@ -233,7 +233,7 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     ignored for an ``HFwfn`` (no correlation)."""
     from .hfwfn import HFwfn
     from .mpwfn import MPwfn
-    from .ciwfn import CIwfn 
+    from .ciwfn import CIwfn
 
     mol = wfn.ref.molecule()
     nuclear = _nuclear_aat(mol, origin)

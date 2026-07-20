@@ -74,6 +74,12 @@ autodoc_default_options = {
     'private-members': True,
 }
 
+# Merge each class's ``__init__`` docstring into the class documentation.  The autodoc default
+# ('class') renders only the class docstring, so an ``__init__`` docstring -- where the
+# construction / integral-build math is documented (e.g. Hamiltonian, CPHF, the deriv drivers) --
+# would otherwise never appear.
+autoclass_content = 'both'
+
 napoleon_google_docstring = False
 napoleon_use_param = False
 napoleon_use_ivar = True

@@ -52,5 +52,5 @@ def test_ft_sanity():
     re_max = np.argmax(np.abs(np.real(i)))
     im_max = np.argmax(np.abs(np.imag(i)))
 
-    assert (w[re_max] - 3) < 1E-4 
-    assert (w[im_max] - 1) < 1E-4 
+    assert (w[re_max] - 3) < 1E-4
+    assert (w[im_max] - 1) < 1E-4

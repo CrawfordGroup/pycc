@@ -892,7 +892,7 @@ def t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDeno
 def t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=True):
     """Spin-orbital disconnected T3 amplitudes for fixed virtual a, b, c.
 
-    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T) 
+    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T)
     or the T1-dressed CC3 intermediates for CC3.
     """
     Fov = F[o,v]

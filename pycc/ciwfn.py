@@ -296,7 +296,7 @@ class CIwfn(Wavefunction):
         n0 = self._normalized_amplitudes()[0]
         return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1) + c('ijab,ijab->', tau.conj(), dn2))
 
-    # coupled-perturbed CI 
+    # coupled-perturbed CI
 
     def _psi4_mints(self):
         """psi4 MintsHelper + C as psi4.core.Matrix"""
@@ -818,7 +818,7 @@ class CIwfn(Wavefunction):
         dz = dz_ov.T
         return dz, dD_corr
 
-    # AAT 
+    # AAT
 
     def _build_Dtilde(self, dc1, dc2, dc0):
         c = self.contract
@@ -920,7 +920,7 @@ class CIwfn(Wavefunction):
                  + self.compute_Iphiphi_AATs() + self.compute_Icphi_AATs())
         return total.reshape(natom, 3, 3)
 
-    # velocity-gauge APT  
+    # velocity-gauge APT
     def compute_Icc_VG_APT(self):
         from .cphf import Perturbation
         c = self.contract

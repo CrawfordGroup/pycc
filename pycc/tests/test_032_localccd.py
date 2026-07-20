@@ -23,9 +23,9 @@ def test_pno_ccd(rhf_wfn):
 
     #pno-ccd
     lccd = pycc.ccwfn(wfn,model='CCD', local='PNO', local_cutoff=1e-5,it2_opt=False)
-    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter) 
+    elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccd_sim - elccd) < 1e-12) 
+    assert(abs(eccd_sim - elccd) < 1e-12)
 
 @pytest.mark.slow
 def test_pnopp_ccd(rhf_wfn):
@@ -45,7 +45,7 @@ def test_pnopp_ccd(rhf_wfn):
     lccd = pycc.ccwfn(wfn,model='CCD', local='PNO++', local_cutoff=1e-7,it2_opt=False)
     elccd = lccd.lccwfn.solve_lcc(e_conv, r_conv, maxiter)
 
-    assert(abs(eccd_sim - elccd) < 1e-12) 
+    assert(abs(eccd_sim - elccd) < 1e-12)
 
 @pytest.mark.slow
 def test_pno_ccd_opt(rhf_wfn):

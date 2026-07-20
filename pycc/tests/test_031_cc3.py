@@ -37,13 +37,13 @@ def test_cc3_h2o(rhf_wfn):
     cclambda = pycc.cclambda(cc, hbar)
     lcc = cclambda.solve_lambda(e_conv, r_conv)
     print("lcc: ", lcc)
-    lcc_cfour = -0.2233231845185215 
+    lcc_cfour = -0.2233231845185215
     assert(abs(lcc - lcc_cfour) < 1e-11)
 
     ccdensity = pycc.ccdensity(cc, cclambda)
     # no laser
     rtcc = pycc.rtcc(cc, cclambda, ccdensity, None, magnetic = False)
-    
+
     CFOUR = [0, 0, 0.7703875967] # CFOUR total dipole (CC3 + SCF + nuclear)
     scf = wfn.variable('SCF DIPOLE') # PSI4 reference dipole (SCF + nuclear)
     ref = CFOUR - scf # Final reference: CC3 only

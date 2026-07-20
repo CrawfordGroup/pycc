@@ -38,6 +38,8 @@ class CCderiv(CorrelatedDerivs):
     """
 
     def __init__(self, ccwfn: "CCwfn") -> None:
+        """Bind the converged CCwfn (aliased as ``ccwfn``; the base stores it as ``wfn``) and
+        initialize the lazy Lambda/reduced-density cache (see :meth:`_density`)."""
         super().__init__(ccwfn)
         self.ccwfn = ccwfn                              # alias: this class uses .ccwfn, the base .wfn
         self._dens = None
@@ -86,9 +88,14 @@ class CCderiv(CorrelatedDerivs):
                        'Hovvo', 'Hvvvo', 'Hovoo')
 
     def polarizability(self, route: str = '2n+1') -> np.ndarray:
-        """CCSD **correlation** contribution to the static (omega=0) dipole polarizability (a.u.),
-        shape ``(3, 3)``: ``alpha_corr[a,b] = -d^2 E_corr/dF_a dF_b``, the CC analog of
-        :meth:`MPwfn.polarizability`.
+        r"""CCSD **correlation** contribution to the static (omega=0) dipole polarizability (a.u.),
+        shape ``(3, 3)``, the CC analog of :meth:`MPwfn.polarizability`::
+
+            alpha_corr[a,b] = -d^2 E_corr / dF_a dF_b
+
+        .. math::
+
+            \alpha^\mathrm{corr}_{ab} = -\frac{\partial^2 E_\mathrm{corr}}{\partial F_a\,\partial F_b}
 
         Only the **asymmetric (2n+1) route** is available for CC -- differentiate the relaxed-density
         gradient a second time (a single (T)-capable formulation; see DERIVATIVES_PLAN sec 8).  The
@@ -113,10 +120,16 @@ class CCderiv(CorrelatedDerivs):
         return super().polarizability(route)        # shared 2n+1 assembly (SO/spatial dispatch in the base)
 
     def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
-        """CCSD/CCSD(T) **correlation** contribution to the atomic polar tensors (nuclear dipole
-        derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
-        ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed field/nuclear
-        analog of :meth:`polarizability`.
+        r"""CCSD/CCSD(T) **correlation** contribution to the atomic polar tensors (nuclear dipole
+        derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]``, the mixed
+        field/nuclear analog of :meth:`polarizability`::
+
+            d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}
+
+        .. math::
+
+            \frac{\partial \mu_\alpha}{\partial X_{A\beta}}
+                = -\frac{\partial^2 E_\mathrm{corr}}{\partial F_\alpha\,\partial X_{A\beta}}
 
         ``route='2n+1-field'`` (default, 3 field solves) or ``'2n+1-nuclear'`` (``3N`` nuclear
         solves); both give the same tensor.  The nuclear ``Z_A`` and SCF reference terms are kept
@@ -141,9 +154,15 @@ class CCderiv(CorrelatedDerivs):
         return super().dipole_derivatives(route)    # shared 2n+1 assembly (SO/spatial dispatch in the base)
 
     def hessian(self, route: str = '2n+1') -> np.ndarray:
-        """CCSD/CCSD(T) **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
-        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
-        nuclear-nuclear analog of :meth:`polarizability` / :meth:`dipole_derivatives`.
+        r"""CCSD/CCSD(T) **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
+        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)``, the nuclear-nuclear analog of
+        :meth:`polarizability` / :meth:`dipole_derivatives`::
+
+            H[Aa,Bb] = d^2 E_corr / dX_{Aa} dX_{Bb}
+
+        .. math::
+
+            H_{Aa,Bb} = \frac{\partial^2 E_\mathrm{corr}}{\partial X_{Aa}\,\partial X_{Bb}}
 
         ``route`` accepts only ``'2n+1'`` (``3N`` nuclear perturbed solves).  The nuclear-repulsion
         second derivative and the SCF reference Hessian are kept separate
@@ -193,9 +212,17 @@ class CCderiv(CorrelatedDerivs):
         return self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
 
     def _ccsd_jacobian(self, X1, X2, hbar):
-        """The CCSD Jacobian applied to an amplitude pair, ``(HBAR . X)_singles``,
-        ``(HBAR . X)_doubles`` (doubles un-symmetrized).  Method-agnostic (the same contraction
-        pattern as ``ccresponse.r_X1/r_X2``, built from ``cchbar`` -- not a ccresponse dependency)."""
+        r"""The CCSD Jacobian applied to an amplitude pair -- ``(HBAR . X)`` projected onto singles
+        and doubles (doubles un-symmetrized), i.e. the singles/doubles action ``<mu|[HBAR, X]|0>``
+        built from ``cchbar``::
+
+            sigma1_ia   = (HBAR . X)_ia
+            sigma2_ijab = (HBAR . X)_ijab
+
+        .. math::
+
+            \sigma^{a}_{i} = (\bar{H}\,X)^{a}_{i}, \qquad \sigma^{ab}_{ij} = (\bar{H}\,X)^{ab}_{ij}
+        """
         c = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         t2 = self.ccwfn.t2
@@ -218,8 +245,16 @@ class CCderiv(CorrelatedDerivs):
         return r1, r2
 
     def _so_ccsd_jacobian(self, X1, X2, hbar):
-        """Spin-orbital CCSD Jacobian ``(HBAR . X)`` -- the SO ``ccresponse.r_X1/r_X2`` contraction
-        pattern (antisymmetrized; the P(ij)P(ab) is built in, so no final symmetrization)."""
+        r"""Spin-orbital CCSD Jacobian ``(HBAR . X)`` -- the antisymmetrized singles/doubles action
+        ``<mu|[HBAR, X]|0>`` (the P(ij)P(ab) is built in, so no final symmetrization)::
+
+            sigma1_ia   = (HBAR . X)_ia
+            sigma2_ijab = (HBAR . X)_ijab
+
+        .. math::
+
+            \sigma^{a}_{i} = (\bar{H}\,X)^{a}_{i}, \qquad \sigma^{ab}_{ij} = (\bar{H}\,X)^{ab}_{ij}
+        """
         c = self.contract
         o, v = self.ccwfn.o, self.ccwfn.v
         t2 = self.ccwfn.t2
@@ -248,11 +283,24 @@ class CCderiv(CorrelatedDerivs):
         return r1, r2
 
     def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=None, rconv=None):
-        """Perturbed CCSD amplitudes ``dt/dF`` (iterative).  RHS = the field-derivative of the CC
-        residual at fixed ``t`` -- since the residual is linear in H, that is just
-        ``residuals(df, t1, t2)`` with the perturbed two-electron integrals swapped in (the
-        CPHF-folded ``deri``/``dL`` carry the orbital relaxation).  LHS = the CCSD Jacobian;
-        iterate ``dt += (B + HBAR.dt)/D`` with DIIS, like :meth:`ccresponse.solve_right`.
+        r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
+        equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation ``x`` splits into the
+        ``d_x t`` part (the CCSD Jacobian :meth:`_ccsd_jacobian`, ``<mu|[HBAR, d_x t]|0>``) and the
+        fixed-``t`` part -- the perturbation-dependent inhomogeneity ``B^x``, the derivative of the
+        **bare** Hamiltonian similarity-transformed at fixed ``t``::
+
+            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
+
+        .. math::
+
+            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
+
+        (Note ``B^x`` differentiates only the integrals -- ``t`` is held fixed -- so it is NOT
+        ``d_x HBAR``, whose ``[HBAR, d_x t]`` piece is the Jacobian LHS.)  ``B^x`` is computed by
+        evaluating ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
+        ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation), the residual formula
+        supplying the ``e^-T ( ) e^T`` transform.  Iterate ``dt += (B + HBAR.dt)/D`` with DIIS.
         ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
@@ -282,9 +330,20 @@ class CCderiv(CorrelatedDerivs):
         return X1, X2
 
     def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=None, rconv=None):
-        """Spin-orbital perturbed CCSD amplitudes ``dt/dF`` (SO Jacobian; SO residual has no 0.5 /
-        no final symmetrization, matching ``ccresponse.solve_right``).  ``maxiter``/``rconv`` default
-        to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
+        r"""Spin-orbital perturbed CCSD amplitudes ``dt/dx`` -- the spin-orbital analogue of
+        :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
+        no 0.5 and no final symmetrization)::
+
+            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
+
+        .. math::
+
+            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
+
+        ``B^x`` (fixed-``t``) is ``cc.residuals`` evaluated with the perturbed **bare** integrals
+        (``df``, ``deri`` swapped in).  ``maxiter``/``rconv`` default to the wavefunction's
+        convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
@@ -311,11 +370,21 @@ class CCderiv(CorrelatedDerivs):
         return X1, X2
 
     def _perturbed_hbar(self, df, deri, dL, dt1, dt2, hbar):
-        """Spatial (closed-shell RHF) perturbed HBAR ``dHBAR``: the term-by-term product-rule
-        derivative of the :meth:`cchbar.build_H*` builders along
-        ``(F+df, ERI+deri, L+dL, t1+dt1, t2+dt2)``.  Computed in dependency order (``Hov``,
-        ``Hvvvv``, ``Hoooo`` feed ``Hvvvo``/``Hovoo``).  Needed for the perturbed-Lambda
-        inhomogeneity; verified to ~1e-15 against a complex-step derivative of the HBAR builders."""
+        r"""Spatial (closed-shell RHF) perturbed HBAR ``dHBAR`` (``d`` = the full ``d/dx``
+        derivative): the term-by-term product-rule derivative of each :meth:`cchbar.build_H*`
+        builder along ``(F+df, ERI+deri, L+dL, t1+dt1, t2+dt2)``.  Each block is the product rule
+        applied to its unperturbed builder (see :mod:`pycc.cchbar`); e.g. for ``Hov``::
+
+            d Hov_me = df_me + dt1_nf L_mnef + t1_nf dL_mnef
+
+        .. math::
+
+            \partial_x \bar{H}_{me} = \partial_x f_{me} + \partial_x t^{f}_{n}\,L_{mnef}
+                + t^{f}_{n}\,\partial_x L_{mnef}
+
+        Computed in dependency order (``Hov``, ``Hvvvv``, ``Hoooo`` feed ``Hvvvo``/``Hovoo``).
+        Needed for the perturbed-Lambda inhomogeneity; verified to ~1e-15 against a complex-step
+        derivative of the HBAR builders."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
         c = self.contract
@@ -385,11 +454,21 @@ class CCderiv(CorrelatedDerivs):
         return d
 
     def _so_perturbed_hbar(self, df, deri, dt1, dt2, hbar):
-        """Spin-orbital perturbed HBAR ``dHBAR``: the term-by-term product-rule derivative
-        of the :meth:`cchbar._so_build_*` block builders along ``(F+df, ERI+deri, t1+dt1, t2+dt2)``.
-        Blocks are computed in dependency order (``Hov`` first; ``Hvvvo``/``Hovoo`` last, reusing the
-        unperturbed ``Hov``/``Hvvvv``/``Hoooo``/``Zovov`` intermediates).  Verified to ~1e-15 against
-        a complex-step derivative of the ``_so_build_*`` builders."""
+        r"""Spin-orbital perturbed HBAR ``dHBAR`` -- the spin-orbital analogue of
+        :meth:`_perturbed_hbar`: the term-by-term product-rule derivative of each
+        :meth:`cchbar._so_build_*` block builder along ``(F+df, ERI+deri, t1+dt1, t2+dt2)`` (the
+        antisymmetrized ``<pq||rs>`` in place of ``L``); e.g. for ``Hov``::
+
+            d Hov_me = df_me + dt1_nf <mn||ef> + t1_nf d<mn||ef>
+
+        .. math::
+
+            \partial_x \bar{H}_{me} = \partial_x f_{me} + \partial_x t^{f}_{n}\,\langle mn\Vert ef\rangle
+                + t^{f}_{n}\,\partial_x \langle mn\Vert ef\rangle
+
+        Blocks in dependency order (``Hov`` first; ``Hvvvo``/``Hovoo`` last, reusing the unperturbed
+        ``Hov``/``Hvvvv``/``Hoooo``/``Zovov`` intermediates).  Verified to ~1e-15 against a
+        complex-step derivative of the ``_so_build_*`` builders."""
         cc = self.ccwfn
         o, v = cc.o, cc.v
         c = self.contract
@@ -460,9 +539,18 @@ class CCderiv(CorrelatedDerivs):
         return d
 
     def _perturbed_t3_intermediates(self, df, deri, dL, dt1, dt2):
-        """Field response of the (T) intermediates ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}/dF``: the
-        analytic product-rule derivative ``dt3 = (dN - t3 dD)/D`` (:func:`cctriples.dt3_density`) along
-        the **canonical** field path ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``.  ``df`` MUST be the
+        r"""First-order response of the (T) intermediates ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}/dx``:
+        the analytic product/quotient-rule derivative of the T3 amplitudes
+        (:func:`cctriples.dt3_density`) along the **canonical** perturbation path
+        ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``::
+
+            dt3 = (dN - t3 dD) / D
+
+        .. math::
+
+            \partial_x t_3 = \frac{\partial_x N - t_3\,\partial_x D}{D}
+
+        with ``N``/``D`` the (T)-amplitude numerator / orbital-energy denominator.  ``df`` MUST be the
         canonical perturbed Fock (``perturbed_fock(..., canonical=True)``, diagonal in oo/vv) so the
         batched diagonal-denominator (T) formula stays valid."""
         from . import cctriples
@@ -473,9 +561,9 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
 
     def _so_perturbed_t3_intermediates(self, df, deri, dt1, dt2):
-        """Spin-orbital field response of the (T) intermediates: the analytic product-rule derivative
-        :func:`cctriples.so_dt3_density` along the canonical path (no ``L``); see
-        :meth:`_perturbed_t3_intermediates`."""
+        """Spin-orbital first-order response of the (T) intermediates: the analytic product-rule
+        derivative :func:`cctriples.so_dt3_density` along the canonical perturbation path (no
+        ``L``); see :meth:`_perturbed_t3_intermediates`."""
         from . import cctriples
         cc = self.ccwfn
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
@@ -484,12 +572,23 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
-        """Perturbed Lambda ``dLambda/dF`` (iterative, linear), staying in ``cclambda`` (no
-        ``Y1/Y2``).  The inhomogeneity is ``r_L`` evaluated with the perturbed HBAR + ``dL``
-        (unperturbed G) plus the explicit ``dG.H``/``dG.L`` product-rule halves; the Lambda-Jacobian
-        action is ``r_L(dLambda) - r_L(0)`` (``r_L`` is affine in Lambda).  Iterate
-        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`.  ``maxiter``/``rconv``
-        default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``).
+        r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear): a single inhomogeneous linear solve
+        that reuses ``cclambda``'s ground-state Lambda residual ``r_L`` as the operator (no separate
+        perturbed-multiplier amplitudes).  Differentiating the Lambda
+        equation gives a linear equation with the same Lambda-Jacobian: its action is
+        ``r_L(dLambda) - r_L(0)`` -- since ``r_L`` is affine in Lambda (linear plus a
+        Lambda-independent constant), the subtraction cancels the constant and leaves the pure linear
+        Jacobian action -- and an inhomogeneity ``B`` = ``r_L`` evaluated with the perturbed HBAR + ``dL`` (unperturbed
+        ``G``) plus the explicit ``dG.H``/``dG.L`` product-rule halves; iterate
+        ``dLambda += (B + Jacobian)/D`` like :meth:`cclambda.solve_lambda`::
+
+            J_Lambda . dLambda = -B,   B = r_L(dHBAR, dL) + dG-halves
+
+        .. math::
+
+            J_\Lambda\,\partial_x \Lambda = -B
+
+        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``).
 
         CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` (from :meth:`_perturbed_t3_intermediates`)
         are passed straight into ``r_L1``/``r_L2`` via their ``s1``/``s2`` arguments, so they thread
@@ -547,8 +646,15 @@ class CCderiv(CorrelatedDerivs):
         return dl1, dl2
 
     def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
-        """Spin-orbital perturbed Lambda ``dLambda/dF`` (SO r_L; inhomogeneity = r_L with perturbed
-        HBAR + perturbed ERI, unperturbed G, plus the dG.H / dG.<pq||rs> product-rule halves).
+        r"""Spin-orbital perturbed Lambda ``dLambda/dx`` -- the spin-orbital analogue of
+        :meth:`_perturbed_lambda` (SO ``_so_r_L``; inhomogeneity = ``r_L`` with perturbed HBAR +
+        perturbed ERI, unperturbed G, plus the ``dG.H`` / ``dG.<pq||rs>`` product-rule halves)::
+
+            J_Lambda . dLambda = -B,   B = r_L(dHBAR, deri) + dG-halves
+
+        .. math::
+
+            J_\Lambda\,\partial_x \Lambda = -B
 
         CCSD(T): the perturbed (T) sources ``dS1``/``dS2`` are passed straight into the SO
         ``_so_r_L1``/``_so_r_L2`` via their ``s1``/``s2`` arguments (no 1/2 on S2, unlike the spatial
@@ -605,9 +711,19 @@ class CCderiv(CorrelatedDerivs):
         return dl1, dl2
 
     def _perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        """Field response ``(dD, dGamma)`` of the unrelaxed CC correlation densities: the analytic
-        product-rule derivative of the density builders, dispatched by orbital basis to
-        :meth:`_so_perturbed_correlation_densities` or
+        r"""First-order response ``(dD, dGamma)`` of the unrelaxed CC correlation densities: the
+        analytic product-rule (chain-rule) derivative of the density builders in the
+        amplitudes/multipliers::
+
+            dD     = (dD/dt) dt + (dD/dl) dl
+            dGamma = (dGamma/dt) dt + (dGamma/dl) dl
+
+        .. math::
+
+            \partial_x D = \frac{\partial D}{\partial t}\,\partial_x t + \frac{\partial D}{\partial \lambda}\,\partial_x \lambda,
+            \qquad \partial_x \Gamma = \frac{\partial \Gamma}{\partial t}\,\partial_x t + \frac{\partial \Gamma}{\partial \lambda}\,\partial_x \lambda
+
+        Dispatched by orbital basis to :meth:`_so_perturbed_correlation_densities` or
         :meth:`_spatial_perturbed_correlation_densities`.  For CCSD(T), ``dt3`` (from
         :meth:`_perturbed_t3_intermediates`) supplies the perturbed (T) 1-/2-PDM increments, added
         with the same blocks and symmetrization the unperturbed builders use."""
@@ -617,7 +733,7 @@ class CCderiv(CorrelatedDerivs):
         return self._spatial_perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3)
 
     def _so_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
+        """Analytic first-order response ``(dD, dGamma)`` of the unrelaxed **spin-orbital CCSD**
         correlation densities: the product-rule derivative of the raw density builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and :meth:`ccdensity.build_so_twopdm`),
         i.e. Appendix C of ``docs/cc_gradients_orbital_response.tex``.  Replaces the 5-point stencil
@@ -731,7 +847,7 @@ class CCderiv(CorrelatedDerivs):
         return dD, 0.25 * dGam
 
     def _spatial_perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):
-        """Analytic field response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
+        """Analytic first-order response ``(dD, dGamma)`` of the unrelaxed **spatial (closed-shell RHF)
         CCSD** correlation densities: the product-rule derivative of the ccdensity builders
         (:meth:`ccdensity.build_Doo`/``Dvv``/``Dvo``/``Dov`` and ``Doooo``/``Dvvvv``/``Dooov``/
         ``Dvvvo``/``Dovov``/``Doovv``), placed and symmetrized exactly as

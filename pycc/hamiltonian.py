@@ -1,3 +1,9 @@
+"""MO-basis molecular Hamiltonian objects: the Fock matrix, two-electron integrals, and the
+one-electron property integrals (electric dipole, magnetic dipole, linear momentum, traceless
+quadrupole), transformed from the AO basis.  :class:`Hamiltonian` is the spatial (closed-shell RHF)
+object; :class:`SpinOrbitalHamiltonian` is the open-shell (UHF/ROHF) spin-orbital sibling with the
+same attribute surface but the antisymmetrized ``<pq||rs>`` in place of the spin-adapted ``L``.
+"""
 from __future__ import annotations
 
 if __name__ == "__main__":
@@ -28,7 +34,23 @@ class Hamiltonian(object):
         MO-basis magnetic dipole integrals
     """
     def __init__(self, ref: Any, Cp: Any, Cr: Any, Cq: Any, Cs: Any) -> None:
+        r"""Build the spatial MO-basis integrals from the SCF reference ``ref`` and the AO->MO
+        coefficient matrices (repeated indices summed)::
 
+            F_pq    = C_mu,p F_mu,nu C_nu,q                              (MO Fock)
+            <pq|rs> = C_mu,p C_nu,q C_lam,r C_sig,s <mu nu|lam sig>      (Dirac; via chemist + swap)
+            L_pqrs  = 2 <pq|rs> - <pq|sr>                               (spin-adapted)
+            O_pq    = C_mu,p O_mu,nu C_nu,q                             (mu / m / p / Q)
+
+        .. math::
+
+            F_{pq} = C^{\mu}_{p} F_{\mu\nu} C^{\nu}_{q}, \qquad
+            \langle pq|rs\rangle = C^{\mu}_{p} C^{\nu}_{q} C^{\lambda}_{r} C^{\sigma}_{s}\,\langle \mu\nu|\lambda\sigma\rangle, \qquad
+            L_{pqrs} = 2\langle pq|rs\rangle - \langle pq|sr\rangle
+
+        The magnetic-dipole (``m``) and linear-momentum (``p``) integrals carry an ``i`` (imaginary /
+        anti-Hermitian), and ``m`` also carries the ``-1/2`` of ``-(e/2 m_e) L``.
+        """
         npCp = np.asarray(Cp)
         npCr = np.asarray(Cr)
 
@@ -114,6 +136,22 @@ class SpinOrbitalHamiltonian(object):
     def __init__(self, ref: Any, Ca: Any, Cb: Any, spin: Any, spat: Any,
                  nocc_a: int, nocc_b: int,
                  field_strength: float = 0.0, field_axis: int = 2) -> None:
+        r"""Build the spin-orbital MO integrals from the SCF reference and the per-spin MOs
+        ``Ca``/``Cb`` (with the ``spin``/``spat`` maps).  Each spin is semicanonicalized
+        (:meth:`_semicanonicalize`), the Fock is placed block-diagonal in spin, and the two-electron
+        integral is spin-blocked, converted to Dirac notation, and antisymmetrized::
+
+            <pq||rs> = <pq|rs> - <pq|sr>
+
+        .. math::
+
+            \langle pq\Vert rs\rangle = \langle pq|rs\rangle - \langle pq|sr\rangle
+
+        (nonzero only on the spin-conserving blocks -- ``spin_p = spin_r``, ``spin_q = spin_s`` in
+        chemist form).  A static electric field (``field_strength != 0``) adds the length-gauge
+        perturbation ``V = -field_strength mu[axis]`` to the Fock: ``F0`` retains the canonical Fock
+        and ``F = F0 + V`` drives the CCSD residual.
+        """
         npCa = np.asarray(Ca)
         npCb = np.asarray(Cb)
         nact = spin.shape[0]
@@ -219,14 +257,22 @@ class SpinOrbitalHamiltonian(object):
 
     @staticmethod
     def _semicanonicalize(npC, F_ao, nocc):
-        """Rotate the occupied and virtual MO blocks of ``npC`` so the occ-occ and
-        vir-vir blocks of the MO Fock become diagonal (semicanonical).
+        r"""Rotate the occupied and virtual MO blocks of ``npC`` so the occ-occ and vir-vir blocks
+        of the MO Fock become diagonal (semicanonical): separately diagonalize each block and rotate
+        the corresponding MO columns by its eigenvectors::
 
-        ``npC`` columns are ordered [occupied (nocc), virtual]. Returns the rotated
-        coefficients and the resulting MO Fock; its occ-occ and vir-vir blocks are
-        diagonal (orbital energies on the diagonal), while the occ-vir block may be
-        nonzero (as for ROHF -- this is what feeds the MP2 singles). For a canonical
-        reference both blocks are already diagonal and the rotation is the identity.
+            F_ij U^o = U^o eps_o,   C[:, occ] <- C[:, occ] U^o    (and likewise for vir)
+
+        .. math::
+
+            F^{oo} U^{o} = U^{o}\,\mathrm{diag}(\epsilon_o), \qquad
+            C_\mathrm{occ} \to C_\mathrm{occ}\, U^{o}
+
+        ``npC`` columns are ordered [occupied (nocc), virtual]. Returns the rotated coefficients and
+        the resulting MO Fock; its occ-occ and vir-vir blocks are diagonal (orbital energies on the
+        diagonal), while the occ-vir block may be nonzero (as for ROHF -- this is what feeds the MP2
+        singles). For a canonical reference both blocks are already diagonal and the rotation is the
+        identity.
         """
         Fmo = npC.T @ F_ao @ npC
         C = npC.copy()

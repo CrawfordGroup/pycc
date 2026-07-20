@@ -121,7 +121,7 @@ class cclambda(object):
         print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
 
         diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
- 
+
         contract = self.contract
 
         if self.ccwfn.model == 'CC3':
@@ -144,7 +144,7 @@ class cclambda(object):
             s2 = self.ccwfn.S2 if self.ccwfn.model == 'CCSD(T)' else None
             r1 = self.r_L1(o, v, l1, l2, Hov, Hvv, Hoo, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s1=s1)
             r2 = self.r_L2(o, v, l1, l2, L, Hov, Hvv, Hoo, Hoooo, Hvvvv, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov, Gvv, Goo, s2=s2)
-   
+
             if self.ccwfn.model == 'CC3':
                 if self.ccwfn.orbital_basis == 'spinorbital':
                     # The spin-orbital Y1/Y2 come out fully antisymmetric already,
@@ -177,7 +177,7 @@ class cclambda(object):
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
             print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
-            
+
             if HAS_TORCH and isinstance(self.l1, torch.Tensor):
                 if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
                     print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
@@ -196,7 +196,7 @@ class cclambda(object):
 
         if (HAS_TORCH and isinstance(r1, torch.Tensor)) & (self.ccwfn.model == 'CC3'):
             del cc3_ints
-           
+
     def residuals(self, F, t1, t2, l1, l2):
         """
         Parameters
@@ -247,10 +247,10 @@ class cclambda(object):
 
             if HAS_TORCH and isinstance(r1, torch.Tensor):
                 del cc3_ints
-       
+
         if HAS_TORCH and isinstance(r1, torch.Tensor):
             del Goo, Gvv, Hoo, Hvv, Hov, Hovvo, Hovov, Hvvvo, Hovoo, Hvovv, Hooov
-                                             
+
         return r1, r2
 
     def build_Goo(self, t2, l2):
@@ -350,7 +350,7 @@ class cclambda(object):
                 r_l1 = r_l1 + s1
 
             r_l1 = r_l1 + contract('ie,ea->ia', l1, Hvv)
-            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)          
+            r_l1 = r_l1 - contract('ma,im->ia', l1, Hoo)
             r_l1 = r_l1 + contract('imef,efam->ia', l2, Hvvvo)
             r_l1 = r_l1 - contract('mnae,iemn->ia', l2, Hovoo)
             r_l1 = r_l1 + contract('me,ieam->ia', l1, (2.0 * Hovvo - Hovov.swapaxes(2,3)))
