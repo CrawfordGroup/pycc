@@ -684,9 +684,12 @@ class CPHF(object):
         magnetic dipole (:meth:`magnetic_ints`) and the linear momentum
         (:meth:`momentum_ints`).  ``hmag`` is the stripped real antisymmetric operator matrix
         in the MO basis; returns ``(U, dF, dERI)`` with the antisymmetric orbital response and
-        the gauge treatment of the redundant oo/vv blocks documented on :meth:`magnetic_ints`::
+        the gauge treatment of the redundant oo/vv blocks documented on :meth:`magnetic_ints`.
+        The ov response comes from the shared ``kind='magnetic'`` orbital Hessian via
+        :meth:`solve` (``G^m`` = :meth:`_build_mo_hessian`, the same operator
+        :meth:`solve_magnetic` / :meth:`solve_momentum` use)::
 
-            U^x_ai = (Gm)^-1 h_ai,   U^x_ia = U^x_ai
+            U^x_ai = (G^m)^-1 h_ai,   U^x_ia = U^x_ai
             d<pq|rs> = U^x_tr <pq|ts> + U^x_ts <pq|rt> - U^x_tp <tq|rs> - U^x_tq <pt|rs>
 
         .. math::
@@ -698,16 +701,13 @@ class CPHF(object):
             \end{aligned}
         """
         o, v, nmo = self.o, self.v, self.wfn.nmo
-        no, nv = self.no, self.nv
+        no = self.no
         t = slice(0, nmo)
         eps = self.eps
         c = self.contract
         ERI = np.asarray(self.wfn.H.ERI)
         W = ERI if self.wfn.orbital_basis == 'spinorbital' else np.asarray(self.wfn.H.L)
-        core = -W + W.swapaxes(1, 3)                # antisymmetric mean-field weight
-        Gm = (np.einsum('ab,ij->aibj', np.eye(nv), np.eye(no))
-              * (eps[v].reshape(nv, 1, 1, 1) - eps[o].reshape(1, no, 1, 1))
-              + core.swapaxes(1, 2)[v, o, v, o]).reshape(nv * no, nv * no)
+        core = -W + W.swapaxes(1, 3)                # antisymmetric mean-field weight (oo/vv blocks below)
 
         def _safe_div(num, e):
             # canonical oo/vv rotation num_pq / (eps_q - eps_p), degeneracy-guarded: where two
@@ -720,7 +720,11 @@ class CPHF(object):
             return out
 
         U = np.zeros((nmo, nmo))
-        U[v, o] = np.linalg.solve(Gm, hmag[v, o].reshape(nv * no)).reshape(nv, no)
+        # ov response from the shared kind='magnetic' orbital Hessian and solve (one Hessian
+        # build, one ov solve -- the same operator solve_magnetic/solve_momentum use).  solve()
+        # works in the (no, nv) ov layout, so feed the vo RHS transposed and transpose the
+        # (no, nv) result back into the (nv, no) U[v, o] block.
+        U[v, o] = self.solve(hmag[v, o].T, kind="magnetic").T
         U[o, v] = U[v, o].T
         if gauge == 'canonical':
             U[o, o] = _safe_div(-hmag[o, o] + c('em,iejm->ij', U[v, o], core[o, v, o, o]), eps[o])
