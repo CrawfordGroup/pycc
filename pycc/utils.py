@@ -32,8 +32,11 @@ def permute_triples(ijkabc, perm_ijk, perm_abc):
 
     .. math::
 
-        \mathcal{P}(k/ij) = 1 - P(ik) - P(jk), \qquad \mathcal{P}(a/bc) = 1 - P(ab) - P(ac),
-        \qquad t' = \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, t
+        \begin{aligned}
+        \mathcal{P}(k/ij) &= 1 - P(ik) - P(jk) \\
+        \mathcal{P}(a/bc) &= 1 - P(ab) - P(ac) \\
+        t' &= \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, t
+        \end{aligned}
 
     ``perm_ijk``/``perm_abc`` are strings like ``'k/ij'`` / ``'a/bc'`` denoting the one-vs-pair
     antisymmetrizers.  Backend-agnostic (only ``swapaxes``).  Used by the full-array (store_triples)
