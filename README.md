@@ -16,7 +16,8 @@ include:
   - Triples drivers for various approximate triples methods
   - One- and two-electron (reduced) density matrices for CC2 and CCSD (with CC3 and (T)
     contributions), and CC one-electron properties (e.g. dipole moments)
-  - RHF-EOM-CCSD excitation energies
+  - EOM-CCSD excitation energies for both the spin-adapted (closed-shell RHF) and the
+    spin-orbital (open-shell UHF/ROHF) references
   - Linear response functions (dynamic polarizability, optical rotation) for both the
     spin-adapted (closed-shell) and spin-orbital references
   - Real-time (RT) CC2, CCSD, and CC3 with a selection of integrators
@@ -28,9 +29,14 @@ include:
     and atomic axial tensors (AATs) -- the building blocks for IR and VCD spectra. Both spin
     paths (spin-adapted closed-shell RHF and spin-orbital), all-electron and frozen-core; the
     MP2 second derivatives come via two independent routes (explicit-derivative and 2n+1)
-  - Analytic nuclear energy gradients, relaxed electronic dipoles, and static dipole polarizabilities
-    for CCSD and CCSD(T) (both spin-adapted closed-shell RHF and spin-orbital UHF), all-electron and
-    frozen-core, built on the same relaxed-density / Z-vector machinery as the MP2 gradient
+  - Analytic derivative properties for CCSD and CCSD(T): nuclear energy gradients, relaxed
+    electronic dipoles, static dipole polarizabilities, nuclear Hessians (force-constant
+    matrices), and atomic polar tensors (APTs / dipole derivatives). Both spin paths
+    (spin-adapted closed-shell RHF and spin-orbital UHF), all-electron and frozen-core, built
+    on the same relaxed-density / Z-vector and 2n+1 machinery as the MP2 derivatives
+  - Analytic derivative properties for CISD (`CIwfn`): atomic polar tensors (APTs, in both the
+    length and velocity gauge), atomic axial tensors (AATs), and nuclear Hessians, sharing the
+    same `CorrelatedDerivs` base as the MP2 and CC properties
   - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
     `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that dispatches on wavefunction type and returns
     each property's nuclear/reference/correlation decomposition as a `PropertyComponents`
@@ -41,7 +47,7 @@ include:
 Future plans:
   - Quadratic response functions (in development)
   - CC2 and CC3 excited states
-  - Analytic CC Hessians and APTs
+  - Analytic CC atomic axial tensors (AATs) for VCD spectra
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 
