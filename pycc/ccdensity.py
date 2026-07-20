@@ -324,6 +324,24 @@ class ccdensity(object):
         return [contract('pq,pq->', mu[axis], opdm) for axis in range(3)]
 
     def build_Doo(self, t1, t2, l1, l2):  # complete
+        r"""Occupied-occupied block D_ij of the CC one-particle correlation density
+        (``l1``/``l2`` are the Lambda amplitudes).
+
+        Notes
+        -----
+        Spatial CCSD (spin-orbital: the doubles term carries an extra 1/2; CCD keeps only
+        the doubles term).  Repeated indices summed::
+
+            D_ij = -t_ie l_je - t_imef l_jmef
+
+        .. math::
+
+            \begin{aligned}
+            D_{ij} = -t^e_i \lambda^e_j - t^{ef}_{im} \lambda^{ef}_{jm}
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             Doo = (-1.0 * contract('ie,je->ij', t1, l1)
@@ -344,6 +362,23 @@ class ccdensity(object):
 
 
     def build_Dvv(self, t1, t2, l1, l2):  # complete
+        r"""Virtual-virtual block D_ab of the CC one-particle correlation density.
+
+        Notes
+        -----
+        Spatial CCSD (spin-orbital: the doubles term carries an extra 1/2; CCD keeps only
+        the doubles term).  Repeated indices summed::
+
+            D_ab = t_mb l_ma + t_mnbe l_mnae
+
+        .. math::
+
+            \begin{aligned}
+            D_{ab} = t^b_m \lambda^a_m + t^{be}_{mn} \lambda^{ae}_{mn}
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             Dvv = (contract('mb,ma->ab', t1, l1)
@@ -364,9 +399,34 @@ class ccdensity(object):
 
 
     def build_Dvo(self, l1):  # complete
+        r"""Virtual-occupied block D_ai of the CC one-particle correlation density: simply the
+        transpose of the Lambda singles, ``D_ai = l_ia`` (:math:`D_{ai} = \lambda^a_i`)."""
         return clone(l1.T)
 
     def build_Dov(self, t1, t2, l1, l2):  # complete
+        r"""Occupied-virtual block D_ia of the CC one-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; CCD has no singles so D_ia = 0).
+
+        Notes
+        -----
+        Spatial CCSD and spin-orbital forms (repeated indices summed)::
+
+            spatial: D_ia = 2 t_ia + 2 l_me t2_imae - l_me tau_miae
+                          - (l_mnef t2_inef) t_ma - (l_mnef t2_mnaf) t_ie
+            so:      D_ia = t_ia + l_me t2_imae - l_me t_ie t_ma
+                          - 1/2 (l_mnef t2_inef) t_ma - 1/2 (l_mnef t2_mnaf) t_ie
+
+        .. math::
+
+            \begin{aligned}
+            D_{ia}^{\text{spatial}} &= 2 t^a_i + 2 \lambda^e_m t^{ae}_{im} - \lambda^e_m \tau^{ae}_{mi} \\
+            &\quad - \left(\lambda^{ef}_{mn} t^{ef}_{in}\right) t^a_m - \left(\lambda^{ef}_{mn} t^{af}_{mn}\right) t^e_i \\
+            D_{ia}^{\text{so}} &= t^a_i + \lambda^e_m t^{ae}_{im} - \lambda^e_m t^e_i t^a_m \\
+            &\quad - \tfrac{1}{2}\left(\lambda^{ef}_{mn} t^{ef}_{in}\right) t^a_m - \tfrac{1}{2}\left(\lambda^{ef}_{mn} t^{af}_{mn}\right) t^e_i
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             Dov = clone(t1)
@@ -401,6 +461,21 @@ class ccdensity(object):
 
     # CC3 contributions to the one electron densities
     def build_cc3_Dov(self, o, v, no, nv, F, L, t1, t2, l1, l2, Wvvvo, Wovoo, Fov, Wvovv, Wooov, real_time=False):
+        r"""CC3 connected-triples contribution to the occupied-virtual 1-PDM block D_ia, added
+        to the CCSD :meth:`build_Dov`.  Built per-(i,j,k) from the connected T3
+        (:func:`~pycc.cctriples.t3c_ijk`) and lambda L3 (:func:`~pycc.cctriples.l3_ijk`); the
+        ``Z`` intermediate folds l3 with t2.  Repeated indices summed::
+
+            Z_lmdi = l3_lmndef t2_nife
+            D_ia += (t3_ijkabc - t3_ijkbac) l2_jkbc - Z_lmdi t2_lmda
+
+        .. math::
+
+            \begin{aligned}
+            Z_{lmdi} &= \lambda^{def}_{lmn} t^{fe}_{ni} \\
+            D_{ia} &\mathrel{+}= \left(t^{abc}_{ijk} - t^{bac}_{ijk}\right)\lambda^{bc}_{jk} - Z_{lmdi}\, t^{da}_{lm}
+            \end{aligned}
+        """
         contract = self.contract
         Dov = zeros_like(t1)
         Zlmdi = zeros_like(t2[:,:,:,:no])
@@ -422,6 +497,18 @@ class ccdensity(object):
         return Dov
                                     
     def build_cc3_Doo(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
+        r"""CC3 connected-triples contribution to the occupied-occupied 1-PDM block D_ij, built
+        per-(b,c) from the fixed-virtual T3 (:func:`~pycc.cctriples.t3c_bc`) and L3
+        (:func:`~pycc.cctriples.l3_bc`).  Repeated indices summed::
+
+            D_ij = -1/2 t3_lmiabc l3_lmjabc
+
+        .. math::
+
+            \begin{aligned}
+            D_{ij} = -\tfrac{1}{2}\, t^{abc}_{lmi}\, \lambda^{abc}_{lmj}
+            \end{aligned}
+        """
         contract = self.contract
         Doo = zeros_like(l1[:,:no])
         for b in range(nv):
@@ -436,6 +523,18 @@ class ccdensity(object):
         return Doo        
 
     def build_cc3_Dvv(self, o, v, no, nv, F, L, t2, l1, l2, Fov, Wvvvo, Wovoo, Wvovv, Wooov, real_time=False):
+        r"""CC3 connected-triples contribution to the virtual-virtual 1-PDM block D_ab, built
+        per-(i,j,k) from the connected T3 (:func:`~pycc.cctriples.t3c_ijk`) and L3
+        (:func:`~pycc.cctriples.l3_ijk`).  Repeated indices summed::
+
+            D_ab = 1/2 t3_ijkbdc l3_ijkadc
+
+        .. math::
+
+            \begin{aligned}
+            D_{ab} = \tfrac{1}{2}\, t^{bdc}_{ijk}\, \lambda^{adc}_{ijk}
+            \end{aligned}
+        """
         contract = self.contract
         # Dvv's leading axis is virtual (shape nv,nv), so allocate it directly
         # rather than zeros_like(l1) (no,nv) + pad.
@@ -453,6 +552,21 @@ class ccdensity(object):
         return Dvv
 
     def build_Doooo(self, t1, t2, l2):  # complete
+        r"""Occupied\ :sup:`4` block Gamma_ijkl of the CC two-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; CCD uses t2 for tau).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Gamma_ijkl = tau_ijef l2_klef
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijkl} = \tau^{ef}_{ij}\, \lambda^{ef}_{kl}
+            \end{aligned}
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('ijef,klef->ijkl', t2, l2)
@@ -462,6 +576,21 @@ class ccdensity(object):
             return contract('ijef,klef->ijkl', self.ccwfn.build_tau(t1, t2), l2)
 
     def build_Dvvvv(self, t1, t2, l2):  # complete
+        r"""Virtual\ :sup:`4` block Gamma_abcd of the CC two-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; CCD uses t2 for tau).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Gamma_abcd = tau_mnab l2_mncd
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{abcd} = \tau^{ab}_{mn}\, \lambda^{cd}_{mn}
+            \end{aligned}
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             return contract('mnab,mncd->abcd', t2, l2)
@@ -471,6 +600,33 @@ class ccdensity(object):
             return contract('mnab,mncd->abcd', self.ccwfn.build_tau(t1, t2), l2)
 
     def build_Dooov(self, t1, t2, l1, l2):  # complete
+        r"""Occ-occ-occ-vir block Gamma_ijka of the CC two-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; G_oo = :meth:`~pycc.cclambda.cclambda.build_Goo`).
+        CCD returns zero for this block; CC2 keeps only the first two terms and the final
+        t1^3 term.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Gamma_ijka = -l_ke (2 tau_ijea - tau_ijae) - t_ie l2_jkae
+                       - 2 Goo_ik t_ja + Goo_jk t_ia
+                       - 2 (t2_jmaf l2_kmef) t_ie + (t2_imaf l2_kmef) t_je
+                       + (t2_ijef l2_kmef) t_ma + (t2_mjaf l2_kmef) t_ie
+                       + (t2_imea l2_kmef) t_jf + (l2_kmef t_ie t_jf) t_ma
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijka} &= -\lambda^e_k\left(2\tau^{ea}_{ij} - \tau^{ae}_{ij}\right) - t^e_i \lambda^{ae}_{jk} \\
+            &\quad - 2 G^{oo}_{ik} t^a_j + G^{oo}_{jk} t^a_i \\
+            &\quad - 2\left(t^{af}_{jm}\lambda^{ef}_{km}\right) t^e_i + \left(t^{af}_{im}\lambda^{ef}_{km}\right) t^e_j \\
+            &\quad + \left(t^{ef}_{ij}\lambda^{ef}_{km}\right) t^a_m + \left(t^{af}_{mj}\lambda^{ef}_{km}\right) t^e_i \\
+            &\quad + \left(t^{ea}_{im}\lambda^{ef}_{km}\right) t^f_j + \left(\lambda^{ef}_{km} t^e_i t^f_j\right) t^a_m
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
@@ -515,6 +671,33 @@ class ccdensity(object):
 
 
     def build_Dvvvo(self, t1, t2, l1, l2):  # complete
+        r"""Vir-vir-vir-occ block Gamma_abci of the CC two-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; G_vv = :meth:`~pycc.cclambda.cclambda.build_Gvv`).
+        CCD returns zero for this block; CC2 keeps only the first two terms and the final
+        t1^3 term.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Gamma_abci = l_mc (2 tau_miab - tau_miba) + t_ma l2_imbc
+                       - 2 Gvv_ca t_ib + Gvv_cb t_ia
+                       + 2 (t2_imbe l2_nmce) t_na - (t2_imae l2_nmce) t_nb
+                       - (t2_nmab l2_nmce) t_ie - (t2_niae l2_nmce) t_mb
+                       - (t2_mibe l2_nmce) t_na - (l2_nmce t_ie t_na) t_mb
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{abci} &= \lambda^c_m\left(2\tau^{ab}_{mi} - \tau^{ba}_{mi}\right) + t^a_m \lambda^{bc}_{im} \\
+            &\quad - 2 G^{vv}_{ca} t^b_i + G^{vv}_{cb} t^a_i \\
+            &\quad + 2\left(t^{be}_{im}\lambda^{ce}_{nm}\right) t^a_n - \left(t^{ae}_{im}\lambda^{ce}_{nm}\right) t^b_n \\
+            &\quad - \left(t^{ab}_{nm}\lambda^{ce}_{nm}\right) t^e_i - \left(t^{ae}_{ni}\lambda^{ce}_{nm}\right) t^b_m \\
+            &\quad - \left(t^{be}_{mi}\lambda^{ce}_{nm}\right) t^a_n - \left(\lambda^{ce}_{nm} t^e_i t^a_n\right) t^b_m
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             no = self.ccwfn.no
@@ -559,6 +742,22 @@ class ccdensity(object):
 
 
     def build_Dovov(self, t1, t2, l1, l2):  # complete
+        r"""Occ-vir-occ-vir block Gamma_iajb of the CC two-particle correlation density
+        (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; CCD drops the singles term and uses t2
+        for tau).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            Gamma_iajb = -t_ia l_jb - tau_mibe l2_jmea - t2_imbe l2_mjea
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{iajb} = -t^a_i \lambda^b_j - \tau^{be}_{mi}\, \lambda^{ea}_{jm} - t^{be}_{im}\, \lambda^{ea}_{mj}
+            \end{aligned}
+        """
         contract = self.contract
         if self.ccwfn.model == 'CCD':
             Dovov = -contract('mibe,jmea->iajb', t2, l2)
@@ -574,6 +773,49 @@ class ccdensity(object):
 
 
     def build_Doovv(self, t1, t2, l1, l2):
+        r"""Occ-occ-vir-vir block Gamma_ijab of the CC two-particle correlation density -- the
+        largest block (tau = :meth:`~pycc.ccwfn.CCwfn.build_tau`; G_oo/G_vv =
+        :meth:`~pycc.cclambda.cclambda.build_Goo`/:meth:`~pycc.cclambda.cclambda.build_Gvv`).
+        The spin-adapted combinations ``2 t2 - t2.swap`` and ``2 tau - tau.swap`` are written
+        ``t2s`` / ``taus`` (LaTeX ``\tilde t`` / ``\tilde\tau``).  CCD keeps the doubles
+        structure without the singles terms; CC2 keeps only the leading + t1-relaxation +
+        final t1^4 terms.  Repeated indices summed::
+
+            Gamma_ijab = 4 t_ia l_jb + 2 taus_ijab + l2_ijab
+                       + 4 l_me t2s_jmbe t_ia - 2 l_me t2s_jmae t_ib
+                       - 2 t2s_ijeb l_me t_ma - 2 taus_jmba l_me t_ie
+                       + 4 t2_imae l2_mjeb - 2 tau_mjbe l2_imae
+                       + (t2_ijef l2_mnef) t2_mnab
+                       + (t2_njbf l2_mnef) t2_miae + (t2_imfb l2_mnef) t2_njae
+                       + 4 Gvv_eb tau_ijae - 2 Gvv_ea tau_ijbe
+                       - 4 Goo_jm tau_imab + 2 Goo_jm tau_imba
+                       - 4 (t2_inaf l2_mnef) tau_mjbe + 2 (t2_inbf l2_mnef) tau_mjae
+                       + 4 (t2_jnbf l2_mnef) t2_imae - 2 (t2_jnaf l2_mnef) t2_imbe
+                       + (t2_ijef l2_mnef) t_ma t_nb
+                       + (l2_mnef t_ie t_jf) t2_mnab
+                       + (l2_mnef t_ie t2_njbf) t_ma + (l2_mnef t_jf t2_miae) t_nb
+                       + (l2_mnef t_je t2_imfb) t_na + (l2_mnef t_if t2_njae) t_mb
+                       + l2_mnef t_ie t_jf t_ma t_nb
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} &= 4 t^a_i \lambda^b_j + 2 \tilde\tau^{ab}_{ij} + \lambda^{ab}_{ij} \\
+            &\quad + 4 \lambda^e_m \tilde t^{be}_{jm} t^a_i - 2 \lambda^e_m \tilde t^{ae}_{jm} t^b_i \\
+            &\quad - 2 \tilde t^{eb}_{ij} \lambda^e_m t^a_m - 2 \tilde\tau^{ba}_{jm} \lambda^e_m t^e_i \\
+            &\quad + 4 t^{ae}_{im} \lambda^{eb}_{mj} - 2 \tau^{be}_{mj} \lambda^{ae}_{im} \\
+            &\quad + \left(t^{ef}_{ij} \lambda^{ef}_{mn}\right) t^{ab}_{mn} + \left(t^{bf}_{nj} \lambda^{ef}_{mn}\right) t^{ae}_{mi} + \left(t^{fb}_{im} \lambda^{ef}_{mn}\right) t^{ae}_{nj} \\
+            &\quad + 4 G^{vv}_{eb} \tau^{ae}_{ij} - 2 G^{vv}_{ea} \tau^{be}_{ij} - 4 G^{oo}_{jm} \tau^{ab}_{im} + 2 G^{oo}_{jm} \tau^{ba}_{im} \\
+            &\quad - 4 \left(t^{af}_{in} \lambda^{ef}_{mn}\right) \tau^{be}_{mj} + 2 \left(t^{bf}_{in} \lambda^{ef}_{mn}\right) \tau^{ae}_{mj} \\
+            &\quad + 4 \left(t^{bf}_{jn} \lambda^{ef}_{mn}\right) t^{ae}_{im} - 2 \left(t^{af}_{jn} \lambda^{ef}_{mn}\right) t^{be}_{im} \\
+            &\quad + \left(t^{ef}_{ij} \lambda^{ef}_{mn}\right) t^a_m t^b_n + \left(\lambda^{ef}_{mn} t^e_i t^f_j\right) t^{ab}_{mn} \\
+            &\quad + \left(\lambda^{ef}_{mn} t^e_i t^{bf}_{nj}\right) t^a_m + \left(\lambda^{ef}_{mn} t^f_j t^{ae}_{mi}\right) t^b_n \\
+            &\quad + \left(\lambda^{ef}_{mn} t^e_j t^{fb}_{im}\right) t^a_n + \left(\lambda^{ef}_{mn} t^f_i t^{ae}_{nj}\right) t^b_m \\
+            &\quad + \lambda^{ef}_{mn} t^e_i t^f_j t^a_m t^b_n
+            \end{aligned}
+
+        For CCSD(T) the (T) contribution (:meth:`~pycc.ccwfn.CCwfn.t3_density`) is added.
+        """
         contract = self.contract
         tau = self.ccwfn.build_tau(t1, t2)
         tau_spinad = 2.0 * tau - tau.swapaxes(2,3)
@@ -680,7 +922,7 @@ class ccdensity(object):
         return Doovv
 
     def build_so_twopdm(self, t1, t2, l1, l2):
-        """Spin-orbital CCSD two-particle density -- the nine unique blocks of Table 6.3 of the
+        r"""Spin-orbital CCSD two-particle density -- the nine unique blocks of Table 6.3 of the
         coupled-cluster notes (Crawford), returned as a dict keyed by block label.
 
         Because the spin-orbital 2-PDM is fully antisymmetric (``Gamma_pqrs = -Gamma_qprs =
@@ -693,6 +935,45 @@ class ccdensity(object):
         ``tau^{ab}_{ij} = t^{ab}_{ij} + t^a_i t^b_j - t^a_j t^b_i`` (= ``t2 + P(ij) t1 t1``), which
         also equals ``t2^{ab}_{ij} + 1/2 P(ij)P(ab) t^a_i t^b_j``.  Validated by reconstructing the
         CCSD correlation energy, ``contract(gamma, F) + 1/4 contract(Gamma, <pq||rs>) = E_corr``.
+
+        Notes
+        -----
+        With the permutation operator P(pq) X = X - X_swap(pq) and X_miae = t2_miae +
+        2 t_ie t_ma (repeated indices summed)::
+
+            G_ijkl = 1/2 tau_ijef l2_klef
+            G_abcd = 1/2 l2_mnab tau_mncd
+            G_ijka = -l_ke tau_ijea + 1/2 l2_kmef tau_ijef t_ma
+                   + P(ij) l2_mkef t2_imae t_jf - 1/2 P(ij) l2_kmef t2_imef t_ja
+            G_ciab = l_mc tau_miab - 1/2 l2_mnce tau_mnab t_ie
+                   - P(ab) l2_mnce t2_inae t_mb + 1/2 P(ab) l2_mnce t2_mnae t_ib
+            G_abci = l2_miab t_mc
+            G_kaij = -l2_ijea t_ke
+            G_ibaj = t_ia l_jb + l2_jmbe t2_miea - l2_jmbe t_ma t_ie
+            G_ijab = tau + 1/4 l2_mnef tau_ijef tau_mnab
+                   - 1/2 P(ij) l2_mnef t2_inef tau_mjab - P(ij) l_me tau_mjab t_ie
+                   - 1/2 P(ab) l2_mnef t2_mnaf tau_ijeb - P(ab) l_me tau_ijeb t_ma
+                   - 1/2 P(ij)P(ab) X_miae l2_mnef t2_jnbf - P(ij)P(ab) X_miae l_me t_jb
+                   + 3 P(ij)P(ab) l_me t_ia t_je t_mb
+            G_abij = l2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma^{ijkl} &= \tfrac{1}{2}\, \tau^{ef}_{ij}\, \lambda^{ef}_{kl} \\
+            \Gamma^{abcd} &= \tfrac{1}{2}\, \lambda^{ab}_{mn}\, \tau^{cd}_{mn} \\
+            \Gamma^{ijka} &= -\lambda^e_k \tau^{ea}_{ij} + \tfrac{1}{2}\, \lambda^{ef}_{km} \tau^{ef}_{ij} t^a_m + \mathcal{P}(ij)\, \lambda^{ef}_{mk} t^{ae}_{im} t^f_j - \tfrac{1}{2}\mathcal{P}(ij)\, \lambda^{ef}_{km} t^{ef}_{im} t^a_j \\
+            \Gamma^{ciab} &= \lambda^c_m \tau^{ab}_{mi} - \tfrac{1}{2}\, \lambda^{ce}_{mn} \tau^{ab}_{mn} t^e_i - \mathcal{P}(ab)\, \lambda^{ce}_{mn} t^{ae}_{in} t^b_m + \tfrac{1}{2}\mathcal{P}(ab)\, \lambda^{ce}_{mn} t^{ae}_{mn} t^b_i \\
+            \Gamma^{abci} &= \lambda^{ab}_{mi} t^c_m \\
+            \Gamma^{kaij} &= -\lambda^{ea}_{ij} t^e_k \\
+            \Gamma^{ibaj} &= t^a_i \lambda^b_j + \lambda^{be}_{jm} t^{ea}_{mi} - \lambda^{be}_{jm} t^a_m t^e_i \\
+            \Gamma^{ijab} &= \tau^{ab}_{ij} + \tfrac{1}{4}\, \lambda^{ef}_{mn} \tau^{ef}_{ij} \tau^{ab}_{mn} \\
+            &\quad - \tfrac{1}{2}\mathcal{P}(ij)\, \lambda^{ef}_{mn} t^{ef}_{in} \tau^{ab}_{mj} - \mathcal{P}(ij)\, \lambda^e_m \tau^{ab}_{mj} t^e_i \\
+            &\quad - \tfrac{1}{2}\mathcal{P}(ab)\, \lambda^{ef}_{mn} t^{af}_{mn} \tau^{eb}_{ij} - \mathcal{P}(ab)\, \lambda^e_m \tau^{eb}_{ij} t^a_m \\
+            &\quad - \tfrac{1}{2}\mathcal{P}(ij)\mathcal{P}(ab)\, X_{miae} \lambda^{ef}_{mn} t^{bf}_{jn} - \mathcal{P}(ij)\mathcal{P}(ab)\, X_{miae} \lambda^e_m t^b_j \\
+            &\quad + 3\, \mathcal{P}(ij)\mathcal{P}(ab)\, \lambda^e_m t^a_i t^e_j t^b_m \\
+            \Gamma^{abij} &= \lambda^{ab}_{ij}
+            \end{aligned}
         """
         contract = self.contract
         tau = t2 + contract('ia,jb->ijab', t1, t1) - contract('ja,ib->ijab', t1, t1)
@@ -760,6 +1041,17 @@ class ccdensity(object):
 
     # T1-transformed dipole integrals needed in CC3
     def build_Moo(self, no, nv, ints, t1):
+        r"""Occupied-occupied block of a T1-transformed one-electron (dipole) integral ``ints``,
+        used in the CC3 density.  Repeated indices summed::
+
+            Moo_mi = M_mi + M_ma t_ia
+
+        .. math::
+
+            \begin{aligned}
+            M_{mi} = M_{mi} + M_{ma} t^a_i
+            \end{aligned}
+        """
         contract = self.contract
         Moo = clone(ints[:no,:no])
         Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
@@ -767,6 +1059,17 @@ class ccdensity(object):
         return Moo
 
     def build_Mvv(self, no, nv, ints, t1):
+        r"""Virtual-virtual block of a T1-transformed one-electron (dipole) integral ``ints``,
+        used in the CC3 density.  Repeated indices summed::
+
+            Mvv_ae = M_ae - M_ie t_ia
+
+        .. math::
+
+            \begin{aligned}
+            M_{ae} = M_{ae} - M_{ie} t^a_i
+            \end{aligned}
+        """
         contract = self.contract
         Mvv = clone(ints[-nv:,-nv:])
         Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
