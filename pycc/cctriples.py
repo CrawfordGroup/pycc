@@ -488,8 +488,12 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
 # Efficient algorithm for l3
 # Need further debugging
 def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    """Connected lambda-L3 (i,j,k-batched), an alternative factorization of :func:`l3_ijk`
-    (same amplitude; see there for the equation)."""
+    """Alternative (i,j,k-batched) factorization of the connected lambda-L3 from the original
+    CC3-Lambda development (git ``3363618``).  Currently **unused** and **does not reproduce**
+    :func:`l3_ijk`: its W (ladder) block antisymmetrizes the contracted intermediate
+    (``2W - W.swap(0,1) - W.swap(0,2)``) rather than spin-adapting the integrals inline, and the
+    two disagree by ~4e-3 (H2O/STO-3G/CC3).  Retained pending review of its original intent;
+    use :func:`l3_ijk` (the validated form)."""
     Loovv = L[o,o,v,v]
     l3 = contract('ab,c->abc', Loovv[i,j], l1[k]) - contract('ac,b->abc', Loovv[i,j], l1[k])
     l3 += contract('ac,b->abc', Loovv[i,k], l1[j]) - contract('ab,c->abc', Loovv[i,k], l1[j])
@@ -532,8 +536,9 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
         return l3
 
 def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
-    """Connected lambda-L3 (a,b,c-batched), the alternative-factorization companion of
-    :func:`l3_ijk_alt` (same amplitude; see :func:`l3_ijk`)."""
+    """a,b,c-batched companion of :func:`l3_ijk_alt` -- the same unused alternative CC3-Lambda
+    factorization, which **does not reproduce** the validated :func:`l3_abc`/:func:`l3_ijk`
+    (~4e-3 disagreement).  Retained pending review of its original intent."""
     Loovv = clone(L[o,o,v,v])
     l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
     l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
