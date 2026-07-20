@@ -55,6 +55,10 @@ class rtcc(object):
         optionally isolate 'x', 'y', or 'z' electric field kick (default = False)
     """
     def __init__(self, ccwfn: "CCwfn", cclambda: "cclambda", ccdensity: "ccdensity", V: Tensor, magnetic: bool = False, kick: Any = None) -> None:
+        """Bind the CC wavefunction, Lambda, and density objects and the time-dependent field
+        ``V``; cache the electric-dipole integrals ``mu`` (and the isotropic ``mu_tot``, or a single
+        'x'/'y'/'z' ``kick``), and -- when ``magnetic=True`` -- the magnetic-dipole integrals ``m``.
+        Precision/backend (SP/DP, NumPy/torch) is inherited from ``ccwfn``."""
         self.ccwfn = ccwfn
         self.cclambda = cclambda
         self.ccdensity = ccdensity
@@ -98,7 +102,21 @@ class rtcc(object):
             self.magnetic = False
 
     def f(self, t: float, y: Tensor) -> Tensor:
-        """
+        r"""ODE right-hand side ``f(t, y) = dy/dt`` for the RT-CC propagation -- the time-derivative
+        of the flattened cluster amplitudes, multipliers, and phase, evaluated with the
+        field-dressed Fock ``F(t) = F + mu_tot V(t)`` (the time-dependent CC equations of motion;
+        repeated indices summed)::
+
+            dt/dt      = -i <mu| HBAR(F(t)) |0>                (T-amplitude residuals)
+            dLambda/dt = +i <0|(1+Lambda)[HBAR, tau_mu]|0>     (Lambda residuals)
+            dphase/dt  = -i (E_ref + E_cc)                     (quasienergy; see phase())
+
+        .. math::
+
+            \dot{t} = -i\,\langle\mu|\bar{H}(F(t))|0\rangle, \qquad
+            \dot{\Lambda} = +i\,\langle 0|(1+\Lambda)[\bar{H}, \tau_\mu]|0\rangle,
+            \qquad F(t) = F + \mu_\mathrm{tot}\,V(t)
+
         Parameters
         ----------
         t : float
@@ -200,7 +218,18 @@ class rtcc(object):
         return t1, t2, l1, l2, phase
 
     def dipole(self, t1: Tensor, t2: Tensor, l1: Tensor, l2: Tensor, magnetic: bool = False, real_time: bool = False):
-        """
+        r"""Correlated dipole (or magnetic-dipole) expectation value ``Tr(mu D)`` from the CC
+        one-particle density (repeated indices summed)::
+
+            mu_alpha = (mu_alpha)_pq D_pq
+
+        .. math::
+
+            \mu_\alpha = (\mu_\alpha)_{pq}\, D_{pq}
+
+        For CC3 the density splits into ``opdm + opdm_cc3`` and the property integrals are
+        T1-transformed (:meth:`_build_Moo`/:meth:`_build_Mvv`) before contraction with the CC3 part.
+
         Parameters
         ----------
         t1, t2, l1, l2 : NumPy arrays
@@ -258,13 +287,11 @@ class rtcc(object):
         r"""Occupied-occupied block of a T1-transformed one-electron property integral ``ints``,
         used in the CC3 dipole.  Repeated indices summed::
 
-            Moo_mi = M_mi + M_ma t_ia
+            ~Moo_mi = M_mi + M_ma t_ia
 
         .. math::
 
-            \begin{aligned}
-            M_{mi} = M_{mi} + M_{ma} t^a_i
-            \end{aligned}
+            \tilde{M}_{mi} = M_{mi} + M_{ma}\, t^a_i
         """
         contract = self.contract
         Moo = clone(ints[:no,:no])
@@ -275,13 +302,11 @@ class rtcc(object):
         r"""Virtual-virtual block of a T1-transformed one-electron property integral ``ints``,
         used in the CC3 dipole.  Repeated indices summed::
 
-            Mvv_ae = M_ae - M_ie t_ia
+            ~Mvv_ae = M_ae - M_ie t_ia
 
         .. math::
 
-            \begin{aligned}
-            M_{ae} = M_{ae} - M_{ie} t^a_i
-            \end{aligned}
+            \tilde{M}_{ae} = M_{ae} - M_{ie}\, t^a_i
         """
         contract = self.contract
         Mvv = clone(ints[-nv:,-nv:])
@@ -289,7 +314,19 @@ class rtcc(object):
         return Mvv
 
     def lagrangian(self, t, t1, t2, l1, l2):
-        """
+        r"""CC Lagrangian energy ``E_cc`` at time ``t`` (reference + one- + two-electron; excludes
+        nuclear repulsion), from the CC reduced densities and the field-dressed Fock ``F(t)``
+        (repeated indices summed)::
+
+            E_cc = E_ref + F_pq D_pq + 1/2 <pq|rs> Gamma_pqrs
+
+        .. math::
+
+            E_\mathrm{cc} = E_\mathrm{ref} + F_{pq} D_{pq} + \tfrac{1}{2}\langle pq|rs\rangle\,\Gamma_{pqrs}
+
+        with the one-particle density ``D`` (:meth:`ccdensity.compute_onepdm`) and the two-particle
+        blocks (Doooo/Dvvvv/Dooov/Dvvvo/Dovov/Doovv) contracted with the matching ERI blocks.
+
         Parameters
         ----------
         t : float
@@ -333,12 +370,17 @@ class rtcc(object):
         return eref + eone + etwo
 
     def _eref(self, F):
-        """Reference (zeroth-order) energy contribution to the CC quasienergy.
+        r"""Reference (zeroth-order) energy contribution to the CC quasienergy (repeated indices
+        summed)::
 
-        Returns ``2 Tr F_oo - sum_{ia} L_iaia`` (i.e. ``2 np.trace(F[o,o]) -
-        np.trace(np.trace(L[o,o,o,o], axis1=1, axis2=3))``). Evaluated through the
-        backend ``contract`` so the single expression runs unchanged on NumPy or
-        torch — ``contract`` handles any device transfer of ``H.L`` in GPU mode.
+            E_ref = 2 F_ii - L_iaia
+
+        .. math::
+
+            E_\mathrm{ref} = 2 F_{ii} - L_{iaia}
+
+        Evaluated through the backend ``contract`` so the single expression runs unchanged on NumPy
+        or torch (``contract`` handles any device transfer of ``H.L`` in GPU mode).
         """
         o = self.ccwfn.o
         contract = self.contract
@@ -347,7 +389,19 @@ class rtcc(object):
         return eref
 
     def phase(self, F, t1, t2):
-        """
+        r"""Wave-function quasienergy / phase-factor time-derivative (the phase enters the amplitudes
+        as ``exp(-phase(t))``), with the field-dressed Fock ``F`` and the tau-dressed doubles
+        ``tau = build_tau(t1, t2)`` (repeated indices summed; ``L`` = ``H.L``)::
+
+            dphase/dt = -i (E_ref + E_cc),   E_cc = 2 F_ia t_ia + tau_ijab L_ijab
+
+        .. math::
+
+            \dot{\phi} = -i\,(E_\mathrm{ref} + E_\mathrm{cc}), \qquad
+            E_\mathrm{cc} = 2 F_{ia} t^a_i + \tau^{ab}_{ij} L_{ijab}
+
+        (CCD keeps only the ``tau_ijab L_ijab`` term.)
+
         Parameters
         ----------
         F : NumPy array
@@ -376,7 +430,23 @@ class rtcc(object):
         return (eref + ecc) * (-1.0j)
 
     def autocorrelation(self, y_left: Tensor, y_right: Tensor):
-        """
+        r"""Autocorrelation function ``A(t1, t2) = <Psi(t1)|Psi(t2)>``, Eq. (18) of J. Chem. Phys.
+        150, 144106 (2019).  Symmetrized over the two time points as ``1/2 A + 1/2 conj(B)``, where
+        ``B`` is ``A`` with the left/right amplitudes swapped; ``A`` is (repeated indices summed)::
+
+            A = [ 1 + l1_l (t1_r - t1_l) + 1/2 l2_l (t2_r - t2_l)
+                    + 1/2 l2_l t1_l t1_l + 1/2 l2_l t1_r t1_r - l2_l t1_l t1_r ]
+                * exp(-phase_l) exp(phase_r)
+
+        .. math::
+
+            A = \Big[ 1 + \lambda^{(l)}_{ia}(t^{(r)}_{ia} - t^{(l)}_{ia})
+                + \tfrac{1}{2}\lambda^{(l)}_{ijab}(t^{(r)}_{ijab} - t^{(l)}_{ijab})
+                + \tfrac{1}{2}\lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(l)}_{jb}
+                + \tfrac{1}{2}\lambda^{(l)}_{ijab} t^{(r)}_{ia} t^{(r)}_{jb}
+                - \lambda^{(l)}_{ijab} t^{(l)}_{ia} t^{(r)}_{jb} \Big]\,
+                e^{-\phi_l}\, e^{\phi_r}
+
         Parameters
         ----------
         y_left, y_right : Numpy arrays
