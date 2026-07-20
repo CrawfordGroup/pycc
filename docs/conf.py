@@ -58,6 +58,22 @@ autosummary_generate = True
 # guarded by a try/except in the package, so its absence is handled normally.
 autodoc_mock_imports = ['psi4']
 
+# Document members in source order (preserving each module's labeled-section grouping) rather
+# than alphabetically.
+autodoc_member_order = 'bysource'
+
+# Document all members by default, including PRIVATE (underscore-prefixed) ones -- much of pycc's
+# substantive documentation (the derivations) lives on private methods.  To hide specific members:
+#   * per module: add e.g. ``:exclude-members: _foo, _bar`` under its ``automodule`` in api.rst;
+#   * a member's own docstring: add a ``:meta private:`` line (it still shows while private-members
+#     is on, but is a stable marker) -- to force-hide, use exclude-members or the skip handler below;
+#   * globally by name/pattern: see the ``autodoc-skip-member`` handler stub in ``setup()`` at the
+#     bottom of this file.
+autodoc_default_options = {
+    'members': True,
+    'private-members': True,
+}
+
 napoleon_google_docstring = False
 napoleon_use_param = False
 napoleon_use_ivar = True
@@ -177,3 +193,18 @@ texinfo_documents = [
 
 
 # -- Extension configuration -------------------------------------------------
+
+# Optional: drop specific members from autodoc by name/pattern across the whole build (private
+# members are on by default; this is how you carve exceptions back out).  Uncomment and edit:
+#
+# import re
+# _HIDE_NAMES = set()                         # exact member names to always hide, e.g. {'_scratch'}
+# _HIDE_PATTERNS = [re.compile(r'^_debug_')]  # regexes matched against the member name
+#
+# def _skip_member(app, what, name, obj, skip, options):
+#     if name in _HIDE_NAMES or any(p.search(name) for p in _HIDE_PATTERNS):
+#         return True                         # True  -> hide this member
+#     return None                             # None  -> keep Sphinx's default decision
+#
+# def setup(app):
+#     app.connect('autodoc-skip-member', _skip_member)

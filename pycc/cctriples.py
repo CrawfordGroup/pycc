@@ -24,7 +24,7 @@ desired target.
 """
 
 def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
-    """Build the T3 amplitudes in batches for fixed i,j,k indices.
+    r"""Build the connected T3 amplitudes in batches for fixed i,j,k indices.
 
     Returns
     -------
@@ -32,14 +32,19 @@ def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
     Notes
     -----
-    General expression:
+    ``W`` is either a two-electron integral <pq|rs> (for the (T) correction) or a T1-dressed
+    CC3 intermediate.  ``P(ijk/abc)`` is the full antisymmetrizer over the three
+    (occupied, virtual) pairs; ``D_ijkabc`` is the orbital-energy denominator::
 
-    t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ]/D_ijkabc
+        t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ] / D_ijkabc
+        D_ijkabc = f_ii + f_jj + f_kk - f_aa - f_bb - f_cc
 
-    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
-    intermediate (e.g., T1-similarity-transformed integrals) depending on the
-    desired target.
+    .. math::
 
+        \begin{aligned}
+        D^{abc}_{ijk}\, t^{abc}_{ijk} &= -\mathcal{P}(ijk/abc)\left( t^{ae}_{ij} W_{bcek} - t^{ab}_{im} W_{mcjk} \right) \\
+        D^{abc}_{ijk} &= f_{ii} + f_{jj} + f_{kk} - f_{aa} - f_{bb} - f_{cc}
+        \end{aligned}
     """
     t3 = contract('bae,ce->abc', Wvvvo[:,:,:,i], t2[k,j])
     t3 += contract('cae,be->abc', Wvvvo[:,:,:,i], t2[j,k])
@@ -67,22 +72,12 @@ def t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
 
 def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
-    """Build the T3 amplitudes in batches for fixed a,b,c indices.
+    """Build the connected T3 amplitudes in batches for fixed a,b,c indices -- the a,b,c-batched
+    form of :func:`t3c_ijk` (same amplitude and equation; see there).
 
     Returns
     -------
     ndarray or torch.Tensor, shape (no, no, no)
-
-    Notes
-    -----
-    General expression:
-
-    t3_ijkabc = -P(ijk/abc) [ t2_ijae W_bcek - t2_imab W_mcjk ]/D_ijkabc
-
-    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
-    intermediate (e.g., T1-similarity-transformed integrals) depending on the
-    desired target.
-
     """
     t3 = contract('ei,kje->ijk', Wvvvo[b,a], t2[:,:,c])
     t3 += contract('ei,jke->ijk', Wvvvo[c,a], t2[:,:,b])
@@ -110,8 +105,8 @@ def t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
 
 
 def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
-    """Build the disconnected contributions to the T3 amplitudes in batches
-    for fixed i,j,k indices.
+    r"""Build the disconnected contributions to the T3 amplitudes in batches for fixed i,j,k
+    indices.
 
     Returns
     -------
@@ -119,15 +114,18 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
 
     Notes
     -----
-    General expression:
+    ``W`` is either a two-electron integral <pq|rs> (for (T)) or a T1-dressed CC3 intermediate;
+    ``F`` is the occupied-virtual Fock block (zero for canonical HF).  Divided by the
+    orbital-energy denominator ``D_ijkabc``::
 
-    t3_ijkabc = W_ijab t1_kc + W_ikac t1_jb + W_jkbc t1_ia +
-                t2_ijab F_kc + t2_ikac F_jb + t2_jkbc F_ia
+        t3_ijkabc = W_ijab t1_kc + W_ikac t1_jb + W_jkbc t1_ia
+                  + t2_ijab F_kc + t2_ikac F_jb + t2_jkbc F_ia
 
-    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
-    intermediate (e.g., T1-similarity-transformed integrals) depending on the
-    desired target.
+    .. math::
 
+        \begin{aligned}
+        D^{abc}_{ijk}\, t^{abc}_{ijk} = W_{ijab} t^c_k + W_{ikac} t^b_j + W_{jkbc} t^a_i + t^{ab}_{ij} F_{kc} + t^{ac}_{ik} F_{jb} + t^{bc}_{jk} F_{ia}
+        \end{aligned}
     """
     Fov = F[o,v]
     t3 = contract('ab,c->abc', Woovv[i,j], t1[k])
@@ -148,24 +146,12 @@ def t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, WithDenom=True):
         return t3
 
 def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
-    """Build the disconnected contributions to the T3 amplitudes in batches
-    for fixed a,b,c indices.
+    """Build the disconnected contributions to the T3 amplitudes in batches for fixed a,b,c
+    indices -- the a,b,c-batched form of :func:`t3d_ijk` (same amplitude and equation; see there).
 
     Returns
     -------
     ndarray or torch.Tensor, shape (no, no, no)
-
-    Notes
-    -----
-    General expression:
-
-    t3_ijkabc = W_ijab t1_kc + W_ikac t1_jb + W_jkbc t1_ia +
-                t2_ijab F_kc + t2_ikac F_jb + t2_jkbc F_ia
-
-    Here the W quantity is either a two-electron integral <pq|rs> or a dressed
-    intermediate (e.g., T1-similarity-transformed integrals) depending on the
-    desired target.
-
     """
     t3 = contract('ij,k->ijk', Woovv[:,:,a,b], t1[:,c])
     t3 += contract('ik,j->ijk', Woovv[:,:,a,c], t1[:,b])
@@ -188,13 +174,19 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
 
 # Lee and Rendell's formulation
 def t_tjl(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the efficient formulation by Rendell
-    and Lee, Chem. Phys. Lett. 178, 462-470 (1991).
+    """Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) using the
+    efficient formulation of Lee and Rendell, Chem. Phys. Lett. 178, 462-470 (1991).
+
+    Returns the same E(T) as :func:`t_vikings` / :func:`t_vikings_inverted`, but via the
+    Lee-Rendell factorization: the connected T3 batch ``W3`` (:func:`t3c_ijk`) and the full
+    numerator ``V3 = W3 + t3d`` are combined into the ``X3``/``Y3``/``Z3`` symmetry
+    intermediates and summed over the *triangular* ranges i>=j>=k and a>=b>=c with the
+    corresponding permutation multiplicity weights -- about a factor of 6 fewer batch
+    contractions than the full-loop viking algorithm.
 
     Returns
     -------
     float
-
     """
     contract = ccwfn.contract
 
@@ -248,15 +240,35 @@ def t_tjl(ccwfn: "CCwfn") -> float:
 
 # Vikings' formulation
 def t_vikings(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the formulation by Helgaker,
-    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
-    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
-    batches triples oveer fixed i,j,k indices.
+    r"""Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) using the
+    Helgaker-Jorgensen-Olsen "vikings" formulation (Molecular Electronic Structure Theory,
+    Wiley, 2000, Ch. 14, pp. 794-795, Eqs. (14.6.62)-(14.6.64)), batching the triples over
+    fixed i,j,k indices.
 
     Returns
     -------
     float
 
+    Notes
+    -----
+    Occupied-batched: the connected T3 ``t3`` (:func:`t3c_ijk`, canonical denominator) is built
+    per-(i,j,k) and contracted into the X1/X2 intermediates -- the full T3 is never stored.
+    ``L = 2 ERI - ERI.swap``; ``t3_cba`` etc. are index permutations of ``t3``; the f_kc term is
+    nonzero only for a non-canonical reference.  Repeated indices summed::
+
+        X1_ia = (t3_abc - t3_cba) L_jkbc
+        X2_ijab += (t3_abc - t3_cba) f_kc
+                +  (2 t3_aef - t3_afe - t3_fea) <bk|ef>
+                -  (2 t3_imkabc - t3_imkacb - t3_imkcba) <mk|jc>
+        E(T) = 2 t1_ia X1_ia + (4 t2 - 2 t2.swap)_ijab X2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        (X_1)^a_i &= (t^{abc}_{ijk} - t^{cba}_{ijk}) L_{jkbc} \\
+        (X_2)^{ab}_{ij} &\mathrel{+}= (t^{abc}_{ijk} - t^{cba}_{ijk}) F_{kc} + (2 t^{aef}_{ijk} - t^{afe}_{ijk} - t^{fea}_{ijk}) \langle bk|ef \rangle - (2 t^{abc}_{imk} - t^{acb}_{imk} - t^{cba}_{imk}) \langle mk|jc \rangle \\
+        E^{(T)} &= 2 t^a_i (X_1)^a_i + (4 t^{ab}_{ij} - 2 t^{ba}_{ij}) (X_2)^{ab}_{ij}
+        \end{aligned}
     """
     contract = ccwfn.contract
 
@@ -296,15 +308,14 @@ def t_vikings(ccwfn: "CCwfn") -> float:
 
 # Vikings' formulation – inverted algorithm
 def t_vikings_inverted(ccwfn: "CCwfn") -> float:
-    """Compute the (T) energy correction using the formulation by Helgaker,
-    Jørgensen, and Olsen, Molecular Electronic Structure Theory, Wiley & Sons, 
-    New York, 2000, Ch.14, pp. 794-795, Eqs. (14.6.62)-(14.6.64).  This algorithm
-    batches triples oveer fixed a,b,c indices.
+    """Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) via the
+    Helgaker-Jorgensen-Olsen "vikings" formulation -- the virtual-batched (fixed a,b,c) form of
+    :func:`t_vikings` (same E(T) and X1/X2 expressions; see there), building the connected T3
+    with :func:`t3c_abc`.
 
     Returns
     -------
     float
-
     """
     contract = ccwfn.contract
 
@@ -342,6 +353,15 @@ def t_vikings_inverted(ccwfn: "CCwfn") -> float:
     return ET
 
 def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    """Build the connected lambda-L3 amplitudes in batches for fixed i,j,k indices -- the
+    spin-adapted (closed-shell, L = 2*ERI - ERI.swap) analogue of :func:`l3_ijk_so` (same
+    amplitude; see there for the equation), assembled in fully-antisymmetrized form.  The
+    lambda counterpart of the connected T3 :func:`t3c_ijk`.
+
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (nv, nv, nv)
+    """
     Loovv = L[o,o,v,v]
     l3 = contract('ab,c->abc', Loovv[i,j], l1[k]) - contract('ac,b->abc', Loovv[i,j], l1[k])
     l3 += contract('ac,b->abc', Loovv[i,k], l1[j]) - contract('ab,c->abc', Loovv[i,k], l1[j])
@@ -400,6 +420,12 @@ def l3_ijk(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
         return l3
 
 def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    """Connected lambda-L3, the a,b,c-batched form of :func:`l3_ijk` (same amplitude; see there).
+
+    Returns
+    -------
+    ndarray or torch.Tensor, shape (no, no, no)
+    """
     Loovv = clone(L[o,o,v,v])
     l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
     l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
@@ -462,6 +488,12 @@ def l3_abc(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=T
 # Efficient algorithm for l3
 # Need further debugging
 def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    """Alternative (i,j,k-batched) factorization of the connected lambda-L3 from the original
+    CC3-Lambda development (git ``3363618``).  Currently **unused** and **does not reproduce**
+    :func:`l3_ijk`: its W (ladder) block antisymmetrizes the contracted intermediate
+    (``2W - W.swap(0,1) - W.swap(0,2)``) rather than spin-adapting the integrals inline, and the
+    two disagree by ~4e-3 (H2O/STO-3G/CC3).  Retained pending review of its original intent;
+    use :func:`l3_ijk` (the validated form)."""
     Loovv = L[o,o,v,v]
     l3 = contract('ab,c->abc', Loovv[i,j], l1[k]) - contract('ac,b->abc', Loovv[i,j], l1[k])
     l3 += contract('ac,b->abc', Loovv[i,k], l1[j]) - contract('ab,c->abc', Loovv[i,k], l1[j])
@@ -504,6 +536,9 @@ def l3_ijk_alt(i, j, k, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
         return l3
 
 def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    """a,b,c-batched companion of :func:`l3_ijk_alt` -- the same unused alternative CC3-Lambda
+    factorization, which **does not reproduce** the validated :func:`l3_abc`/:func:`l3_ijk`
+    (~4e-3 disagreement).  Retained pending review of its original intent."""
     Loovv = clone(L[o,o,v,v])
     l3 = contract('ij,k->ijk', Loovv[:,:,a,b], l1[:,c]) - contract('ij,k->ijk', Loovv[:,:,a,c], l1[:,b])
     l3 += contract('ik,j->ijk', Loovv[:,:,a,c], l1[:,b]) - contract('ik,j->ijk', Loovv[:,:,a,b], l1[:,c])
@@ -548,7 +583,9 @@ def l3_abc_alt(a, b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDen
 # Triples drivers that are useful for density matrix calculation
 # W_bc(ijka)
 def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
-
+    """Connected T3 for fixed virtuals b,c (one free virtual + three occupied), the
+    partial-batching of :func:`t3c_ijk` (same amplitude and equation; see there) used by the
+    (T)-density virtual loop."""
     t3 = contract('aei,kje->ijka', Wvvvo[b], t2[:,:,c])
     t3 += contract('aei,jke->ijka', Wvvvo[c], t2[:,:,b])
     t3 += contract('aek,jie->ijka', Wvvvo[:,c], t2[:,:,b])
@@ -575,6 +612,8 @@ def t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract, WithDenom=True):
         return t3
 
 def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True):
+    """Connected lambda-L3 for fixed virtuals b,c (one free virtual + three occupied), the
+    partial-batching of :func:`l3_ijk` used by the (T)-density virtual loop (same amplitude)."""
     Loovv = clone(L[o,o,v,v])
     l3 = contract('ija,k->ijka', Loovv[:,:,:,b], l1[:,c]) - contract('ija,k->ijka', Loovv[:,:,:,c], l1[:,b])
     l3 += contract('ika,j->ijka', Loovv[:,:,:,c], l1[:,b]) - contract('ika,j->ijka', Loovv[:,:,:,b], l1[:,c])
@@ -637,6 +676,20 @@ def l3_bc(b, c, o, v, L, l1, l2, Fov, Wvovv, Wooov, F, contract, WithDenom=True)
 # Useful for RT-CC3
 # Additional term in T3 equation when an external perturbation is present
 def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
+    r"""Perturbation coupling of the T3 amplitudes (the ``[V,T2].T2`` term), fixed i,j,k.  Valid
+    for any real (Hermitian) one-electron perturbation ``V`` -- electric field, nuclear
+    displacement, etc. -- not electric fields specifically.  In the perturbed / real-time (T)
+    the connected T3 is corrected by this contribution (``t3 -= t3_pert``).  Divided by the
+    orbital-energy denominator D_ijkabc::
+
+        t3_ijkabc = V_ld t2_ijad t2_klcb
+
+    .. math::
+
+        \begin{aligned}
+        D^{abc}_{ijk}\, t^{abc}_{ijk} = V_{ld}\, t^{ad}_{ij}\, t^{cb}_{kl}
+        \end{aligned}
+    """
     tmp = contract('ld,ad->al', V[o,v], t2[i,j])
     t3 = contract('al,lcb->abc', tmp, t2[k])
 
@@ -651,6 +704,7 @@ def t3_pert_ijk(o, v, i, j, k, t2, V, F, contract, WithDenom=True):
         return t3
 
 def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
+    """T3 perturbation coupling, a,b,c-batched form of :func:`t3_pert_ijk` (same term; see there)."""
     tmp = contract('ld,ijd->ijl', V[o,v], t2[:,:,a])
     t3 = contract('ijl,kl->ijk', tmp, t2[:,:,c,b])
 
@@ -665,6 +719,7 @@ def t3_pert_abc(o, v, a, b, c, t2, V, F, contract, WithDenom=True):
         return t3
 
 def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
+    """T3 perturbation coupling, fixed-b,c batched form of :func:`t3_pert_ijk` (same term; see there)."""
     tmp = contract('ld,ijad->ijal', V[o,v], t2)
     t3 = contract('ijal,kl->ijka', tmp, t2[:,:,c,b])
 
@@ -688,10 +743,24 @@ def t3_pert_bc(o, v, b, c, t2, V, F, contract, WithDenom=True):
 # ERI = <pq||rs> (docs/archive/ENHANCEMENT_PLAN_2026-06.md, phase 4).
 
 def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDenom=True):
-    """Spin-orbital connected T3 amplitudes for fixed occupied i, j, k.
+    r"""Spin-orbital connected T3 amplitudes for fixed occupied i, j, k.
 
     ``Wvvvo`` (<ab||ei>) and ``Wovoo`` (<ia||jk>) are passed explicitly: bare ERI
     slices for (T), or the T1-dressed CC3 intermediates for CC3.
+
+    Notes
+    -----
+    With the one-vs-pair antisymmetrizer P(p/qr) = 1 - P(pq) - P(pr) and the orbital-energy
+    denominator D_ijkabc (shifted by ``omega`` when set)::
+
+        D_ijkabc t3_ijkabc = P(k/ij) P(a/bc) t2_ijad Wvvvo_bcdk
+                           - P(i/jk) P(c/ab) t2_ilab Wovoo_lcjk
+
+    .. math::
+
+        \begin{aligned}
+        D^{abc}_{ijk}\, t^{abc}_{ijk} = \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, t^{ad}_{ij} W^{vvvo}_{bcdk} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\, t^{ab}_{il} W^{ovoo}_{lcjk}
+        \end{aligned}
     """
     abc = contract('ad,bcd->abc', t2[i,j], Wvvvo[:,:,:,k])
     abc = abc - contract('ad,bcd->abc', t2[k,j], Wvvvo[:,:,:,i])
@@ -712,10 +781,23 @@ def t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, omega=0.0, WithDeno
     return t3
 
 def t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=True):
-    """Spin-orbital disconnected T3 amplitudes for fixed occupied i, j, k.
+    r"""Spin-orbital disconnected T3 amplitudes for fixed occupied i, j, k.
 
-    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T) 
+    ``Woovv`` (<ab||ei>) are passed explicitly: bare ERI slices for (T)
     or the T1-dressed CC3 intermediates for CC3.
+
+    Notes
+    -----
+    With P(p/qr) = 1 - P(pq) - P(pr) and the orbital-energy denominator D_ijkabc (repeated
+    indices summed)::
+
+        D_ijkabc t3_ijkabc = P(i/jk) P(a/bc) (t1_ia Woovv_jkbc + F_ia t2_jkbc)
+
+    .. math::
+
+        \begin{aligned}
+        D^{abc}_{ijk}\, t^{abc}_{ijk} = \mathcal{P}(i/jk)\,\mathcal{P}(a/bc)\left( t^a_i W^{oovv}_{jkbc} + F_{ia}\, t^{bc}_{jk} \right)
+        \end{aligned}
     """
     Fov = F[o,v]
     abc = contract('a,bc->abc', t1[i], Woovv[j,k])
@@ -736,12 +818,27 @@ def t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=T
 
 
 def l3_ijk_so(o, v, i, j, k, l1, l2, F, Fov, Woovv, Wvovv, Wooov, contract, WithDenom=True):
-    """Spin-orbital connected lambda-L3 amplitudes for fixed occupied i, j, k.
+    r"""Spin-orbital connected lambda-L3 amplitudes for fixed occupied i, j, k.
 
     Mirrors :func:`t3c_ijk_so` (spin-orbital convention, antisymmetrized
     ``<pq||rs>`` integrals) for the lambda equations. ``Woovv`` is ``ERI[o,o,v,v]``;
     ``Wvovv`` (<am||ef>) and ``Wooov`` (<mn||ie>) are the T1-dressed CC3
     intermediates. The result is antisymmetric in a,b,c.
+
+    Notes
+    -----
+    With P(p/qr) = 1 - P(pq) - P(pr) and the orbital-energy denominator D_ijkabc::
+
+        D_ijkabc l3_ijkabc = P(i/jk) P(a/bc) (l1_ia Woovv_jkbc + F_ia l2_jkbc)
+                           + P(k/ij) P(a/bc) l2_ijad Wvovv_dkbc
+                           - P(i/jk) P(c/ab) l2_ilab Wooov_jklc
+
+    .. math::
+
+        \begin{aligned}
+        D^{abc}_{ijk}\, \lambda^{abc}_{ijk} &= \mathcal{P}(i/jk)\,\mathcal{P}(a/bc)\left( \lambda^a_i W^{oovv}_{jkbc} + F_{ia}\, \lambda^{bc}_{jk} \right) \\
+        &\quad + \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\, \lambda^{ad}_{ij} W^{vovv}_{dkbc} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\, \lambda^{ab}_{il} W^{ooov}_{jklc}
+        \end{aligned}
     """
     abc = contract('ad,dbc->abc', l2[i,j], Wvovv[:,k,:,:])
     abc = abc - contract('ad,dbc->abc', l2[k,j], Wvovv[:,i,:,:])
@@ -816,11 +913,32 @@ def t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract, omega=0.0, WithDenom=T
     return t3
 
 def t_vikings_so(o, v, t1, t2, F, ERI, contract):
-    """Spin-orbital (T) energy via the occupied-batched ("viking") algorithm.
+    r"""Spin-orbital (T) energy via the occupied-batched ("viking") algorithm -- the
+    spin-orbital counterpart of :func:`t_vikings`.
 
-    Builds the connected T3 in (i,j,k) batches and contracts each batch into the
-    disconnected (x1) and connected (x2) intermediates, then E(T) = t1.x1 +
-    1/4 t2.x2. The spatial RHF (T) drivers (t_tjl/t_vikings) are not used here.
+    Builds the connected T3 in (i,j,k) batches (:func:`t3c_ijk_so`, canonical denominator) and
+    contracts each batch into the disconnected (x1) and connected (x2) intermediates -- the full
+    T3 is **never materialized** (O(v^3) memory).  Contrast :func:`_t_energy_from_t3_so`, which
+    evaluates the *same* E(T) as whole-array einsums from a **pre-built** O(o^3 v^3) T3 (used by
+    the iterated :func:`t_invariant_so`).  The spatial RHF drivers (:func:`t_tjl`/:func:`t_vikings`)
+    are not used here.
+
+    Notes
+    -----
+    With P(pq) X = X - X_swap (the doubles x2 antisymmetrized P(ij)P(ab) after the loop; the
+    f_kc term is nonzero only for a non-canonical reference; repeated indices summed)::
+
+        x1_ia   = 1/4 t3_ijkabc <jk||bc>
+        x2_ijab = P(ij) P(ab) [ 1/4 t3_ijkabc f_kc + 1/4 t3_ijkaef <bk||ef> - 1/4 t3_inlabd <nl||jd> ]
+        E(T)    = t1_ia x1_ia + 1/4 t2_ijab x2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        (x_1)^a_i &= \tfrac{1}{4}\, t^{abc}_{ijk} \langle jk||bc \rangle \\
+        (x_2)^{ab}_{ij} &= \mathcal{P}(ij)\,\mathcal{P}(ab)\left( \tfrac{1}{4}\, t^{abc}_{ijk} F_{kc} + \tfrac{1}{4}\, t^{aef}_{ijk} \langle bk||ef \rangle - \tfrac{1}{4}\, t^{abd}_{inl} \langle nl||jd \rangle \right) \\
+        E^{(T)} &= t^a_i (x_1)^a_i + \tfrac{1}{4}\, t^{ab}_{ij} (x_2)^{ab}_{ij}
+        \end{aligned}
     """
     x1 = zeros_like(t1)
     x2 = zeros_like(t2)
@@ -858,11 +976,13 @@ def t_vikings_so(o, v, t1, t2, F, ERI, contract):
 
 
 def _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract):
-    """Spin-orbital (T) energy from a pre-built connected T3, via the "viking"
-    contraction of :func:`t_vikings_so` written in full-array form (no per-(i,j,k)
-    batching).  ``E(T) = <t1|x1> + 1/4 <t2|x2>`` with the disconnected (x1) and
-    connected (x2) intermediates built from the whole T3.  Factored out so both the
-    canonical check and the invariant driver share one energy expression."""
+    """Spin-orbital (T) energy from a **pre-built, whole-array** connected T3 (``t3`` passed in,
+    O(o^3 v^3) stored) -- the full-array form of the :func:`t_vikings_so` contraction (same
+    ``E(T) = t1.x1 + 1/4 t2.x2``; see there for the x1/x2 expressions).  Where
+    :func:`t_vikings_so` builds the T3 batch-by-batch and never stores it, this consumes a T3
+    built elsewhere, so the iterated :func:`t_invariant_so` (whose T3 carries the
+    off-diagonal-Fock coupling) and the canonical whole-array cross-check can share one energy
+    expression."""
     Fov = F[o,v]
     x1 = 0.25 * contract('ijkabc,jkbc->ia', t3, ERI[o,o,v,v])
     x2 = 0.25 * contract('ijkabc,kc->ijab', t3, Fov)                 # f_kc (non-Brillouin only)
@@ -935,11 +1055,48 @@ def t_invariant_so(o, v, t1, t2, F, ERI, contract, e_conv=1e-11, maxiter=100):
 # delegates and caches the returned intermediates on the wfn for cclambda/ccdensity.
 
 def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
-    """(T) density/Lambda intermediates, spatial-orbital spin-adapted closed-shell RHF.
+    r"""(T) density/Lambda intermediates, spatial-orbital spin-adapted closed-shell RHF.
 
     Returns (ET, intermediates), where ET is the (T) energy correction and
     intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
     Gvvvo, S1, S2} that the caller caches on the wavefunction.
+
+    Notes
+    -----
+    Built per-(i,j,k) from the connected T3 ``M3`` (:func:`t3c_ijk`) and disconnected T3 ``N3``
+    (:func:`t3d_ijk`), with the spin-adapted symmetrizers below (a,b,c the three virtual axes;
+    repeated indices summed over the i,j,k loop).  Full derivation in
+    ``docs/ccsdt_t_density.tex`` and the appendix Table:ccsdt_1pdm/2pdm of
+    ``docs/cc_gradients_orbital_response.tex``::
+
+        sym(A)_abc = 8 A_abc - 4 A_bac - 4 A_acb - 4 A_cba + 2 A_bca + 2 A_cab
+        X3 = sym(M3),  Y3 = sym(N3)
+        Z3_abc = 2 (M3_abc - M3_acb) - (M3_bac - M3_cab)
+
+        # one-particle (T) increments (Doo/Dvv diagonal in the canonical basis)
+        Dvv_aa =  1/2 M3_acd (X3+Y3)_acd
+        Doo_ii = -1/2 M3_abc (X3+Y3)_abc
+        Dov_ia = (M3_abc - M3_cba) (4 t2_jkbc - 2 t2_jkcb)
+
+        # two-particle (T) increments
+        Goovv_ijab = 4 t1_kc Z3_abc
+        Gooov_jila = -(2 X3 + Y3)_abc t2_lkbc
+        Gvvvo_abdj = (2 X3 + Y3)_abc t2_kicd
+
+        # Lambda-1/2 (T) sources (S2 antisymmetrized S2 += S2.T afterward) and (T) energy
+        S1_ia   = 2 (M3_abc - M3_bac) L_jkbc
+        S2_ilab = -(2 X3 + Y3)_abc <jk|lc> + (2 X3 + Y3)_abc <dk|cb>
+        ET      = t1_ia S1_ia + (4 t2 - 2 t2.swap)_ijab X2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        \mathrm{sym}(A)_{abc} &= 8 A_{abc} - 4 A_{bac} - 4 A_{acb} - 4 A_{cba} + 2 A_{bca} + 2 A_{cab},\quad X_3 = \mathrm{sym}(M_3),\ Y_3 = \mathrm{sym}(N_3) \\
+        D^{(T)}_{aa} &= \tfrac{1}{2} M_{3,acd}(X_3+Y_3)_{acd}, \qquad D^{(T)}_{ii} = -\tfrac{1}{2} M_{3,abc}(X_3+Y_3)_{abc} \\
+        D^{(T)}_{ia} &= (M_{3,abc} - M_{3,cba})(4 t^{bc}_{jk} - 2 t^{cb}_{jk}) \\
+        \Gamma^{(T)}_{ijab} &= 4\, t^c_k Z_{3,abc}, \quad \Gamma^{(T)}_{jila} = -(2X_3+Y_3)_{abc} t^{bc}_{lk}, \quad \Gamma^{(T)}_{abdj} = (2X_3+Y_3)_{abc} t^{cd}_{ki} \\
+        S^a_i &= 2 (M_{3,abc} - M_{3,bac}) L_{jkbc}
+        \end{aligned}
     """
     dvv = np.zeros(nv, dtype=t2.dtype)   # diagonal of the (T) vir-vir 1-PDM (see below)
     doo = np.zeros(no, dtype=t2.dtype)   # diagonal of the (T) occ-occ 1-PDM; dtype-propagating for complex-step
@@ -1003,11 +1160,34 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
 
 
 def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract):
-    """Analytic field response of the spatial (closed-shell RHF) (T) intermediates -- the
-    product-rule derivative of :func:`t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)``
-    with **canonical** perturbed orbitals.  Returns ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}``
+    r"""Analytic response of the spatial (closed-shell RHF) (T) intermediates to any real
+    (Hermitian) perturbation (electric field, nuclear displacement, etc.) -- the product-rule
+    derivative of :func:`t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri, L+dL)`` with
+    **canonical** perturbed orbitals.  Returns ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvvvo,S1,S2}``
     (the spatial route has no ``Gvovv``/``Govoo``).  Verified to ~1e-16 against a complex-step
-    derivative of :func:`t3_density`."""
+    derivative of :func:`t3_density`.
+
+    Notes
+    -----
+    Every :func:`t3_density` contraction is differentiated by the product rule.  The perturbed
+    T3 batches use the differentiated numerators ``dNc``/``dNd`` (each contract of the
+    :func:`t3c_ijk`/:func:`t3d_ijk` numerators with one factor replaced by its response, e.g.
+    dW.t2 + W.dt2) and the differentiated denominator ``ddenom = d_x(f_ii+f_jj+f_kk -
+    f_aa-f_bb-f_cc)``::
+
+        dM3 = (dNc - M3 . ddenom) / D_ijkabc
+        dN3 = (dNd - N3 . ddenom) / D_ijkabc
+
+    .. math::
+
+        \begin{aligned}
+        dM_3 &= \left(dN^{c}_{ijk} - M_3\, d D^{abc}_{ijk}\right) / D^{abc}_{ijk}, \qquad
+        dN_3 = \left(dN^{d}_{ijk} - N_3\, d D^{abc}_{ijk}\right) / D^{abc}_{ijk}
+        \end{aligned}
+
+    each intermediate of :func:`t3_density` then following as ``d(A B) = (dA) B + A (dB)`` with
+    ``dX3 = sym(dM3)``, ``dY3 = sym(dN3)``.
+    """
     ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
     dDov = np.zeros((no,nv), dtype=t2.dtype)
     dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)
@@ -1065,11 +1245,47 @@ def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contrac
 
 
 def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
-    """(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
+    r"""(T) density/Lambda intermediates, spin-orbital (UHF/ROHF references).
 
     Returns (ET, intermediates), where ET is the (T) energy correction and
     intermediates is a dict of the (T) contributions {Doo, Dvv, Dov, Goovv, Gooov,
     Gvovv, Govoo, Gvvvo, S1, S2} that the caller caches on the wavefunction.
+
+    Notes
+    -----
+    Built per-(i,j,k) from the connected T3 ``t3c`` (:func:`t3c_ijk_so`) and disconnected T3
+    ``t3d`` (:func:`t3d_ijk_so`); a,b,c/d,e are virtual, repeated indices summed over the
+    i,j,k loop.  The doubles intermediates ``x2``/``S2`` are antisymmetrized P(ij)P(ab) after
+    the loop.  Full derivation in ``docs/ccsdt_t_density.tex`` and the appendix
+    Table:ccsdt_1pdm/2pdm of ``docs/cc_gradients_orbital_response.tex``::
+
+        # one-particle (T) increments (Doo/Dvv diagonal in the canonical basis)
+        Dvv_aa =  1/12 (t3c + t3d)_abc t3c_abc
+        Doo_ii = -1/12 t3c_abc (t3c + t3d)_abc
+        Dov_ia =  1/4  t3c_ade t2_jkde
+
+        # two-particle (T) increments
+        Goovv_ijab =  t3c_abc t1_kc
+        Gooov_ijla = -1/2 t2_klbc t3c_abc
+        Gvovv_ciab =  1/2 t2_jkec t3c_abe
+        Govoo_laij = -1/2 t2_klbc (t3c + t3d)_abc
+        Gvvvo_abci =  1/2 (t3c + t3d)_abe t2_jkec
+
+        # Lambda-1/2 (T) sources (S2 antisymmetrized P(ij)P(ab) afterward) and (T) energy
+        S1_ia   = 1/4 t3c_abc <jk||bc>
+        S2_ijab = P(ij) P(ab) [ -1/4 <jk||md> (2 t3c + t3d)_abd + 1/4 (2 t3c + t3d)_ade <bk||de> ]
+        ET      = t1_ia S1_ia + 1/4 t2_ijab x2_ijab
+
+    .. math::
+
+        \begin{aligned}
+        D^{(T)}_{aa} &= \tfrac{1}{12}\, (t_{3c}+t_{3d})_{abc}\, t_{3c,abc}, \qquad
+        D^{(T)}_{ii} = -\tfrac{1}{12}\, t_{3c,abc}\, (t_{3c}+t_{3d})_{abc} \\
+        D^{(T)}_{ia} &= \tfrac{1}{4}\, t_{3c,ade}\, t^{de}_{jk} \\
+        \Gamma^{(T)}_{ijab} &= t_{3c,abc}\, t^c_k, \quad \Gamma^{(T)}_{ijla} = -\tfrac{1}{2}\, t^{bc}_{kl}\, t_{3c,abc}, \quad \Gamma^{(T)}_{ciab} = \tfrac{1}{2}\, t^{ec}_{jk}\, t_{3c,abe} \\
+        \Gamma^{(T)}_{laij} &= -\tfrac{1}{2}\, t^{bc}_{kl}\, (t_{3c}+t_{3d})_{abc}, \quad \Gamma^{(T)}_{abci} = \tfrac{1}{2}\, (t_{3c}+t_{3d})_{abe}\, t^{ec}_{jk} \\
+        S^a_i &= \tfrac{1}{4}\, t_{3c,abc}\, \langle jk||bc \rangle
+        \end{aligned}
     """
     x2 = np.zeros_like(t2)
     dvv = np.zeros(nv, dtype=t2.dtype)          # dtype-propagating so complex-step works
@@ -1148,12 +1364,30 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
 
 
 def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
-    """Analytic field response of the spin-orbital (T) intermediates -- the product-rule
+    r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
+    perturbation (electric field, nuclear displacement, etc.) -- the product-rule
     derivative of :func:`so_t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri)`` with **canonical**
     perturbed orbitals (so the batched diagonal denominator's response is ``diag(df)``).  Returns
     ``d{Doo,Dvv,Dov,Goovv,Gooov,Gvovv,Govoo,Gvvvo,S1,S2}``.  Each per-ijk triple response is
     ``dt3 = (dN - t3 dD)/D``; every intermediate is then the product rule of its contraction.
-    Verified to ~1e-16 against a complex-step derivative of :func:`so_t3_density`."""
+    Verified to ~1e-16 against a complex-step derivative of :func:`so_t3_density`.
+
+    Notes
+    -----
+    The perturbed connected/disconnected T3 batches (dN = the numerator of
+    :func:`t3c_ijk_so`/:func:`t3d_ijk_so` differentiated by the product rule, one factor at a
+    time; dD = the denominator response ``d_x(f_ii+f_jj+f_kk - f_aa-f_bb-f_cc) = diag(df)``)::
+
+        dt3 = (dN - t3 dD) / D_ijkabc
+
+    .. math::
+
+        \begin{aligned}
+        dt_3 = \left(dN_{ijk} - t_3\, dD^{abc}_{ijk}\right) / D^{abc}_{ijk}
+        \end{aligned}
+
+    and every :func:`so_t3_density` intermediate follows as ``d(A B) = (dA) B + A (dB)``.
+    """
     ddvv = np.zeros(nv, dtype=t2.dtype); ddoo = np.zeros(no, dtype=t2.dtype)
     dDov = np.zeros((no,nv), dtype=t2.dtype)
     dGoovv = np.zeros_like(t2); dGooov = np.zeros((no,no,no,nv), dtype=t2.dtype)

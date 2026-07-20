@@ -1,15 +1,20 @@
 """MP2 analytic-derivative property driver.
 
 `MPderiv` is the MP2 leaf of the :class:`~pycc.correlatedderivs.CorrelatedDerivs` hierarchy (see
-docs/DERIVATIVES_PLAN_2026-06.md section 9): it supplies the MP2 reduced densities and their
-first-order responses and carries the MP2 correlation-property methods (dipole, gradient,
-polarizability, APT, Hessian, AAT, VG-APT).  The base holds the method-agnostic machinery
-(reference ``HFwfn``, canonical dependent-pair rotations); later phases hoist more shared
-orbital-response and 2n+1 assembly into it.
+docs/DERIVATIVES_PLAN_2026-06.md section 9): it supplies MP2's two density hooks -- the unrelaxed
+reduced densities (:meth:`_unrelaxed_densities`) and their first-order response
+(:meth:`_perturbed_unrelaxed_densities`) -- and adds the MP2-specific atomic axial tensors (AAT) and
+velocity-gauge APT, which are overlap formulations the base does not provide.  Everything else is
+inherited: the base owns the method-agnostic orbital-response (Z-vector) solve and the 2n+1 assembly,
+so the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian come from it unchanged,
+driven by the two hooks above.
 
-State is read from the MP2 wavefunction ``self.mp`` (an :class:`~pycc.mpwfn.MPwfn`); the unrelaxed
-correlation-density seeds (``_*_corr_opdm`` / ``_*_tpdm``) and the intermediate normalization stay
-on ``MPwfn`` (they are amplitude-derived quantities exercised directly by the energy/test surface).
+State is read from the MP2 wavefunction ``self.mp`` (an :class:`~pycc.mpwfn.MPwfn`).  The unrelaxed
+correlation-density seeds (``_*_corr_opdm`` / ``_*_tpdm``) live here on the derivative driver,
+mirroring the CC layout where the reduced densities live in :mod:`pycc.ccdensity` (reached from
+:class:`~pycc.ccderiv.CCderiv`) rather than on :class:`~pycc.ccwfn.ccwfn`.  The intermediate
+normalization (:meth:`MPwfn._mp2_normalization` / ``_so_``) is a wavefunction-level quantity and
+stays on ``MPwfn``; the AAT/VG-APT overlaps read it via ``self.mp``.
 """
 
 from __future__ import annotations
@@ -22,10 +27,13 @@ from .correlatedderivs import CorrelatedDerivs
 class MPderiv(CorrelatedDerivs):
     """MP2 correlation derivative-property driver.
 
-    Constructed from a converged :class:`~pycc.mpwfn.MPwfn`; carries the orbital-response
-    (Z-vector) machinery and the correlation contributions to the analytic first and second
-    derivative properties.  Both the spin-adapted (closed-shell RHF) and spin-orbital (``_so_``)
-    paths are frozen-core aware.
+    Constructed from a converged :class:`~pycc.mpwfn.MPwfn`.  Supplies the MP2 density hooks
+    (:meth:`_unrelaxed_densities`, :meth:`_perturbed_unrelaxed_densities`) and the MP2-specific atomic
+    axial tensors (:meth:`atomic_axial_tensors`) and velocity-gauge APT
+    (:meth:`velocity_dipole_derivatives`); the orbital-response (Z-vector) solve and the 2n+1 assembly
+    of the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian are inherited from
+    :class:`~pycc.correlatedderivs.CorrelatedDerivs`.  Both the spin-adapted (closed-shell RHF) and
+    spin-orbital (``_so_``) paths are frozen-core aware.
     """
 
     def __init__(self, wfn) -> None:
@@ -63,7 +71,7 @@ class MPderiv(CorrelatedDerivs):
         """First-order response of the unrelaxed correlation densities to ``pert``: returns
         ``(d_a gamma, d_a Gamma)`` (full-MO arrays), from the perturbed amplitudes
         :meth:`_perturbed_t2` by the product rule -- the same density expressions as the
-        unrelaxed densities (:meth:`MPwfn._so_mp2_corr_opdm`/`MPwfn._so_mp2_tpdm` and the
+        unrelaxed densities (:meth:`_so_mp2_corr_opdm`/`_so_mp2_tpdm` and the
         spatial siblings), differentiated. Basis-aware.
 
         This is MP2's implementation of the base
@@ -99,18 +107,116 @@ class MPderiv(CorrelatedDerivs):
     # driven by the _perturbed_unrelaxed_densities hook above.  See mp2_2n1_perturbed.tex /
     # DERIVATIVES_PLAN.
 
+    # ---- unrelaxed correlation-density seeds ----
+    # The unrelaxed one- and two-particle correlation densities (pure functions of the MP2
+    # amplitudes ``self.mp.t2``) seed the relaxed densities and orbital response.  They live here on
+    # the derivative driver (the MP2 analogue of pycc.ccdensity, reached from CCderiv), since nothing
+    # outside the derivative code consumes them.  The spin-orbital (_so_) and spin-adapted
+    # (closed-shell, unlabeled) paths are paired; the spatial spin sum rides in
+    # l2 = 2(2 t2 - t2.swap).
+
+    def _mp2_corr_opdm(self):
+        r"""Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``, with
+        the spin-adapted lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell
+        spin sum)::
+
+            Doo_ij  = -sum_mef t_imef l2_jmef
+            Dvv_ab  =  sum_mne t_mnbe l2_mnae
+            l2_ijab = 2(2 t2_ijab - t2_ijba)
+
+        .. math::
+
+            \begin{aligned}
+            D^{oo}_{ij} &= -\sum_{mef} t_{imef} \lambda_{jmef} \\
+            D^{vv}_{ab} &=  \sum_{mne} t_{mnbe} \lambda_{mnae} \\
+            \lambda_{ijab} &= 2(2 t^{ab}_{ij} - t^{ba}_{ij})
+            \end{aligned}
+        """
+        c = self.contract
+        t2 = self.mp.t2
+        l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
+        Doo = -c('imef,jmef->ij', t2, l2)
+        Dvv = c('mnbe,mnae->ab', t2, l2)
+        return Doo, Dvv
+
+    def _so_mp2_corr_opdm(self):
+        r"""Spin-orbital unrelaxed MP2 one-particle correlation density blocks ``(Doo, Dvv)``.
+        The ``1/2`` is the normalization that makes the densities close the energy
+        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)::
+
+            Doo_ij = -1/2 sum_mef t_imef t_jmef
+            Dvv_ab =  1/2 sum_mne t_mnbe t_mnae
+
+        .. math::
+
+            \begin{aligned}
+            D^{oo}_{ij} &= -\tfrac{1}{2} \sum_{mef} t_{imef} t_{jmef} \\
+            D^{vv}_{ab} &=  \tfrac{1}{2} \sum_{mne} t_{mnbe} t_{mnae}
+            \end{aligned}
+        """
+        c = self.contract
+        t2 = self.mp.t2
+        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
+        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
+        return Doo, Dvv
+
+    def _mp2_tpdm(self) -> np.ndarray:
+        r"""Spin-adapted MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks. Built over the full MO
+        space (``self.mp.nmo``); the active ``o``/``v`` slices place the amplitudes, leaving any
+        frozen-core rows/columns zero::
+
+            Gamma_ijab = 2 t2_ijab - t2_ijba
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} = 2 t^{ab}_{ij} - t^{ba}_{ij}
+            \end{aligned}
+        """
+        o, v = self.mp.o, self.mp.v
+        nmo = self.mp.nmo
+        t2 = np.asarray(self.mp.t2)
+        u = 2.0 * t2 - t2.transpose(0, 1, 3, 2)
+        Gam = np.zeros((nmo, nmo, nmo, nmo))
+        Gam[o, o, v, v] = u
+        Gam[v, v, o, o] = u.transpose(2, 3, 0, 1)
+        return Gam
+
+    def _so_mp2_tpdm(self) -> np.ndarray:
+        r"""Spin-orbital MP2 cumulant 2-PDM in the ``oovv``/``vvoo`` blocks -- the only blocks that
+        contribute (determined from the MP2 energy Lagrangian, in which Lambda and T2 enter
+        linearly). Built over the full MO space (``self.mp.nmo``); the active ``o``/``v`` slices place
+        the amplitudes::
+
+            Gamma_ijab = 1/4 t2_ijab
+
+        .. math::
+
+            \begin{aligned}
+            \Gamma_{ijab} = \tfrac{1}{4} t^{ab}_{ij}
+            \end{aligned}
+        """
+        o, v = self.mp.o, self.mp.v
+        nmo = self.mp.nmo
+        t2 = np.asarray(self.mp.t2)
+        Gam = np.zeros((nmo, nmo, nmo, nmo))
+        Gam[o, o, v, v] = 0.25 * t2
+        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
+        return Gam
+
     def _unrelaxed_densities(self):
         """MP2 unrelaxed reduced densities as full-MO arrays: the 1-PDM ``D`` (the ``Doo``/``Dvv``
         correlation blocks on the occupied/virtual diagonal) and the cumulant 2-PDM ``Gamma``, from
-        the amplitude seeds (:meth:`MPwfn._{so_}mp2_corr_opdm` / ``_{so_}mp2_tpdm``).  Supplies the
-        base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
+        the amplitude seeds (:meth:`_mp2_corr_opdm` / :meth:`_mp2_tpdm` and the ``_so_`` siblings).
+        Supplies the base Z-vector (:meth:`CorrelatedDerivs._orbital_response` /
+        :meth:`_so_orbital_response`)."""
         nmo, o, v = self.mp.nmo, self.mp.o, self.mp.v
         if self.mp.orbital_basis == 'spinorbital':
-            Doo, Dvv = self.mp._so_mp2_corr_opdm()
-            Gam = self.mp._so_mp2_tpdm()
+            Doo, Dvv = self._so_mp2_corr_opdm()
+            Gam = self._so_mp2_tpdm()
         else:
-            Doo, Dvv = self.mp._mp2_corr_opdm()
-            Gam = self.mp._mp2_tpdm()
+            Doo, Dvv = self._mp2_corr_opdm()
+            Gam = self._mp2_tpdm()
         D = np.zeros((nmo, nmo))
         D[o, o] = np.asarray(Doo)
         D[v, v] = np.asarray(Dvv)
@@ -254,7 +360,7 @@ class MPderiv(CorrelatedDerivs):
         Dijab = np.asarray(self.mp.Dijab)
         N = self.mp._so_mp2_normalization()
         c0, c2 = N, N * t2
-        Doo, Dvv = self.mp._so_mp2_corr_opdm()
+        Doo, Dvv = self._so_mp2_corr_opdm()
         gamma = np.zeros((nmo, nmo))                    # correlation part of the 1-PDM (no delta_ij
         gamma[o, o] = N**2 * np.asarray(Doo)            # reference: it rides in the SCF AAT, kept
         gamma[v, v] = N**2 * np.asarray(Dvv)            # separate -- return is correlation only)
@@ -406,7 +512,7 @@ class MPderiv(CorrelatedDerivs):
         Dijab = np.asarray(self.mp.Dijab)
         N = self.mp._so_mp2_normalization()
         c0, c2 = N, N * t2
-        Doo, Dvv = self.mp._so_mp2_corr_opdm()
+        Doo, Dvv = self._so_mp2_corr_opdm()
         gamma = np.zeros((nmo, nmo))                    # correlation 1-PDM only (no delta ref)
         gamma[o, o] = N**2 * np.asarray(Doo)
         gamma[v, v] = N**2 * np.asarray(Dvv)

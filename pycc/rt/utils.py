@@ -147,13 +147,6 @@ class Pade():
     A container for Padé approximants
     Based on Bruner et al (10.1021/acs.jctc.6b00511)
 
-    Methods
-    -------
-    build()
-        solves the system of equations for the a and b Padé coefficients
-    approx()
-        approximates the discrete Fourier transform for a given frequency range
-
     Examples
     --------
     >>> p = Pade(data,dt=0.01)

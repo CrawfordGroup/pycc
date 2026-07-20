@@ -108,7 +108,7 @@ def test_so_gradient_densities_convention(uhf_wfn):
     convention (the ``1/4`` absorbed into ``Gamma``), so the correlation energy is
     ``contract(D, F) + contract(Gamma, <pq||rs>) = E_corr`` -- no extra prefactor, matching the
     spatial path and the SO MP2 machinery.  The oovv block is ``1/4 * Gamma_ijab`` (cf.
-    ``MPwfn._so_mp2_tpdm`` whose oovv block is ``1/4 t2``)."""
+    ``MPderiv._so_mp2_tpdm`` whose oovv block is ``1/4 t2``)."""
     cc, dens, ecc = _so_density(uhf_wfn("0 2\nN\nH 1 1.02\nH 1 1.02 2 103.0", "STO-3G",
                                         geom_extra="\nsymmetry c1"))
     D, Gam = dens.gradient_densities()

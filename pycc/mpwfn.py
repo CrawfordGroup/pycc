@@ -59,13 +59,25 @@ class MPwfn(Wavefunction):
         return mp
 
     def _build_mp2(self) -> None:
-        """Build the energy denominators and MP2 doubles amplitudes from the seeded
+        r"""Build the energy denominators and MP2 doubles amplitudes from the seeded
         MO integrals. The ERI oovv block is staged onto the compute device with
         clone(..., device1) so the divide lands where the amplitudes live.
 
-        Basis-agnostic: ``t2 = <ij|ab> / Dijab`` (spatial) and
-        ``t2 = <ij||ab> / Dijab`` (spin-orbital) are the same expression in the
-        respective ``H.ERI``, and the denominator from the Fock diagonal is too.
+        Basis-agnostic -- the same expression in the respective ``H.ERI`` (``<ij|ab>`` spatial,
+        the antisymmetrized ``<ij||ab>`` spin-orbital), with the denominator from the Fock
+        diagonal::
+
+            D_ijab  = eps_i + eps_j - eps_a - eps_b
+            t2_ijab = <ij||ab> / D_ijab
+            t1_ia   = f_ia / D_ia          (spin-orbital only)
+
+        .. math::
+
+            \begin{aligned}
+            D_{ijab} &= \varepsilon_i + \varepsilon_j - \varepsilon_a - \varepsilon_b \\
+            t^{ab}_{ij} &= \langle ij||ab \rangle / D_{ijab} \\
+            t^a_i &= f_{ia} / D_{ia} \qquad \text{(spin-orbital only)}
+            \end{aligned}
         """
         o = self.o
         v = self.v
@@ -84,12 +96,21 @@ class MPwfn(Wavefunction):
             self.t1 = clone(self.H.F[o, v], device=self.device1) / self.Dia
 
     def compute_energy(self) -> "Tensor":
-        """Compute and return the MP2 correlation energy.
+        r"""Compute and return the MP2 correlation energy.
 
-        Spatial (spin-adapted) path: ``E = t2_ijab L_ijab``. Spin-orbital path:
-        ``E = f_ia t1_ia + 1/4 <ij||ab> t2_ijab`` -- no ``L`` exists, the 1/4 accounts
-        for the unrestricted sum over the antisymmetrized doubles, and the singles term
-        is nonzero only for a non-canonical (e.g. ROHF) reference.
+        Spatial (spin-adapted) and spin-orbital paths (no ``L`` exists in the SO path; the ``1/4``
+        accounts for the unrestricted sum over the antisymmetrized doubles, and the singles term is
+        nonzero only for a non-canonical, e.g. ROHF, reference)::
+
+            E = sum_ijab t2_ijab L_ijab                            (spatial)
+            E = sum_ia f_ia t1_ia + 1/4 sum_ijab <ij||ab> t2_ijab  (spin-orbital)
+
+        .. math::
+
+            \begin{aligned}
+            E &= \sum_{ijab} t^{ab}_{ij} L_{ijab} && \text{(spatial)} \\
+            E &= \sum_{ia} f_{ia} t^a_i + \tfrac{1}{4} \sum_{ijab} \langle ij||ab \rangle t^{ab}_{ij} && \text{(spin-orbital)}
+            \end{aligned}
         """
         o = self.o
         v = self.v
@@ -100,90 +121,58 @@ class MPwfn(Wavefunction):
                          + self.contract('ia,ia->', self.H.F[o, v], self.t1))
         return self.emp2
 
-    # ---- unrelaxed correlation-density seeds ----
-    # The unrelaxed one- and two-particle correlation densities (pure functions of the MP2
-    # amplitudes) seed the relaxed densities and orbital response.  They are built here, on the
-    # wavefunction; MPderiv (the derivative driver) consumes them (self.mp._*_corr_opdm / _*_tpdm)
-    # for the Lagrangian, Z-vector, and property derivatives.  The spin-orbital (_so_) and
-    # spin-adapted (closed-shell, unlabeled) paths are paired; the spatial spin sum rides in
-    # l2 = 2(2 t2 - t2.swap) and the spin-adapted L (= H.L).
-
-    def _so_mp2_corr_opdm(self):
-        """Spin-orbital unrelaxed MP2 one-particle correlation density blocks
-        ``(Doo, Dvv)``: ``Doo = -1/2 t_imef t_jmef``, ``Dvv = 1/2 t_mnbe t_mnae``. The
-        1/2 is the normalization that makes the densities close the energy
-        (``Tr(F Doo) + Tr(F Dvv) = -E_MP2``)."""
-        c = self.contract
-        t2 = self.t2
-        Doo = -0.5 * c('imef,jmef->ij', t2, t2)
-        Dvv = 0.5 * c('mnbe,mnae->ab', t2, t2)
-        return Doo, Dvv
-
-    def _so_mp2_tpdm(self) -> np.ndarray:
-        """Spin-orbital MP2 cumulant 2-PDM ``Gamma_ijab = 1/4 t2`` in the ``oovv``/``vvoo``
-        blocks -- the only blocks that contribute (determined from the MP2 energy
-        Lagrangian, in which Lambda and T2 enter linearly). Built over the full MO space
-        (``self.nmo``); the active ``o``/``v`` slices place the amplitudes."""
-        o, v = self.o, self.v
-        nmo = self.nmo
-        t2 = np.asarray(self.t2)
-        Gam = np.zeros((nmo, nmo, nmo, nmo))
-        Gam[o, o, v, v] = 0.25 * t2
-        Gam[v, v, o, o] = 0.25 * t2.transpose(2, 3, 0, 1)
-        return Gam
-
-    def _mp2_corr_opdm(self):
-        """Spin-adapted unrelaxed MP2 one-particle correlation density blocks ``(Doo,
-        Dvv)``: ``Doo = -t_imef l2_jmef``, ``Dvv = t_mnbe l2_mnae``, with the spin-adapted
-        lambda ``l2 = 2(2 t2 - t2.swap)`` (the factor-2 carries the closed-shell spin sum)."""
-        c = self.contract
-        t2 = self.t2
-        l2 = 2.0 * (2.0 * t2 - t2.swapaxes(2, 3))
-        Doo = -c('imef,jmef->ij', t2, l2)
-        Dvv = c('mnbe,mnae->ab', t2, l2)
-        return Doo, Dvv
-
-    def _mp2_tpdm(self) -> np.ndarray:
-        """Spin-adapted MP2 cumulant 2-PDM ``Gamma_ijab = 2 t2 - t2.swap`` (``oovv``/``vvoo``).
-        Built over the full MO space (``self.nmo``); the active ``o``/``v`` slices place the
-        amplitudes, leaving any frozen-core rows/columns zero."""
-        o, v = self.o, self.v
-        nmo = self.nmo
-        t2 = np.asarray(self.t2)
-        u = 2.0 * t2 - t2.transpose(0, 1, 3, 2)
-        Gam = np.zeros((nmo, nmo, nmo, nmo))
-        Gam[o, o, v, v] = u
-        Gam[v, v, o, o] = u.transpose(2, 3, 0, 1)
-        return Gam
+    # ---- intermediate normalization ----
+    # A wavefunction-level quantity (the norm of the intermediate-normalized MP2 wave function),
+    # kept here on MPwfn.  The derivative driver's AAT / VG-APT overlaps read it via self.mp; the
+    # unrelaxed correlation-density seeds themselves live on MPderiv.
 
     def _mp2_normalization(self) -> float:
-        """MP2 intermediate normalization ``N = 1/sqrt(1 + <T2|2T2 - T2~>)`` (spin-adapted),
-        for the wave-function-overlap AAT (:meth:`MPderiv.atomic_axial_tensors`). The normalized
-        doubles are ``c2 = N t2`` and the reference coefficient is ``c0 = N``."""
+        r"""MP2 intermediate normalization (spin-adapted), for the wave-function-overlap AAT
+        (:meth:`MPderiv.atomic_axial_tensors`). The normalized doubles are ``c2 = N t2`` and the
+        reference coefficient is ``c0 = N``::
+
+            N = 1 / sqrt(1 + sum_ijab t2_ijab (2 t2_ijab - t2_ijba))
+
+        .. math::
+
+            \begin{aligned}
+            N = \Big(1 + \sum_{ijab} t^{ab}_{ij} \, (2 t^{ab}_{ij} - t^{ba}_{ij})\Big)^{-1/2}
+            \end{aligned}
+        """
         t2 = np.asarray(self.t2)
         norm2 = self.contract('ijab,ijab->', t2, 2.0 * t2 - t2.swapaxes(2, 3))
         return 1.0 / np.sqrt(1.0 + norm2)
 
     def _so_mp2_normalization(self) -> float:
-        """Spin-orbital MP2 normalization ``N = 1/sqrt(1 + (1/4)<T2|T2>)`` -- the spin-orbital
-        analogue of :meth:`_mp2_normalization` (the ``1/4`` for the antisymmetric double sum).
-        Equal to the spin-adapted value on a closed shell."""
+        r"""Spin-orbital MP2 normalization -- the spin-orbital analogue of
+        :meth:`_mp2_normalization` (the ``1/4`` for the antisymmetric double sum). Equal to the
+        spin-adapted value on a closed shell::
+
+            N = 1 / sqrt(1 + 1/4 sum_ijab t2_ijab t2_ijab)
+
+        .. math::
+
+            \begin{aligned}
+            N = \Big(1 + \tfrac{1}{4} \sum_{ijab} t^{ab}_{ij} t^{ab}_{ij}\Big)^{-1/2}
+            \end{aligned}
+        """
         t2 = np.asarray(self.t2)
         norm2 = 0.25 * self.contract('ijab,ijab->', t2, t2)
         return 1.0 / np.sqrt(1.0 + norm2)
 
     # ---- analytic derivative-property driver (see pycc.mpderiv.MPderiv) ----
-    # The analytic derivative-property code lives on MPderiv, the MP2 leaf of CorrelatedDerivs.
-    # `deriv` is the cached driver; the thin methods below delegate to it so the historical
-    # `mpwfn.<property>()` call sites keep working, and the pycc property facade routes through
-    # the registry (pycc/__init__.py) to the same driver.
 
     @property
     def deriv(self):
         """The cached :class:`~pycc.mpderiv.MPderiv` derivative-property driver for this
-        wavefunction (built lazily).  A single instance so its ``_full_occ_cphf`` / Z-vector
-        caches are shared across the MP2 property calls and the ``CCderiv`` cross-calls that
-        reach it via ``cc.mp.deriv``."""
+        wavefunction (built lazily).  ``MPderiv`` is the MP2 leaf of
+        :class:`~pycc.correlatedderivs.CorrelatedDerivs` and carries the analytic
+        derivative-property code; the thin property methods below (:meth:`gradient`,
+        :meth:`polarizability`, :meth:`hessian`, ...) delegate to it so the historical
+        ``mpwfn.<property>()`` call sites keep working, and the :mod:`pycc.properties` facade routes
+        through the registry (``pycc/__init__.py``) to the same driver.  A single cached instance,
+        so its ``_full_occ_cphf`` / Z-vector caches are shared across the MP2 property calls and the
+        ``CCderiv`` cross-calls that reach it via ``cc.mp.deriv``."""
         if getattr(self, '_deriv', None) is None:
             from .mpderiv import MPderiv
             self._deriv = MPderiv(self)
@@ -217,11 +206,6 @@ class MPwfn(Wavefunction):
     def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
         """MP2 correlation AAT -- delegates to :meth:`MPderiv.atomic_axial_tensors`."""
         return self.deriv.atomic_axial_tensors(gauge)
-
-    def _perturbed_unrelaxed_densities(self, pert):
-        """First-order unrelaxed correlation-density response -- delegates to
-        :meth:`MPderiv._perturbed_unrelaxed_densities`."""
-        return self.deriv._perturbed_unrelaxed_densities(pert)
 
     # ---- reference for the total (reference + correlation) properties ----
     # The property methods above are the correlation contribution only.  The full molecular

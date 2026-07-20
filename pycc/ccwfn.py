@@ -64,13 +64,6 @@ class CCwfn(Wavefunction):
         T2 amplitudes
     ecc | float
         the final CC correlation energy
-
-    Methods
-    -------
-    solve_cc()
-        Solves the CC T amplitude equations
-    residuals()
-        Computes the T1 and T2 residuals for a given set of amplitudes and Fock operator
     """
 
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
@@ -428,7 +421,7 @@ class CCwfn(Wavefunction):
         return X1, X2
 
     def build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
-        """Build the effective doubles amplitude tau = fact1*t2 + fact2*(t1 t1).
+        r"""Build the effective doubles amplitude tau = fact1*t2 + fact2*(t1 t1).
 
         Returns
         -------
@@ -441,6 +434,12 @@ class CCwfn(Wavefunction):
 
             tau_ijab = fact1 * t2_ijab + fact2 * t_ia t_jb
 
+        .. math::
+
+            \begin{aligned}
+            \tau^{ab}_{ij} = \text{fact1}\; t^{ab}_{ij} + \text{fact2}\; t^a_i t^b_j
+            \end{aligned}
+
         (defaults fact1 = fact2 = 1).
         """
         contract = self.contract
@@ -448,7 +447,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Fae(self, o, v, F, L, t1, t2):
-        """Build the F_ae similarity-transformed one-body intermediate.
+        r"""Build the F_ae similarity-transformed one-body intermediate.
 
         Parameters
         ----------
@@ -469,6 +468,13 @@ class CCwfn(Wavefunction):
 
             F_ae = f_ae - 1/2 f_me t_ma + t_mf L_mafe
                         - (t2_mnaf + 1/2 t_ma t_nf) L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            F_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m + t^f_m L_{mafe} \\
+            &- \left(t^{af}_{mn} + \tfrac{1}{2} t^a_m t^f_n\right) L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -484,7 +490,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Fmi(self, o, v, F, L, t1, t2):
-        """Build the F_mi similarity-transformed one-body intermediate.
+        r"""Build the F_mi similarity-transformed one-body intermediate.
 
         Returns
         -------
@@ -498,6 +504,13 @@ class CCwfn(Wavefunction):
 
             F_mi = f_mi + 1/2 t_ie f_me + t_ne L_mnie
                         + (t2_inef + 1/2 t_ie t_nf) L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            F_{mi} = f_{mi} &+ \tfrac{1}{2} t^e_i f_{me} + t^e_n L_{mnie} \\
+            &+ \left(t^{ef}_{in} + \tfrac{1}{2} t^e_i t^f_n\right) L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -513,7 +526,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Fme(self, o, v, F, L, t1):
-        """Build the F_me similarity-transformed one-body intermediate.
+        r"""Build the F_me similarity-transformed one-body intermediate.
 
         Returns
         -------
@@ -526,6 +539,12 @@ class CCwfn(Wavefunction):
         Repeated indices summed::
 
             F_me = f_me + t_nf L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            F_{me} = f_{me} + t^f_n L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -538,7 +557,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Wmnij(self, o, v, ERI, t1, t2):
-        """Build the W_mnij similarity-transformed two-body intermediate.
+        r"""Build the W_mnij similarity-transformed two-body intermediate.
 
         Returns
         -------
@@ -551,6 +570,13 @@ class CCwfn(Wavefunction):
 
             W_mnij = <mn|ij> + t_je <mn|ie> + t_ie <mn|ej>
                             + (t2_ijef + t_ie t_jf) <mn|ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnij} = \langle mn|ij \rangle &+ t^e_j \langle mn|ie \rangle + t^e_i \langle mn|ej \rangle \\
+            &+ \left(t^{ef}_{ij} + t^e_i t^f_j\right) \langle mn|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
 
@@ -570,7 +596,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Wmbej(self, o, v, ERI, L, t1, t2):
-        """Build the W_mbej similarity-transformed two-body intermediate.
+        r"""Build the W_mbej similarity-transformed two-body intermediate.
 
         Returns
         -------
@@ -585,6 +611,14 @@ class CCwfn(Wavefunction):
             W_mbej = <mb|ej> + t_jf <mb|ef> - t_nb <mn|ej>
                             - (1/2 t2_jnfb + t_jf t_nb) <mn|ef>
                             + 1/2 t2_njfb L_mnef
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbej} = \langle mb|ej \rangle &+ t^f_j \langle mb|ef \rangle - t^b_n \langle mn|ej \rangle \\
+            &- \left(\tfrac{1}{2} t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn|ef \rangle \\
+            &+ \tfrac{1}{2} t^{fb}_{nj} L_{mnef}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -604,7 +638,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Wmbje(self, o, v, ERI, t1, t2):
-        """Build the W_mbje similarity-transformed two-body intermediate.
+        r"""Build the W_mbje similarity-transformed two-body intermediate.
 
         Returns
         -------
@@ -618,6 +652,13 @@ class CCwfn(Wavefunction):
 
             W_mbje = -<mb|je> - t_jf <mb|fe> + t_nb <mn|je>
                              + (1/2 t2_jnfb + t_jf t_nb) <mn|fe>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbje} = -\langle mb|je \rangle &- t^f_j \langle mb|fe \rangle + t^b_n \langle mn|je \rangle \\
+            &+ \left(\tfrac{1}{2} t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn|fe \rangle
+            \end{aligned}
         """
         contract = self.contract
 
@@ -635,7 +676,7 @@ class CCwfn(Wavefunction):
 
 
     def build_Zmbij(self, o, v, ERI, t1, t2):
-        """Build the Z_mbij similarity-transformed intermediate.
+        r"""Build the Z_mbij similarity-transformed intermediate.
 
         Returns
         -------
@@ -647,6 +688,12 @@ class CCwfn(Wavefunction):
         CCSD form (repeated indices summed)::
 
             Z_mbij = <mb|ef> (t2_ijef + t_ie t_jf)
+
+        .. math::
+
+            \begin{aligned}
+            Z_{mbij} = \langle mb|ef \rangle \left(t^{ef}_{ij} + t^e_i t^f_j\right)
+            \end{aligned}
         """
         contract = self.contract
 
@@ -660,7 +707,7 @@ class CCwfn(Wavefunction):
 
 
     def r_T1(self, o, v, F, ERI, L, t1, t2, Fae, Fme, Fmi):
-        """Compute the T1 (singles) amplitude residual.
+        r"""Compute the T1 (singles) amplitude residual.
 
         solve_cc drives this residual to zero. Fae/Fme/Fmi are the precomputed
         one-body intermediates. Returns zeros for CCD (no singles).
@@ -679,6 +726,16 @@ class CCwfn(Wavefunction):
                     + t_nf L_nafi
                     + (2 t2_mief - t2_mife) <ma|ef>
                     - t2_mnae L_nmei
+
+        .. math::
+
+            \begin{aligned}
+            r^{t1}_{ia} = f_{ia} &+ t^e_i F_{ae} - F_{mi} t^a_m \\
+            &+ \left(2 t^{ae}_{im} - t^{ea}_{im}\right) F_{me} \\
+            &+ t^f_n L_{nafi} \\
+            &+ \left(2 t^{ef}_{mi} - t^{fe}_{mi}\right) \langle ma|ef \rangle \\
+            &- t^{ae}_{mn} L_{nmei}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -720,21 +777,31 @@ class CCwfn(Wavefunction):
         return r_T2
 
     def _r_T2_ccd(self, o, v, ERI, t2, Fae, Fmi, Wmnij, Wmbej, Wmbje):
-        """CCD doubles residual (no singles), before the r_T2 symmetrization.
+        r"""CCD doubles residual (no singles), before the r_T2 symmetrization.
 
         Notes
         -----
         The CCSD form with every singles term dropped (so tau -> t2); F_be = Fae
         and F_mj = Fmi are the CCD intermediates. Before the i<->j / a<->b
-        symmetrization (repeated indices summed; W_mbje[e<->j] is Wmbje with its
-        last two axes swapped)::
+        symmetrization (repeated indices summed)::
 
             r_t2_ijab = 1/2 <ij|ab>
                       + t2_ijae F_be - t2_imab F_mj
                       + 1/2 t2_mnab W_mnij + 1/2 t2_ijef <ab|ef>
                       + (t2_imae - t2_imea) W_mbej
-                      + t2_imae (W_mbej + W_mbje[e<->j])
+                      + t2_imae (W_mbej + W_mbje)
                       + t2_mjae W_mbie
+
+        .. math::
+
+            \begin{aligned}
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            &\quad + t^{ae}_{ij} F_{be} - t^{ab}_{im} F_{mj} \\
+            &\quad + \tfrac{1}{2} t^{ab}_{mn} W_{mnij} + \tfrac{1}{2} t^{ef}_{ij} \langle ab|ef \rangle \\
+            &\quad + \left(t^{ae}_{im} - t^{ea}_{im}\right) W_{mbej} \\
+            &\quad + t^{ae}_{im} \left(W_{mbej} + W_{mbje}\right) \\
+            &\quad + t^{ae}_{mj} W_{mbie}
+            \end{aligned}
         """
         contract = self.contract
 
@@ -749,7 +816,7 @@ class CCwfn(Wavefunction):
         return r_T2
 
     def _r_T2_cc2(self, o, v, F, ERI, t1, t2, Wmnij, Zmbij):
-        """CC2 doubles residual (bare-Fock Fae/Fmi forms), before the r_T2 symmetrization.
+        r"""CC2 doubles residual (bare-Fock Fae/Fmi forms), before the r_T2 symmetrization.
 
         Notes
         -----
@@ -765,6 +832,18 @@ class CCwfn(Wavefunction):
                       - t_ma Z_mbij
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
+
+        .. math::
+
+            \begin{aligned}
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            &\quad + t^{ae}_{ij} \left(f_{be} - \tfrac{1}{2} f_{me} t^b_m\right) - \tfrac{1}{2} t^{ae}_{ij} f_{me} t^b_m \\
+            &\quad - t^{ab}_{im} \left(f_{mj} + \tfrac{1}{2} f_{me} t^e_j\right) - \tfrac{1}{2} t^{ab}_{im} f_{me} t^e_j \\
+            &\quad + \tfrac{1}{2} t^a_m t^b_n W_{mnij} + \tfrac{1}{2} t^e_i t^f_j \langle ab|ef \rangle \\
+            &\quad - t^a_m Z_{mbij} \\
+            &\quad - t^e_i t^a_m \langle mb|ej \rangle - t^e_i t^b_m \langle ma|je \rangle \\
+            &\quad + t^e_i \langle ab|ej \rangle - t^a_m \langle mb|ij \rangle
+            \end{aligned}
         """
         contract = self.contract
 
@@ -791,12 +870,12 @@ class CCwfn(Wavefunction):
         return r_T2
 
     def _r_T2_ccsd(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wmbej, Wmbje, Zmbij):
-        """CCSD doubles residual (also used by CC3 / CCSD(T)), before the r_T2 symmetrization.
+        r"""CCSD doubles residual (also used by CC3 / CCSD(T)), before the r_T2 symmetrization.
 
         Notes
         -----
         CCSD form, before the i<->j / a<->b symmetrization (repeated indices
-        summed; W_mbje[e<->j] is Wmbje with its last two axes swapped)::
+        summed)::
 
             r_t2_ijab = 1/2 <ij|ab>
                       + t2_ijae F_be  - 1/2 t2_ijae t_mb F_me
@@ -804,10 +883,25 @@ class CCwfn(Wavefunction):
                       + 1/2 tau_mnab W_mnij + 1/2 tau_ijef <ab|ef>
                       - t_ma Z_mbij
                       + (t2_imae - t2_imea) W_mbej
-                      + t2_imae (W_mbej + W_mbje[e<->j])
+                      + t2_imae (W_mbej + W_mbje)
                       + t2_mjae W_mbie
                       - t_ie t_ma <mb|ej> - t_ie t_mb <ma|je>
                       + t_ie <ab|ej> - t_ma <mb|ij>
+
+        .. math::
+
+            \begin{aligned}
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            &\quad + t^{ae}_{ij} F_{be} - \tfrac{1}{2} t^{ae}_{ij} t^b_m F_{me} \\
+            &\quad - t^{ab}_{im} F_{mj} - \tfrac{1}{2} t^{ab}_{im} t^e_j F_{me} \\
+            &\quad + \tfrac{1}{2} \tau^{ab}_{mn} W_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle ab|ef \rangle \\
+            &\quad - t^a_m Z_{mbij} \\
+            &\quad + \left(t^{ae}_{im} - t^{ea}_{im}\right) W_{mbej} \\
+            &\quad + t^{ae}_{im} \left(W_{mbej} + W_{mbje}\right) \\
+            &\quad + t^{ae}_{mj} W_{mbie} \\
+            &\quad - t^e_i t^a_m \langle mb|ej \rangle - t^e_i t^b_m \langle ma|je \rangle \\
+            &\quad + t^e_i \langle ab|ej \rangle - t^a_m \langle mb|ij \rangle
+            \end{aligned}
         """
         contract = self.contract
 
@@ -837,7 +931,7 @@ class CCwfn(Wavefunction):
 
     # Intermedeates needed for CC3
     def build_cc3_Wmnij(self, o, v, ERI, t1):
-        """Build the CC3 W_mnij intermediate (T1-dressed integrals).
+        r"""Build the CC3 W_mnij intermediate (T1-dressed integrals).
 
         Returns
         -------
@@ -850,6 +944,13 @@ class CCwfn(Wavefunction):
 
             W_mnij = <mn|ij> + t_ja <mn|ia> + t_ia <nm|ja>
                             + t_ie t_jf <mn|ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnij} = \langle mn|ij \rangle &+ t^a_j \langle mn|ia \rangle + t^a_i \langle nm|ja \rangle \\
+            &+ t^e_i t^f_j \langle mn|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         W = clone(ERI[o,o,o,o], device=self.device1)
@@ -860,7 +961,7 @@ class CCwfn(Wavefunction):
         return W
 
     def build_cc3_Wmbij(self, o, v, ERI, t1, Wmnij):
-        """Build the CC3 W_mbij intermediate (T1-dressed integrals).
+        r"""Build the CC3 W_mbij intermediate (T1-dressed integrals).
 
         Reuses the CC3 W_mnij intermediate.
 
@@ -875,6 +976,13 @@ class CCwfn(Wavefunction):
 
             W_mbij = <mb|ij> - W_mnij t_nb + t_je <mb|ie>
                             + t_ie ( <mb|ej> + t_jf <mb|ef> )
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbij} = \langle mb|ij \rangle &- W_{mnij} t^b_n + t^e_j \langle mb|ie \rangle \\
+            &+ t^e_i \left(\langle mb|ej \rangle + t^f_j \langle mb|ef \rangle\right)
+            \end{aligned}
         """
         contract = self.contract
         W = clone(ERI[o,v,o,o], device=self.device1)
@@ -885,7 +993,7 @@ class CCwfn(Wavefunction):
         return W
 
     def build_cc3_Wmnie(self, o, v, ERI, t1):
-        """Build the CC3 W_mnie intermediate (T1-dressed integrals).
+        r"""Build the CC3 W_mnie intermediate (T1-dressed integrals).
 
         Returns
         -------
@@ -897,6 +1005,12 @@ class CCwfn(Wavefunction):
         Repeated indices summed::
 
             W_mnie = <mn|ie> + t_if <mn|fe>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnie} = \langle mn|ie \rangle + t^f_i \langle mn|fe \rangle
+            \end{aligned}
         """
         contract = self.contract
         W = clone(ERI[o,o,o,v], device=self.device1)
@@ -904,7 +1018,7 @@ class CCwfn(Wavefunction):
         return W
 
     def build_cc3_Wamef(self, o, v, ERI, t1):
-        """Build the CC3 W_amef intermediate (T1-dressed integrals).
+        r"""Build the CC3 W_amef intermediate (T1-dressed integrals).
 
         Returns
         -------
@@ -916,6 +1030,12 @@ class CCwfn(Wavefunction):
         Repeated indices summed::
 
             W_amef = <am|ef> - t_na <nm|ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{amef} = \langle am|ef \rangle - t^a_n \langle nm|ef \rangle
+            \end{aligned}
         """
         contract = self.contract
         W = clone(ERI[v,o,v,v], device=self.device1)
@@ -923,20 +1043,38 @@ class CCwfn(Wavefunction):
         return W
 
     def build_cc3_Wabei(self, o, v, ERI, t1):
-        """Build the CC3 W_abei intermediate (T1-dressed integrals).
+        r"""Build the CC3 W_abei intermediate (T1-dressed integrals).
 
-        The most involved CC3 intermediate. It is assembled in two parts that
-        are combined as W_abei = Z_abei + Z_eiab[swap (a,e) and (b,i)]:
-
-        - Z_eiab: <ei|ab> dressed by t1 through the vir-vir-vir-vir integrals
-          (symmetric + antisymmetric pieces) and ladder/ring corrections;
-        - Z_abei: the -t_ma (<mb|ei> + t_if <mb|ef>) particle-attachment term.
+        The most involved CC3 intermediate.  It is assembled from two pieces,
+        W_abei = Z_abei + Z_eiab[swap (a,e) and (b,i)], where the swap
+        (``Z_eiab.swapaxes(0,2).swapaxes(1,3)``) relabels the doubles-attachment
+        piece Z_eiab into the abei ordering.
 
         Returns
         -------
         ndarray or torch.Tensor, shape (nv, nv, nv, no)
-            Indexed [a, b, e, i]. See the inline construction for the exact
-            term-by-term T1 dressing.
+            Indexed [a, b, e, i].
+
+        Notes
+        -----
+        Repeated indices summed.  The ladder term t_if <ab|ef> is coded as a
+        symmetric + antisymmetric integral pair that sums back to t_if <ab|ef>
+        (a numerical device, not a separate contribution)::
+
+            Z_eiab = <ei|ab> + t_if <ab|ef>
+                   - t_mb (<ei|am> + t_if <am|ef>)
+                   + t_ma t_nb (<mn|ei> + t_if <mn|ef>)
+
+            Z_abei = -t_ma (<mb|ei> + t_if <mb|ef>)
+
+        .. math::
+
+            \begin{aligned}
+            Z_{eiab} &= \langle ei|ab \rangle + t^f_i \langle ab|ef \rangle \\
+            &\quad - t^b_m \left(\langle ei|am \rangle + t^f_i \langle am|ef \rangle\right) \\
+            &\quad + t^a_m t^b_n \left(\langle mn|ei \rangle + t^f_i \langle mn|ef \rangle\right) \\
+            Z_{abei} &= -t^a_m \left(\langle mb|ei \rangle + t^f_i \langle mb|ef \rangle\right)
+            \end{aligned}
         """
         contract = self.contract
         # eiab
@@ -968,17 +1106,36 @@ class CCwfn(Wavefunction):
         return W
 
     def cc_energy(self, o, v, F, L, t1, t2):
-        """Compute the CC correlation energy from the current amplitudes.
+        r"""Compute the CC correlation energy from the current amplitudes.
 
         Returns
         -------
         float
-            The CC correlation energy (repeated indices summed)::
+            The CC correlation energy.
 
-                CCD:   E = t2_ijab L_ijab
-                else:  E = 2 f_ia t_ia + tau_ijab L_ijab   (tau = t2 + t1 t1)
+        Notes
+        -----
+        Repeated indices summed (tau = t2 + t1 t1)::
 
-        Spin-orbital path: E = f_ia t_ia + 1/4 t2_ijab <ij||ab> + 1/2 t_ia t_jb <ij||ab>.
+            CCD:   E = t2_ijab L_ijab
+            else:  E = 2 f_ia t_ia + tau_ijab L_ijab
+
+        .. math::
+
+            \begin{aligned}
+            E_\text{CCD} &= t^{ab}_{ij} L_{ijab} \\
+            E &= 2 f_{ia} t^a_i + \tau^{ab}_{ij} L_{ijab}
+            \end{aligned}
+
+        Spin-orbital path::
+
+            E = f_ia t_ia + 1/4 t2_ijab <ij||ab> + 1/2 t_ia t_jb <ij||ab>
+
+        .. math::
+
+            \begin{aligned}
+            E = f_{ia} t^a_i + \tfrac{1}{4} t^{ab}_{ij} \langle ij||ab \rangle + \tfrac{1}{2} t^a_i t^b_j \langle ij||ab \rangle
+            \end{aligned}
         """
         if self.orbital_basis == 'spinorbital':
             return self._so_cc_energy(o, v, F, self.H.ERI, t1, t2)
@@ -1001,17 +1158,46 @@ class CCwfn(Wavefunction):
     # ------------------------------------------------------------------
 
     def _so_build_tau(self, t1, t2, fact1=1.0, fact2=1.0):
-        """Spin-orbital effective doubles tau = fact1*t2 + fact2*(t1 t1 antisymmetrized).
+        r"""Spin-orbital effective doubles tau = fact1*t2 + fact2*(t1 t1 antisymmetrized).
 
         fact2=1.0 gives tau; fact2=0.5 gives the "tau-tilde" used in Fae/Fmi. Mirrors
         the spatial :meth:`build_tau` signature (the t1 t1 term is antisymmetrized here
         because spin orbitals are not spin-adapted).
+
+        Notes
+        -----
+        ::
+
+            tau_ijab = fact1 * t2_ijab + fact2 * (t_ia t_jb - t_ib t_ja)
+
+        .. math::
+
+            \begin{aligned}
+            \tau^{ab}_{ij} = \text{fact1}\; t^{ab}_{ij} + \text{fact2}\; \left(t^a_i t^b_j - t^b_i t^a_j\right)
+            \end{aligned}
         """
         contract = self.contract
         return fact1 * t2 + fact2 * (contract('ia,jb->ijab', t1, t1)
                                      - contract('ib,ja->ijab', t1, t1))
 
     def _so_build_Fae(self, o, v, F, ERI, t1, t2):
+        r"""Spin-orbital F_ae one-body intermediate (the SO sibling of :meth:`build_Fae`,
+        on antisymmetrized <pq||rs>; tau-tilde is :meth:`_so_build_tau` with fact2=1/2).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            F_ae = f_ae - 1/2 f_me t_ma + t_mf <ma||fe>
+                        - 1/2 (t2_mnaf + 1/2 (t_ma t_nf - t_na t_mf)) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            F_{ae} = f_{ae} &- \tfrac{1}{2} f_{me} t^a_m + t^f_m \langle ma||fe \rangle \\
+            &- \tfrac{1}{2} \left(t^{af}_{mn} + \tfrac{1}{2}\left(t^a_m t^f_n - t^a_n t^f_m\right)\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Fae = clone(F[v,v])
         Fae = Fae - 0.5 * contract('me,ma->ae', F[o,v], t1)
@@ -1020,6 +1206,23 @@ class CCwfn(Wavefunction):
         return Fae
 
     def _so_build_Fmi(self, o, v, F, ERI, t1, t2):
+        r"""Spin-orbital F_mi one-body intermediate (the SO sibling of :meth:`build_Fmi`,
+        on antisymmetrized <pq||rs>; tau-tilde is :meth:`_so_build_tau` with fact2=1/2).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            F_mi = f_mi + 1/2 f_me t_ie + t_ne <mn||ie>
+                        + 1/2 (t2_inef + 1/2 (t_ie t_nf - t_if t_ne)) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            F_{mi} = f_{mi} &+ \tfrac{1}{2} f_{me} t^e_i + t^e_n \langle mn||ie \rangle \\
+            &+ \tfrac{1}{2} \left(t^{ef}_{in} + \tfrac{1}{2}\left(t^e_i t^f_n - t^f_i t^e_n\right)\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Fmi = clone(F[o,o])
         Fmi = Fmi + 0.5 * contract('me,ie->mi', F[o,v], t1)
@@ -1028,12 +1231,44 @@ class CCwfn(Wavefunction):
         return Fmi
 
     def _so_build_Fme(self, o, v, F, ERI, t1):
+        r"""Spin-orbital F_me one-body intermediate (the SO sibling of :meth:`build_Fme`,
+        on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            F_me = f_me + t_nf <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            F_{me} = f_{me} + t^f_n \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Fme = clone(F[o,v])
         Fme = Fme + contract('nf,mnef->me', t1, ERI[o,o,v,v])
         return Fme
 
     def _so_build_Wmnij(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital W_mnij two-body intermediate (the SO sibling of :meth:`build_Wmnij`,
+        on antisymmetrized <pq||rs>; tau is :meth:`_so_build_tau`).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mnij = <mn||ij> + t_je <mn||ie> - t_ie <mn||je>
+                             + 1/4 tau_ijef <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
+            &+ \tfrac{1}{4} \tau^{ef}_{ij} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wmnij = clone(ERI[o,o,o,o])
         Wmnij = Wmnij + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
@@ -1042,6 +1277,24 @@ class CCwfn(Wavefunction):
         return Wmnij
 
     def _so_build_Wabef(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital W_abef two-body (particle-ladder) intermediate; tau is
+        :meth:`_so_build_tau`.  No spatial CCSD sibling (the spatial path contracts
+        <ab|ef> directly), so this is a spin-orbital-only intermediate.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_abef = <ab||ef> - t_mb <am||ef> + t_ma <bm||ef>
+                             + 1/4 tau_mnab <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
+            &+ \tfrac{1}{4} \tau^{ab}_{mn} \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wabef = clone(ERI[v,v,v,v])
         Wabef = Wabef - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
@@ -1050,6 +1303,23 @@ class CCwfn(Wavefunction):
         return Wabef
 
     def _so_build_Wmbej(self, o, v, ERI, t1, t2):
+        r"""Spin-orbital W_mbej two-body (ring) intermediate (the SO sibling of
+        :meth:`build_Wmbej`, on antisymmetrized <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbej = <mb||ej> + t_jf <mb||ef> - t_nb <mn||ej>
+                             - (1/2 t2_jnfb + t_jf t_nb) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
+            &- \left(\tfrac{1}{2} t^{fb}_{jn} + t^f_j t^b_n\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wmbej = clone(ERI[o,v,v,o])
         Wmbej = Wmbej + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
@@ -1059,6 +1329,27 @@ class CCwfn(Wavefunction):
         return Wmbej
 
     def _so_r_T1(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi):
+        r"""Spin-orbital T1 residual (the SO sibling of :meth:`r_T1`, on antisymmetrized
+        <pq||rs>).  solve_cc drives it to zero.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            r_t1_ia = f_ia + t_ie F_ae - t_ma F_mi + t2_imae F_me
+                    - t_nf <na||if>
+                    - 1/2 t2_imef <ma||ef>
+                    - 1/2 t2_mnae <nm||ei>
+
+        .. math::
+
+            \begin{aligned}
+            r^{t1}_{ia} = f_{ia} &+ t^e_i F_{ae} - t^a_m F_{mi} + t^{ae}_{im} F_{me} \\
+            &- t^f_n \langle na||if \rangle \\
+            &- \tfrac{1}{2} t^{ef}_{im} \langle ma||ef \rangle \\
+            &- \tfrac{1}{2} t^{ae}_{mn} \langle nm||ei \rangle
+            \end{aligned}
+        """
         contract = self.contract
         r1 = clone(F[o,v])
         r1 = r1 + contract('ie,ae->ia', t1, Fae)
@@ -1070,6 +1361,41 @@ class CCwfn(Wavefunction):
         return r1
 
     def _so_r_T2(self, o, v, F, ERI, t1, t2, Fae, Fme, Fmi, Wmnij, Wabef, Wmbej):
+        r"""Spin-orbital T2 residual (the SO sibling of :meth:`r_T2`, on antisymmetrized
+        <pq||rs>; tau is :meth:`_so_build_tau`).  solve_cc drives it to zero.  The
+        i<->j and a<->b antisymmetry is carried inline by the explicit +/- term pairs
+        (no post-symmetrization step).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            r_t2_ijab = <ij||ab>
+                      + t2_ijae (F_be - 1/2 t_mb F_me) - t2_ijbe (F_ae - 1/2 t_ma F_me)
+                      - t2_imab (F_mj + 1/2 t_je F_me) + t2_jmab (F_mi + 1/2 t_ie F_me)
+                      + 1/2 tau_mnab W_mnij + 1/2 tau_ijef W_abef
+                      + (t2_imae W_mbej - t_ie t_ma <mb||ej>)
+                      - (t2_imbe W_maej - t_ie t_mb <ma||ej>)
+                      - (t2_jmae W_mbei - t_je t_ma <mb||ei>)
+                      + (t2_jmbe W_maei - t_je t_mb <ma||ei>)
+                      + t_ie <ab||ej> - t_je <ab||ei>
+                      - t_ma <mb||ij> + t_mb <ma||ij>
+
+        .. math::
+
+            \begin{aligned}
+            r^{t2}_{ijab} &= \langle ij||ab \rangle \\
+            &\quad + t^{ae}_{ij}\left(F_{be} - \tfrac{1}{2} t^b_m F_{me}\right) - t^{be}_{ij}\left(F_{ae} - \tfrac{1}{2} t^a_m F_{me}\right) \\
+            &\quad - t^{ab}_{im}\left(F_{mj} + \tfrac{1}{2} t^e_j F_{me}\right) + t^{ab}_{jm}\left(F_{mi} + \tfrac{1}{2} t^e_i F_{me}\right) \\
+            &\quad + \tfrac{1}{2} \tau^{ab}_{mn} W_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} W_{abef} \\
+            &\quad + \left(t^{ae}_{im} W_{mbej} - t^e_i t^a_m \langle mb||ej \rangle\right) \\
+            &\quad - \left(t^{be}_{im} W_{maej} - t^e_i t^b_m \langle ma||ej \rangle\right) \\
+            &\quad - \left(t^{ae}_{jm} W_{mbei} - t^e_j t^a_m \langle mb||ei \rangle\right) \\
+            &\quad + \left(t^{be}_{jm} W_{maei} - t^e_j t^b_m \langle ma||ei \rangle\right) \\
+            &\quad + t^e_i \langle ab||ej \rangle - t^e_j \langle ab||ei \rangle \\
+            &\quad - t^a_m \langle mb||ij \rangle + t^b_m \langle ma||ij \rangle
+            \end{aligned}
+        """
         contract = self.contract
         r2 = clone(ERI[o,o,v,v])
         Z = clone(Fae) - 0.5 * contract('mb,me->be', t1, Fme)
@@ -1124,8 +1450,21 @@ class CCwfn(Wavefunction):
         return r1, r2
 
     def _so_cc_energy(self, o, v, F, ERI, t1, t2):
-        """Spin-orbital CCSD correlation energy. CC3 shares this -- the triples enter
-        through the residuals, not the energy expression."""
+        r"""Spin-orbital CCSD correlation energy. CC3 shares this -- the triples enter
+        through the residuals, not the energy expression.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            E = f_ia t_ia + 1/4 t2_ijab <ij||ab> + 1/2 t_ia t_jb <ij||ab>
+
+        .. math::
+
+            \begin{aligned}
+            E = f_{ia} t^a_i + \tfrac{1}{4} t^{ab}_{ij} \langle ij||ab \rangle + \tfrac{1}{2} t^a_i t^b_j \langle ij||ab \rangle
+            \end{aligned}
+        """
         contract = self.contract
         ecc = contract('ia,ia->', F[o,v], t1)
         ecc = ecc + 0.25 * contract('ijab,ijab->', t2, ERI[o,o,v,v])
@@ -1135,6 +1474,23 @@ class CCwfn(Wavefunction):
     # --- Spin-orbital CC3: T1-dressed W-intermediates + connected-triples residual ---
 
     def _so_build_Woooo_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_mnij intermediate (T1-dressed <pq||rs>).  Here tau is the
+        pure t1 t1 term (no t2, since the CC3 W-intermediates dress only on singles).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mnij = <mn||ij> + t_je <mn||ie> - t_ie <mn||je>
+                             + 1/2 (t_ie t_jf - t_if t_je) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnij} = \langle mn||ij \rangle &+ t^e_j \langle mn||ie \rangle - t^e_i \langle mn||je \rangle \\
+            &+ \tfrac{1}{2} \left(t^e_i t^f_j - t^f_i t^e_j\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Woooo = clone(ERI[o,o,o,o])
         Woooo = Woooo + (contract('je,mnie->mnij', t1, ERI[o,o,o,v])
@@ -1144,6 +1500,25 @@ class CCwfn(Wavefunction):
         return Woooo
 
     def _so_build_Wovoo_CC3(self, o, v, ERI, t1, Woooo):
+        r"""Spin-orbital CC3 W_mbij intermediate (T1-dressed <pq||rs>).  Reuses the CC3
+        W_mnij (``Woooo``); tau is the pure t1 t1 term.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbij = <mb||ij> - t_nb W_mnij
+                             + 1/2 (t_ie t_jf - t_if t_je) <mb||ef>
+                             + t_ie <mb||ej> - t_je <mb||ei>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbij} = \langle mb||ij \rangle &- t^b_n W_{mnij} \\
+            &+ \tfrac{1}{2} \left(t^e_i t^f_j - t^f_i t^e_j\right) \langle mb||ef \rangle \\
+            &+ t^e_i \langle mb||ej \rangle - t^e_j \langle mb||ei \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wovoo = clone(ERI[o,v,o,o])
         Wovoo = Wovoo - contract('nb,mnij->mbij', t1, Woooo)
@@ -1154,18 +1529,68 @@ class CCwfn(Wavefunction):
         return Wovoo
 
     def _so_build_Wooov_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_mnie intermediate (T1-dressed <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mnie = <mn||ie> - t_if <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mnie} = \langle mn||ie \rangle - t^f_i \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wooov = clone(ERI[o,o,o,v])
         Wooov = Wooov - contract('if,mnef->mnie', t1, ERI[o,o,v,v])
         return Wooov
 
     def _so_build_Wvovv_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_amef intermediate (T1-dressed <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_amef = <am||ef> - t_na <nm||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{amef} = \langle am||ef \rangle - t^a_n \langle nm||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wvovv = clone(ERI[v,o,v,v])
         Wvovv = Wvovv - contract('na,nmef->amef', t1, ERI[o,o,v,v])
         return Wvovv
 
     def _so_build_Wvvvo_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_abei intermediate (T1-dressed <pq||rs>).  The SO analogue of
+        :meth:`build_cc3_Wabei`; the a<->b antisymmetry is carried inline by the
+        explicit +/- term pairs.
+
+        Notes
+        -----
+        Repeated indices summed (tau_mnab = t_ma t_nb - t_mb t_na)::
+
+            W_abei = <ab||ei> + t_if <ab||ef>
+                   - t_mb t_if <am||ef> + t_ma t_if <bm||ef>
+                   + 1/2 (<mn||ei> + t_if <mn||ef>) tau_mnab
+                   - t_ma <mb||ei> + t_mb <ma||ei>
+
+        .. math::
+
+            \begin{aligned}
+            W_{abei} = \langle ab||ei \rangle &+ t^f_i \langle ab||ef \rangle \\
+            &- t^b_m t^f_i \langle am||ef \rangle + t^a_m t^f_i \langle bm||ef \rangle \\
+            &+ \tfrac{1}{2} \left(\langle mn||ei \rangle + t^f_i \langle mn||ef \rangle\right) \tau^{ab}_{mn} \\
+            &- t^a_m \langle mb||ei \rangle + t^b_m \langle ma||ei \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Z1 = contract('if,amef->amei', t1, ERI[v,o,v,v])
         Z2 = clone(ERI[o,o,v,o]) + contract('if,mnef->mnei', t1, ERI[o,o,v,v])
@@ -1179,6 +1604,23 @@ class CCwfn(Wavefunction):
         return Wvvvo
 
     def _so_build_Wvvvv_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_abef intermediate (T1-dressed <pq||rs>).  tau is the pure
+        t1 t1 term.
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_abef = <ab||ef> - t_mb <am||ef> + t_ma <bm||ef>
+                             + 1/2 (t_ma t_nb - t_mb t_na) <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{abef} = \langle ab||ef \rangle &- t^b_m \langle am||ef \rangle + t^a_m \langle bm||ef \rangle \\
+            &+ \tfrac{1}{2} \left(t^a_m t^b_n - t^b_m t^a_n\right) \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wvvvv = clone(ERI[v,v,v,v])
         Wvvvv = Wvvvv - (contract('mb,amef->abef', t1, ERI[v,o,v,v])
@@ -1188,6 +1630,22 @@ class CCwfn(Wavefunction):
         return Wvvvv
 
     def _so_build_Wovvo_CC3(self, o, v, ERI, t1):
+        r"""Spin-orbital CC3 W_mbej intermediate (T1-dressed <pq||rs>).
+
+        Notes
+        -----
+        Repeated indices summed::
+
+            W_mbej = <mb||ej> + t_jf <mb||ef> - t_nb <mn||ej>
+                             - t_jf t_nb <mn||ef>
+
+        .. math::
+
+            \begin{aligned}
+            W_{mbej} = \langle mb||ej \rangle &+ t^f_j \langle mb||ef \rangle - t^b_n \langle mn||ej \rangle \\
+            &- t^f_j t^b_n \langle mn||ef \rangle
+            \end{aligned}
+        """
         contract = self.contract
         Wovvo = clone(ERI[o,v,v,o])
         Wovvo = Wovvo + contract('jf,mbef->mbej', t1, ERI[o,v,v,v])
@@ -1196,9 +1654,36 @@ class CCwfn(Wavefunction):
         return Wovvo
 
     def _so_cc3_t_residual(self, o, v, F, ERI, Fme, t1, t2):
-        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
-        residuals, via per-(i,j,k) batched T3 built from the T1-dressed
-        intermediates."""
+        r"""Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        residuals, via per-(i,j,k) batched T3 built from the T1-dressed intermediates.
+
+        Notes
+        -----
+        The connected triples T3 is built per-(i,j,k) (:func:`~pycc.cctriples.t3c_ijk_so`)
+        from the T1-dressed CC3 intermediates W_bcdk (:meth:`_so_build_Wvvvo_CC3`, <bc||dk>)
+        and W_lcjk (:meth:`_so_build_Wovoo_CC3`, <lc||jk>), then folded into the T1/T2
+        residuals.  With the one-vs-pair antisymmetrizer P(p/qr) = 1 - P(pq) - P(pr)
+        (repeated indices summed; F_kc = Fme, W_bkcd = :meth:`_so_build_Wvovv_CC3` <bk||cd>,
+        W_kljc = :meth:`_so_build_Wooov_CC3` <kl||jc>)::
+
+            D_ijkabc t3_ijkabc = P(k/ij) P(a/bc) t2_ijad W_bcdk
+                               - P(i/jk) P(c/ab) t2_ilab W_lcjk
+            D_ijkabc = f_ii + f_jj + f_kk - f_aa - f_bb - f_cc
+
+            x1_ia   = 1/4 t3_ijkabc <jk||bc>
+            x2_ijab = t3_ijkabc F_kc
+                    + 1/2 P(ab) t3_ijkacd W_bkcd
+                    - 1/2 P(ij) t3_iklabc W_kljc
+
+        .. math::
+
+            \begin{aligned}
+            D^{abc}_{ijk}\, t^{abc}_{ijk} &= \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} W_{bcdk} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\; t^{ab}_{il} W_{lcjk} \\
+            D^{abc}_{ijk} &= f_{ii} + f_{jj} + f_{kk} - f_{aa} - f_{bb} - f_{cc} \\
+            (x_1)^a_i &= \tfrac{1}{4} t^{abc}_{ijk} \langle jk||bc \rangle \\
+            (x_2)^{ab}_{ij} &= t^{abc}_{ijk} F_{kc} + \tfrac{1}{2}\mathcal{P}(ab)\, t^{acd}_{ijk} W_{bkcd} - \tfrac{1}{2}\mathcal{P}(ij)\, t^{abc}_{ikl} W_{kljc}
+            \end{aligned}
+        """
         contract = self.contract
         Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
         Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
@@ -1224,16 +1709,51 @@ class CCwfn(Wavefunction):
         return x1, x2
 
     def _so_cc3_t_residual_full(self, o, v, F, ERI, Fme, t1, t2):
-        """Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
+        r"""Spin-orbital CC3 connected-triples contribution (x1, x2) to the T1/T2
         residuals via the full T3 array (store_triples=True path).
 
         Builds the whole connected T3 with one set of whole-array contractions
         (no per-(i,j,k) batching), stores it on ``self.t3``, and folds it into the
-        residuals. Full-array counterpart of the batched :func:`_so_cc3_t_residual`;
-        port of socc ``CC3_full``. With a static external field the T3 also picks up
-        the perturbation coupling: ``[V,T3]`` (iterative -- uses the previous
-        ``self.t3``) and ``1/2 [[V,T2],T2]``, and the (canonical) ``F0`` sets the
-        denominator. Without a field the two paths give identical x1/x2."""
+        residuals. Full-array counterpart of the batched :meth:`_so_cc3_t_residual`;
+        port of socc ``CC3_full``. Without a field the two paths give identical x1/x2.
+
+        Notes
+        -----
+        Same connected T3 and x1/x2 folding as :meth:`_so_cc3_t_residual`, but built with
+        whole-array contractions (the one-vs-pair antisymmetrizer P(p/qr) = 1 - P(pq) -
+        P(pr) applied by :func:`~pycc.utils.permute_triples`) and stored on ``self.t3``::
+
+            D_ijkabc t3_ijkabc = P(k/ij) P(a/bc) t2_ijad W_bcdk
+                               - P(i/jk) P(c/ab) t2_ilab W_lcjk
+
+            x1_ia   = 1/4 t3_ijkabc <jk||bc>
+            x2_ijab = t3_ijkabc F_kc
+                    + 1/2 P(ab) t3_ijkacd W_bkcd
+                    - 1/2 P(ij) t3_iklabc W_kljc
+
+        For a static perturbation V (``self.field``) the T3 numerator gains the field
+        coupling -- built from the previous iteration's amplitudes t3' = ``self.t3`` and
+        the T1-dressed field intermediates Vbar_ae = V_ae - t_ma V_me,
+        Vbar_mi = V_mi + t_ie V_me -- and the canonical F0 replaces F in D_ijkabc::
+
+            [V,T3]:          P(c/ab) t3'_ijkabd Vbar_cd - P(k/ij) t3'_ijlabc Vbar_lk
+            1/2 [[V,T2],T2]: -P(k/ij) P(a/bc) t2_ijad t2_lkbc V_ld
+
+        .. math::
+
+            \begin{aligned}
+            D^{abc}_{ijk}\, t^{abc}_{ijk} &= \mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} W_{bcdk} - \mathcal{P}(i/jk)\,\mathcal{P}(c/ab)\; t^{ab}_{il} W_{lcjk} \\
+            (x_1)^a_i &= \tfrac{1}{4} t^{abc}_{ijk} \langle jk||bc \rangle \\
+            (x_2)^{ab}_{ij} &= t^{abc}_{ijk} F_{kc} + \tfrac{1}{2}\mathcal{P}(ab)\, t^{acd}_{ijk} W_{bkcd} - \tfrac{1}{2}\mathcal{P}(ij)\, t^{abc}_{ikl} W_{kljc}
+            \end{aligned}
+
+        .. math::
+
+            \begin{aligned}
+            \text{[V,T3]:}&\quad \mathcal{P}(c/ab)\, \tilde t^{abd}_{ijk} \bar V_{cd} - \mathcal{P}(k/ij)\, \tilde t^{abc}_{ijl} \bar V_{lk} \\
+            \tfrac{1}{2}\text{[[V,T2],T2]:}&\quad -\mathcal{P}(k/ij)\,\mathcal{P}(a/bc)\; t^{ad}_{ij} t^{bc}_{lk} V_{ld}
+            \end{aligned}
+        """
         contract = self.contract
         Woooo = self._so_build_Woooo_CC3(o, v, ERI, t1)
         Wovoo = self._so_build_Wovoo_CC3(o, v, ERI, t1, Woooo)
