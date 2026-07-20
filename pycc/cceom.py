@@ -118,7 +118,7 @@ class cceom(object):
         if guess not in valid_guesses:
             raise InvalidKeywordError('guess', guess, valid_guesses)
         nguess = 2 * N
-        _, C1 = self.guess(nguess, guess)
+        _, C1 = self._guess(nguess, guess)
         V = np.hstack((np.reshape(C1, (nguess, s1_len)), np.zeros((nguess, s2_len))))
         V = self._orthonormalize(V)
         W = np.empty((0, sigma_len), float)     # sigma vectors, in lockstep with V
@@ -231,15 +231,6 @@ class cceom(object):
 
             return E, norm_eigvec
 
-
-    def _orthonormalize(self, rows):
-        """Return an orthonormal row basis for the row space of ``rows`` (M, sigma_len), dropping
-        linearly dependent rows.  Used to condition the initial guess block and the restart Ritz
-        vectors."""
-        Q, Rm = np.linalg.qr(np.asarray(rows).real.T)
-        keep = np.abs(np.diag(Rm)) > 1e-8
-        return Q.T[keep].copy()
-
     def _eom_sigma(self, block, eom_type):
         """Apply the EOM sigma operator to each row of ``block`` (k, sigma_len), returning the
         sigma vectors as rows (k, sigma_len).  RIGHT uses ``s_r1``/``s_r2`` (sigma = HBAR * C);
@@ -256,15 +247,15 @@ class cceom(object):
                 s1 = self.s_r1(hbar, C1, C2)
                 s2 = self.s_r2(hbar, C1, C2)
             else:
-                Goo = self.build_Goo(t2, C2)
-                Gvv = self.build_Gvv(t2, C2)
+                Goo = self._build_Goo(t2, C2)
+                Gvv = self._build_Gvv(t2, C2)
                 s1 = self.s_l1(hbar, C1, C2, Goo, Gvv)
                 s2 = self.s_l2(hbar, C1, C2, Goo, Gvv)
             out[k, :s1_len] = np.asarray(s1).ravel()
             out[k, s1_len:] = np.asarray(s2).ravel()
         return out
 
-    def guess(self, M, method):
+    def _guess(self, M, method):
         """
         Compute single-excitation guess vectors for EOM-CC Davidson algorithm
 
@@ -338,8 +329,10 @@ class cceom(object):
 
 
     def s_r1(self, hbar, C1, C2):
-        """
-        Build the singles components of the sigma = HBAR * C vector
+        r"""
+        Build the singles components of the right EOM-CC sigma vector sigma = HBAR * C
+        (the homogeneous analogue of the ccresponse r_X1 Jacobian: no perturbation
+        source, no frequency), projected onto singles.
 
         Parameters
         ----------
@@ -351,6 +344,26 @@ class cceom(object):
         -------
         s1 : NumPy array
             the singles components of sigma
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); Hbar_* are hbar blocks::
+
+            sigma_ia = C1_ie Hbar_ae - Hbar_mi C1_ma
+                     + C1_me (2 Hbar_maei - Hbar_maie)
+                     + Hbar_me (2 C2_miea - C2_imea)
+                     + C2_imef (2 Hbar_amef - Hbar_amfe)
+                     - (2 Hbar_mnie - Hbar_nmie) C2_mnae
+
+        .. math::
+
+            \begin{aligned}
+            \sigma^{a}_{i} &= C^{e}_{i}\bar{H}_{ae} - \bar{H}_{mi} C^{a}_{m}
+                + C^{e}_{m}(2\bar{H}_{maei} - \bar{H}_{maie}) \\
+            &\quad + \bar{H}_{me}(2 C^{ea}_{mi} - C^{ea}_{im})
+                + C^{ef}_{im}(2\bar{H}_{amef} - \bar{H}_{amfe})
+                - (2\bar{H}_{mnie} - \bar{H}_{nmie}) C^{ae}_{mn}
+            \end{aligned}
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_s_r1(hbar, C1, C2)
@@ -370,8 +383,25 @@ class cceom(object):
         return s1.copy()
 
     def _so_s_r1(self, hbar, C1, C2):
-        """Spin-orbital singles sigma (right), sigma = HBAR * C.  Built from the
-        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov; <pq||rs> for the ERI)."""
+        r"""Spin-orbital singles sigma (right), sigma = HBAR * C.  Built from the
+        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov; <pq||rs> for the ERI);
+        the L-combinations of the spatial s_r1 collapse to single blocks and a 1/2 appears
+        on the C2 ladders.
+
+        Notes
+        -----
+        Spin-orbital form (repeated indices summed; Hbar_amef, Hbar_mnie antisymmetrized)::
+
+            sigma_ia = C1_ie Hbar_ae - Hbar_mi C1_ma + Hbar_maei C1_me
+                     + Hbar_me C2_imae
+                     + 1/2 C2_imef Hbar_amef - 1/2 Hbar_mnie C2_mnae
+
+        .. math::
+
+            \sigma^{a}_{i} = C^{e}_{i}\bar{H}_{ae} - \bar{H}_{mi} C^{a}_{m}
+                + \bar{H}_{maei} C^{e}_{m} + \bar{H}_{me} C^{ae}_{im}
+                + \tfrac{1}{2} C^{ef}_{im}\bar{H}_{amef} - \tfrac{1}{2}\bar{H}_{mnie} C^{ae}_{mn}
+        """
         contract = hbar.contract
         s1 = contract('ie,ae->ia', C1, hbar.Hvv)
         s1 -= contract('mi,ma->ia', hbar.Hoo, C1)
@@ -383,8 +413,10 @@ class cceom(object):
 
 
     def s_r2(self, hbar, C1, C2):
-        """
-        Build the doubles components of the sigma = HBAR * C vector
+        r"""
+        Build the doubles components of the right EOM-CC sigma vector sigma = HBAR * C
+        (the homogeneous analogue of the ccresponse r_X2 Jacobian), projected onto
+        doubles. P(ij,ab) f_ijab = f_ijab + f_jiba restores the ijab<->jiba symmetry.
 
         Parameters
         ----------
@@ -396,6 +428,35 @@ class cceom(object):
         -------
         s2 : NumPy array
             the doubles components of sigma
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); L_mnef = 2<mn|ef> -
+        <mn|fe>, and Zae/Zmi are the C1/C2-dressed vv/oo intermediates::
+
+            Zae = (2 Hbar_amef - Hbar_amfe) C1_mf - L_mnef C2_mnaf
+            Zmi = -(2 Hbar_mnie - Hbar_nmie) C1_ne - L_mnef C2_inef
+            sigma_ijab = P(ij,ab)[ C1_ie Hbar_abej - C1_ma Hbar_mbij
+                       + Zae t2_ijeb + Zmi t2_mjab
+                       + C2_ijeb Hbar_ae - C2_mjab Hbar_mi
+                       + 1/2 C2_mnab Hbar_mnij + 1/2 C2_ijef Hbar_abef
+                       - C2_imeb Hbar_maje - C2_imea Hbar_mbej
+                       + 2 C2_miea Hbar_mbej - C2_miea Hbar_mbje ]
+
+        .. math::
+
+            \begin{aligned}
+            Z_{ae} &= (2\bar{H}_{amef} - \bar{H}_{amfe}) C^{f}_{m} - L_{mnef} C^{af}_{mn},
+                \qquad Z_{mi} = -(2\bar{H}_{mnie} - \bar{H}_{nmie}) C^{e}_{n} - L_{mnef} C^{ef}_{in} \\
+            \sigma^{ab}_{ij} &= \mathcal{P}(ij,ab)\Big[ C^{e}_{i}\bar{H}_{abej} - C^{a}_{m}\bar{H}_{mbij}
+                + Z_{ae} t^{eb}_{ij} + Z_{mi} t^{ab}_{mj} \\
+            &\quad + C^{eb}_{ij}\bar{H}_{ae} - C^{ab}_{mj}\bar{H}_{mi}
+                + \tfrac{1}{2} C^{ab}_{mn}\bar{H}_{mnij} + \tfrac{1}{2} C^{ef}_{ij}\bar{H}_{abef} \\
+            &\quad - C^{eb}_{im}\bar{H}_{maje} - C^{ea}_{im}\bar{H}_{mbej}
+                + 2 C^{ea}_{mi}\bar{H}_{mbej} - C^{ea}_{mi}\bar{H}_{mbje} \Big]
+            \end{aligned}
+
+        with :math:`\mathcal{P}(ij,ab) f_{ijab} = f_{ijab} + f_{jiba}`.
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_s_r2(hbar, C1, C2)
@@ -429,9 +490,37 @@ class cceom(object):
         return (s2 + s2.swapaxes(0,1).swapaxes(2,3)).copy()
 
     def _so_s_r2(self, hbar, C1, C2):
-        """Spin-orbital doubles sigma (right), sigma = HBAR * C.  Built already antisymmetric
+        r"""Spin-orbital doubles sigma (right), sigma = HBAR * C.  Built already antisymmetric
         under i<->j and a<->b (explicit permutations), from the antisymmetrized spin-orbital
-        HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI."""
+        HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI.
+
+        Notes
+        -----
+        Spin-orbital form (repeated indices summed; P(pq) X_pq = X_pq - X_qp; each term
+        carries only the permutation its factors do not already supply)::
+
+            Zae = Hbar_amef C1_mf - 1/2 C2_mnaf <mn||ef>
+            Zmi = -Hbar_mnie C1_ne - 1/2 <mn||ef> C2_inef
+            sigma_ijab = P(ij)[ C1_ie Hbar_abej ] - P(ab)[ C1_ma Hbar_mbij ]
+                       + P(ab)[ Zae t2_ijeb ] + P(ij)[ Zmi t2_mjab ]
+                       + P(ab)[ C2_ijeb Hbar_ae ] - P(ij)[ Hbar_mi C2_mjab ]
+                       + 1/2 Hbar_mnij C2_mnab + 1/2 C2_ijef Hbar_abef
+                       + P(ij)P(ab)[ C2_imae Hbar_mbej ]
+
+        .. math::
+
+            \begin{aligned}
+            Z_{ae} &= \bar{H}_{amef} C^{f}_{m} - \tfrac{1}{2} C^{af}_{mn}\langle mn\Vert ef\rangle,
+                \qquad Z_{mi} = -\bar{H}_{mnie} C^{e}_{n} - \tfrac{1}{2}\langle mn\Vert ef\rangle C^{ef}_{in} \\
+            \sigma^{ab}_{ij} &= \mathcal{P}(ij)\, C^{e}_{i}\bar{H}_{abej} - \mathcal{P}(ab)\, C^{a}_{m}\bar{H}_{mbij}
+                + \mathcal{P}(ab)\, Z_{ae} t^{eb}_{ij} + \mathcal{P}(ij)\, Z_{mi} t^{ab}_{mj} \\
+            &\quad + \mathcal{P}(ab)\, C^{eb}_{ij}\bar{H}_{ae} - \mathcal{P}(ij)\, \bar{H}_{mi} C^{ab}_{mj}
+                + \tfrac{1}{2}\bar{H}_{mnij} C^{ab}_{mn} + \tfrac{1}{2} C^{ef}_{ij}\bar{H}_{abef} \\
+            &\quad + \mathcal{P}(ij)\mathcal{P}(ab)\, C^{ae}_{im}\bar{H}_{mbej}
+            \end{aligned}
+
+        with :math:`\mathcal{P}(pq) X_{pq} = X_{pq} - X_{qp}`.
+        """
         contract = hbar.contract
         ERI = hbar.ccwfn.H.ERI
         t2 = hbar.ccwfn.t2
@@ -467,14 +556,44 @@ class cceom(object):
         return s2.copy()
 
 
-    def build_Goo(self, t2, l2):
+    def _build_Goo(self, t2, l2):
+        r"""Occupied-occupied G intermediate contracting t2 with l2 (called with
+        l2 = C2 by the left sigma builders s_l1/s_l2).
+
+        Notes
+        -----
+        Spin-adapted (spatial) and spin-orbital forms::
+
+            spatial: G_mi = t2_mjab l2_ijab
+            so:      G_mi = 1/2 t2_mnef l2_inef
+
+        .. math::
+
+            G_{mi} = t^{ab}_{mj} l^{ab}_{ij}
+            \qquad\text{(SO: } G_{mi} = \tfrac{1}{2}\, t^{ef}_{mn} l^{ef}_{in}\text{)}
+        """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             return 0.5 * contract('mnef,inef->mi', t2, l2)
         return contract('mjab,ijab->mi', t2, l2)
 
 
-    def build_Gvv(self, t2, l2):
+    def _build_Gvv(self, t2, l2):
+        r"""Virtual-virtual G intermediate contracting t2 with l2 (called with
+        l2 = C2 by the left sigma builders s_l1/s_l2).
+
+        Notes
+        -----
+        Spin-adapted (spatial) and spin-orbital forms::
+
+            spatial: G_ae = -t2_ijeb l2_ijab
+            so:      G_ae = -1/2 t2_mnef l2_mnaf
+
+        .. math::
+
+            G_{ae} = -t^{eb}_{ij} l^{ab}_{ij}
+            \qquad\text{(SO: } G_{ae} = -\tfrac{1}{2}\, t^{ef}_{mn} l^{af}_{mn}\text{)}
+        """
         contract = self.contract
         if self.ccwfn.orbital_basis == 'spinorbital':
             return -0.5 * contract('mnef,mnaf->ae', t2, l2)
@@ -482,19 +601,44 @@ class cceom(object):
 
 
     def s_l1(self, hbar, C1, C2, Goo, Gvv):
-        """
-        Build the singles components of the sigma = C * HBAR vector
+        r"""
+        Build the singles components of the left EOM-CC sigma vector sigma = C * HBAR
+        (the homogeneous analogue of the ccresponse r_Y1 Jacobian), projected onto
+        singles. Gvv/Goo are the C2-dressed intermediates _build_Gvv(t2, C2),
+        _build_Goo(t2, C2).
 
         Parameters
         ----------
         hbar : PyCC cchbar object
         C1, C2 : NumPy arrays
             the singles and doubles vectors for the current guess
+        Goo, Gvv : NumPy arrays
+            the oo/vv G intermediates (_build_Goo(t2, C2), _build_Gvv(t2, C2))
 
         Returns
         -------
         s1 : NumPy array
             the singles components of sigma
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); Hbar_* are hbar blocks::
+
+            sigma_ia = C1_ie Hbar_ea - C1_ma Hbar_im
+                     + (2 Hbar_ieam - Hbar_iema) C1_me
+                     + C2_imef Hbar_efam - C2_mnae Hbar_iemn
+                     - (2 Hbar_eifa - Hbar_eiaf) Gvv_ef
+                     - (2 Hbar_mina - Hbar_imna) Goo_mn
+
+        .. math::
+
+            \begin{aligned}
+            \sigma^{a}_{i} &= C^{e}_{i}\bar{H}_{ea} - C^{a}_{m}\bar{H}_{im}
+                + (2\bar{H}_{ieam} - \bar{H}_{iema}) C^{e}_{m} \\
+            &\quad + C^{ef}_{im}\bar{H}_{efam} - C^{ae}_{mn}\bar{H}_{iemn}
+                - (2\bar{H}_{eifa} - \bar{H}_{eiaf}) G_{ef}
+                - (2\bar{H}_{mina} - \bar{H}_{imna}) G_{mn}
+            \end{aligned}
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_s_l1(hbar, C1, C2, Goo, Gvv)
@@ -513,19 +657,54 @@ class cceom(object):
 
 
     def s_l2(self, hbar, C1, C2, Goo, Gvv):
-        """
-        Build the doubles components of the sigma = C * HBAR vector
+        r"""
+        Build the doubles components of the left EOM-CC sigma vector sigma = C * HBAR
+        (the homogeneous analogue of the ccresponse r_Y2 Jacobian), projected onto
+        doubles. P(ij,ab) f_ijab = f_ijab + f_jiba restores the ijab<->jiba symmetry;
+        Gvv/Goo are _build_Gvv(t2, C2)/_build_Goo(t2, C2).
 
         Parameters
         ----------
         hbar : PyCC cchbar object
         C1, C2 : NumPy arrays
             the singles and doubles vectors for the current guess
+        Goo, Gvv : NumPy arrays
+            the oo/vv G intermediates (_build_Goo(t2, C2), _build_Gvv(t2, C2))
 
         Returns
         -------
         s2 : NumPy array
             the doubles components of sigma
+
+        Notes
+        -----
+        Spin-adapted (spatial) form (repeated indices summed); L_ijeb = 2<ij|eb> -
+        <ij|be>, the (2 Hbar_ieam - Hbar_iema) ring is the L-combination of the
+        ovvo/ovov blocks::
+
+            sigma_ijab = P(ij,ab)[ 2 C1_ia Hbar_jb - C1_ja Hbar_ib
+                       + 2 C1_ie Hbar_ejab - C1_ie Hbar_ejba
+                       - 2 C1_mb Hbar_jima + C1_mb Hbar_ijma
+                       + C2_ijeb Hbar_ea - C2_mjab Hbar_im
+                       + 1/2 C2_mnab Hbar_ijmn + 1/2 C2_ijef Hbar_efab
+                       + C2_mjeb (2 Hbar_ieam - Hbar_iema)
+                       - C2_mibe Hbar_jema - C2_mieb Hbar_jeam
+                       + Gvv_ae L_ijeb - Goo_mi L_mjab ]
+
+        .. math::
+
+            \begin{aligned}
+            \sigma^{ab}_{ij} &= \mathcal{P}(ij,ab)\Big[ 2 C^{a}_{i}\bar{H}_{jb} - C^{a}_{j}\bar{H}_{ib}
+                + 2 C^{e}_{i}\bar{H}_{ejab} - C^{e}_{i}\bar{H}_{ejba}
+                - 2 C^{b}_{m}\bar{H}_{jima} + C^{b}_{m}\bar{H}_{ijma} \\
+            &\quad + C^{eb}_{ij}\bar{H}_{ea} - C^{ab}_{mj}\bar{H}_{im}
+                + \tfrac{1}{2} C^{ab}_{mn}\bar{H}_{ijmn} + \tfrac{1}{2} C^{ef}_{ij}\bar{H}_{efab} \\
+            &\quad + C^{eb}_{mj}(2\bar{H}_{ieam} - \bar{H}_{iema})
+                - C^{be}_{mi}\bar{H}_{jema} - C^{eb}_{mi}\bar{H}_{jeam}
+                + G_{ae} L_{ijeb} - G_{mi} L_{mjab} \Big]
+            \end{aligned}
+
+        with :math:`\mathcal{P}(ij,ab) f_{ijab} = f_{ijab} + f_{jiba}`.
         """
         if self.ccwfn.orbital_basis == 'spinorbital':
             return self._so_s_l2(hbar, C1, C2, Goo, Gvv)
@@ -555,9 +734,29 @@ class cceom(object):
         return s2.copy()
 
     def _so_s_l1(self, hbar, C1, C2, Goo, Gvv):
-        """Spin-orbital singles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-singles
+        r"""Spin-orbital singles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-singles
         structure (cclambda._so_r_L1) without the inhomogeneous Hov term (EOM is homogeneous),
-        with l1/l2 -> C1/C2; single antisymmetrized Hovvo, no Hovov."""
+        with l1/l2 -> C1/C2; single antisymmetrized Hovvo, no Hovov.
+
+        Notes
+        -----
+        Spin-orbital form (repeated indices summed); Gvv = _build_Gvv(t2, C2),
+        Goo = _build_Goo(t2, C2)::
+
+            sigma_ia = C1_ie Hbar_ea - C1_ma Hbar_im + Hbar_ieam C1_me
+                     + 1/2 C2_imef Hbar_efam - 1/2 C2_mnae Hbar_iemn
+                     - Gvv_ef Hbar_eifa - Goo_mn Hbar_mina
+
+        .. math::
+
+            \begin{aligned}
+            \sigma^{a}_{i} &= C^{e}_{i}\bar{H}_{ea} - C^{a}_{m}\bar{H}_{im} + \bar{H}_{ieam} C^{e}_{m} \\
+            &\quad + \tfrac{1}{2} C^{ef}_{im}\bar{H}_{efam} - \tfrac{1}{2} C^{ae}_{mn}\bar{H}_{iemn}
+                - \bar{H}_{eifa} G_{ef} - \bar{H}_{mina} G_{mn}
+            \end{aligned}
+
+        with :math:`G_{ef}` = _build_Gvv(t2, C2), :math:`G_{mn}` = _build_Goo(t2, C2).
+        """
         contract = hbar.contract
         s1 = contract('ie,ea->ia', C1, hbar.Hvv)
         s1 = s1 - contract('ma,im->ia', C1, hbar.Hoo)
@@ -569,10 +768,38 @@ class cceom(object):
         return s1.copy()
 
     def _so_s_l2(self, hbar, C1, C2, Goo, Gvv):
-        """Spin-orbital doubles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-doubles
+        r"""Spin-orbital doubles sigma (left), sigma = C * HBAR.  The spin-orbital lambda-doubles
         structure (cclambda._so_r_L2) without the inhomogeneous <ij||ab> term, with l1/l2 -> C1/C2;
         built already antisymmetric under i<->j and a<->b (no trailing symmetrization), from the
-        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI."""
+        antisymmetrized spin-orbital HBAR (single Hovvo, no Hovov) and the <pq||rs> ERI.
+
+        Notes
+        -----
+        Spin-orbital form (repeated indices summed; P(pq) X_pq = X_pq - X_qp; each term
+        carries only the permutation its factors do not already supply); Gvv =
+        _build_Gvv(t2, C2), Goo = _build_Goo(t2, C2)::
+
+            sigma_ijab = P(ij)[ C1_ia Hbar_jb ] + P(ij)[ C1_jb Hbar_ia ]
+                       + P(ab)[ C2_ijae Hbar_eb ] - P(ij)[ C2_imab Hbar_jm ]
+                       + 1/2 C2_ijef Hbar_efab + 1/2 C2_mnab Hbar_ijmn
+                       + P(ij)[ C1_ie Hbar_ejab ] - P(ab)[ C1_ma Hbar_ijmb ]
+                       + P(ij)P(ab)[ C2_imae Hbar_jebm ]
+                       + P(ab)[ Gvv_be <ij||ae> ] - P(ij)[ Goo_mj <im||ab> ]
+
+        .. math::
+
+            \begin{aligned}
+            \sigma^{ab}_{ij} &= \mathcal{P}(ij)\, C^{a}_{i}\bar{H}_{jb} + \mathcal{P}(ij)\, C^{b}_{j}\bar{H}_{ia}
+                + \mathcal{P}(ab)\, C^{ae}_{ij}\bar{H}_{eb} - \mathcal{P}(ij)\, C^{ab}_{im}\bar{H}_{jm} \\
+            &\quad + \tfrac{1}{2} C^{ef}_{ij}\bar{H}_{efab} + \tfrac{1}{2} C^{ab}_{mn}\bar{H}_{ijmn}
+                + \mathcal{P}(ij)\, C^{e}_{i}\bar{H}_{ejab} - \mathcal{P}(ab)\, C^{a}_{m}\bar{H}_{ijmb} \\
+            &\quad + \mathcal{P}(ij)\mathcal{P}(ab)\, C^{ae}_{im}\bar{H}_{jebm}
+                + \mathcal{P}(ab)\, G_{be}\langle ij\Vert ae\rangle - \mathcal{P}(ij)\, G_{mj}\langle im\Vert ab\rangle
+            \end{aligned}
+
+        with :math:`\mathcal{P}(pq) X_{pq} = X_{pq} - X_{qp}`, :math:`G_{be}` =
+        _build_Gvv(t2, C2), :math:`G_{mj}` = _build_Goo(t2, C2).
+        """
         contract = hbar.contract
         ERI = hbar.ccwfn.H.ERI
         o = hbar.o
@@ -590,3 +817,11 @@ class cceom(object):
         s2 = s2 + (contract('be,ijae->ijab', Gvv, ERI[o,o,v,v]) - contract('ae,ijbe->ijab', Gvv, ERI[o,o,v,v]))
         s2 = s2 - (contract('mj,imab->ijab', Goo, ERI[o,o,v,v]) - contract('mi,jmab->ijab', Goo, ERI[o,o,v,v]))
         return s2.copy()
+
+    def _orthonormalize(self, rows):
+        """Return an orthonormal row basis for the row space of ``rows`` (M, sigma_len), dropping
+        linearly dependent rows.  Used to condition the initial guess block and the restart Ritz
+        vectors."""
+        Q, Rm = np.linalg.qr(np.asarray(rows).real.T)
+        keep = np.abs(np.diag(Rm)) > 1e-8
+        return Q.T[keep].copy()
