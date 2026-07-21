@@ -21,50 +21,71 @@ if TYPE_CHECKING:
 
 
 class CCderiv(CorrelatedDerivs):
-    """Analytic derivative properties of a converged CCSD wavefunction.
+    """Analytic derivative properties of a CCSD / CCSD(T) wavefunction.
 
     Parameters
     ----------
     ccwfn : CCwfn
-        A converged coupled-cluster wavefunction (call :meth:`CCwfn.solve_cc` first).
+        A ``CCSD`` or ``CCSD(T)`` wavefunction.  The constructor solves it (and, for ``CCSD(T)``,
+        builds the (T) density) and then builds Lambda and the reduced densities.
 
     Notes
     -----
-    Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported; ROHF is not
-    (the semicanonical response does not reproduce the restricted ROHF response).  Lambda and the
-    reduced densities are solved/built on first use and cached.  The analytic gradient, static
-    polarizability, atomic polar tensors (length-gauge APTs), and molecular Hessian are implemented,
-    for CCSD and CCSD(T), all-electron and frozen core.
+    The correlation properties -- relaxed dipole, analytic gradient, static polarizability,
+    length-gauge atomic polar tensors, and molecular Hessian -- are inherited from
+    :class:`~pycc.correlatedderivs.CorrelatedDerivs` and computed via its asymmetric (2n+1) route (a
+    single (T)-capable formulation; see DERIVATIVES_PLAN_2026-06.md sec 8).  ``CCderiv`` supplies
+    only the CC-specific density hooks: there is no property-specific (T) code -- the (T)
+    contribution enters entirely through the (T)-aware relaxed and perturbed densities the base
+    builds.  Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported, all-
+    electron and frozen core; ROHF is not (the semicanonical response does not reproduce the
+    restricted ROHF response).
+
+    Validation: CCSD against tight finite fields of the relaxed dipole and SO == spatial keystones;
+    CCSD(T) against energy finite differences and CFOUR oracles (``POLAR`` / ``DIPDER`` /
+    ``FCMFINAL`` minus their SCF values; see test_084 / test_087 / test_089).
     """
 
-    def __init__(self, ccwfn: "CCwfn") -> None:
-        """Bind the converged CCwfn (aliased as ``ccwfn``; the base stores it as ``wfn``) and
-        initialize the lazy Lambda/reduced-density cache (see :meth:`_density`)."""
+    def __init__(self, ccwfn: "CCwfn", e_conv=None, r_conv=None, maxiter=None,
+                 max_diis=8, start_diis=1) -> None:
+        """Build the CCSD/CCSD(T) derivative machinery for ``ccwfn``: run ``solve_cc`` for the
+        T amplitudes, then build the similarity-transformed Hamiltonian ``self.hbar``, solve the
+        Lambda amplitudes ``self.cclambda``, and build the (Lambda-response) reduced densities
+        ``self.ccdensity``.
+
+        ``solve_cc`` is run unconditionally; it warm-starts from the wavefunction's current
+        amplitudes, so an already-converged wfn costs only about one iteration.  For a
+        ``CCSD(T)`` wavefunction this sets ``make_t3_density`` so the (T) density is built during
+        the (T) pass -- the derivative-property codes require it.  Convergence
+        (``e_conv``/``r_conv``/``maxiter``) and DIIS (``max_diis``/``start_diis``) default to the
+        wavefunction's current settings (its ``solve_cc`` defaults, or a prior solve); Lambda
+        inherits the same convergence.  Pass values to override.  ``CCSD`` and ``CCSD(T)`` only
+        (raises otherwise)."""
+        from .cchbar import cchbar
+        from .cclambda import cclambda
+        from .ccdensity import ccdensity
         super().__init__(ccwfn)
         self.ccwfn = ccwfn                              # alias: this class uses .ccwfn, the base .wfn
-        self._dens = None
-
-    def _density(self):
-        """Converged Lambda amplitudes and the (Lambda-response) reduced densities, cached.
-        Builds ``cchbar`` -> ``cclambda`` (solved) -> ``ccdensity`` on first use.  Lambda inherits
-        the wavefunction's convergence criteria (``ccwfn.e_conv``/``r_conv``/``maxiter``, set by
-        ``solve_cc``) rather than hardwiring its own."""
-        if self._dens is None:
-            from .cchbar import cchbar
-            from .cclambda import cclambda
-            from .ccdensity import ccdensity
-            cc = self.ccwfn
-            hbar = cchbar(cc)
-            lam = cclambda(cc, hbar)
-            lam.solve_lambda(e_conv=cc.e_conv, r_conv=cc.r_conv, maxiter=cc.maxiter)
-            self._dens = ccdensity(cc, lam)
-        return self._dens
+        model = ccwfn.model.upper()
+        if model not in ('CCSD', 'CCSD(T)'):
+            raise NotImplementedError(
+                f"CCderiv: only CCSD and CCSD(T) are implemented (not {ccwfn.model}).")
+        e_conv = ccwfn.e_conv if e_conv is None else e_conv
+        r_conv = ccwfn.r_conv if r_conv is None else r_conv
+        maxiter = ccwfn.maxiter if maxiter is None else maxiter
+        if model == 'CCSD(T)':
+            ccwfn.make_t3_density = True                # (T) density built by solve_cc's (T) pass
+        ccwfn.solve_cc(e_conv, r_conv, maxiter, max_diis, start_diis)
+        self.hbar = cchbar(ccwfn)
+        self.cclambda = cclambda(ccwfn, self.hbar)
+        self.cclambda.solve_lambda(e_conv=e_conv, r_conv=r_conv, maxiter=maxiter)
+        self.ccdensity = ccdensity(ccwfn, self.cclambda)
 
     def _unrelaxed_densities(self):
         """CC unrelaxed reduced densities: the Lambda-response 1-PDM ``D`` and the (symmetrized)
         cumulant 2-PDM ``Gam`` (:meth:`ccdensity.gradient_densities`), full-MO arrays.  Supplies the
         base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
-        D, Gam = self._density().gradient_densities()
+        D, Gam = self.ccdensity.gradient_densities()
         return np.asarray(D), np.asarray(Gam)
 
     # ---- second derivatives: static dipole polarizability ----------------
@@ -87,115 +108,18 @@ class CCderiv(CorrelatedDerivs):
     _SO_HBAR_BLOCKS = ('Hov', 'Hvv', 'Hoo', 'Hoooo', 'Hvvvv', 'Hvovv', 'Hooov',
                        'Hovvo', 'Hvvvo', 'Hovoo')
 
-    def polarizability(self, route: str = '2n+1') -> np.ndarray:
-        r"""CCSD **correlation** contribution to the static (omega=0) dipole polarizability (a.u.),
-        shape ``(3, 3)``, the CC analog of :meth:`MPwfn.polarizability`::
-
-            alpha_corr[a,b] = -d^2 E_corr / dF_a dF_b
-
-        .. math::
-
-            \alpha^\mathrm{corr}_{ab} = -\frac{\partial^2 E_\mathrm{corr}}{\partial F_a\,\partial F_b}
-
-        Only the **asymmetric (2n+1) route** is available for CC -- differentiate the relaxed-density
-        gradient a second time (a single (T)-capable formulation; see DERIVATIVES_PLAN sec 8).  The
-        ``route`` argument (from the :func:`pycc.polarizability` facade) accepts only ``'2n+1'``.
-
-        The reference (SCF) polarizability is kept separate (:meth:`HFwfn.polarizability`); the
-        :func:`pycc.polarizability` facade sums nuclear (zero) + reference + this correlation part.
-
-        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
-        core.  CCSD is validated against a tight finite field of :meth:`relaxed_dipole` and the
-        SO == spatial keystone; CCSD(T) against the energy second-derivative finite field and the
-        SO == spatial keystone (SO CCSD(T) itself matched to CFOUR).
-
-        Overrides :meth:`CorrelatedDerivs.polarizability` only to add the CC method-specific guards
-        (supported model, (T) density intermediates); the shared 2n+1 assembly runs via ``super()``."""
-        cc = self.ccwfn
-        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
-            raise NotImplementedError(f"CC polarizability: only CCSD and CCSD(T) are implemented (not {cc.model}).")
-        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
-            raise ValueError("CCSD(T) polarizability requires the (T) density intermediates; "
-                             "build the wavefunction with make_t3_density=True.")
-        return super().polarizability(route)        # shared 2n+1 assembly (SO/spatial dispatch in the base)
-
-    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
-        r"""CCSD/CCSD(T) **correlation** contribution to the atomic polar tensors (nuclear dipole
-        derivatives, a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]``, the mixed
-        field/nuclear analog of :meth:`polarizability`::
-
-            d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}
-
-        .. math::
-
-            \frac{\partial \mu_\alpha}{\partial X_{A\beta}}
-                = -\frac{\partial^2 E_\mathrm{corr}}{\partial F_\alpha\,\partial X_{A\beta}}
-
-        ``route='2n+1-field'`` (default, 3 field solves) or ``'2n+1-nuclear'`` (``3N`` nuclear
-        solves); both give the same tensor.  The nuclear ``Z_A`` and SCF reference terms are kept
-        separate (:meth:`HFwfn.dipole_derivatives`) and summed with this correlation part by
-        :func:`pycc.apt`.
-
-        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
-        core.  The (T) contribution enters entirely through the (T)-aware relaxed and perturbed
-        densities the shared base already builds (no APT-specific (T) code); the spin-orbital CCSD(T)
-        APT is validated against a CFOUR DIPDER oracle (``DIPDER(CCSD(T)) - DIPDER(SCF)``, see
-        ``test_087_ccsdt_apt``).
-
-        Overrides :meth:`CorrelatedDerivs.dipole_derivatives` only to add the CC method-specific
-        guards (supported model, (T) density intermediates); the shared 2n+1 assembly runs via
-        ``super()``."""
-        cc = self.ccwfn
-        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
-            raise NotImplementedError(f"CC dipole derivatives: only CCSD and CCSD(T) are implemented (not {cc.model}).")
-        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
-            raise ValueError("CCSD(T) dipole derivatives require the (T) density intermediates; "
-                             "build the wavefunction with make_t3_density=True.")
-        return super().dipole_derivatives(route)    # shared 2n+1 assembly (SO/spatial dispatch in the base)
-
-    def hessian(self, route: str = '2n+1') -> np.ndarray:
-        r"""CCSD/CCSD(T) **correlation** contribution to the molecular (nuclear) Hessian (a.u.), shape
-        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)``, the nuclear-nuclear analog of
-        :meth:`polarizability` / :meth:`dipole_derivatives`::
-
-            H[Aa,Bb] = d^2 E_corr / dX_{Aa} dX_{Bb}
-
-        .. math::
-
-            H_{Aa,Bb} = \frac{\partial^2 E_\mathrm{corr}}{\partial X_{Aa}\,\partial X_{Bb}}
-
-        ``route`` accepts only ``'2n+1'`` (``3N`` nuclear perturbed solves).  The nuclear-repulsion
-        second derivative and the SCF reference Hessian are kept separate
-        (:meth:`HFwfn.hessian` / :meth:`Derivatives.nuclear_repulsion2`) and summed with this
-        correlation part by :func:`pycc.hessian`.
-
-        Spatial closed-shell RHF and spin-orbital UHF, CCSD and CCSD(T), all-electron and frozen
-        core.  As for the APT, the (T) contribution enters entirely through the (T)-aware relaxed and
-        perturbed densities the shared base already builds (no Hessian-specific (T) code); validated
-        against a CFOUR FCMFINAL oracle (``FCMFINAL(CCSD(T)) - FCMFINAL(SCF)``, see
-        ``test_089_ccsdt_hessian``).
-
-        Overrides :meth:`CorrelatedDerivs.hessian` only to add the CC method-specific guards
-        (supported model, (T) density intermediates); the shared 2n+1 assembly runs via ``super()``."""
-        cc = self.ccwfn
-        if cc.model.upper() not in ('CCSD', 'CCSD(T)'):
-            raise NotImplementedError(f"CC hessian: only CCSD and CCSD(T) are implemented (not {cc.model}).")
-        if cc.model.upper() == 'CCSD(T)' and not hasattr(cc, 'S1'):
-            raise ValueError("CCSD(T) hessian requires the (T) density intermediates; "
-                             "build the wavefunction with make_t3_density=True.")
-        return super().hessian(route)               # shared 2n+1 assembly (SO/spatial dispatch in the base)
-
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """CC perturbed unrelaxed densities ``(d_x gamma, d_x Gamma)`` -- the base
         :meth:`CorrelatedDerivs._perturbed_unrelaxed_densities` hook.  Runs the iterative perturbed
         amplitude solve ``dt = dt(df, deri, dL)`` and the perturbed Lambda solve ``dLambda``
-        (reusing the converged ``hbar``/``lam`` from :meth:`_density`), threading the perturbed (T)
-        intermediates ``dt3`` into both and into the density for CCSD(T), then builds the perturbed
-        correlation densities (:meth:`_perturbed_correlation_densities`).  ``df``/``deri`` are already
-        canonical per :attr:`perturbed_mo_gauge` (passed in by the base perturbed Z-vector solve)."""
+        (reusing the converged ``self.hbar``/``self.cclambda`` built in ``__init__``), threading the
+        perturbed (T) intermediates ``dt3`` into both and into the density for CCSD(T), then builds
+        the perturbed correlation densities (:meth:`_perturbed_correlation_densities`).
+        ``df``/``deri`` are already canonical per :attr:`perturbed_mo_gauge` (passed in by the base
+        perturbed Z-vector solve)."""
         cc = self.ccwfn
-        lam = self._density().cclambda
-        hbar = lam.hbar
+        lam = self.cclambda
+        hbar = self.hbar
         is_t = cc.model.upper() == 'CCSD(T)'
         if cc.orbital_basis == 'spinorbital':
             dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)

@@ -104,7 +104,7 @@ def test_ccsd_gradient_density_energy():
     """The gradient-convention densities (CCderiv adapter) reproduce the CCSD correlation energy:
     E_corr = contract(D, F) + contract(Gamma, ERI) (no prefactor on the two-particle term)."""
     cc = _ccwfn(REF, "STO-3G")
-    dens = pycc.CCderiv(cc)._density()
+    dens = pycc.CCderiv(cc).ccdensity
     ecc = dens.compute_energy()
     D, G = dens.gradient_densities()
     E = cc.contract('pq,pq->', D, np.asarray(cc.H.F)) + cc.contract('pqrs,pqrs->', G, np.asarray(cc.H.ERI))
@@ -118,7 +118,7 @@ def test_ccsd_gradient_ccpvdz():
     cc = _ccwfn(REF, "cc-pVDZ")
     g = np.asarray(pycc.CCderiv(cc).gradient())
     assert np.max(np.abs(g - GRAD_REF_PVDZ)) < 1e-11, g
-    dens = pycc.CCderiv(cc)._density()
+    dens = pycc.CCderiv(cc).ccdensity
     D, G = dens.gradient_densities()
     E = cc.contract('pq,pq->', D, np.asarray(cc.H.F)) + cc.contract('pqrs,pqrs->', G, np.asarray(cc.H.ERI))
     assert abs(E - dens.compute_energy()) < 1e-12
