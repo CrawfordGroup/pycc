@@ -95,7 +95,7 @@ def test_ccsd_gradient_vs_findiff():
     cc = _ccwfn(REF, "STO-3G")
     g = np.asarray(pycc.CCderiv(cc).gradient())
     assert np.max(np.abs(g - GRAD_REF_STO3G)) < 1e-11, g
-    r = pycc.gradient(cc)
+    r = pycc.gradient(pycc.CCderiv(cc))
     assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
     assert np.max(np.abs(np.asarray(r.correlation) - GRAD_REF_STO3G)) < 1e-11
 

@@ -2,8 +2,9 @@
 Property facade -- pycc.aat() and pycc.PropertyComponents.
 
 The facade returns the additive physical decomposition ``total = nuclear + reference +
-correlation`` for any supported wavefunction type, with the pieces genuinely computed apart
-(the correlation excludes the SCF reference density; the reference is the independent SCF AAT).
+correlation``, taking a derivative driver (``MPderiv``/``CCderiv``) for the correlated methods or a
+bare ``HFwfn`` for the reference, with the pieces genuinely computed apart (the correlation excludes
+the SCF reference density; the reference is the independent SCF value).
 """
 
 import psi4
@@ -110,15 +111,16 @@ def test_aat_frozen_core_total():
 # ---- the other properties under the same umbrella ----
 
 def _facade_and_pieces(hf, mp):
-    """Each facade function paired with (HF public method, MP2 correlation method) that
-    reconstruct the physical total, for the composition check."""
+    """Each facade function (called on the MP2 driver) paired with (HF public method, MP2
+    correlation method) that reconstruct the physical total, for the composition check."""
+    d = pycc.MPderiv(mp)
     return [
-        ("dipole",         pycc.dipole(mp),               hf.dipole(),                     mp.relaxed_dipole()),
-        ("gradient",       pycc.gradient(mp),             hf.gradient(),                   mp.gradient()),
-        ("polarizability", pycc.polarizability(mp),       hf.polarizability(),             mp.polarizability()),
-        ("hessian",        pycc.hessian(mp),              hf.hessian(),                    mp.hessian()),
-        ("apt-length",     pycc.apt(mp, 'length'),        hf.dipole_derivatives(),         mp.dipole_derivatives()),
-        ("apt-velocity",   pycc.apt(mp, 'velocity'),      hf.velocity_dipole_derivatives(), mp.velocity_dipole_derivatives()),
+        ("dipole",         pycc.dipole(d),                hf.dipole(),                     mp.relaxed_dipole()),
+        ("gradient",       pycc.gradient(d),              hf.gradient(),                   mp.gradient()),
+        ("polarizability", pycc.polarizability(d),        hf.polarizability(),             mp.polarizability()),
+        ("hessian",        pycc.hessian(d),               hf.hessian(),                    mp.hessian()),
+        ("apt-length",     pycc.apt(d, 'length'),         hf.dipole_derivatives(),         mp.dipole_derivatives()),
+        ("apt-velocity",   pycc.apt(d, 'velocity'),       hf.velocity_dipole_derivatives(), mp.velocity_dipole_derivatives()),
     ]
 
 
@@ -131,9 +133,9 @@ def test_facade_decomposition_and_total():
         assert np.max(np.abs(comp.total - (np.asarray(hf_pub) + np.asarray(mp_corr)))) < 1e-10, name
 
 
-def test_facade_accepts_driver_object():
-    """The facade takes a derivative driver (the driver-object API) as well as a bare wavefunction
-    (the transitional path); both give identical PropertyComponents for every property."""
+def test_facade_requires_driver_object():
+    """The facade takes a derivative driver; a bare (registered) correlated wavefunction is rejected
+    with a TypeError telling the caller to construct the driver first."""
     _, mp = _wfns()
     driver = pycc.MPderiv(mp)
     cases = [
@@ -145,9 +147,13 @@ def test_facade_accepts_driver_object():
         ("apt-velocity",   lambda x: pycc.apt(x, 'velocity')),
     ]
     for name, fn in cases:
-        via_wfn, via_driver = fn(mp), fn(driver)
-        assert np.max(np.abs(via_driver.total - via_wfn.total)) < 1e-12, name
-        assert np.max(np.abs(via_driver.correlation - via_wfn.correlation)) < 1e-12, name
+        r = fn(driver)                                   # driver object works
+        assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12, name
+        try:
+            fn(mp)                                       # bare registered wfn is rejected
+            assert False, f"expected TypeError for a bare wavefunction: {name}"
+        except TypeError:
+            pass
 
 
 def test_facade_hf_wavefunction():
@@ -169,7 +175,7 @@ def test_facade_hf_wavefunction():
 def test_facade_polarizability_no_nuclear():
     """The polarizability has no nuclear contribution (pure electronic response)."""
     _, mp = _wfns()
-    assert np.all(pycc.polarizability(mp).nuclear == 0.0)
+    assert np.all(pycc.polarizability(pycc.MPderiv(mp)).nuclear == 0.0)
 
 
 def test_apt_bad_gauge():
@@ -186,12 +192,13 @@ def test_facade_route_option():
     """route (MP2 correlation algorithm) is exposed and passed through; the two APT 2n+1 routes
     agree, and route is ignored for HF."""
     hf, mp = _wfns()
-    assert np.max(np.abs(pycc.polarizability(mp, route='2n+1').total
-                         - pycc.polarizability(mp).total)) < 1e-12
-    assert np.max(np.abs(pycc.hessian(mp, route='2n+1').total
-                         - pycc.hessian(mp).total)) < 1e-12
-    assert np.max(np.abs(pycc.apt(mp, 'length', route='2n+1-nuclear').total
-                         - pycc.apt(mp, 'length', route='2n+1-field').total)) < 1e-10
+    d = pycc.MPderiv(mp)
+    assert np.max(np.abs(pycc.polarizability(d, route='2n+1').total
+                         - pycc.polarizability(d).total)) < 1e-12
+    assert np.max(np.abs(pycc.hessian(d, route='2n+1').total
+                         - pycc.hessian(d).total)) < 1e-12
+    assert np.max(np.abs(pycc.apt(d, 'length', route='2n+1-nuclear').total
+                         - pycc.apt(d, 'length', route='2n+1-field').total)) < 1e-10
     assert np.all(pycc.hessian(hf, route='2n+1').correlation == 0.0)
 
 
@@ -199,8 +206,10 @@ def test_facade_orbital_gauge_option():
     """orbital_gauge (expert-only) is exposed on aat / apt(velocity); the tensor is invariant to
     it (the knob reaches the correlation method, which is gauge invariant), ignored for HF."""
     hf, mp = _wfns()
+    # aat keeps its wavefunction-based interface for now (pending the AAT/VG-APT hoist)
     assert np.max(np.abs(pycc.aat(mp, orbital_gauge='non-canonical').total
                          - pycc.aat(mp, orbital_gauge='canonical').total)) < 1e-9
-    assert np.max(np.abs(pycc.apt(mp, 'velocity', orbital_gauge='non-canonical').total
-                         - pycc.apt(mp, 'velocity', orbital_gauge='canonical').total)) < 1e-9
+    d = pycc.MPderiv(mp)
+    assert np.max(np.abs(pycc.apt(d, 'velocity', orbital_gauge='non-canonical').total
+                         - pycc.apt(d, 'velocity', orbital_gauge='canonical').total)) < 1e-9
     assert np.all(pycc.apt(hf, 'velocity', orbital_gauge='canonical').correlation == 0.0)

@@ -932,8 +932,7 @@ class ccdensity(object):
         return Doovv
 
     def build_so_twopdm(self, t1, t2, l1, l2):
-        r"""Spin-orbital CCSD two-particle density -- the nine unique blocks of Table 6.3 of the
-        coupled-cluster notes (Crawford), returned as a dict keyed by block label.
+        r"""Spin-orbital CCSD two-particle density, returned as a dict keyed by block label.
 
         Because the spin-orbital 2-PDM is fully antisymmetric (``Gamma_pqrs = -Gamma_qprs =
         -Gamma_pqsr``), these nine blocks are *representatives*: every one of the sixteen o/v
@@ -999,7 +998,6 @@ class ccdensity(object):
                      + 0.5 * contract('kmef,ijef,ma->ijka', l2, tau, t1)
                      + Pij(contract('mkef,imae,jf->ijka', l2, t2, t1))
                      - 0.5 * Pij(contract('kmef,imef,ja->ijka', l2, t2, t1)))
-        # NB: the t^{ae}_{in} term carries a leading minus sign (erratum vs the printed table).
         G['ciab'] = (contract('mc,miab->ciab', l1, tau)
                      - 0.5 * contract('mnce,mnab,ie->ciab', l2, tau, t1)
                      - Pab(contract('mnce,inae,mb->ciab', l2, t2, t1))

@@ -164,7 +164,7 @@ def test_ccsdt_relaxed_dipole(rhf_wfn):
     mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
     assert abs(mu[2] - RELAXED_DIPOLE_Z_REF) < 1e-10, mu[2]
     # facade: total = nuclear + reference + correlation, and correlation == relaxed_dipole
-    r = pycc.dipole(cc)
+    r = pycc.dipole(pycc.CCderiv(cc))
     assert np.max(np.abs(np.asarray(r.total) - (np.asarray(r.nuclear)
                   + np.asarray(r.reference) + np.asarray(r.correlation)))) < 1e-12
     assert np.max(np.abs(np.asarray(r.correlation) - mu)) < 1e-12

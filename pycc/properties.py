@@ -3,11 +3,13 @@ as its additive physical decomposition
 
     total = nuclear + reference + correlation
 
-Each property takes a **derivative driver** (``CCderiv``/``MPderiv``/``CIderiv`` -- the object that
-owns the solve and the correlation-derivative methods) or, for a reference-only value, a bare
-``HFwfn`` (its correlation block is zero).  During the transition to the driver-object API a bare
-correlated wavefunction is also accepted and wrapped in its registered driver (the construction the
-facade used to do implicitly); this path is temporary and will be removed once callers pass drivers.
+Each property takes a **derivative driver** (``CCderiv``/``MPderiv`` -- the object that owns the
+solve and the correlation-derivative methods) or, for a reference-only value, a bare ``HFwfn`` (its
+correlation block is zero).  A bare *registered* correlated wavefunction (``CCwfn``/``MPwfn``) is
+rejected: construct the driver yourself, e.g. ``pycc.gradient(pycc.CCderiv(cc))`` -- so the solve
+cost sits in an explicit constructor.  CISD is the one exception (transitional): its ``CIwfn`` is
+still accepted directly, because ``CIderiv`` is not yet a working driver; that path goes away when
+it is.  ``aat`` keeps its own wavefunction-based interface for now (pending the AAT/VG-APT hoist).
 The pieces are genuinely computed apart -- the correlation contribution is built from correlation
 quantities only, never as (total - reference).
 """
@@ -124,18 +126,20 @@ def _correlated(obj):
     """Resolve ``obj`` to ``(reference_hf, target)``: the SCF-reference ``HFwfn`` carrying the
     reference derivative, and the driver carrying the correlation-derivative methods.
 
-    ``obj`` may be a derivative driver (``CCderiv``/``MPderiv``/``CIderiv``) -- used directly -- or,
-    during the transition to the driver-object property API, a correlated wavefunction, which is
-    wrapped in its registered driver (``deriv_cls(wfn)``, the same construction the facade did
-    implicitly before).  A wavefunction with no registered driver is used as its own target
-    (transitional, while a method's derivative code still lives on its wfn class -- CISD)."""
+    ``obj`` must be a derivative driver (``CCderiv``/``MPderiv``): the property is computed on it and
+    the solve cost lives in its explicit constructor.  A bare **registered** correlated wavefunction
+    (``CCwfn``/``MPwfn``) is rejected -- construct the driver yourself.  A correlated wavefunction
+    with no registered driver (CISD, whose ``CIderiv`` is still a stub) is used as its own target
+    (transitional; removed once CISD has a real driver)."""
     from .correlatedderivs import CorrelatedDerivs
     if isinstance(obj, CorrelatedDerivs):
         return obj._reference_hf(), obj
     deriv_cls = _DERIV_REGISTRY.get(type(obj))
     if deriv_cls is not None:
-        target = deriv_cls(obj)
-        return target._reference_hf(), target
+        raise TypeError(
+            f"pycc property facade: pass a {deriv_cls.__name__}, not a bare "
+            f"{type(obj).__name__} -- e.g. pycc.gradient(pycc.{deriv_cls.__name__}(wfn)).  "
+            f"The driver's constructor owns the solve; see pycc.{deriv_cls.__name__}.")
     return obj._reference_hf(), obj
 
 
