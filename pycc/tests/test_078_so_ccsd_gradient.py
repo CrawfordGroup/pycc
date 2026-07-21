@@ -68,7 +68,7 @@ def test_so_ccsd_gradient_vs_psi4_uhf():
     This is the open-shell validation: an external check against a converged, non-degenerate UHF
     reference (NH2)."""
     cc, _ = _so_ccwfn(NH2, reference="uhf")
-    r = pycc.gradient(cc)
+    r = pycc.gradient(pycc.CCderiv(cc))
     assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
 
     psi4.core.clean_options()
@@ -88,7 +88,7 @@ def test_so_ccsd_gradient_vs_psi4_uhf_oh_c2v():
     near-singular (this is the case that is *not* reproducible when forced into C1)."""
     cc, wfn = _so_ccwfn(OH_C2V, reference="uhf", basis="6-31G")
     assert wfn.molecule().point_group().symbol() == "c2v"        # actually running in C2v
-    r = pycc.gradient(cc)
+    r = pycc.gradient(pycc.CCderiv(cc))
 
     psi4.core.clean_options()
     psi4.set_options({'basis': '6-31G', 'scf_type': 'pk', 'reference': 'uhf',

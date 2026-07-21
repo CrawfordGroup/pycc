@@ -209,7 +209,7 @@ def _ccsd_apt(geom, freeze_core, orbital_basis):
     wfn = _cfour_wfn(geom, freeze_core)
     cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)      # model defaults to CCSD
     cc.solve_cc(1e-12, 1e-12, 100)
-    return pycc.apt(cc)
+    return pycc.apt(pycc.CCderiv(cc))
 
 
 def _check(r, corr_ref, total_ref, Z, perp):

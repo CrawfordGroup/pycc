@@ -61,14 +61,14 @@ def _mpwfn(orbital_basis='spatial', freeze_core='false', geom=H2O2, basis='STO-3
 def test_mp2_vg_apt_all_electron():
     """All-electron spatial MP2 VG APT (total, via the pycc.apt velocity-gauge facade) reproduces
     the regression reference for (P)-H2O2/STO-3G."""
-    P = np.asarray(pycc.apt(_mpwfn()[0], gauge='velocity').total).reshape(-1, 3)
+    P = np.asarray(pycc.apt(pycc.MPderiv(_mpwfn()[0]), gauge='velocity').total).reshape(-1, 3)
     for (row, col), ref in VG_REF['false'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
 
 def test_mp2_vg_apt_frozen_core():
     """Frozen-core spatial MP2 VG APT (total) reproduces the regression reference."""
-    P = np.asarray(pycc.apt(_mpwfn(freeze_core='true')[0], gauge='velocity').total).reshape(-1, 3)
+    P = np.asarray(pycc.apt(pycc.MPderiv(_mpwfn(freeze_core='true')[0]), gauge='velocity').total).reshape(-1, 3)
     for (row, col), ref in VG_REF['true'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
@@ -77,7 +77,7 @@ def test_mp2_vg_apt_reduces_to_hf():
     """The MP2 VG APT total reduces to the (Amos-pinned) HF VG APT total as the correlation
     vanishes: the difference is the small MP2 correlation contribution."""
     mp, wfn = _mpwfn()
-    VG = np.asarray(pycc.apt(mp, gauge='velocity').total)
+    VG = np.asarray(pycc.apt(pycc.MPderiv(mp), gauge='velocity').total)
     HF = np.asarray(pycc.HFwfn(wfn).velocity_dipole_derivatives())
     diff = np.max(np.abs(VG - HF))
     assert diff < 0.05, diff            # small correlation contribution

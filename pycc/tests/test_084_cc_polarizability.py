@@ -120,7 +120,7 @@ def test_ccsd_polarizability_water_631g(rhf_wfn):
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9              # symmetric
 
     # facade: total = nuclear (0) + reference (HF) + correlation, and correlation == analytic alpha
-    r = pycc.polarizability(cc)
+    r = pycc.polarizability(pycc.CCderiv(cc))
     assert np.max(np.abs(np.asarray(r.nuclear))) < 1e-14
     assert np.max(np.abs(np.asarray(r.correlation) - alpha)) < 1e-12
     assert np.max(np.abs(np.asarray(r.total) - (np.asarray(r.nuclear)
@@ -156,7 +156,7 @@ def test_ccsd_polarizability_hof_offdiagonal(rhf_wfn):
     assert abs(alpha[0, 1]) > 0.5                              # genuine in-plane off-diagonal
     assert abs(alpha[0, 2]) < 1e-9 and abs(alpha[1, 2]) < 1e-9  # out-of-plane block vanishes (Cs)
 
-    r = pycc.polarizability(cc)
+    r = pycc.polarizability(pycc.CCderiv(cc))
     total = np.asarray(r.total)
     assert np.all(np.linalg.eigvalsh(0.5 * (total + total.T)) > 0.0), np.linalg.eigvalsh(total)
     psi4.core.clean()
