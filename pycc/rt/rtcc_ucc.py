@@ -827,3 +827,4 @@ class rtcc_ucc:
         z = np.dot(self.mu[2].flatten(), opdm.flatten())
 
         return x, y, z
+
