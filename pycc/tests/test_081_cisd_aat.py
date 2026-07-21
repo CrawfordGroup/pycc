@@ -8,8 +8,7 @@ itself validated independently: the analytic Hessian against Psi4/Gaussian
 finite differences (~1e-6), the AATs against the determinant-based apyib
 reference (B. Shumberger; ~1e-11 a.u.), and the LG-APT (Z-vector route)
 against finite differences of the analytic dipole.  The CIwfn port
-reproduces these values to ~1e-10; the test tolerance (1e-6) absorbs the
-printed precision of the reference.  The references are TOTAL tensors, so
+reproduces these values to ~1e-10.  The references are TOTAL tensors, so
 the tests exercise the full facade decomposition (nuclear + HF reference +
 CISD correlation).  Spatial orbitals, all-electron only.
 """
@@ -34,7 +33,7 @@ AAT_REF = np.array([
  [ 0.2035256536,-2.2788945997,-0.0000010340],
 ])
 
-# Same, (P)-H2O2/cc-pVDZ - a real virtual space (virtuals in every irrep,
+# (P)-H2O2/cc-pVDZ - a real virtual space (virtuals in every irrep,
 # polarization functions) that STO-3G's two virtuals cannot provide.
 AAT_REF_CCPVDZ = np.array([
  [-0.0086864882,  0.0460210947, -0.2786642140],
@@ -53,8 +52,9 @@ AAT_REF_CCPVDZ = np.array([
 
 
 def test_cisd_aat_vs_reference(cisd_h2o2):
-    """The facade total reproduces the standalone validated reference, every
-    element (STO-3G)."""
+    """The facade total (via CIderiv.atomic_axial_tensors(), migrated
+    verbatim from the retired on-CIwfn overlap code) reproduces the
+    standalone validated reference, every element (STO-3G)."""
     P = np.asarray(pycc.aat(cisd_h2o2()).total).reshape(-1, 3)
     print(P)
     assert np.max(np.abs(P - AAT_REF)) < 1e-8, np.max(np.abs(P - AAT_REF))

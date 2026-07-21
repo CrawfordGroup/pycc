@@ -8,8 +8,7 @@ itself validated independently: the analytic Hessian against Psi4/Gaussian
 finite differences (~1e-6), the AATs against the determinant-based apyib
 reference (B. Shumberger; ~1e-11 a.u.), and the LG-APT (Z-vector route)
 against finite differences of the analytic dipole.  The CIwfn port
-reproduces these values to ~1e-10; the test tolerance (1e-6) absorbs the
-printed precision of the reference.  The references are TOTAL tensors, so
+reproduces these values to ~1e-10.  The references are TOTAL tensors, so
 the tests exercise the full facade decomposition (nuclear + HF reference +
 CISD correlation).  Spatial orbitals, all-electron only.
 """
@@ -36,7 +35,8 @@ VG_APT_REF = np.array([
 
 
 def test_cisd_vg_apt_vs_reference(cisd_h2o2):
-    """The facade total reproduces the standalone validated reference, every
-    element."""
+    """The facade total (via CIderiv.velocity_dipole_derivatives(), migrated
+    verbatim from the retired on-CIwfn overlap code) reproduces the
+    standalone validated reference, every element."""
     P = np.asarray(pycc.apt(cisd_h2o2(), gauge='velocity').total).reshape(-1, 3)
     assert np.max(np.abs(P - VG_APT_REF)) < 1e-9, np.max(np.abs(P - VG_APT_REF))

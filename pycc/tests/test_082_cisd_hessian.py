@@ -8,8 +8,7 @@ itself validated independently: the analytic Hessian against Psi4/Gaussian
 finite differences (~1e-6), the AATs against the determinant-based apyib
 reference (B. Shumberger; ~1e-11 a.u.), and the LG-APT (Z-vector route)
 against finite differences of the analytic dipole.  The CIwfn port
-reproduces these values to ~1e-10; the test tolerance (1e-6) absorbs the
-printed precision of the reference.  The references are TOTAL tensors, so
+reproduces these values to ~1e-10.  The references are TOTAL tensors, so
 the tests exercise the full facade decomposition (nuclear + HF reference +
 CISD correlation).  Spatial orbitals, all-electron only.
 """
@@ -36,16 +35,18 @@ HESS_REF = np.array([
 
 
 def test_cisd_hessian_vs_reference(cisd_h2o2):
-    """The facade total (nuclear repulsion + HF reference + CISD correlation)
-    reproduces the standalone validated reference, every element."""
+    """The facade total (nuclear repulsion + HF reference + CIderiv-driven
+    CISD correlation) reproduces the standalone validated reference, every
+    element. Primary correctness gate for the CIderiv migration."""
     H = np.asarray(pycc.hessian(cisd_h2o2()).total)
     assert np.max(np.abs(H - HESS_REF)) < 1e-8, np.max(np.abs(H - HESS_REF))
 
 
 def test_cisd_hessian_symmetry_sum_rule(cisd_h2o2):
-    """The total Hessian is symmetric and
-    translationally invariant (sum over the second atom vanishes); the
-    correlation block obeys both on its own."""
+    """The total Hessian is symmetric and translationally invariant (sum
+    over the second atom vanishes); the correlation block (from CIderiv,
+    inherited from the base CorrelatedDerivs 2n+1 assembly) obeys both on
+    its own - FD-free, implementation-agnostic physics check."""
     comp = pycc.hessian(cisd_h2o2())
     for H in (np.asarray(comp.total), np.asarray(comp.correlation)):
         assert np.max(np.abs(H - H.T)) < 1e-9
