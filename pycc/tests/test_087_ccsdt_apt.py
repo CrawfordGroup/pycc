@@ -5,8 +5,9 @@ dX_{A,beta}, the mixed field/nuclear analog of the CCSD(T) polarizability (test_
 The (T) contribution needs no APT-specific code: the base CorrelatedDerivs.dipole_derivatives 2n+1
 assembly consumes the same (T)-aware relaxed and perturbed densities that the CCSD(T) gradient and
 polarizability already build (dt3 threaded through the perturbed amplitudes/Lambda/densities, the
-canonical perturbed-MO oo/vv dependent pairs).  CCderiv.dipole_derivatives overrides the base only
-to add the method guards (supported model, make_t3_density), exactly as CCderiv.polarizability does.
+canonical perturbed-MO oo/vv dependent pairs).  CCderiv inherits dipole_derivatives from
+CorrelatedDerivs; the supported-model check and the (T)-density build happen when the CCderiv is
+constructed.
 
 Oracle: CFOUR (xcfour, CALC=CCSD(T), VIB=EXACT, SCF_CONV=13, CC_CONV=12).  The DIPDER file holds the
 TOTAL APT (nuclear + HF + correlation).  The correlation contribution is DIPDER(CCSD(T)) minus the
@@ -311,15 +312,15 @@ def test_ccsdt_apt_routes_agree_water():
 
 
 def test_ccsdt_apt_guards():
-    """The misused paths raise rather than silently returning a wrong tensor: CCSD(T) built without
-    the (T) density intermediates (make_t3_density), and an unknown route."""
+    """Constructing a CCderiv sets the (T) density itself, so a CCSD(T) APT no longer needs the user
+    to pass make_t3_density (the former footgun); an unknown route still raises."""
     wfn = _cfour_wfn(WATER, 'false')
     cc_t = pycc.ccwfn(wfn, model='ccsd(t)')                     # CCSD(T), no make_t3_density
     cc_t.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                             # (T) needs make_t3_density
-        pycc.CCderiv(cc_t).dipole_derivatives()
+    pycc.CCderiv(cc_t)                                          # sets the flag + builds the (T) density
+    assert cc_t.make_t3_density is True and hasattr(cc_t, 'S1')
     cc = pycc.ccwfn(wfn)                                        # plain CCSD: reaches the route check
     cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                             # unknown route
+    with pytest.raises(ValueError):                             # unknown route still raises
         pycc.CCderiv(cc).dipole_derivatives(route='bogus')
     psi4.core.clean()

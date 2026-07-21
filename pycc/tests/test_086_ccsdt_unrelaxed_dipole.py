@@ -58,7 +58,7 @@ def _ccwfn(wfn, orbital_basis):
 def _unrelaxed_dipole(cc):
     """Unrelaxed correlation dipole Tr(D . mu) for all three axes, from the full unrelaxed 1-PDM
     (gradient_densities places the Doo/Dov/Dvo/Dvv blocks, including the (T) ov increment)."""
-    D = np.asarray(pycc.CCderiv(cc)._density().gradient_densities()[0])
+    D = np.asarray(pycc.CCderiv(cc).ccdensity.gradient_densities()[0])
     return np.array([np.einsum('pq,pq->', D, np.asarray(cc.H.mu[a])) for a in range(3)])
 
 

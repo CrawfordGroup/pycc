@@ -131,6 +131,25 @@ def test_facade_decomposition_and_total():
         assert np.max(np.abs(comp.total - (np.asarray(hf_pub) + np.asarray(mp_corr)))) < 1e-10, name
 
 
+def test_facade_accepts_driver_object():
+    """The facade takes a derivative driver (the driver-object API) as well as a bare wavefunction
+    (the transitional path); both give identical PropertyComponents for every property."""
+    _, mp = _wfns()
+    driver = pycc.MPderiv(mp)
+    cases = [
+        ("dipole",         pycc.dipole),
+        ("gradient",       pycc.gradient),
+        ("polarizability", pycc.polarizability),
+        ("hessian",        pycc.hessian),
+        ("apt-length",     lambda x: pycc.apt(x, 'length')),
+        ("apt-velocity",   lambda x: pycc.apt(x, 'velocity')),
+    ]
+    for name, fn in cases:
+        via_wfn, via_driver = fn(mp), fn(driver)
+        assert np.max(np.abs(via_driver.total - via_wfn.total)) < 1e-12, name
+        assert np.max(np.abs(via_driver.correlation - via_wfn.correlation)) < 1e-12, name
+
+
 def test_facade_hf_wavefunction():
     """pycc.<property>(HFwfn): correlation is an all-zeros block and the total equals the SCF
     public method (same shape/type as the MP2 result)."""

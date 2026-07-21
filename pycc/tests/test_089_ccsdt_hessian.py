@@ -6,8 +6,9 @@ As for the APT, the (T) contribution needs no Hessian-specific code: the base
 CorrelatedDerivs.hessian 2n+1 assembly (3N nuclear perturbed solves plus the full nuclear-nuclear
 second skeletons) consumes the same (T)-aware relaxed and perturbed densities the CCSD(T) gradient,
 polarizability, and APT already build (dt3 threaded through the perturbed amplitudes/Lambda/
-densities, canonical perturbed-MO oo/vv dependent pairs).  CCderiv.hessian adds only the method
-guards (supported model; CCSD(T) requires make_t3_density) and delegates to the base.
+densities, canonical perturbed-MO oo/vv dependent pairs).  CCderiv inherits hessian from
+CorrelatedDerivs; the supported-model check and the (T)-density build happen when the CCderiv is
+constructed.
 
 Oracle: CFOUR (xcfour, CALC=CCSD(T), VIB=EXACT, SCF_CONV=13, CC_CONV=12).  FCMFINAL holds the TOTAL
 force-constant matrix; the correlation contribution is FCMFINAL(CCSD(T)) - FCMFINAL(SCF) (frozen core
@@ -256,15 +257,15 @@ def test_ccsdt_hessian_cfour_hof_spatial():
 
 
 def test_ccsdt_hessian_guards():
-    """The misused paths raise rather than silently returning a wrong matrix: CCSD(T) built without
-    the (T) density intermediates (make_t3_density), and an unknown route."""
+    """Constructing a CCderiv sets the (T) density itself, so a CCSD(T) Hessian no longer needs the
+    user to pass make_t3_density (the former footgun); an unknown route still raises."""
     wfn = _cfour_wfn(WATER, 'false')
     cc_t = pycc.ccwfn(wfn, model='ccsd(t)')                     # CCSD(T), no make_t3_density
     cc_t.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                             # (T) needs make_t3_density
-        pycc.CCderiv(cc_t).hessian()
+    pycc.CCderiv(cc_t)                                          # sets the flag + builds the (T) density
+    assert cc_t.make_t3_density is True and hasattr(cc_t, 'S1')
     cc = pycc.ccwfn(wfn)                                        # plain CCSD: reaches the route check
     cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                             # unknown route
+    with pytest.raises(ValueError):                             # unknown route still raises
         pycc.CCderiv(cc).hessian(route='bogus')
     psi4.core.clean()
