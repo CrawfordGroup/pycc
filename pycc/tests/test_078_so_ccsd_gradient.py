@@ -4,9 +4,8 @@ Spin-orbital (UHF) CCSD analytic nuclear gradient -- pycc.gradient(ccwfn) / CCde
 The spin-orbital gradient mirrors the spatial one (Z-vector route) with the antisymmetrized
 generalized-Fock Lagrangian, an inline orbital Hessian, and the spin-orbital derivative integrals.
 Validated by: the SO == spatial keystone (a closed-shell RHF driven through the spin-orbital path
-must reproduce the spatial closed-shell gradient), psi4's analytic UHF-CCSD gradient, the
-independent explicit-derivative route (Z-vector == explicit), and -- for frozen core, which psi4's
-CC gradients do not support -- the spatial frozen-core gradient.
+must reproduce the spatial closed-shell gradient), psi4's analytic UHF-CCSD gradient, and -- for
+frozen core, which psi4's CC gradients do not support -- the spatial frozen-core gradient.
 """
 
 import numpy as np

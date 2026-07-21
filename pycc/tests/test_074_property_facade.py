@@ -189,17 +189,12 @@ def test_apt_bad_gauge():
 
 
 def test_facade_route_option():
-    """route (MP2 correlation algorithm) is exposed and passed through; the two APT 2n+1 routes
-    agree, and route is ignored for HF."""
-    hf, mp = _wfns()
+    """The APT route (the only property that still takes one) is exposed and passed through: its
+    two 2n+1 sub-routes (field vs nuclear) give the same tensor."""
+    _, mp = _wfns()
     d = pycc.MPderiv(mp)
-    assert np.max(np.abs(pycc.polarizability(d, route='2n+1').total
-                         - pycc.polarizability(d).total)) < 1e-12
-    assert np.max(np.abs(pycc.hessian(d, route='2n+1').total
-                         - pycc.hessian(d).total)) < 1e-12
     assert np.max(np.abs(pycc.apt(d, 'length', route='2n+1-nuclear').total
                          - pycc.apt(d, 'length', route='2n+1-field').total)) < 1e-10
-    assert np.all(pycc.hessian(hf, route='2n+1').correlation == 0.0)
 
 
 def test_facade_orbital_gauge_option():

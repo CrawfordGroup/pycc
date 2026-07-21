@@ -252,13 +252,3 @@ def test_so_ccsd_hessian_cfour_hof():
     psi4.core.clean()
     _check(_ccsd_hess(HOF, 'true', 'spinorbital'), CFOUR_HESS_HOF_FC)
     psi4.core.clean()
-
-
-def test_ccsd_hessian_route_guard():
-    """An unknown Hessian route raises rather than silently returning a wrong matrix (only '2n+1')."""
-    wfn = _cfour_wfn(WATER, 'false')
-    cc = pycc.ccwfn(wfn)
-    cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):
-        pycc.CCderiv(cc).hessian(route='bogus')
-    psi4.core.clean()
