@@ -206,44 +206,53 @@ class CCderiv(CorrelatedDerivs):
         r2 += tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3) + tmp.swapaxes(0, 1).swapaxes(2, 3)
         return r1, r2
 
-    def _perturbed_amplitudes(self, df, deri, dL, hbar, maxiter=None, rconv=None):
+    def _perturbed_amplitudes(self, df, deri, dL, hbar, omega=0.0, maxiter=None, rconv=None):
         r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
         equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation ``x`` splits into the
         ``d_x t`` part (the CCSD Jacobian :meth:`_ccsd_jacobian`, ``<mu|[HBAR, d_x t]|0>``) and the
         fixed-``t`` part -- the perturbation-dependent inhomogeneity ``B^x``, the derivative of the
         **bare** Hamiltonian similarity-transformed at fixed ``t``::
 
-            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
+            (HBAR - omega) . dt = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            (\bar{H} - \omega)\,\partial_x t = -B^{x}, \qquad
             B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
         (Note ``B^x`` differentiates only the integrals -- ``t`` is held fixed -- so it is NOT
         ``d_x HBAR``, whose ``[HBAR, d_x t]`` piece is the Jacobian LHS.)  ``B^x`` is computed by
         evaluating ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
         ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation), the residual formula
-        supplying the ``e^-T ( ) e^T`` transform.  Iterate ``dt += (B + HBAR.dt)/D`` with DIIS.
-        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
+        supplying the ``e^-T ( ) e^T`` transform.  The singles source's leading term is the ``[v,o]``
+        block ``A_ai`` -- ``<Phi_i^a|(d_x H)|0> = (d_x f)_{ai}`` -- supplied directly by ``r_T1``'s
+        leading ``F[v,o]`` term (\S ``ccwfn.r_T1``).  This matters only for an anti-Hermitian
+        perturbation (the magnetic dipole): for a Hermitian one (the Fock derivative, the electric
+        dipole) ``[v,o] == [o,v]`` and it is the ordinary ``f_ia``.  Iterate
+        ``dt += (B + HBAR.dt - omega dt)/(D + omega)``
+        with DIIS.  ``omega`` is the CC linear-response frequency (the ``-omega dt`` residual shift and
+        ``(D + omega)`` denominators; default ``0`` reproduces the static derivative equation exactly
+        -- see the CC linear-response section).  ``maxiter``/``rconv`` default to the wavefunction's
+        convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
-        Dia, Dijab = cc.Dia, cc.Dijab
+        Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
+        o, v = cc.o, cc.v
         saveERI, saveL = cc.H.ERI, cc.H.L
         cc.H.ERI, cc.H.L = deri, dL
         try:
             B1, B2 = cc.residuals(df, cc.t1, cc.t2)
         finally:
             cc.H.ERI, cc.H.L = saveERI, saveL
-        B1, B2 = np.asarray(B1), np.asarray(B2)
-        X1, X2 = B1 / Dia, B2 / Dijab
+        B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
+        X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
         for _ in range(maxiter):
             j1, j2 = self._ccsd_jacobian(X1, X2, hbar)
-            r1 = B1 + j1
-            r2 = 0.5 * B2 + j2
+            r1 = B1 + j1 - omega * X1
+            r2 = 0.5 * (B2 - omega * X2) + j2
             r2 = r2 + r2.swapaxes(0, 1).swapaxes(2, 3)
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
@@ -253,38 +262,44 @@ class CCderiv(CorrelatedDerivs):
             X1, X2 = diis.extrapolate(X1, X2)
         return X1, X2
 
-    def _so_perturbed_amplitudes(self, df, deri, hbar, maxiter=None, rconv=None):
+    def _so_perturbed_amplitudes(self, df, deri, hbar, omega=0.0, maxiter=None, rconv=None):
         r"""Spin-orbital perturbed CCSD amplitudes ``dt/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
         no 0.5 and no final symmetrization)::
 
-            (HBAR . dt) = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
+            (HBAR - omega) . dt = -B^x,   B^x_mu = <mu| e^-T (d_x H) e^T |0>
 
         .. math::
 
-            \bar{H}\,\partial_x t = -B^{x}, \qquad
+            (\bar{H} - \omega)\,\partial_x t = -B^{x}, \qquad
             B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
         ``B^x`` (fixed-``t``) is ``cc.residuals`` evaluated with the perturbed **bare** integrals
-        (``df``, ``deri`` swapped in).  ``maxiter``/``rconv`` default to the wavefunction's
-        convergence (``ccwfn.maxiter``/``r_conv``)."""
+        (``df``, ``deri`` swapped in); the singles source's leading term is the ``[v,o]`` block ``A_ai``
+        supplied by ``_so_r_T1``'s leading ``F[v,o]`` term (correct for an anti-Hermitian perturbation
+        like the magnetic dipole, identical to ``[o,v]`` for a symmetric one -- see
+        :meth:`_perturbed_amplitudes`).
+        ``omega`` is the CC linear-response frequency (``-omega dt``
+        residual shift, ``(D + omega)`` denominators; default ``0`` = the static derivative equation).
+        ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
-        Dia, Dijab = cc.Dia, cc.Dijab
+        o, v = cc.o, cc.v
+        Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         saveERI = cc.H.ERI
         cc.H.ERI = deri
         try:
             B1, B2 = cc.residuals(df, cc.t1, cc.t2)
         finally:
             cc.H.ERI = saveERI
-        B1, B2 = np.asarray(B1), np.asarray(B2)
-        X1, X2 = B1 / Dia, B2 / Dijab
+        B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
+        X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
         for _ in range(maxiter):
             j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
-            r1, r2 = B1 + j1, B2 + j2
+            r1, r2 = B1 + j1 - omega * X1, B2 + j2 - omega * X2
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
             if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
@@ -495,7 +510,8 @@ class CCderiv(CorrelatedDerivs):
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
-    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
+    def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None,
+                          omega=0.0, maxiter=None, rconv=None):
         r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear): a single inhomogeneous linear solve
         that reuses ``cclambda``'s ground-state Lambda residual ``r_L`` as the operator (no separate
         perturbed-multiplier amplitudes).  Differentiating the Lambda
@@ -524,7 +540,7 @@ class CCderiv(CorrelatedDerivs):
         rconv = cc.r_conv if rconv is None else rconv
         o, v = cc.o, cc.v
         c = self.contract
-        Dia, Dijab = cc.Dia, cc.Dijab
+        Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         l1, l2 = np.asarray(lam.l1), np.asarray(lam.l2)
         t2 = np.asarray(cc.t2)
         L0 = np.asarray(cc.H.L)
@@ -559,8 +575,8 @@ class CCderiv(CorrelatedDerivs):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
             j1 = rL1(dl1, dl2, H0, Gvv_d, Goo_d) - rL1_0
             j2 = rL2(dl1, dl2, L0, H0, Gvv_d, Goo_d) - rL2_0
-            r1 = B1 + j1
-            r2 = B2 + j2
+            r1 = B1 + j1 + omega * dl1
+            r2 = B2 + j2 + omega * dl2
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
             if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
@@ -569,7 +585,8 @@ class CCderiv(CorrelatedDerivs):
             dl1, dl2 = diis.extrapolate(dl1, dl2)
         return dl1, dl2
 
-    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None, maxiter=None, rconv=None):
+    def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None,
+                             omega=0.0, maxiter=None, rconv=None):
         r"""Spin-orbital perturbed Lambda ``dLambda/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_lambda` (SO ``_so_r_L``; inhomogeneity = ``r_L`` with perturbed HBAR +
         perturbed ERI, unperturbed G, plus the ``dG.H`` / ``dG.<pq||rs>`` product-rule halves)::
@@ -591,7 +608,7 @@ class CCderiv(CorrelatedDerivs):
         rconv = cc.r_conv if rconv is None else rconv
         o, v = cc.o, cc.v
         c = self.contract
-        Dia, Dijab = cc.Dia, cc.Dijab
+        Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         l1, l2 = np.asarray(lam.l1), np.asarray(lam.l2)
         t2 = np.asarray(cc.t2)
         ERI0 = np.asarray(cc.H.ERI)
@@ -625,7 +642,7 @@ class CCderiv(CorrelatedDerivs):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
             j1 = rL1(dl1, dl2, H0, Gvv_d, Goo_d) - rL1_0
             j2 = rL2(dl1, dl2, ERI0, H0, Gvv_d, Goo_d) - rL2_0
-            r1, r2 = B1 + j1, B2 + j2
+            r1, r2 = B1 + j1 + omega * dl1, B2 + j2 + omega * dl2
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
             if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
@@ -918,3 +935,143 @@ class CCderiv(CorrelatedDerivs):
         dG[v, o, v, v] = 0.5 * dDvvvo.transpose(2, 3, 0, 1)
         dG = 0.25 * (dG + dG.transpose(1, 0, 3, 2) + dG.transpose(2, 3, 0, 1) + dG.transpose(3, 2, 1, 0))
         return dD, dG
+
+    # ---- CC linear response: orbital-unrelaxed (dynamic) properties ------
+    # The frequency-dependent response properties (dipole polarizability, optical
+    # rotation) are the SAME perturbed-amplitude machinery as the static derivative
+    # properties above, in a different configuration: orbital relaxation OFF and a
+    # frequency shift ON.  Two differences from the derivative path:
+    #   (1) the field enters the amplitude equations as the BARE MO dipole
+    #       (df = mu, deri = 0, dL = 0) -- no CPHF folding -- so the perturbed
+    #       T/Lambda are the orbital-unrelaxed field derivatives, i.e. exactly
+    #       ccresponse's right/left perturbed amplitudes X/Y.  (cc.residuals with the
+    #       bare dipole and zeroed two-electron integrals IS the similarity-transformed
+    #       dipole, ccresponse's pertbar source; verified dt == X, dl == Y to ~1e-13
+    #       at omega = 0.)
+    #   (2) the tensor contracts the UNRELAXED perturbed 1-PDM (the leaf density hook,
+    #       no Z-vector / dependent pairs) with the bare MO dipole,
+    #       alpha_ab(omega) = Tr(d_b D(omega) . mu_a), no U.mu orbital terms.
+    # Because there is no CPHF response the whole quantity lands in the correlation
+    # block; the reference (SCF) block is zero.  This is the CC RESPONSE (orbital-
+    # unrelaxed) property, distinct from the relaxed static `polarizability` above
+    # even at omega = 0 -- validate against ccresponse, not the derivative path.  See
+    # docs/ccresponse_reformulation_plan.md.  Static and dynamic (any omega) CCSD are
+    # implemented; the frequency enters the shared perturbed-amplitude/multiplier solvers
+    # as the -/+ omega residual shift (-omega on the right dt, +omega on the left dl) with
+    # (D + omega) denominators (their `omega` argument, default 0 = the derivative path).
+    # Optical rotation and CCSD(T) response are staged to follow.
+
+    def linear_response(self, a, b, omega=0.0):
+        r"""Orbital-unrelaxed CC linear response function ``<<a; b>>_omega`` -- the
+        general engine behind :meth:`response_polarizability` / :meth:`optical_rotation`.
+        The 3x3 tensor is assembled by the density route::
+
+            <<a; b>>_omega[i,j] = Tr(d_bj D(omega) . a_i)
+
+        .. math::
+
+            \langle\langle a; b \rangle\rangle_\omega^{ij}
+                = \mathrm{Tr}\big(\partial_{b_j} D(\omega)\,a_i\big)
+
+        where ``d_bj D`` is the orbital-unrelaxed 1-PDM perturbed by component ``j`` of
+        operator ``b`` (:meth:`_response_density`) and ``a_i`` is the bare MO integral of
+        component ``i`` of operator ``a``.  ``a``/``b`` are operator keys following
+        ``ccresponse``'s idiom (``'mu'`` = electric dipole, ``'m'`` = magnetic dipole);
+        ``omega`` is a single field frequency (a sweep loops at the call site).  This is
+        the CC response (unrelaxed) value, not the relaxed derivative :meth:`polarizability`."""
+        a_ints = self._perturbation_ints(a)
+        dD = [self._response_density(self._perturbation_ints(b)[j], omega) for j in range(3)]
+        tensor = np.zeros((3, 3))
+        for i in range(3):
+            for j in range(3):
+                tensor[i, j] = self.contract('pq,qp->', dD[j], a_ints[i])
+        return tensor
+
+    def response_polarizability(self, omega=0.0):
+        r"""Orbital-unrelaxed dynamic dipole polarizability ``alpha(omega)``, a 3x3 array::
+
+            alpha_ab(omega) = -<<mu; mu>>_omega = -Tr(d_b D(omega) . mu_a)
+
+        .. math::
+
+            \alpha_{ab}(\omega) = -\langle\langle \mu; \mu \rangle\rangle_\omega
+                = -\mathrm{Tr}\big(\partial_{b} D(\omega)\,\mu_a\big)
+
+        ``omega = 0`` gives the static orbital-unrelaxed polarizability (the CC response
+        value, distinct from the relaxed derivative :meth:`polarizability`); ``omega != 0``
+        the dynamic (frequency-dependent) polarizability.  The overall sign is the
+        ``alpha = -<<mu; mu>>`` convention of ``ccresponse.polarizability``."""
+        return -self.linear_response('mu', 'mu', omega)
+
+    def optical_rotation(self, omega):
+        r"""Orbital-unrelaxed optical-rotation tensor ``G'(omega) = <<mu; m>>_omega``, a 3x3 array --
+        the odd-in-omega part of the density response function of the electric dipole ``mu`` to the
+        magnetic dipole ``m``::
+
+            G'_ab(omega) = <<mu; m>>_omega
+                         = 1/2 [ Tr(d_{m_b} D(omega) . mu_a) - Tr(d_{m_b} D(-omega) . mu_a) ]
+
+        .. math::
+
+            G'_{ab}(\omega) = \langle\langle \mu; m \rangle\rangle_\omega
+                = \tfrac{1}{2}\big[\mathrm{Tr}(\partial_{m_b} D(\omega)\,\mu_a)
+                                  - \mathrm{Tr}(\partial_{m_b} D(-\omega)\,\mu_a)\big]
+
+        The magnetic dipole is anti-Hermitian, so unlike the electric polarizability a single
+        density evaluation is not the response function: the symmetric ``ccresponse.optrot`` (via
+        ``linresp_sym``) is ``0.5*(S1 - S2)`` with ``S1 = linresp_sym(mu@-omega, m@+omega)`` and
+        ``S2`` its frequency-swap, which equals this odd-in-omega combination of the asymmetric
+        density response (verified against ``ccresponse.optrot`` to ~1e-12).  ``omega != 0`` (there
+        is no static optical rotation).  Not symmetric in ``a``/``b`` (a pseudotensor).  The magnetic
+        integrals are the pure-real operator of :meth:`_perturbation_ints` (the ``i`` is factored out,
+        as in ``ccresponse``), so the perturbed amplitudes stay real."""
+        if omega == 0.0:
+            raise ValueError("Optical rotation requires a nonzero field frequency.")
+        return 0.5 * (self.linear_response('mu', 'm', omega)
+                      - self.linear_response('mu', 'm', -omega))
+
+    def _perturbation_ints(self, key):
+        """Bare MO integrals of a one-electron perturbation operator, as a list of three
+        (nmo x nmo) arrays (Cartesian x, y, z).  ``'mu'`` returns the electric-dipole
+        integrals (``H.mu``); ``'m'`` the magnetic-dipole integrals (``H.m``, stored pure
+        imaginary in :mod:`pycc.hamiltonian` for the RT-CC code -- the ``i`` is factored
+        out here as in :meth:`ccresponse._build_pertbar`, since the response values are
+        bilinear in the perturbation)."""
+        cc = self.ccwfn
+        if key == 'mu':
+            return [np.asarray(cc.H.mu[x]) for x in range(3)]
+        if key == 'm':
+            return [np.real(-1.0j * np.asarray(cc.H.m[x])) for x in range(3)]
+        raise KeyError(f"Unknown perturbation operator key: {key!r} (expected 'mu' or 'm').")
+
+    def _response_density(self, op_ints, omega=0.0):
+        r"""Orbital-unrelaxed perturbed 1-PDM ``d_op D(omega)`` for a bare one-electron
+        operator ``op_ints`` (full-MO ``nmo x nmo``).  Solves the perturbed amplitudes and
+        multipliers with the BARE operator as the perturbation (``df = op_ints``, no
+        perturbed two-electron integrals, no CPHF folding -- the orbital-unrelaxed field
+        derivative), reusing the converged ``self.hbar``/``self.cclambda`` from ``__init__``,
+        then builds the unrelaxed perturbed correlation 1-PDM
+        (:meth:`_perturbed_correlation_densities`; no Z-vector, no dependent pairs)::
+
+            (HBAR - omega) . dt = -B(op),    dl with +omega,    d_op D = dD(dt, dl)
+
+        The perturbed amplitudes ``dt`` take the ``-omega`` right-hand shift and the multipliers
+        ``dl`` the ``+omega`` left-hand shift (both with ``(D + omega)`` denominators); ``omega = 0``
+        recovers the static case.  CCSD only for now; CCSD(T) (perturbed (T) sources) is a later phase."""
+        cc = self.ccwfn
+        lam = self.cclambda
+        hbar = self.hbar
+        if cc.model.upper() != 'CCSD':
+            raise NotImplementedError(
+                "CC linear response is implemented for CCSD only; "
+                f"not {cc.model} (CCSD(T) response is a later phase).")
+        zero_eri = np.zeros_like(np.asarray(cc.H.ERI))
+        if cc.orbital_basis == 'spinorbital':
+            dt1, dt2 = self._so_perturbed_amplitudes(op_ints, zero_eri, hbar, omega=omega)
+            dl1, dl2 = self._so_perturbed_lambda(op_ints, zero_eri, dt1, dt2, hbar, lam, omega=omega)
+        else:
+            zero_L = np.zeros_like(np.asarray(cc.H.L))
+            dt1, dt2 = self._perturbed_amplitudes(op_ints, zero_eri, zero_L, hbar, omega=omega)
+            dl1, dl2 = self._perturbed_lambda(op_ints, zero_eri, zero_L, dt1, dt2, hbar, lam, omega=omega)
+        dD, _ = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        return dD
