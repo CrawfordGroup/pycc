@@ -1,6 +1,6 @@
 # CC linear-response reformulation — design plan
 
-**Status:** design/discussion (not started). Living document.
+**Status:** Phase 1 complete (static unrelaxed CCSD polarizability); Phases 2-4 to follow. Living document.
 
 ## Goal
 
@@ -99,12 +99,20 @@ has spurious poles at the SCF excitation frequencies.
 
 ## Phasing
 
-1. **CCSD static unrelaxed polarizability (omega = 0).** Isolates the unrelaxed-density step with no
-   frequency. Validate three ways:
-   - **amplitude-level:** our `dT`/`dL` vs `ccresponse`'s `X`/`Y` from `solve_right`/`solve_left`
-     at omega = 0 (the earliest, sharpest check — before any density contraction);
-   - **tensor:** vs `ccresponse.linresp_asym` / `linresp_sym`;
-   - **finite difference of the unrelaxed dipole** (`d mu_unrelaxed / dF`).
+1. **CCSD static unrelaxed polarizability (omega = 0). DONE.** `CCderiv.response_polarizability(0)`
+   plus the general `linear_response('mu','mu',0)` engine and the `_response_density`/
+   `_perturbation_ints` helpers; spatial and spin-orbital, all-electron and frozen core. The mechanism
+   is exactly as designed: the existing `_perturbed_amplitudes`/`_perturbed_lambda` fed the bare dipole
+   (`df = mu`, `deri = 0`, `dL = 0`, no CPHF) reproduce the response amplitudes with no changes to those
+   solvers. Validated:
+   - **amplitude-level:** our `dt1`/`dt2` reproduce `ccresponse.solve_right`'s `X1`/`X2` at omega = 0 to
+     ~1e-13 (the sharpest check, before any density contraction) -- confirmed during development;
+   - **tensor:** `response_polarizability(0)` vs `ccresponse.polarizability(0)` to ~1e-11
+     (test_092; spatial, SO, off-diagonal HOF, and frozen core), and confirmed distinct from the
+     relaxed derivative `polarizability`;
+   - the FD-of-unrelaxed-dipole check was dropped in favor of the `ccresponse` oracle: the two routes
+     (symmetric right-amplitude response vs asymmetric density contraction) share no machinery, so the
+     match is a stronger, machine-precision cross-check than a truncation-limited finite difference.
 2. **Dynamic (omega != 0).** Reproduce `ccresponse` at several frequencies; same amplitude-level +
    tensor checks.
 3. **Optical rotation.** Operators are the electric dipole `mu` and the magnetic dipole `m` (the

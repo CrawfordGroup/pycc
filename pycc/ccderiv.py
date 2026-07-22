@@ -918,3 +918,124 @@ class CCderiv(CorrelatedDerivs):
         dG[v, o, v, v] = 0.5 * dDvvvo.transpose(2, 3, 0, 1)
         dG = 0.25 * (dG + dG.transpose(1, 0, 3, 2) + dG.transpose(2, 3, 0, 1) + dG.transpose(3, 2, 1, 0))
         return dD, dG
+
+    # ---- CC linear response: orbital-unrelaxed (dynamic) properties ------
+    # The frequency-dependent response properties (dipole polarizability, optical
+    # rotation) are the SAME perturbed-amplitude machinery as the static derivative
+    # properties above, in a different configuration: orbital relaxation OFF and a
+    # frequency shift ON.  Two differences from the derivative path:
+    #   (1) the field enters the amplitude equations as the BARE MO dipole
+    #       (df = mu, deri = 0, dL = 0) -- no CPHF folding -- so the perturbed
+    #       T/Lambda are the orbital-unrelaxed field derivatives, i.e. exactly
+    #       ccresponse's right/left perturbed amplitudes X/Y.  (cc.residuals with the
+    #       bare dipole and zeroed two-electron integrals IS the similarity-transformed
+    #       dipole, ccresponse's pertbar source; verified dt == X, dl == Y to ~1e-13
+    #       at omega = 0.)
+    #   (2) the tensor contracts the UNRELAXED perturbed 1-PDM (the leaf density hook,
+    #       no Z-vector / dependent pairs) with the bare MO dipole,
+    #       alpha_ab(omega) = Tr(d_b D(omega) . mu_a), no U.mu orbital terms.
+    # Because there is no CPHF response the whole quantity lands in the correlation
+    # block; the reference (SCF) block is zero.  This is the CC RESPONSE (orbital-
+    # unrelaxed) property, distinct from the relaxed static `polarizability` above
+    # even at omega = 0 -- validate against ccresponse, not the derivative path.  See
+    # docs/ccresponse_reformulation_plan.md.  Phase 1: static (omega = 0) CCSD; the
+    # dynamic case (omega != 0), optical rotation, and CCSD(T) are staged to follow.
+
+    def linear_response(self, a, b, omega=0.0):
+        r"""Orbital-unrelaxed CC linear response function ``<<a; b>>_omega`` -- the
+        general engine behind :meth:`response_polarizability` / :meth:`optical_rotation`.
+        The 3x3 tensor is assembled by the density route::
+
+            <<a; b>>_omega[i,j] = Tr(d_bj D(omega) . a_i)
+
+        .. math::
+
+            \langle\langle a; b \rangle\rangle_\omega^{ij}
+                = \mathrm{Tr}\big(\partial_{b_j} D(\omega)\,a_i\big)
+
+        where ``d_bj D`` is the orbital-unrelaxed 1-PDM perturbed by component ``j`` of
+        operator ``b`` (:meth:`_response_density`) and ``a_i`` is the bare MO integral of
+        component ``i`` of operator ``a``.  ``a``/``b`` are operator keys following
+        ``ccresponse``'s idiom (``'mu'`` = electric dipole, ``'m'`` = magnetic dipole);
+        ``omega`` is a single field frequency (a sweep loops at the call site).  This is
+        the CC response (unrelaxed) value, not the relaxed derivative :meth:`polarizability`."""
+        a_ints = self._perturbation_ints(a)
+        dD = [self._response_density(self._perturbation_ints(b)[j], omega) for j in range(3)]
+        tensor = np.zeros((3, 3))
+        for i in range(3):
+            for j in range(3):
+                tensor[i, j] = self.contract('pq,qp->', dD[j], a_ints[i])
+        return tensor
+
+    def response_polarizability(self, omega=0.0):
+        r"""Orbital-unrelaxed dynamic dipole polarizability ``alpha(omega)``, a 3x3 array::
+
+            alpha_ab(omega) = -<<mu; mu>>_omega = -Tr(d_b D(omega) . mu_a)
+
+        .. math::
+
+            \alpha_{ab}(\omega) = -\langle\langle \mu; \mu \rangle\rangle_\omega
+                = -\mathrm{Tr}\big(\partial_{b} D(\omega)\,\mu_a\big)
+
+        ``omega = 0`` gives the static orbital-unrelaxed polarizability (the CC response
+        value, distinct from the relaxed derivative :meth:`polarizability`).  The overall
+        sign is the ``alpha = -<<mu; mu>>`` convention of ``ccresponse.polarizability``."""
+        return -self.linear_response('mu', 'mu', omega)
+
+    def optical_rotation(self, omega):
+        r"""Orbital-unrelaxed optical-rotation tensor ``G'(omega) = <<mu; m>>_omega``
+        (electric dipole ``mu`` and magnetic dipole ``m``), a 3x3 array; ``omega != 0``
+        (there is no static optical rotation).  Not yet implemented -- staged after the
+        dynamic (omega != 0) polarizability; see docs/ccresponse_reformulation_plan.md."""
+        raise NotImplementedError(
+            "Optical rotation (<<mu; m>>) is a later phase of the CC linear-response "
+            "reformulation; only the static polarizability is implemented so far.")
+
+    def _perturbation_ints(self, key):
+        """Bare MO integrals of a one-electron perturbation operator, as a list of three
+        (nmo x nmo) arrays (Cartesian x, y, z).  ``'mu'`` returns the electric-dipole
+        integrals (``H.mu``); ``'m'`` the magnetic-dipole integrals (``H.m``, stored pure
+        imaginary in :mod:`pycc.hamiltonian` for the RT-CC code -- the ``i`` is factored
+        out here as in :meth:`ccresponse._build_pertbar`, since the response values are
+        bilinear in the perturbation)."""
+        cc = self.ccwfn
+        if key == 'mu':
+            return [np.asarray(cc.H.mu[x]) for x in range(3)]
+        if key == 'm':
+            return [np.real(-1.0j * np.asarray(cc.H.m[x])) for x in range(3)]
+        raise KeyError(f"Unknown perturbation operator key: {key!r} (expected 'mu' or 'm').")
+
+    def _response_density(self, op_ints, omega=0.0):
+        r"""Orbital-unrelaxed perturbed 1-PDM ``d_op D(omega)`` for a bare one-electron
+        operator ``op_ints`` (full-MO ``nmo x nmo``).  Solves the perturbed amplitudes and
+        multipliers with the BARE operator as the perturbation (``df = op_ints``, no
+        perturbed two-electron integrals, no CPHF folding -- the orbital-unrelaxed field
+        derivative), reusing the converged ``self.hbar``/``self.cclambda`` from ``__init__``,
+        then builds the unrelaxed perturbed correlation 1-PDM
+        (:meth:`_perturbed_correlation_densities`; no Z-vector, no dependent pairs)::
+
+            (HBAR -/+ omega) . dt = -B(op),    dl similarly,    d_op D = dD(dt, dl)
+
+        CCSD only for now; the dynamic case (``omega != 0``, the ``-/+ omega`` residual
+        shift) and CCSD(T) (perturbed (T) sources) are later phases."""
+        cc = self.ccwfn
+        lam = self.cclambda
+        hbar = self.hbar
+        if cc.model.upper() != 'CCSD':
+            raise NotImplementedError(
+                "CC linear response is implemented for CCSD only (Phase 1); "
+                f"not {cc.model}.")
+        if omega != 0.0:
+            raise NotImplementedError(
+                "Dynamic CC response (omega != 0) is a later phase; only the static "
+                "(omega = 0) polarizability is implemented so far.")
+        zero_eri = np.zeros_like(np.asarray(cc.H.ERI))
+        if cc.orbital_basis == 'spinorbital':
+            dt1, dt2 = self._so_perturbed_amplitudes(op_ints, zero_eri, hbar)
+            dl1, dl2 = self._so_perturbed_lambda(op_ints, zero_eri, dt1, dt2, hbar, lam)
+        else:
+            zero_L = np.zeros_like(np.asarray(cc.H.L))
+            dt1, dt2 = self._perturbed_amplitudes(op_ints, zero_eri, zero_L, hbar)
+            dl1, dl2 = self._perturbed_lambda(op_ints, zero_eri, zero_L, dt1, dt2, hbar, lam)
+        dD, _ = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
+        return dD
