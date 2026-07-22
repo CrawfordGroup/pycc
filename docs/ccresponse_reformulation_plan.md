@@ -1,6 +1,6 @@
 # CC linear-response reformulation — design plan
 
-**Status:** Phase 1 complete (static unrelaxed CCSD polarizability); Phases 2-4 to follow. Living document.
+**Status:** Phases 1-2 complete (static + dynamic unrelaxed CCSD polarizability); Phases 3-4 to follow. Living document.
 
 ## Goal
 
@@ -113,8 +113,16 @@ has spurious poles at the SCF excitation frequencies.
    - the FD-of-unrelaxed-dipole check was dropped in favor of the `ccresponse` oracle: the two routes
      (symmetric right-amplitude response vs asymmetric density contraction) share no machinery, so the
      match is a stronger, machine-precision cross-check than a truncation-limited finite difference.
-2. **Dynamic (omega != 0).** Reproduce `ccresponse` at several frequencies; same amplitude-level +
-   tensor checks.
+2. **Dynamic (omega != 0). DONE.** The frequency is threaded through the shared solvers as an `omega`
+   argument (default `0`, leaving the derivative path untouched): the `-omega dt` right-hand residual
+   shift in `_perturbed_amplitudes`/`_so_perturbed_amplitudes`, the `+omega dl` left-hand shift in
+   `_perturbed_lambda`/`_so_perturbed_lambda`, and `(D + omega)` denominators throughout. The left
+   (multiplier) frequency term is the full `+omega dl` (no 1/2 on the doubles): the perturbed-Lambda
+   solver is built on `cclambda`'s `r_L`, whose doubles normalization differs from `ccresponse`'s
+   `r_Y` (which carries `0.5*omega*Y2`) -- verified by the tensor match, not assumed.
+   `response_polarizability(omega)` reproduces `ccresponse.polarizability(omega)` to ~1e-11 at
+   omega != 0 (test_092; spatial and spin-orbital, positive and negative frequency, with the static
+   tensor recovered as omega -> 0 and normal dispersion away from it).
 3. **Optical rotation.** Operators are the electric dipole `mu` and the magnetic dipole `m` (the
    `<<mu; m>>` tensor) — not angular momentum. **omega != 0 only** (there is no static optical
    rotation). Antisymmetric combination + mixed `(1+Lambda)` terms.
