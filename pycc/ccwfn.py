@@ -721,7 +721,7 @@ class CCwfn(Wavefunction):
         -----
         CCSD form (repeated indices summed)::
 
-            r_t1_ia = f_ia + t_ie F_ae - F_mi t_ma
+            r_t1_ia = f_ai + t_ie F_ae - F_mi t_ma
                     + (2 t2_imae - t2_imea) F_me
                     + t_nf L_nafi
                     + (2 t2_mief - t2_mife) <ma|ef>
@@ -730,7 +730,7 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t1}_{ia} = f_{ia} &+ t^e_i F_{ae} - F_{mi} t^a_m \\
+            r^{t1}_{ia} = f_{ai} &+ t^e_i F_{ae} - F_{mi} t^a_m \\
             &+ \left(2 t^{ae}_{im} - t^{ea}_{im}\right) F_{me} \\
             &+ t^f_n L_{nafi} \\
             &+ \left(2 t^{ef}_{mi} - t^{fe}_{mi}\right) \langle ma|ef \rangle \\
@@ -742,7 +742,7 @@ class CCwfn(Wavefunction):
         if self.model == 'CCD':
             r_T1 = zeros_like(t1)
         else:
-            r_T1 = clone(F[o,v])
+            r_T1 = clone(F[v, o].swapaxes(0, 1))        # f_ai = <Phi_i^a|F|0> (the [v,o] block; = F[o,v] for a symmetric F)
             r_T1 = r_T1 + contract('ie,ae->ia', t1, Fae)
             r_T1 = r_T1 - contract('mi,ma->ia', Fmi, t1)
             r_T1 = r_T1 + contract('imae,me->ia', (2.0*t2 - t2.swapaxes(2,3)), Fme)
@@ -760,6 +760,11 @@ class CCwfn(Wavefunction):
         CCSD form), then symmetrizes the spin-adapted "half" residual as
         r_t2_ijab += r_t2_jiba. Fae/Fmi/Fme and Wmnij/Wmbej/Wmbje/Zmbij are the
         precomputed intermediates.
+
+        The Lambda-independent leading term is the source <Phi_ij^ab|V|0> = <ab|ij>
+        (the [v,v,o,o] block, swap-axed into [i,j,a,b]), not <ij|ab>: the two are
+        equal for real (Hermitian) integrals but complex conjugates for complex ERI,
+        where <ab|ij> is the correct block (cf. r_T1's f_ai leading term).
 
         Returns
         -------
@@ -785,7 +790,7 @@ class CCwfn(Wavefunction):
         and F_mj = Fmi are the CCD intermediates. Before the i<->j / a<->b
         symmetrization (repeated indices summed)::
 
-            r_t2_ijab = 1/2 <ij|ab>
+            r_t2_ijab = 1/2 <ab|ij>
                       + t2_ijae F_be - t2_imab F_mj
                       + 1/2 t2_mnab W_mnij + 1/2 t2_ijef <ab|ef>
                       + (t2_imae - t2_imea) W_mbej
@@ -795,7 +800,7 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ab|ij \rangle \\
             &\quad + t^{ae}_{ij} F_{be} - t^{ab}_{im} F_{mj} \\
             &\quad + \tfrac{1}{2} t^{ab}_{mn} W_{mnij} + \tfrac{1}{2} t^{ef}_{ij} \langle ab|ef \rangle \\
             &\quad + \left(t^{ae}_{im} - t^{ea}_{im}\right) W_{mbej} \\
@@ -805,7 +810,7 @@ class CCwfn(Wavefunction):
         """
         contract = self.contract
 
-        r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
+        r_T2 = 0.5 * clone(ERI[v,v,o,o].swapaxes(0,2).swapaxes(1,3), device=self.device1)  # <ab|ij> (= <ij|ab> for real ERI)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
         r_T2 = r_T2 - contract('imab,mj->ijab', t2, Fmi)
         r_T2 = r_T2 + 0.5 * contract('ijef,abef->ijab', t2, ERI[v,v,v,v])
@@ -825,7 +830,7 @@ class CCwfn(Wavefunction):
         t1.t1 rather than tau). Before the i<->j / a<->b symmetrization (repeated
         indices summed)::
 
-            r_t2_ijab = 1/2 <ij|ab>
+            r_t2_ijab = 1/2 <ab|ij>
                       + t2_ijae (f_be - 1/2 f_me t_mb) - 1/2 t2_ijae f_me t_mb
                       - t2_imab (f_mj + 1/2 f_me t_je) - 1/2 t2_imab f_me t_je
                       + 1/2 t_ma t_nb W_mnij + 1/2 t_ie t_jf <ab|ef>
@@ -836,7 +841,7 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ab|ij \rangle \\
             &\quad + t^{ae}_{ij} \left(f_{be} - \tfrac{1}{2} f_{me} t^b_m\right) - \tfrac{1}{2} t^{ae}_{ij} f_{me} t^b_m \\
             &\quad - t^{ab}_{im} \left(f_{mj} + \tfrac{1}{2} f_{me} t^e_j\right) - \tfrac{1}{2} t^{ab}_{im} f_{me} t^e_j \\
             &\quad + \tfrac{1}{2} t^a_m t^b_n W_{mnij} + \tfrac{1}{2} t^e_i t^f_j \langle ab|ef \rangle \\
@@ -847,7 +852,7 @@ class CCwfn(Wavefunction):
         """
         contract = self.contract
 
-        r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
+        r_T2 = 0.5 * clone(ERI[v,v,o,o].swapaxes(0,2).swapaxes(1,3), device=self.device1)  # <ab|ij> (= <ij|ab> for real ERI)
 
         tmp = F[v,v] - 0.5 * contract('me,ma->ae', F[o,v], t1)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, tmp.T)
@@ -877,7 +882,7 @@ class CCwfn(Wavefunction):
         CCSD form, before the i<->j / a<->b symmetrization (repeated indices
         summed)::
 
-            r_t2_ijab = 1/2 <ij|ab>
+            r_t2_ijab = 1/2 <ab|ij>
                       + t2_ijae F_be  - 1/2 t2_ijae t_mb F_me
                       - t2_imab F_mj  - 1/2 t2_imab t_je F_me
                       + 1/2 tau_mnab W_mnij + 1/2 tau_ijef <ab|ef>
@@ -891,7 +896,7 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ij|ab \rangle \\
+            r^{t2}_{ijab} &= \tfrac{1}{2} \langle ab|ij \rangle \\
             &\quad + t^{ae}_{ij} F_{be} - \tfrac{1}{2} t^{ae}_{ij} t^b_m F_{me} \\
             &\quad - t^{ab}_{im} F_{mj} - \tfrac{1}{2} t^{ab}_{im} t^e_j F_{me} \\
             &\quad + \tfrac{1}{2} \tau^{ab}_{mn} W_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} \langle ab|ef \rangle \\
@@ -905,7 +910,7 @@ class CCwfn(Wavefunction):
         """
         contract = self.contract
 
-        r_T2 = 0.5 * clone(ERI[o,o,v,v], device=self.device1)
+        r_T2 = 0.5 * clone(ERI[v,v,o,o].swapaxes(0,2).swapaxes(1,3), device=self.device1)  # <ab|ij> (= <ij|ab> for real ERI)
         r_T2 = r_T2 + contract('ijae,eb->ijab', t2, Fae.T)
         tmp = contract('bm,me->be', t1.T, Fme)
         r_T2 = r_T2 - 0.5 * contract('ijae,eb->ijab', t2, tmp.T)
@@ -1336,7 +1341,7 @@ class CCwfn(Wavefunction):
         -----
         Repeated indices summed::
 
-            r_t1_ia = f_ia + t_ie F_ae - t_ma F_mi + t2_imae F_me
+            r_t1_ia = f_ai + t_ie F_ae - t_ma F_mi + t2_imae F_me
                     - t_nf <na||if>
                     - 1/2 t2_imef <ma||ef>
                     - 1/2 t2_mnae <nm||ei>
@@ -1344,14 +1349,14 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t1}_{ia} = f_{ia} &+ t^e_i F_{ae} - t^a_m F_{mi} + t^{ae}_{im} F_{me} \\
+            r^{t1}_{ia} = f_{ai} &+ t^e_i F_{ae} - t^a_m F_{mi} + t^{ae}_{im} F_{me} \\
             &- t^f_n \langle na||if \rangle \\
             &- \tfrac{1}{2} t^{ef}_{im} \langle ma||ef \rangle \\
             &- \tfrac{1}{2} t^{ae}_{mn} \langle nm||ei \rangle
             \end{aligned}
         """
         contract = self.contract
-        r1 = clone(F[o,v])
+        r1 = clone(F[v, o].swapaxes(0, 1))          # f_ai = <Phi_i^a|F|0> (the [v,o] block; = F[o,v] for a symmetric F)
         r1 = r1 + contract('ie,ae->ia', t1, Fae)
         r1 = r1 - contract('ma,mi->ia', t1, Fmi)
         r1 = r1 + contract('imae,me->ia', t2, Fme)
@@ -1370,7 +1375,7 @@ class CCwfn(Wavefunction):
         -----
         Repeated indices summed::
 
-            r_t2_ijab = <ij||ab>
+            r_t2_ijab = <ab||ij>
                       + t2_ijae (F_be - 1/2 t_mb F_me) - t2_ijbe (F_ae - 1/2 t_ma F_me)
                       - t2_imab (F_mj + 1/2 t_je F_me) + t2_jmab (F_mi + 1/2 t_ie F_me)
                       + 1/2 tau_mnab W_mnij + 1/2 tau_ijef W_abef
@@ -1384,7 +1389,7 @@ class CCwfn(Wavefunction):
         .. math::
 
             \begin{aligned}
-            r^{t2}_{ijab} &= \langle ij||ab \rangle \\
+            r^{t2}_{ijab} &= \langle ab||ij \rangle \\
             &\quad + t^{ae}_{ij}\left(F_{be} - \tfrac{1}{2} t^b_m F_{me}\right) - t^{be}_{ij}\left(F_{ae} - \tfrac{1}{2} t^a_m F_{me}\right) \\
             &\quad - t^{ab}_{im}\left(F_{mj} + \tfrac{1}{2} t^e_j F_{me}\right) + t^{ab}_{jm}\left(F_{mi} + \tfrac{1}{2} t^e_i F_{me}\right) \\
             &\quad + \tfrac{1}{2} \tau^{ab}_{mn} W_{mnij} + \tfrac{1}{2} \tau^{ef}_{ij} W_{abef} \\
@@ -1397,7 +1402,7 @@ class CCwfn(Wavefunction):
             \end{aligned}
         """
         contract = self.contract
-        r2 = clone(ERI[o,o,v,v])
+        r2 = clone(ERI[v,v,o,o].swapaxes(0,2).swapaxes(1,3))  # <ab||ij> (= <ij||ab> for real ERI)
         Z = clone(Fae) - 0.5 * contract('mb,me->be', t1, Fme)
         r2 = r2 + (contract('ijae,be->ijab', t2, Z) - contract('ijbe,ae->ijab', t2, Z))
         Z = clone(Fmi) + 0.5 * contract('je,me->mj', t1, Fme)

@@ -224,11 +224,11 @@ class CCderiv(CorrelatedDerivs):
         ``d_x HBAR``, whose ``[HBAR, d_x t]`` piece is the Jacobian LHS.)  ``B^x`` is computed by
         evaluating ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
         ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation), the residual formula
-        supplying the ``e^-T ( ) e^T`` transform.  The singles source's leading term is taken from the
-        ``[v,o]`` block (the correct ``A_ai``), not ``cc.residuals``'s ``[o,v]`` (the ground-state
-        ``f_ia`` convention, which assumes a symmetric perturbation): the two agree for a Hermitian
-        operator (the Fock derivative, the electric dipole) but differ for an anti-Hermitian one (the
-        magnetic dipole), where ``[v,o]`` is the correct similarity-transform source.  Iterate
+        supplying the ``e^-T ( ) e^T`` transform.  The singles source's leading term is the ``[v,o]``
+        block ``A_ai`` -- ``<Phi_i^a|(d_x H)|0> = (d_x f)_{ai}`` -- supplied directly by ``r_T1``'s
+        leading ``F[v,o]`` term (\S ``ccwfn.r_T1``).  This matters only for an anti-Hermitian
+        perturbation (the magnetic dipole): for a Hermitian one (the Fock derivative, the electric
+        dipole) ``[v,o] == [o,v]`` and it is the ordinary ``f_ia``.  Iterate
         ``dt += (B + HBAR.dt - omega dt)/(D + omega)``
         with DIIS.  ``omega`` is the CC linear-response frequency (the ``-omega dt`` residual shift and
         ``(D + omega)`` denominators; default ``0`` reproduces the static derivative equation exactly
@@ -246,11 +246,9 @@ class CCderiv(CorrelatedDerivs):
             B1, B2 = cc.residuals(df, cc.t1, cc.t2)
         finally:
             cc.H.ERI, cc.H.L = saveERI, saveL
-        B1, B2 = np.asarray(B1), np.asarray(B2)
-        dfa = np.asarray(df)
-        B1 = B1 + (dfa[v, o].T - dfa[o, v])         # singles source = the vo block A_ai (see docstring):
-        X1, X2 = B1 / Dia, B2 / Dijab               # zero for a symmetric perturbation, the leading term
-        diis = helper_diis(X1, X2, 8)               # for an anti-Hermitian one (e.g. the magnetic dipole)
+        B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
+        X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
+        diis = helper_diis(X1, X2, 8)
         for _ in range(maxiter):
             j1, j2 = self._ccsd_jacobian(X1, X2, hbar)
             r1 = B1 + j1 - omega * X1
@@ -277,9 +275,10 @@ class CCderiv(CorrelatedDerivs):
             B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
         ``B^x`` (fixed-``t``) is ``cc.residuals`` evaluated with the perturbed **bare** integrals
-        (``df``, ``deri`` swapped in), the singles source's leading term taken from the ``[v,o]`` block
-        (``A_ai``; correct for an anti-Hermitian perturbation like the magnetic dipole, and identical
-        to ``cc.residuals``'s ``[o,v]`` for a symmetric one -- see :meth:`_perturbed_amplitudes`).
+        (``df``, ``deri`` swapped in); the singles source's leading term is the ``[v,o]`` block ``A_ai``
+        supplied by ``_so_r_T1``'s leading ``F[v,o]`` term (correct for an anti-Hermitian perturbation
+        like the magnetic dipole, identical to ``[o,v]`` for a symmetric one -- see
+        :meth:`_perturbed_amplitudes`).
         ``omega`` is the CC linear-response frequency (``-omega dt``
         residual shift, ``(D + omega)`` denominators; default ``0`` = the static derivative equation).
         ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
@@ -295,11 +294,9 @@ class CCderiv(CorrelatedDerivs):
             B1, B2 = cc.residuals(df, cc.t1, cc.t2)
         finally:
             cc.H.ERI = saveERI
-        B1, B2 = np.asarray(B1), np.asarray(B2)
-        dfa = np.asarray(df)
-        B1 = B1 + (dfa[v, o].T - dfa[o, v])         # singles source = the vo block A_ai (see docstring):
-        X1, X2 = B1 / Dia, B2 / Dijab               # zero for a symmetric perturbation, the leading term
-        diis = helper_diis(X1, X2, 8)               # for an anti-Hermitian one (e.g. the magnetic dipole)
+        B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
+        X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
+        diis = helper_diis(X1, X2, 8)
         for _ in range(maxiter):
             j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
             r1, r2 = B1 + j1 - omega * X1, B2 + j2 - omega * X2
