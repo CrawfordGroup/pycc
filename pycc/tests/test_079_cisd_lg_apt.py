@@ -8,8 +8,7 @@ itself validated independently: the analytic Hessian against Psi4/Gaussian
 finite differences (~1e-6), the AATs against the determinant-based apyib
 reference (B. Shumberger; ~1e-11 a.u.), and the LG-APT (Z-vector route)
 against finite differences of the analytic dipole.  The CIwfn port
-reproduces these values to ~1e-10; the test tolerance (1e-6) absorbs the
-printed precision of the reference.  The references are TOTAL tensors, so
+reproduces these values to ~1e-10.  The references are TOTAL tensors, so
 the tests exercise the full facade decomposition (nuclear + HF reference +
 CISD correlation).  Spatial orbitals, all-electron only.
 """
@@ -36,15 +35,18 @@ LG_APT_REF = np.array([
 
 
 def test_cisd_lg_apt_vs_reference(cisd_h2o2):
-    """The facade total (nuclear + HF reference + CISD correlation) reproduces
-    the standalone validated reference, every element."""
+    """The facade total (nuclear + HF reference + CIderiv-driven CISD
+    correlation) reproduces the standalone validated reference, every
+    element. Primary correctness gate for the CIderiv migration."""
     P = np.asarray(pycc.apt(cisd_h2o2()).total).reshape(-1, 3)
     assert np.max(np.abs(P - LG_APT_REF)) < 1e-9, np.max(np.abs(P - LG_APT_REF))
 
+
 def test_cisd_lg_apt_translational_sum_rule(cisd_h2o2):
     """Acoustic sum rule: the total LG APT of neutral H2O2 sums to zero over
-    atoms; the correlation block alone also sums to zero (traceless corr
-    density)."""
+    atoms; the correlation block (from CIderiv, inherited from the base
+    CorrelatedDerivs 2n+1 assembly) alone also sums to zero (traceless corr
+    density) - FD-free, implementation-agnostic physics check."""
     comp = pycc.apt(cisd_h2o2())
     assert np.max(np.abs(np.sum(np.asarray(comp.total), axis=0))) < 1e-9
     assert np.max(np.abs(np.sum(np.asarray(comp.correlation), axis=0))) < 1e-9

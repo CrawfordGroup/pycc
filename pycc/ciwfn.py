@@ -235,9 +235,8 @@ class CIwfn(Wavefunction):
     def _normalized_amplitudes(self):
         if getattr(self, '_ci_namp', None) is None:
             c = self.contract
-            t1, t2 = self.c1, self.c2      # CIwfn's intermediate-normalized amplitudes
-            norm2 = (2.0 * c('ia,ia->', t1.conj(), t1)
-                     + c('ijab,ijab->', t2.conj(), 2.0 * t2 - t2.swapaxes(2, 3)))
+            t1, t2 = self.c1, self.c2    
+            norm2 = (2.0 * c('ia,ia->', t1.conj(), t1) + c('ijab,ijab->', t2.conj(), 2.0 * t2 - t2.swapaxes(2, 3)))
             N = 1.0 / np.sqrt(1.0 + norm2)
             n0 = N.real if np.isrealobj(N) else N
             n1 = N * t1
@@ -329,7 +328,7 @@ class CIwfn(Wavefunction):
         L_AO = mints.ao_angular_momentum()
         h_mag = ct('mp,mn,nq->pq', C.conj(), -0.5 * L_AO[beta].np, C)
 
-        # U_H  (full 4-block solve - exactly as in working code)
+        # U_H  
         U_H = np.zeros((nbf, nbf), dtype=complex)
         B_vo = h_mag[v, o]
         U_H[v, o] += (G_mag @ B_vo.reshape(nv * no)).reshape(nv, no)
@@ -444,6 +443,11 @@ class CIwfn(Wavefunction):
             result = self._build_magnetic_ints(pert.comp)
         elif pert.kind == 'vecpot':
             result = self._build_vecpot_ints(pert.comp)
+        elif pert.kind == 'field':
+            dF = np.asarray(cphf.perturbed_fock(pert))
+            dERI = np.asarray(cphf.perturbed_eri(pert))   # zero for electric field
+            U = np.asarray(cphf.full_U(pert))
+            result = (dF, dERI, U)
         else:
             raise ValueError(f"unknown perturbation kind {pert.kind!r}")
         self._cpci_ints_cache[pert] = result
@@ -611,126 +615,11 @@ class CIwfn(Wavefunction):
             self._solve_cpci(pert)
         return self._cpci_raw_cache[pert]
 
-    # length-gauge APT  (cisd_apt_lg.py: _CISDAPTEngine)
 
-    def _zvector(self):
-        """CISD unperturbed Z-vector: relaxed density Q_relaxed, Lagrangian
-        X, h_mo, and the CPHF orbital-response z-amplitudes."""
-        if getattr(self, '_cizvec', None) is None:
-            c = self.contract
-            o, v, no, nmo = self.o, self.v, self.no, self.nmo
-            D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
-
-            ERI = np.asarray(self.H.ERI)
-            F = np.asarray(self.H.F)
-            h_mo = F - c('piqi->pq', 2.0 * ERI[:, o, :, o] - ERI.swapaxes(2, 3)[:, o, :, o])
-
-            Q = D_pq_corr.copy()
-            for i in range(no):
-                Q[i, i] += 2.0
-
-            G_sym = 0.25 * (D_pqrs + D_pqrs.transpose(1, 0, 3, 2)
-                             + D_pqrs.transpose(2, 3, 0, 1) + D_pqrs.transpose(3, 2, 1, 0))
-            G = G_sym.copy()
-            for i in range(no):
-                for j in range(no):
-                    G[i, j, i, j] += 2.0
-                    G[i, j, j, i] -= 1.0
-            G_cross = np.zeros_like(G)
-            for i in range(no):
-                G_cross[i, :, i, :] += 2.0 * D_pq_corr
-                G_cross[:, i, :, i] += 2.0 * D_pq_corr
-                G_cross[i, :, :, i] -= D_pq_corr.T
-                G_cross[:, i, i, :] -= D_pq_corr
-            G = G + 0.5 * G_cross
-
-            X = c('jm,im->ij', Q, h_mo) + 2.0 * c('jmkl,imkl->ij', G, ERI)
-
-            rhs = -(X[v, o] - X[o, v].T)
-            z_ov = self.cphf.solve(rhs.T)
-            z_ai = z_ov.T
-
-            Q_relaxed = Q.copy()
-            Q_relaxed[v, o] += z_ai
-            Q_relaxed[o, v] += z_ai.T
-
-            self._cizvec = dict(Q=Q, G=G, Q_relaxed=Q_relaxed, X=X, h_mo=h_mo, z_ai=z_ai)
-        return self._cizvec
-
-    def _corr_QGX(self):
-        """Correlation-only (Q_corr, G_corr, X_corr): the full Z-vector
-        quantities with the pure-HF density blocks removed (Q minus 2*delta_oo;
-        G minus the closed-shell HF 2-RDM block 2*d_ik*d_jl - d_il*d_jk; X
-        rebuilt linearly from the corr densities). Cached. Used by the
-        correlation-only property assemblies; the FULL quantities in
-        _zvector() stay untouched (the perturbed-Lagrangian z response is a
-        full-density equation and remains as validated)."""
-        if getattr(self, '_ci_corr_qgx', None) is None:
-            ct = self.contract
-            no = self.no
-            zv = self._zvector()
-            ERI = np.asarray(self.H.ERI)
-            Q_corr = zv['Q'].copy()
-            for i in range(no):
-                Q_corr[i, i] -= 2.0
-            G_corr = zv['G'].copy()
-            for i in range(no):
-                for j in range(no):
-                    G_corr[i, j, i, j] -= 2.0
-                    G_corr[i, j, j, i] += 1.0
-            X_corr = (ct('jm,im->ij', Q_corr, zv['h_mo'])
-                      + 2.0 * ct('jmkl,imkl->ij', G_corr, ERI))
-            self._ci_corr_qgx = (Q_corr, G_corr, X_corr)
-        return self._ci_corr_qgx
-
-    def _reference_hf(self):
-        """The all-electron :class:`HFwfn` for the SCF reference (cached),
-        supplying the reference (electronic) contribution to the total CISD
-        properties via the pycc property facade - same pattern as
-        MPwfn._reference_hf."""
-        if getattr(self, '_ref_hf', None) is None:
-            from .hfwfn import HFwfn
-            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
-        return self._ref_hf
-
-    def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
-        """CISD CORRELATION-ONLY LG-APT, shape (natom, 3, 3), [A, beta, alpha].
-        Port of _CISDAPTEngine.assemble() with the HF density block removed
-        from T1/T2 and the nuclear charge term dropped - both supplied by the
-        pycc.apt facade (HFwfn reference + _nuclear_apt), matching MPwfn's
-        contract."""
-        from .cphf import Perturbation
-        c = self.contract
-        o, v = self.o, self.v
-        zv = self._zvector()
-        # Correlation-only relaxed density: Q_relaxed minus the HF 2*delta_oo.
-        # T3/T3z are already pure correlation (amplitude/Z-vector response).
-        Qt = zv['Q_relaxed'].copy()
-        for i in range(self.no):
-            Qt[i, i] -= 2.0
-        natom = self.derivatives.natom
-        h_E = [np.asarray(self.H.mu[f]) for f in range(3)]
-
-        APT = np.zeros((natom, 3, 3))
-        for A in range(natom):
-            dip = self.derivatives.dipole(A)
-            for beta in range(3):
-                pert = Perturbation('nuclear', (A, beta))
-                U_R = np.asarray(self.cphf.full_U(pert))
-                dc1, dc2, dc0v = self._solve_cpci(pert)
-                dc1, dc2 = dc1.real, dc2.real
-                dc0v = dc0v.real if hasattr(dc0v, 'real') else dc0v
-                dz, dD_corr = self._solve_dz_dR(pert, dc1, dc2, dc0v)
-
-                for alpha in range(3):
-                    h_RE = np.asarray(dip[alpha * 3 + beta])
-                    T1 = c('ij,ij->', Qt, h_RE)
-                    T2 = (c('rp,pq,rq->', U_R, Qt, h_E[alpha])
-                          + c('pq,ps,sq->', Qt, h_E[alpha], U_R))
-                    T3 = c('pq,pq->', dD_corr, h_E[alpha])
-                    T3z = 2.0 * c('ai,ai->', dz, h_E[alpha][v, o])
-                    APT[A, beta, alpha] = (T1 + T2 + T3 + T3z).real
-        return APT
+    # raw perturbed correlation-density builders (true-normalized) 
+    # Used by CIderiv._perturbed_unrelaxed_densities; kept here as CISD-wavefunction-level
+    # primitives, the same pattern as _cisd_densities and the CPCI/magnetic/vecpot machinery
+    # above (see cideriv.py's module docstring for the rationale).
 
     def _perturbed_cisd_corr_opdm(self, dc1, dc2):
         c = self.contract
@@ -777,439 +666,143 @@ class CIwfn(Wavefunction):
         dG[o, o, o, v] = -2.0 * (c('kb,ijba->ijka', dc1, tau_n) + c('kb,ijba->ijka', n1, dtau_n))
         return dG
 
-    def _solve_dz_dR(self, pert, dc1, dc2, dc0v):
-        c = self.contract
-        o, v, no, nv = self.o, self.v, self.no, self.nv
-        zv = self._zvector()
-        z = zv['z_ai']
+    # unperturbed Z-vector (unused by CIderiv directly, but
+    # _corr_QGX below is CIderiv's density-hook source)
 
-        dF, dERI, _ = self._cpci_ints(pert)
-        dD_corr = self._perturbed_cisd_corr_opdm(dc1, dc2)
-        dD_pqrs = self._perturbed_cisd_tpdm(dc1, dc2, dc0v)
+    def _zvector(self):
+        """CISD unperturbed Z-vector: relaxed density Q_relaxed, Lagrangian
+        X, h_mo, and the CPHF orbital-response z-amplitudes."""
+        if getattr(self, '_cizvec', None) is None:
+            c = self.contract
+            o, v, no, nmo = self.o, self.v, self.no, self.nmo
+            D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
 
-        o_ = self.o
-        dh_mo = dF - c('piqi->pq', 2.0 * dERI[:, o_, :, o_] - dERI.swapaxes(2, 3)[:, o_, :, o_])
-        dG_sym = 0.25 * (dD_pqrs + dD_pqrs.transpose(1, 0, 3, 2)
-                          + dD_pqrs.transpose(2, 3, 0, 1) + dD_pqrs.transpose(3, 2, 1, 0))
-        dG = dG_sym.copy()
-        dG_cross = np.zeros_like(dG)
-        for i in range(no):
-            dG_cross[i, :, i, :] += 2.0 * dD_corr
-            dG_cross[:, i, :, i] += 2.0 * dD_corr
-            dG_cross[i, :, :, i] -= dD_corr.T
-            dG_cross[:, i, i, :] -= dD_corr
-        dG = dG + 0.5 * dG_cross
+            ERI = np.asarray(self.H.ERI)
+            F = np.asarray(self.H.F)
+            h_mo = F - c('piqi->pq', 2.0 * ERI[:, o, :, o] - ERI.swapaxes(2, 3)[:, o, :, o])
 
-        ERI = np.asarray(self.H.ERI)
-        dX = c('jm,im->ij', dD_corr, zv['h_mo']) + c('jm,im->ij', zv['Q'], dh_mo)
-        dX = dX + 2.0 * c('jmkl,imkl->ij', dG, ERI) + 2.0 * c('jmkl,imkl->ij', zv['G'], dERI)
+            Q = D_pq_corr.copy()
+            for i in range(no):
+                Q[i, i] += 2.0
 
-        db = -(dX[v, o] - dX[o, v].T)
+            G_sym = 0.25 * (D_pqrs + D_pqrs.transpose(1, 0, 3, 2) + D_pqrs.transpose(2, 3, 0, 1) + D_pqrs.transpose(3, 2, 1, 0))
+            G = G_sym.copy()
+            for i in range(no):
+                for j in range(no):
+                    G[i, j, i, j] += 2.0
+                    G[i, j, j, i] -= 1.0
+            G_cross = np.zeros_like(G)
+            for i in range(no):
+                G_cross[i, :, i, :] += 2.0 * D_pq_corr
+                G_cross[:, i, :, i] += 2.0 * D_pq_corr
+                G_cross[i, :, :, i] -= D_pq_corr.T
+                G_cross[:, i, i, :] -= D_pq_corr
+            G = G + 0.5 * G_cross
 
-        dL = 2.0 * dERI - dERI.swapaxes(2, 3)
-        dG_mat_vovo = (dL[v, o, o, v].transpose(0, 2, 3, 1)
-                       + dL[v, v, o, o].transpose(0, 2, 1, 3))
-        dG_mat_vovo = dG_mat_vovo + c('ab,ij->aibj', dF[v, v], np.eye(no))
-        dG_mat_vovo = dG_mat_vovo - c('ab,ij->aibj', np.eye(nv), dF[o, o])
-        dGz = c('aibj,bj->ai', dG_mat_vovo, z)
+            X = c('jm,im->ij', Q, h_mo) + 2.0 * c('jmkl,imkl->ij', G, ERI)
 
-        rhs = db - dGz
-        dz_ov = self.cphf.solve(rhs.T)
-        dz = dz_ov.T
-        return dz, dD_corr
+            rhs = -(X[v, o] - X[o, v].T)
+            z_ov = self.cphf.solve(rhs.T)
+            z_ai = z_ov.T
 
-    # AAT
+            Q_relaxed = Q.copy()
+            Q_relaxed[v, o] += z_ai
+            Q_relaxed[o, v] += z_ai.T
 
-    def _build_Dtilde(self, dc1, dc2, dc0):
-        c = self.contract
-        n0, n1, n2, tau_n = self._normalized_amplitudes()
-        o, v, nmo = self.o, self.v, self.nmo
+            self._cizvec = dict(Q=Q, G=G, Q_relaxed=Q_relaxed, X=X, h_mo=h_mo, z_ai=z_ai)
+        return self._cizvec
 
-        R = np.zeros((nmo, nmo), dtype=complex)
-        R[o, o] -= 2.0 * c('ja,ia->ij', n1, dc1)
-        R[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n, dc2)
-        R[v, v] += 2.0 * c('ia,ib->ab', n1, dc1)
-        R[v, v] += 2.0 * c('ijac,ijbc->ab', tau_n, dc2)
-        R[o, v] += 2.0 * n0 * dc1 + 2.0 * dc0 * n1
-        R[o, v] += 2.0 * c('jb,ijab->ia', n1, 2.0 * dc2 - dc2.swapaxes(2, 3))
-        R[v, o] += 2.0 * c('ijab,jb->ai', tau_n, dc1)
-        return R
+    def _corr_QGX(self):
+        """Correlation-only (Q_corr, G_corr, X_corr): the unperturbed Q/G from
+        _zvector() with the pure-HF density blocks removed (Q minus 2*delta_oo;
+        G minus the closed-shell HF 2-RDM block 2*d_ik*d_jl - d_il*d_jk; X
+        rebuilt linearly from the corr densities). Cached. THE SOURCE OF
+        CIderiv._unrelaxed_densities() - confirmed (via the energy-closing
+        identity Tr(Q_corr,h)+Tr(G_corr,ERI)=E_corr) to be the correct
+        correlation-only 1-/2-PDM convention."""
+        if getattr(self, '_ci_corr_qgx', None) is None:
+            ct = self.contract
+            no = self.no
+            zv = self._zvector()
+            ERI = np.asarray(self.H.ERI)
+            Q_corr = zv['Q'].copy()
+            for i in range(no):
+                Q_corr[i, i] -= 2.0
+            G_corr = zv['G'].copy()
+            for i in range(no):
+                for j in range(no):
+                    G_corr[i, j, i, j] -= 2.0
+                    G_corr[i, j, j, i] += 1.0
+            X_corr = (ct('jm,im->ij', Q_corr, zv['h_mo'])
+                      + 2.0 * ct('jmkl,imkl->ij', G_corr, ERI))
+            self._ci_corr_qgx = (Q_corr, G_corr, X_corr)
+        return self._ci_corr_qgx
 
-    def _aat_dc_normalized(self, pert):
-        dc1, dc2, dc0v = self._solve_cpci(pert)
-        return dc0v, dc1, dc2
 
-    def compute_Icc_AATs(self):
-        """Term 1 of the AAT: direct state-vector overlap <dPsi_R|dPsi_H>."""
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        I_cc = np.zeros((3 * natom, 3))
-        magH = {b: self._aat_dc_normalized(Perturbation('magnetic', b)) for b in range(3)}
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            pR = Perturbation('nuclear', (A, beta_))
-            _, dn1_R, dn2_R = self._aat_dc_normalized(pR)
-            for beta in range(3):
-                _, dn1_H, dn2_H = magH[beta]
-                term = 2.0 * c('ia,ia->', dn1_R.conj(), dn1_H)
-                term = term + c('ijab,ijab->', (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_H)
-                I_cc[la, beta] = term.real
-        return I_cc
+    # analytic derivative-property driver (see pycc.cideriv.CIderiv) 
+    # The analytic derivative-property code (gradient, relaxed dipole, polarizability, APT, Hessian,
+    # AAT, VG-APT) lives on CIderiv, reached through the cached `deriv` driver; the property methods
+    # below are thin delegators kept for the historical `ciwfn.<property>()` call sites - exactly
+    # mirroring MPwfn's own delegators to MPderiv.
 
-    def compute_Iphic_AATs(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        AAT_phic = np.zeros((3 * natom, 3), dtype=complex)
-        magH = {b: self._aat_dc_normalized(Perturbation('magnetic', b)) for b in range(3)}
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR)
-            half_S = np.asarray(self.derivatives.overlap_half(A)[beta_])
-            Ur_eff = U_R + half_S.T
-            for beta in range(3):
-                dn0_H, dn1_H, dn2_H = magH[beta]
-                R_pq = self._build_Dtilde(dn1_H, dn2_H, dn0_H)
-                AAT_phic[la, beta] = c('pq,qp->', R_pq, Ur_eff)
-        return AAT_phic.real
+    @property
+    def deriv(self):
+        """The cached :class:`~pycc.cideriv.CIderiv` derivative-property driver for this
+        wavefunction (built lazily). `CIderiv` is the CISD leaf of
+        :class:`~pycc.correlatedderivs.CorrelatedDerivs` and carries the analytic derivative-property
+        code; the thin property methods below delegate to it so the historical
+        `ciwfn.<property>()` call sites keep working, and the :mod:`pycc.properties` facade routes
+        through the registry (`pycc/__init__.py`) to the same driver."""
+        if getattr(self, '_deriv', None) is None:
+            from .cideriv import CIderiv
+            self._deriv = CIderiv(self)
+        return self._deriv
 
-    def compute_Iphiphi_AATs(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM
-        I_pp = np.zeros((3 * natom, 3))
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR)
-            half_S = np.asarray(self.derivatives.overlap_half(A)[beta_])
-            Ur_eff = U_R + half_S.T
-            for beta in range(3):
-                _, _, U_H = self._cpci_ints(Perturbation('magnetic', beta))
-                I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff).real
-        return I_pp
+    def relaxed_dipole(self) -> np.ndarray:
+        """CISD correlation dipole - delegates to :meth:`CIderiv.relaxed_dipole`."""
+        return self.deriv.relaxed_dipole()
 
-    def compute_Icphi_AATs(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        AAT_cphi = np.zeros((3 * natom, 3), dtype=complex)
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            pR = Perturbation('nuclear', (A, beta_))
-            dn0_R, dn1_R, dn2_R = self._aat_dc_normalized(pR)
-            R_pq = self._build_Dtilde(dn1_R, dn2_R, dn0_R)
-            for beta in range(3):
-                _, _, U_H = self._cpci_ints(Perturbation('magnetic', beta))
-                AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
-        return AAT_cphi.real
+    def gradient(self) -> np.ndarray:
+        """CISD correlation nuclear gradient - delegates to :meth:`CIderiv.gradient`."""
+        return self.deriv.gradient()
 
-    def atomic_axial_tensors(self, gauge: str = 'canonical') -> np.ndarray:
-        """CISD CORRELATION-ONLY AAT, shape (natom, 3, 3): the four electronic
-        overlap blocks with the correlation 1-PDM in Iphiphi (the 2*delta_oo
-        HF block of Iphiphi is the SCF reference AAT; Icc/Icphi/Iphic are pure
-        correlation, vanishing with the amplitudes). The SCF reference and the
-        nuclear term (Z_A/4) eps_abc R_c are supplied by the pycc.aat facade
-        (HFwfn.atomic_axial_tensors + _nuclear_aat), matching MPwfn's
-        contract."""
-        natom = self.ref.molecule().natom()
-        total = (self.compute_Icc_AATs() + self.compute_Iphic_AATs()
-                 + self.compute_Iphiphi_AATs() + self.compute_Icphi_AATs())
-        return total.reshape(natom, 3, 3)
-
-    # velocity-gauge APT
-    def compute_Icc_VG_APT(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        I_cc = np.zeros((3 * natom, 3), dtype=complex)
-        vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g)) for g in range(3)}
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            _, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)))
-            for gamma in range(3):
-                _, dn1_A, dn2_A = vecA[gamma]
-                I_cc[la, gamma] = (2.0 * c('ia,ia->', dn1_R.conj(), dn1_A)
-                                   + c('ijab,ijab->', (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_A))
-        return I_cc
-
-    def compute_Icphi_VG_APT(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        Icphi = np.zeros((3 * natom, 3), dtype=complex)
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            dn0_R, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)))
-            D_tilde_R = self._build_Dtilde(dn1_R, dn2_R, dn0_R)
-            for gamma in range(3):
-                _, _, U_A = self._cpci_ints(Perturbation('vecpot', gamma))
-                Icphi[la, gamma] = c('pq,pq->', D_tilde_R, U_A)
-        return Icphi
-
-    def compute_Iphic_VG_APT(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        Iphic = np.zeros((3 * natom, 3), dtype=complex)
-        vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g)) for g in range(3)}
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR)
-            half_S = np.asarray(self.derivatives.overlap_half(A)[beta_])
-            Ur_eff = U_R + half_S.T
-            for gamma in range(3):
-                dn0_A, dn1_A, dn2_A = vecA[gamma]
-                D_tilde_A = self._build_Dtilde(dn1_A, dn2_A, dn0_A)
-                Iphic[la, gamma] = c('pq,qp->', D_tilde_A.conj(), Ur_eff)
-        return Iphic
-
-    def compute_Iphiphi_VG_APT(self):
-        from .cphf import Perturbation
-        c = self.contract
-        natom = self.derivatives.natom
-        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM
-        I_pp = np.zeros((3 * natom, 3), dtype=complex)
-        for la in range(3 * natom):
-            A, beta_ = divmod(la, 3)
-            _, _, U_R = self._cpci_ints(Perturbation('nuclear', (A, beta_)))
-            half_S = np.asarray(self.derivatives.overlap_half(A)[beta_])
-            Ur_eff = U_R + half_S.T
-            for gamma in range(3):
-                _, _, U_A = self._cpci_ints(Perturbation('vecpot', gamma))
-                I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
-        return I_pp
-
-    def velocity_dipole_derivatives(self, gauge: str = 'canonical') -> np.ndarray:
-        """CISD CORRELATION-ONLY VG-APT, shape (natom, 3, 3): -2 times the four
-        overlap blocks with the correlation 1-PDM in Iphiphi (the HF block of
-        Iphiphi is the SCF reference; the other three blocks are pure
-        correlation). The SCF reference and the Z_A delta nuclear term are
-        supplied by the pycc.apt(gauge='velocity') facade, matching MPwfn's
-        contract. """
-        natom = self.ref.molecule().natom()
-        overlap_total = (self.compute_Icc_VG_APT() + self.compute_Icphi_VG_APT()
-                          + self.compute_Iphic_VG_APT() + self.compute_Iphiphi_VG_APT())
-        return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
-
-    # Hessian  (cisd_analytic_hessian.py)
-
-    def _hess_build_Y(self):
-        """Y_ijkl double-UU tensor, correlation densities only (linear in Q/G,
-        so the HF part belongs to the SCF reference Hessian)."""
-        ct = self.contract
-        zv = self._zvector()
-        Q, G, _ = self._corr_QGX()
-        h_mo = zv['h_mo']
-        ERI = np.asarray(self.H.ERI)
-        Y = ct('jl,ik->ijkl', Q, h_mo)
-        Y = Y + 2.0 * ct('jlmn,ikmn->ijkl', G, ERI)
-        Y = Y + 2.0 * ct('jmln,imkn->ijkl', G, ERI)
-        Y = Y + 2.0 * ct('jmnl,imnk->ijkl', G, ERI)
-        return Y
-
-    def _hess_X_tilde(self):
-        """Correlation-only X_tilde: X_corr (linear in the corr densities) with
-        the Z-vector-corrected vo block. z itself is solved from the FULL
-        Lagrangian in _zvector() (unchanged from the validated code); it is a
-        pure correlation quantity since the HF part of X satisfies Brillouin
-        (X_HF[v,o] - X_HF[o,v].T = 0) and contributes nothing to the rhs."""
-        ct = self.contract
-        o, v, no, nv = self.o, self.v, self.no, self.nv
-        zv = self._zvector()
-        _, _, X_corr = self._corr_QGX()
-        F, ERI = np.asarray(self.H.F), np.asarray(self.H.ERI)
-        A = (2.0 * ERI - ERI.swapaxes(2, 3)) + (2.0 * ERI - ERI.swapaxes(2, 3)).swapaxes(1, 3)
-        A = A.swapaxes(1, 2)
-        G_mat = (ct('ab,ij->aibj', np.eye(nv), np.eye(no))
-                  * (F[v, v].reshape(nv, 1, nv, 1) - F[o, o].reshape(1, no, 1, no))
-                  + A[v, o, v, o])
-        X_tilde = X_corr.copy()
-        X_tilde[v, o] += ct('aibj,bj->ai', G_mat, zv['z_ai'])
-        return X_tilde
-
-    def build_xi_ab(self, U_a, U_b, S_a, S_b, S_ab):
-        c = self.contract
-        xi = S_ab.copy()
-        xi = xi + c('im,jm->ij', U_a, U_b) + c('im,jm->ij', U_b, U_a)
-        xi = xi - c('im,jm->ij', S_a, S_b) - c('im,jm->ij', S_b, S_a)
-        return xi
-
-    def build_X_deriv(self, h_a_skel, g_a_skel):
-        """Skeleton-derivative Lagrangian, correlation densities only."""
-        ct = self.contract
-        Q, G, _ = self._corr_QGX()
-        Xa = ct('jm,im->ij', Q, h_a_skel)
-        Xa = Xa + 2.0 * ct('jmkl,imkl->ij', G, g_a_skel)
-        return Xa
-
-    def build_cpci_term(self, dc1_a, dc2_a, dc1_b, dc2_b):
-        """The pure linear CI-Jacobian action on dc1_b/dc2_b."""
-        c = self.contract
-        o, v = self.o, self.v
-        F, ERI = np.asarray(self.H.F), np.asarray(self.H.ERI)
-        E_tot = self.eci
-
-        sig1 = -E_tot * dc1_b
-        sig1 = sig1 - c('ji,ja->ia', F[o, o], dc1_b)
-        sig1 = sig1 + c('ab,ib->ia', F[v, v], dc1_b)
-        sig1 = sig1 + c('jabi,jb->ia', 2.0 * ERI[o, v, v, o] - ERI.swapaxes(2, 3)[o, v, v, o], dc1_b)
-        sig1 = sig1 + c('jb,ijab->ia', F[o, v], 2.0 * dc2_b - dc2_b.swapaxes(2, 3))
-        sig1 = sig1 + c('ajbc,ijbc->ia', 2.0 * ERI[v, o, v, v] - ERI.swapaxes(2, 3)[v, o, v, v], dc2_b)
-        sig1 = sig1 - c('kjib,kjab->ia', 2.0 * ERI[o, o, o, v] - ERI.swapaxes(2, 3)[o, o, o, v], dc2_b)
-
-        sig2 = -E_tot * dc2_b
-        sig2 = sig2 + c('abcj,ic->ijab', ERI[v, v, v, o], dc1_b)
-        sig2 = sig2 + c('abic,jc->ijab', ERI[v, v, o, v], dc1_b)
-        sig2 = sig2 - c('kbij,ka->ijab', ERI[o, v, o, o], dc1_b)
-        sig2 = sig2 - c('akij,kb->ijab', ERI[v, o, o, o], dc1_b)
-        sig2 = sig2 + c('ac,ijcb->ijab', F[v, v], dc2_b)
-        sig2 = sig2 + c('bc,ijac->ijab', F[v, v], dc2_b)
-        sig2 = sig2 - c('ki,kjab->ijab', F[o, o], dc2_b)
-        sig2 = sig2 - c('kj,ikab->ijab', F[o, o], dc2_b)
-        sig2 = sig2 + c('klij,klab->ijab', ERI[o, o, o, o], dc2_b)
-        sig2 = sig2 + c('abcd,ijcd->ijab', ERI[v, v, v, v], dc2_b)
-        sig2 = sig2 - c('kbcj,ikca->ijab', ERI[o, v, v, o], dc2_b)
-        sig2 = sig2 + c('kaci,kjcb->ijab', 2.0 * ERI[o, v, v, o] - ERI.swapaxes(2, 3)[o, v, v, o], dc2_b)
-        sig2 = sig2 - c('kbic,kjac->ijab', ERI[o, v, o, v], dc2_b)
-        sig2 = sig2 - c('kaci,kjbc->ijab', ERI[o, v, v, o], dc2_b)
-        sig2 = sig2 + c('kbcj,ikac->ijab', 2.0 * ERI[o, v, v, o] - ERI.swapaxes(2, 3)[o, v, v, o], dc2_b)
-        sig2 = sig2 - c('kajc,ikcb->ijab', ERI[o, v, o, v], dc2_b)
-
-        return -2.0 * (2.0 * c('ia,ia->', dc1_a, sig1) + c('ijab,ijab->', 2.0 * dc2_a - dc2_a.swapaxes(2, 3), sig2)).real
+    def polarizability(self, route: str = '2n+1') -> np.ndarray:
+        """CISD correlation polarizability - delegates to :meth:`CIderiv.polarizability`."""
+        return self.deriv.polarizability(route)
 
     def hessian(self, route: str = 'explicit') -> np.ndarray:
-        """CISD CORRELATION-ONLY nuclear Hessian, shape (3*natom, 3*natom):
-        the T0-T5 assembly with the correlation densities in the density with linear
-        terms (T0, xi-X_tilde, T3, T4, the HF blocks of those terms are the
-        SCF reference Hessian) and the unchanged pure-correlation Z-vector (Bab.z)
-        and CPCI (T5) terms; nuclear-repulsion block dropped. Reference and
-        nuclear are supplied by the pycc.hessian facade, matching MPwfn's
-        contract."""
-        from .cphf import Perturbation
-        ct = self.contract
-        o, v, no = self.o, self.v, self.no
-        mints, C_p4 = self._psi4_mints()
-        mol = self.ref.molecule()
-        natom = mol.natom()
-        ndof = 3 * natom
-        F = np.asarray(self.H.F)
-        eps = np.diag(F)
+        """CISD correlation Hessian - delegates to :meth:`CIderiv.hessian` (custom, migrated
+        verbatim from this method's original implementation; `route` is a vestigial argument
+        the body does not branch on, kept for call-site compatibility)."""
+        return self.deriv.hessian(route)
 
-        zv = self._zvector()
-        Q, G, _ = self._corr_QGX()   # correlation densities (T0/T3/T4/xi-X)
-        X_t = self._hess_X_tilde()
-        Y = self._hess_build_Y()
-        ERI = np.asarray(self.H.ERI)
-        z = zv['z_ai']
-        n0 = self._normalized_amplitudes()[0]
+    def dipole_derivatives(self, route: str = 'explicit') -> np.ndarray:
+        """CISD correlation length-gauge APT - delegates to :meth:`CIderiv.dipole_derivatives`
+        (custom, migrated verbatim from this method's original implementation; `route` is a
+        vestigial argument the body does not branch on, kept for call-site compatibility)."""
+        return self.deriv.dipole_derivatives(route)
 
-        ERI_M = ERI.transpose(0, 2, 1, 3)
-        W_M = 2 * ERI_M - ERI_M.transpose(0, 2, 1, 3)
-        A_M = 4 * ERI_M - ERI_M.transpose(0, 2, 1, 3) - ERI_M.transpose(0, 3, 2, 1)
+    def velocity_dipole_derivatives(self, gauge: str = 'canonical') -> np.ndarray:
+        """CISD correlation velocity-gauge APT - delegates to
+        :meth:`CIderiv.velocity_dipole_derivatives`."""
+        return self.deriv.velocity_dipole_derivatives(gauge)
 
-        def to_mulliken(g_dirac):
-            return g_dirac.transpose(0, 2, 1, 3)
+    def atomic_axial_tensors(self, gauge: str = 'canonical') -> np.ndarray:
+        """CISD correlation AAT - delegates to :meth:`CIderiv.atomic_axial_tensors`."""
+        return self.deriv.atomic_axial_tensors(gauge)
 
-        h_skel_1, g_skel_1, S_skel_1 = {}, {}, {}
-        U_all, dT1_all, dT2_all = {}, {}, {}
+    # reference for the total (reference + correlation) properties 
+    # The property methods above are the correlation contribution only. The full molecular property
+    # (nuclear + SCF reference + correlation) is assembled by the pycc property facade
+    # (pycc.dipole/gradient/polarizability/hessian/apt/aat), which pairs each correlation method
+    # with the SCF reference below and the separate nuclear term. Kept here (not just on the base
+    # CorrelatedDerivs) because the facade's transitional fallback path (register_deriv(CIwfn,
+    # CIderiv) still commented out) calls this directly on the wavefunction - matching MPwfn.
 
-        for N1 in range(natom):
-            T_core = mints.mo_oei_deriv1('KINETIC', N1, C_p4, C_p4)
-            V_core = mints.mo_oei_deriv1('POTENTIAL', N1, C_p4, C_p4)
-            S_core = mints.mo_oei_deriv1('OVERLAP', N1, C_p4, C_p4)
-            E_core = mints.mo_tei_deriv1(N1, C_p4, C_p4, C_p4, C_p4)
-            for a in range(3):
-                la = 3 * N1 + a
-                h_skel_1[la] = T_core[a].np + V_core[a].np
-                S_skel_1[la] = S_core[a].np
-                g_skel_1[la] = E_core[a].np.swapaxes(1, 2)
-                pert = Perturbation('nuclear', (N1, a))
-                U_all[la] = np.asarray(self.cphf.full_U(pert))
-                dT1_all[la], dT2_all[la] = self._cpci_raw(pert)
-
-        X_deriv = {la: self.build_X_deriv(h_skel_1[la], g_skel_1[la])
-                   for la in range(ndof)}
-
-        Fa_M, Aa_M = {}, {}
-        for la in range(ndof):
-            g_a_M = to_mulliken(g_skel_1[la])
-            Fa = h_skel_1[la].copy()
-            Fa += (ct('ijkk->ij', 2 * g_a_M[:, :, o, o]) - ct('ikjk->ij', g_a_M[:, o, :, o]))
-            Fa_M[la] = Fa
-            Aa_M[la] = (4 * g_a_M - g_a_M.transpose(0, 2, 1, 3) - g_a_M.transpose(0, 3, 2, 1))
-
-        Hessian = np.zeros((ndof, ndof))
-
-        def _assemble_ab(a, b, h_ab_sk, S_ab_sk, g_ab_sk, N1, N2):
-            la, lb = 3 * N1 + a, 3 * N2 + b
-            U_a, U_b = U_all[la], U_all[lb]
-
-            # T1: skeleton density contraction
-            t0_val = ct('ij,ij->', Q, h_ab_sk)
-            t0_val += ct('pqrs,pqrs->', G, g_ab_sk)
-
-            # T2: Z-vector replacement
-            xi = self.build_xi_ab(U_a, U_b, S_skel_1[la], S_skel_1[lb], S_ab_sk)
-            t2_xiXt = -ct('ij,ji->', xi, X_t)
-            g_ab_sk_M = to_mulliken(g_ab_sk)
-            F_ab_M = (h_ab_sk + ct('ijkk->ij', 2 * g_ab_sk_M[:, :, o, o]) - ct('ikjk->ij', g_ab_sk_M[:, o, :, o]))
-            Bab = F_ab_M.copy()
-            Bab -= ct('ij,j->ij', xi, eps)
-            Bab -= ct('kl,ijkl->ij', xi[o, o], W_M[:, :, o, o])
-            Bab += ct('ki,kj->ij', U_a, Fa_M[lb])
-            Bab += ct('ki,kj->ij', U_b, Fa_M[la])
-            Bab += ct('kj,ik->ij', U_a, Fa_M[lb])
-            Bab += ct('kj,ik->ij', U_b, Fa_M[la])
-            Bab += ct('ki,kj,k->ij', U_a, U_b, eps)
-            Bab += ct('ki,kj,k->ij', U_b, U_a, eps)
-            UaUbT = U_a[:, o] @ U_b[:, o].T
-            Bab += ct('kl,ijkl->ij', UaUbT, A_M)
-            temp5_b = ct('lm,kjlm->kj', U_b[:, o], A_M[:, :, :, o])
-            temp5_a = ct('lm,kjlm->kj', U_a[:, o], A_M[:, :, :, o])
-            Bab += ct('ki,kj->ij', U_a, temp5_b)
-            Bab += ct('ki,kj->ij', U_b, temp5_a)
-            temp6_b = ct('lm,iklm->ik', U_b[:, o], A_M[:, :, :, o])
-            temp6_a = ct('lm,iklm->ik', U_a[:, o], A_M[:, :, :, o])
-            Bab += ct('kj,ik->ij', U_a, temp6_b)
-            Bab += ct('kj,ik->ij', U_b, temp6_a)
-            Bab += ct('kl,ijkl->ij', U_a[:, o], Aa_M[lb][:, :, :, o])
-            Bab += ct('kl,ijkl->ij', U_b[:, o], Aa_M[la][:, :, :, o])
-            t2_zvec = 2.0 * ct('ai,ai->', Bab[v, o], z)
-            t2_val = t2_xiXt + t2_zvec
-
-            # T3+T4: orbital-response Lagrangian + Y tensor
-            t3_val = 2.0 * (ct('ij,ij->', U_b, X_deriv[la])+ ct('ij,ij->', U_a, X_deriv[lb]))
-            t4_val = 2.0 * ct('ij,kl,ijkl->', U_a, U_b, Y)
-
-            # T5: CPCI amplitude response
-            t5_val = n0**2 * self.build_cpci_term(
-                dT1_all[la], dT2_all[la], dT1_all[lb], dT2_all[lb]).real
-
-            return la, lb, (t0_val + t2_val + t3_val + t4_val + t5_val).real
-
-        for N1 in range(natom):
-            for N2 in range(natom):
-                T_ab = mints.mo_oei_deriv2('KINETIC', N1, N2, C_p4, C_p4)
-                V_ab = mints.mo_oei_deriv2('POTENTIAL', N1, N2, C_p4, C_p4)
-                S_ab = mints.mo_oei_deriv2('OVERLAP', N1, N2, C_p4, C_p4)
-                E_ab = mints.mo_tei_deriv2(N1, N2, C_p4, C_p4, C_p4, C_p4)
-
-                h_ab = {(a, b): T_ab[3 * a + b].np + V_ab[3 * a + b].np for a in range(3) for b in range(3)}
-                S_ab_np = {(a, b): S_ab[3 * a + b].np for a in range(3) for b in range(3)}
-                g_ab = {(a, b): E_ab[3 * a + b].np.swapaxes(1, 2) for a in range(3) for b in range(3)}
-
-                for a in range(3):
-                    for b in range(3):
-                        la, lb, val = _assemble_ab(
-                            a, b, h_ab[(a, b)], S_ab_np[(a, b)], g_ab[(a, b)], N1, N2)
-                        Hessian[la, lb] = val
-
-                del T_ab, V_ab, S_ab, E_ab, h_ab, S_ab_np, g_ab
-
-        Hessian = 0.5 * (Hessian + Hessian.T)
-        return Hessian
+    def _reference_hf(self):
+        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the reference
+        (electronic) contribution to the total CISD properties via the pycc property facade."""
+        if getattr(self, '_ref_hf', None) is None:
+            from .hfwfn import HFwfn
+            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
+        return self._ref_hf
