@@ -1,6 +1,6 @@
 # CC linear-response reformulation — design plan
 
-**Status:** Phases 1-3 complete (static + dynamic unrelaxed CCSD polarizability; optical rotation); Phase 4 (CC3) to follow. Living document.
+**Status:** Phases 1-3 complete (static + dynamic unrelaxed CCSD polarizability; optical rotation), in PR #214 (CI running); Phase 4 (CC3) to follow. The anti-Hermitian source fix that Phase 3 surfaced is now implemented at the source (the T1/T2 residual leading blocks in `ccwfn.py`), which also corrects the complex-ERI real-time CC path; the downstream perturbed-amplitude correction is removed. Living document.
 
 ## Goal
 
@@ -125,15 +125,22 @@ has spurious poles at the SCF excitation frequencies.
    tensor recovered as omega -> 0 and normal dispersion away from it).
 3. **Optical rotation. DONE.** `optical_rotation(omega)` = the `<<mu; m>>_omega` tensor, electric
    dipole `mu` and magnetic dipole `m` (not angular momentum), `omega != 0`. Two findings:
-   - **The magnetic dipole is anti-Hermitian, which exposed a source bug in the perturbed-amplitude
-     solvers.** `cc.residuals` builds the singles source from the `[o,v]` block (the ground-state
-     `f_ia` convention, valid only because the Fock is symmetric); the correct similarity-transform
-     source is the `[v,o]` block `A_ai` (what `ccresponse.pertbar.Avo` uses). For a symmetric
-     perturbation (Fock derivative, electric dipole) the two blocks are equal, so Phases 1-2 were
-     unaffected; for the anti-Hermitian magnetic dipole they differ by a sign. Fixed in
-     `_perturbed_amplitudes`/`_so_perturbed_amplitudes` by `B1 += (df[v,o].T - df[o,v])` (zero for a
-     symmetric perturbation). Confirmed at the amplitude level: our `dt`/`dl` now reproduce
-     `ccresponse`'s `X`/`Y` for BOTH `mu` and `m` to ~1e-14.
+   - **The magnetic dipole is anti-Hermitian, which exposed a mis-blocked leading term in the CC
+     amplitude residuals.** The T1 residual took its leading singles source from the `[o,v]` Fock
+     block (`f_ia`, the ground-state convention, valid only because the Fock is symmetric); the
+     correct similarity-transform source `<Phi_i^a|F|0>` is the `[v,o]` block `f_ai` (= `A_ai`, what
+     `ccresponse.pertbar.Avo` uses). The T2 residual has the analogous swap: its leading term was
+     `<ij|ab>` (`ERI[o,o,v,v]`) but should be `<ab|ij>` = `<Phi_ij^ab|V|0>` (`ERI[v,v,o,o]`). For a
+     symmetric perturbation (Fock derivative, electric dipole), and more generally for real
+     (Hermitian) integrals, the swapped blocks are equal, so Phases 1-2, all ground-state CC, and
+     every real calculation are unaffected; they differ for the anti-Hermitian magnetic dipole and
+     for complex ERI (real-time CC). **Fixed at the source** (`ccwfn.py`): `r_T1`/`_so_r_T1` lead with
+     `F[v,o]` and `r_T2`/`_so_r_T2` (plus the spatial `_r_T2_ccsd`/`_cc2`/`_ccd`) lead with `<ab|ij>`,
+     so the perturbed-amplitude solvers need no special case. (It was first patched downstream by
+     `B1 += (df[v,o].T - df[o,v])` in `_perturbed_amplitudes`/`_so_perturbed_amplitudes`, then
+     relocated to the residuals; that correction is now removed.) Confirmed at the amplitude level:
+     our `dt`/`dl` reproduce `ccresponse`'s `X`/`Y` for BOTH `mu` and `m` to ~1e-14, and no-op across
+     the real suites while the complex path is exercised by the RT-CCSD/RT-CC3/Pade tests.
    - **Optical rotation is the odd-in-omega combination**, not a single density evaluation: a single
      `Tr(d_m D(omega).mu)` is the asymmetric `<<mu; m>>` and differs from the trusted symmetric value.
      `ccresponse.optrot` (via `linresp_sym`) is `0.5*(S1 - S2)` with `S1 = linresp_sym(mu@-omega,
@@ -162,8 +169,11 @@ has spurious poles at the SCF excitation frequencies.
 - `ccresponse.py`: `linresp_asym` (:1627, the asymmetric response function this mirrors),
   `linresp_sym` (:641), `solve_right` (:217) / `r_X1` (:325) / `r_X2` (:384),
   `solve_left` (:1694) / `r_Y1` (:1908) / `r_Y2` (:2102), `_build_pertbar` (:74).
-- `ccderiv.py`: `_perturbed_amplitudes` (:209), `_perturbed_lambda` (:498),
-  `_perturbed_unrelaxed_densities` (:188).
+- `ccwfn.py`: `r_T1`/`_so_r_T1` (leading `F[v,o]` = `f_ai`) and `r_T2`/`_so_r_T2` + the spatial
+  `_r_T2_ccsd`/`_cc2`/`_ccd` (leading `ERI[v,v,o,o]` swap-axed = `<ab|ij>`) -- the corrected residual
+  source blocks.
+- `ccderiv.py`: `_perturbed_amplitudes`, `_perturbed_lambda`, `_perturbed_unrelaxed_densities`
+  (the `[v,o]` source correction removed; now supplied by the fixed residuals).
 - `correlatedderivs.py`: `_perturbed_relaxed_density` (:439), `polarizability` (:667).
 - `docs/cc_gradients_orbital_response.tex`: eq. `eq:polarizability` (the derivative assembly the
   response strips the orbital terms from); pertbar per Crawford, cc_response.pdf eqn 78.
