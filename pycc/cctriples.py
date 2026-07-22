@@ -1121,15 +1121,7 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
                 X2[i,j] += contract('abc,dbc->ad', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[v,o,v,v][:,k])
                 X2[i] -= contract('abc,lc->lab', (2*M3 - M3.swapaxes(1,2) - M3.swapaxes(0,2)),ERI[o,o,o,v][j,k])
 
-                # (T) diagonal one-electron density (occ-occ and vir-vir).  Only the
-                # diagonal is a genuine density term (the off-diagonal <0|L3[E_pq,T3]|0>
-                # blocks appear in neither Lee-Rendell nor Hald et al.; the oo/vv orbital
-                # response is the dependent-pair P_oo/P_vv in CCderiv.gradient), so contract
-                # straight to it.  doo and dvv share this ijk build: the symmetrized
-                # combination X3+Y3 is invariant under the simultaneous occ<->vir index swap
-                # (t3 permutational symmetry), so the occ diagonal needs no separate abc loop
-                # (Lee-Rendell, J. Chem. Phys. 94, 6229 (1991), 2/3 the cost of Scuseria's
-                # off-diagonal, non-canonical-perturbed-MO formulation).
+                # (T) diagonal one-electron density (occ-occ and vir-vir).
                 dvv += 0.5 * contract('acd,acd->a', M3, (X3 + Y3))
                 doo[i] -= 0.5 * contract('abc,abc->', M3, (X3 + Y3))
 
@@ -1312,30 +1304,16 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
                 t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
 
-                # Singles and doubles contributions to the (T) energy correction, built
-                # WITHOUT per-term antisymmetrization -- the P(ij)P(ab) antisymmetrizer is
-                # applied to x2 after the loops (same structure as S2).  Every term carries a
-                # 1/4: the antisymmetrizer quadruples an already-antisymmetric contribution.
+                # Singles and doubles contributions to the (T) energy correction
                 x2[i,j] += (1/4) * contract('c,abc->ab', Fov[k], t3c)
                 x2[i,j] += (1/4) * contract('dbc,abc->ad', Wvovv[:,k], t3c)
                 x2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], t3c)
 
-                # (T) diagonal one-electron density (vv and oo).  Only the diagonal is a
-                # genuine density term; the oo/vv orbital response is the dependent-pair
-                # P_oo/P_vv in CCderiv (canonical perturbed MOs).  doo and dvv are the same
-                # t3c*(t3c+t3d) contraction over the ijk-built T3, differing only in which
-                # index is left free, so the occ diagonal needs no separate abc loop
-                # (Lee-Rendell, J. Chem. Phys. 94, 6229 (1991)).
+                # (T) diagonal one-electron density (vv and oo).
                 dvv += (1/12) * contract('abc,abc->a', (t3c + t3d), t3c)
                 doo[i] -= (1/12) * contract('abc,abc->', t3c, (t3c + t3d))
 
-                # (T) contribution to the ov block of the one-electron density.  The 1/4 is the
-                # T2^dagger normalization (D_ia = 1/4 sum_{lm,ef} t3c^{aef}_{ilm} t^{ef}_{lm}); the
-                # free (j,k)/(d,e) loop sums carry no combinatorial cancellation here.  This block
-                # is invisible to any relaxed first-order property -- the Z-vector/orbital response
-                # absorbs the ov 1-PDM exactly (Handy-Schaefer stationarity), so the CCSD(T) gradient
-                # is blind to this factor -- but it enters unrelaxed one-electron properties and the
-                # perturbed density of second derivatives (e.g. the (T) polarizability) directly.
+                # (T) contribution to the ov block of the one-electron density.
                 Dov[i] += (1/4) * contract('ade,de->a', t3c, t2[j,k])
 
                 # (T) contributions to the two-electron density
@@ -1351,7 +1329,7 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 S2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], (2*t3c + t3d))
                 S2[i,j] += (1/4) * contract('ade,bde->ab', (2*t3c+t3d), Wvovv[:,k])
 
-    # P(ij)P(ab) antisymmetrization of the doubles intermediates (see the loop note)
+    # P(ij)P(ab) antisymmetrization of the doubles intermediates
     S2 = S2 - S2.swapaxes(0,1) - S2.swapaxes(2,3) + S2.swapaxes(0,1).swapaxes(2,3)
     x2 = x2 - x2.swapaxes(0,1) - x2.swapaxes(2,3) + x2.swapaxes(0,1).swapaxes(2,3)
 
