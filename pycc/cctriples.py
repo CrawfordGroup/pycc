@@ -1124,7 +1124,7 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
                 # (T) diagonal one-electron density (occ-occ and vir-vir).  Only the
                 # diagonal is a genuine density term (the off-diagonal <0|L3[E_pq,T3]|0>
                 # blocks appear in neither Lee-Rendell nor Hald et al.; the oo/vv orbital
-                # response is the dependent-pair kappa-bar in CCderiv.gradient), so contract
+                # response is the dependent-pair P_oo/P_vv in CCderiv.gradient), so contract
                 # straight to it.  doo and dvv share this ijk build: the symmetrized
                 # combination X3+Y3 is invariant under the simultaneous occ<->vir index swap
                 # (t3 permutational symmetry), so the occ diagonal needs no separate abc loop
@@ -1322,7 +1322,7 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
 
                 # (T) diagonal one-electron density (vv and oo).  Only the diagonal is a
                 # genuine density term; the oo/vv orbital response is the dependent-pair
-                # kappa-bar in CCderiv (canonical perturbed MOs).  doo and dvv are the same
+                # P_oo/P_vv in CCderiv (canonical perturbed MOs).  doo and dvv are the same
                 # t3c*(t3c+t3d) contraction over the ijk-built T3, differing only in which
                 # index is left free, so the occ diagonal needs no separate abc loop
                 # (Lee-Rendell, J. Chem. Phys. 94, 6229 (1991)).

@@ -317,7 +317,7 @@ class CorrelatedDerivs:
                 X = X - (c('jc,ajic->ia', zjc, L[v, o, ofull, co])
                          + c('jc,acij->ia', zjc, L[v, co, ofull, o]))
             # Canonical perturbed MOs: carry the off-diagonal oo/vv orbital response as the
-            # dependent-pair rotations kappa_oo/kappa_vv (added to Drel, coupled into X).  This is
+            # dependent-pair rotations P_oo/P_vv (added to Drel, coupled into X).  This is
             # the CCSD(T) choice -- the (T) contributions to Doo/Dvv are then built from their
             # diagonal oo/vv blocks alone, saving an O(N^7) step.  For oo/vv-invariant methods the
             # pairs vanish, so the non-canonical default (MP2, CCSD) simply skips them.
@@ -385,7 +385,7 @@ class CorrelatedDerivs:
                 X = X - (c('jc,ajic->ia', zjc, ERI[v, o, ofull, co])
                          + c('jc,acij->ia', zjc, ERI[v, co, ofull, o]))
             # Canonical perturbed MOs: carry the off-diagonal oo/vv orbital response as the
-            # dependent-pair rotations kappa_oo/kappa_vv (added to Drel, coupled into X).  This is
+            # dependent-pair rotations P_oo/P_vv (added to Drel, coupled into X).  This is
             # the CCSD(T) choice -- the (T) contributions to Doo/Dvv are then built from their
             # diagonal oo/vv blocks alone, saving an O(N^7) step.  For oo/vv-invariant methods the
             # pairs vanish, so the non-canonical default (MP2, CCSD) simply skips them.
