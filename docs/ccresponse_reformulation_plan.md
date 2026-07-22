@@ -60,9 +60,36 @@ has spurious poles at the SCF excitation frequencies.
 
 ## Architecture
 
-- **Entry: on `CCderiv`** (a new method, e.g. a frequency-dependent unrelaxed polarizability /
-  optical-rotation), reusing the base perturbed-amplitude machinery. Not in `ccresponse`, not in the
-  `pycc.polarizability` derivative facade (different physical quantity).
+- **Entry: on `CCderiv`** — a general linear-response engine plus thin property-named wrappers
+  (the `ccresponse` pattern: `linresp_asym` engine + `polarizability`/`optrot` wrappers). Not in
+  `ccresponse`, not in the `pycc.polarizability` derivative facade (different physical quantity).
+  Each returns a bare `(3,3)` correlation tensor (`reference` block is zero; see above).
+
+  ```python
+  def linear_response(self, a, b, omega=0.0):
+      """Orbital-unrelaxed CC linear response function <<a; b>>_omega, shape (3,3), via
+      Tr(d_b D(omega) . a). Operator keys a, b follow ccresponse's pertkey idiom
+      ('mu' = electric dipole, 'm' = magnetic dipole)."""
+
+  def response_polarizability(self, omega=0.0):
+      return self.linear_response('mu', 'mu', omega)   # -<<mu; mu>>_omega
+
+  def optical_rotation(self, omega):
+      return self.linear_response('mu', 'm', omega)    # <<mu; m>>_omega, omega != 0
+  ```
+
+  Naming: `response_polarizability` (not `unrelaxed_polarizability`) — it is the frequency-dependent
+  response quantity, distinct from the inherited relaxed static `polarizability`. Operator handling
+  and the single-`omega`-per-call convention mirror `ccresponse` (a frequency sweep loops at the
+  call site). Internally both wrappers ride one helper, the perturbed unrelaxed density at frequency
+  omega:
+
+  ```python
+  def _response_density(self, op, omega):
+      """Orbital-unrelaxed perturbed 1-PDM d_op D(omega): solve dT (residual -omega X) and
+      dL (residual +omega Y) driven by operator `op`'s seven pertbar A-intermediates (no CPHF
+      folding), then _perturbed_unrelaxed_densities. No Z-vector, no dependent pairs."""
+  ```
 - **Shared engine:** add an `omega` argument (default `0.0`, so the existing derivative path is
   unchanged) to `_perturbed_amplitudes`, `_perturbed_lambda`, and `_perturbed_unrelaxed_densities`,
   applying the `-/+ omega` residual shift and the `(D + omega)` denominators. Supply the seven
@@ -95,8 +122,9 @@ has spurious poles at the SCF excitation frequencies.
 
 ## Open items
 
-1. **Entry-point signature** on `CCderiv` (method name / argument shape for the frequency-dependent
-   unrelaxed polarizability and optrot). To be sketched and picked.
+1. ~~**Entry-point signature** on `CCderiv`.~~ **Settled** (see Architecture): a general
+   `linear_response(a, b, omega=0.0)` engine with `response_polarizability(omega)` and
+   `optical_rotation(omega)` wrappers, operator keys and single-`omega` per `ccresponse`.
 2. **CC3** — whether/how it fits this framework.
 
 ## Code references
