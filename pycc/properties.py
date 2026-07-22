@@ -183,24 +183,18 @@ def gradient(wfn) -> PropertyComponents:
     return PropertyComponents(nuclear, reference, correlation)
 
 
-def polarizability(wfn, route='2n+1') -> PropertyComponents:
+def polarizability(wfn) -> PropertyComponents:
     """Static electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)``
-    each.  A pure electronic response property: the nuclear block is zero.
-
-    ``route`` selects the MP2 correlation algorithm, ``'2n+1'`` (default -- the O(N)-cheaper 2n+1
-    route) or ``'explicit'``; both give the same tensor and it is ignored for an ``HFwfn``."""
-    reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability', {'route': route})
+    each.  A pure electronic response property: the nuclear block is zero."""
+    reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability')
     return PropertyComponents(np.zeros((3, 3)), reference, correlation)
 
 
-def hessian(wfn, route='2n+1') -> PropertyComponents:
+def hessian(wfn) -> PropertyComponents:
     """Molecular (nuclear) Hessian as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
-    repulsion second derivative ``d^2 V_NN/dX dY``.
-
-    ``route`` selects the MP2 correlation algorithm, ``'2n+1'`` (default -- the O(N)-cheaper 2n+1
-    route) or ``'explicit'``; both give the same matrix and it is ignored for an ``HFwfn``."""
-    reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian', {'route': route})
+    repulsion second derivative ``d^2 V_NN/dX dY``."""
+    reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian')
     nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion2())
     return PropertyComponents(nuclear, reference, correlation)
 
@@ -213,9 +207,8 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     ``gauge='length'`` (default) is the length-gauge APT (:meth:`dipole_derivatives`);
     ``gauge='velocity'`` is the velocity-gauge APT (:meth:`velocity_dipole_derivatives`).
 
-    ``route`` (length gauge only) selects the MP2 correlation algorithm -- ``'2n+1-field'``
-    (default -- the O(N)-cheaper route, 3 field solves), ``'2n+1-nuclear'``, or ``'explicit'``;
-    all give the same tensor.
+    ``route`` (length gauge only) selects the algorithm -- ``'2n+1-field'`` (default -- the
+    O(N)-cheaper route, 3 field solves) or ``'2n+1-nuclear'``; both give the same tensor.
 
     ``orbital_gauge`` (velocity gauge only; **expert only**) selects the redundant momentum
     orbital-rotation gauge, ``'non-canonical'`` (default, numerically stable) or ``'canonical'``.

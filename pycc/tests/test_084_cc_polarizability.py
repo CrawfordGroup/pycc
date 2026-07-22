@@ -366,17 +366,14 @@ def test_ccsdt_polarizability_cfour(route, mol, fc):
 
 def test_ccsd_polarizability_guards(rhf_wfn):
     """Constructing a CCderiv sets the (T) density itself -- so a CCSD(T) property no longer needs
-    the user to pass make_t3_density (the former footgun) -- while a misused route still raises.
-    Both the spatial and spin-orbital CCSD(T) paths build without the flag."""
-    import pytest
+    the user to pass make_t3_density (the former footgun).  Both the spatial and spin-orbital
+    CCSD(T) paths build without the flag."""
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn, model='ccsd(t)')                              # spatial CCSD(T), no make_t3_density
     cc.solve_cc(1e-12, 1e-12, 100)
     d = pycc.CCderiv(cc)                                              # sets make_t3_density, builds the (T) density
     assert cc.make_t3_density is True
     d.polarizability()                                               # works without the user setting the flag
-    with pytest.raises(ValueError):                                  # unknown route still raises
-        d.polarizability(route='explicit')
     cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
     cc_so.solve_cc(1e-12, 1e-12, 100)
     pycc.CCderiv(cc_so).polarizability()                             # SO path likewise works without the flag

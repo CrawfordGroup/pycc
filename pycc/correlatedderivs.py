@@ -664,7 +664,7 @@ class CorrelatedDerivs:
     # separate and are summed by the facade.  A leaf overrides one of these only to add
     # method-specific behavior (e.g. CCderiv.polarizability's model / (T)-intermediate guards).
 
-    def polarizability(self, route: str = '2n+1') -> np.ndarray:
+    def polarizability(self) -> np.ndarray:
         r"""Correlation contribution to the static (omega=0) dipole polarizability (a.u.), shape
         ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``, via the 2n+1 route (frozen-core
         aware; spin-orbital and spin-adapted paths).  Differentiating the relaxed dipole
@@ -683,11 +683,8 @@ class CorrelatedDerivs:
         canonical core-active block, gauge per :attr:`perturbed_mo_gauge`).  No second-order CPHF
         ``U^{ab}`` -- only first-order responses.
 
-        ``route`` accepts only ``'2n+1'`` (the sole route; the argument is retained for a uniform
-        property signature).  The reference part is kept separate (:meth:`HFwfn.polarizability`) and
-        summed with this correlation part by :func:`pycc.polarizability`."""
-        if route != '2n+1':
-            raise ValueError(f"unknown polarizability route {route!r} (only '2n+1')")
+        The reference part is kept separate (:meth:`HFwfn.polarizability`) and summed with this
+        correlation part by :func:`pycc.polarizability`."""
         from .cphf import Perturbation
         wfn = self.wfn
         c = self.contract
@@ -829,7 +826,7 @@ class CorrelatedDerivs:
                                           + c('pq,pq->', dW[alpha], SX) + c('pq,pq->', W, rot1(Um, SX)))
         return P
 
-    def hessian(self, route: str = '2n+1') -> np.ndarray:
+    def hessian(self) -> np.ndarray:
         r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
         nuclear-nuclear analog of :meth:`polarizability` / :meth:`dipole_derivatives`, via the 2n+1
@@ -862,10 +859,8 @@ class CorrelatedDerivs:
         skeleton's occupied-sum response as the per-``X`` intermediate ``J^X`` contracted with
         ``U^Y`` (so no ``O(N^2)`` four-index rotation).
 
-        ``route`` accepts only ``'2n+1'`` (retained for a uniform property signature).  The reference
-        and nuclear parts are separate and summed with this correlation part by :func:`pycc.hessian`."""
-        if route != '2n+1':
-            raise ValueError(f"unknown hessian route {route!r} (only '2n+1')")
+        The reference and nuclear parts are separate and summed with this correlation part by
+        :func:`pycc.hessian`."""
         from .cphf import Perturbation
         wfn = self.wfn
         c = self.contract

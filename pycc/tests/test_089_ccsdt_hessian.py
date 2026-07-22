@@ -258,14 +258,10 @@ def test_ccsdt_hessian_cfour_hof_spatial():
 
 def test_ccsdt_hessian_guards():
     """Constructing a CCderiv sets the (T) density itself, so a CCSD(T) Hessian no longer needs the
-    user to pass make_t3_density (the former footgun); an unknown route still raises."""
+    user to pass make_t3_density (the former footgun)."""
     wfn = _cfour_wfn(WATER, 'false')
     cc_t = pycc.ccwfn(wfn, model='ccsd(t)')                     # CCSD(T), no make_t3_density
     cc_t.solve_cc(1e-12, 1e-12, 100)
     pycc.CCderiv(cc_t)                                          # sets the flag + builds the (T) density
     assert cc_t.make_t3_density is True and hasattr(cc_t, 'S1')
-    cc = pycc.ccwfn(wfn)                                        # plain CCSD: reaches the route check
-    cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                             # unknown route still raises
-        pycc.CCderiv(cc).hessian(route='bogus')
     psi4.core.clean()
