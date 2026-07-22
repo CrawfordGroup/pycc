@@ -224,7 +224,12 @@ class CCderiv(CorrelatedDerivs):
         ``d_x HBAR``, whose ``[HBAR, d_x t]`` piece is the Jacobian LHS.)  ``B^x`` is computed by
         evaluating ``cc.residuals`` with the perturbed **bare** integrals (``df`` and the CPHF-folded
         ``deri``/``dL`` swapped into ``cc.H``, carrying the orbital relaxation), the residual formula
-        supplying the ``e^-T ( ) e^T`` transform.  Iterate ``dt += (B + HBAR.dt - omega dt)/(D + omega)``
+        supplying the ``e^-T ( ) e^T`` transform.  The singles source's leading term is taken from the
+        ``[v,o]`` block (the correct ``A_ai``), not ``cc.residuals``'s ``[o,v]`` (the ground-state
+        ``f_ia`` convention, which assumes a symmetric perturbation): the two agree for a Hermitian
+        operator (the Fock derivative, the electric dipole) but differ for an anti-Hermitian one (the
+        magnetic dipole), where ``[v,o]`` is the correct similarity-transform source.  Iterate
+        ``dt += (B + HBAR.dt - omega dt)/(D + omega)``
         with DIIS.  ``omega`` is the CC linear-response frequency (the ``-omega dt`` residual shift and
         ``(D + omega)`` denominators; default ``0`` reproduces the static derivative equation exactly
         -- see the CC linear-response section).  ``maxiter``/``rconv`` default to the wavefunction's
@@ -234,6 +239,7 @@ class CCderiv(CorrelatedDerivs):
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
+        o, v = cc.o, cc.v
         saveERI, saveL = cc.H.ERI, cc.H.L
         cc.H.ERI, cc.H.L = deri, dL
         try:
@@ -241,8 +247,10 @@ class CCderiv(CorrelatedDerivs):
         finally:
             cc.H.ERI, cc.H.L = saveERI, saveL
         B1, B2 = np.asarray(B1), np.asarray(B2)
-        X1, X2 = B1 / Dia, B2 / Dijab
-        diis = helper_diis(X1, X2, 8)
+        dfa = np.asarray(df)
+        B1 = B1 + (dfa[v, o].T - dfa[o, v])         # singles source = the vo block A_ai (see docstring):
+        X1, X2 = B1 / Dia, B2 / Dijab               # zero for a symmetric perturbation, the leading term
+        diis = helper_diis(X1, X2, 8)               # for an anti-Hermitian one (e.g. the magnetic dipole)
         for _ in range(maxiter):
             j1, j2 = self._ccsd_jacobian(X1, X2, hbar)
             r1 = B1 + j1 - omega * X1
@@ -269,13 +277,17 @@ class CCderiv(CorrelatedDerivs):
             B^{x}_\mu = \langle\mu|\, e^{-T}(\partial_x H)\, e^{T}\,|0\rangle
 
         ``B^x`` (fixed-``t``) is ``cc.residuals`` evaluated with the perturbed **bare** integrals
-        (``df``, ``deri`` swapped in).  ``omega`` is the CC linear-response frequency (``-omega dt``
+        (``df``, ``deri`` swapped in), the singles source's leading term taken from the ``[v,o]`` block
+        (``A_ai``; correct for an anti-Hermitian perturbation like the magnetic dipole, and identical
+        to ``cc.residuals``'s ``[o,v]`` for a symmetric one -- see :meth:`_perturbed_amplitudes`).
+        ``omega`` is the CC linear-response frequency (``-omega dt``
         residual shift, ``(D + omega)`` denominators; default ``0`` = the static derivative equation).
         ``maxiter``/``rconv`` default to the wavefunction's convergence (``ccwfn.maxiter``/``r_conv``)."""
         from .utils import helper_diis
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
+        o, v = cc.o, cc.v
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         saveERI = cc.H.ERI
         cc.H.ERI = deri
@@ -284,8 +296,10 @@ class CCderiv(CorrelatedDerivs):
         finally:
             cc.H.ERI = saveERI
         B1, B2 = np.asarray(B1), np.asarray(B2)
-        X1, X2 = B1 / Dia, B2 / Dijab
-        diis = helper_diis(X1, X2, 8)
+        dfa = np.asarray(df)
+        B1 = B1 + (dfa[v, o].T - dfa[o, v])         # singles source = the vo block A_ai (see docstring):
+        X1, X2 = B1 / Dia, B2 / Dijab               # zero for a symmetric perturbation, the leading term
+        diis = helper_diis(X1, X2, 8)               # for an anti-Hermitian one (e.g. the magnetic dipole)
         for _ in range(maxiter):
             j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
             r1, r2 = B1 + j1 - omega * X1, B2 + j2 - omega * X2
@@ -993,13 +1007,31 @@ class CCderiv(CorrelatedDerivs):
         return -self.linear_response('mu', 'mu', omega)
 
     def optical_rotation(self, omega):
-        r"""Orbital-unrelaxed optical-rotation tensor ``G'(omega) = <<mu; m>>_omega``
-        (electric dipole ``mu`` and magnetic dipole ``m``), a 3x3 array; ``omega != 0``
-        (there is no static optical rotation).  Not yet implemented -- staged after the
-        dynamic (omega != 0) polarizability; see docs/ccresponse_reformulation_plan.md."""
-        raise NotImplementedError(
-            "Optical rotation (<<mu; m>>) is a later phase of the CC linear-response "
-            "reformulation; only the static polarizability is implemented so far.")
+        r"""Orbital-unrelaxed optical-rotation tensor ``G'(omega) = <<mu; m>>_omega``, a 3x3 array --
+        the odd-in-omega part of the density response function of the electric dipole ``mu`` to the
+        magnetic dipole ``m``::
+
+            G'_ab(omega) = <<mu; m>>_omega
+                         = 1/2 [ Tr(d_{m_b} D(omega) . mu_a) - Tr(d_{m_b} D(-omega) . mu_a) ]
+
+        .. math::
+
+            G'_{ab}(\omega) = \langle\langle \mu; m \rangle\rangle_\omega
+                = \tfrac{1}{2}\big[\mathrm{Tr}(\partial_{m_b} D(\omega)\,\mu_a)
+                                  - \mathrm{Tr}(\partial_{m_b} D(-\omega)\,\mu_a)\big]
+
+        The magnetic dipole is anti-Hermitian, so unlike the electric polarizability a single
+        density evaluation is not the response function: the symmetric ``ccresponse.optrot`` (via
+        ``linresp_sym``) is ``0.5*(S1 - S2)`` with ``S1 = linresp_sym(mu@-omega, m@+omega)`` and
+        ``S2`` its frequency-swap, which equals this odd-in-omega combination of the asymmetric
+        density response (verified against ``ccresponse.optrot`` to ~1e-12).  ``omega != 0`` (there
+        is no static optical rotation).  Not symmetric in ``a``/``b`` (a pseudotensor).  The magnetic
+        integrals are the pure-real operator of :meth:`_perturbation_ints` (the ``i`` is factored out,
+        as in ``ccresponse``), so the perturbed amplitudes stay real."""
+        if omega == 0.0:
+            raise ValueError("Optical rotation requires a nonzero field frequency.")
+        return 0.5 * (self.linear_response('mu', 'm', omega)
+                      - self.linear_response('mu', 'm', -omega))
 
     def _perturbation_ints(self, key):
         """Bare MO integrals of a one-electron perturbation operator, as a list of three

@@ -1,6 +1,6 @@
 # CC linear-response reformulation — design plan
 
-**Status:** Phases 1-2 complete (static + dynamic unrelaxed CCSD polarizability); Phases 3-4 to follow. Living document.
+**Status:** Phases 1-3 complete (static + dynamic unrelaxed CCSD polarizability; optical rotation); Phase 4 (CC3) to follow. Living document.
 
 ## Goal
 
@@ -123,9 +123,23 @@ has spurious poles at the SCF excitation frequencies.
    `response_polarizability(omega)` reproduces `ccresponse.polarizability(omega)` to ~1e-11 at
    omega != 0 (test_092; spatial and spin-orbital, positive and negative frequency, with the static
    tensor recovered as omega -> 0 and normal dispersion away from it).
-3. **Optical rotation.** Operators are the electric dipole `mu` and the magnetic dipole `m` (the
-   `<<mu; m>>` tensor) — not angular momentum. **omega != 0 only** (there is no static optical
-   rotation). Antisymmetric combination + mixed `(1+Lambda)` terms.
+3. **Optical rotation. DONE.** `optical_rotation(omega)` = the `<<mu; m>>_omega` tensor, electric
+   dipole `mu` and magnetic dipole `m` (not angular momentum), `omega != 0`. Two findings:
+   - **The magnetic dipole is anti-Hermitian, which exposed a source bug in the perturbed-amplitude
+     solvers.** `cc.residuals` builds the singles source from the `[o,v]` block (the ground-state
+     `f_ia` convention, valid only because the Fock is symmetric); the correct similarity-transform
+     source is the `[v,o]` block `A_ai` (what `ccresponse.pertbar.Avo` uses). For a symmetric
+     perturbation (Fock derivative, electric dipole) the two blocks are equal, so Phases 1-2 were
+     unaffected; for the anti-Hermitian magnetic dipole they differ by a sign. Fixed in
+     `_perturbed_amplitudes`/`_so_perturbed_amplitudes` by `B1 += (df[v,o].T - df[o,v])` (zero for a
+     symmetric perturbation). Confirmed at the amplitude level: our `dt`/`dl` now reproduce
+     `ccresponse`'s `X`/`Y` for BOTH `mu` and `m` to ~1e-14.
+   - **Optical rotation is the odd-in-omega combination**, not a single density evaluation: a single
+     `Tr(d_m D(omega).mu)` is the asymmetric `<<mu; m>>` and differs from the trusted symmetric value.
+     `ccresponse.optrot` (via `linresp_sym`) is `0.5*(S1 - S2)` with `S1 = linresp_sym(mu@-omega,
+     m@+omega)` and `S2` its frequency-swap; this equals `0.5*[Tr(d_m D(+omega).mu) -
+     Tr(d_m D(-omega).mu)]`. Matches `ccresponse.optrot` to ~1e-13 (test_093; spatial + SO, chiral
+     H2O2, nonzero trace).
 4. **CC3.** Deferred; scope TBD.
 
 ## Validation
