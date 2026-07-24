@@ -29,10 +29,10 @@ OrbitalResponse = namedtuple('OrbitalResponse', 'Drel Gam D z mo_hessian Pco Poo
 
 #: Result of a perturbed (2n+1) orbital-response solve for one perturbation ``x``.  ``dDrel`` is the
 #: first-order response of the relaxed 1-PDM; ``dGam`` the response of the unrelaxed cumulant 2-PDM;
-#: ``dW`` the response of the energy-weighted density ``W = I'(Drel, Gam)``.  All three fall out of a
+#: ``dI`` the response of the energy-weighted density ``I = I'(Drel, Gam)``.  All three fall out of a
 #: single perturbed solve -- the polarizability needs only ``dDrel``; the APT/Hessian
-#: (nuclear-skeleton) assemblies also contract ``dGam`` and ``dW`` against the perturbed integrals.
-PerturbedResponse = namedtuple('PerturbedResponse', 'dDrel dGam dW')
+#: (nuclear-skeleton) assemblies also contract ``dGam`` and ``dI`` against the perturbed integrals.
+PerturbedResponse = namedtuple('PerturbedResponse', 'dDrel dGam dI')
 
 
 class CorrelatedDerivs:
@@ -98,7 +98,7 @@ class CorrelatedDerivs:
     # The Gauss/Stanton/Bartlett orbital-gradient Lagrangian: a method-agnostic function of a
     # full-MO 1-PDM ``D`` and cumulant 2-PDM ``Gam`` (both supplied by the leaf) plus the SCF
     # reference integrals/Fock.  Its occupied-virtual antisymmetric part ``X_ai = I'_ia - I'_ai``
-    # drives the Z-vector; evaluated at the relaxed density it is the energy-weighted density ``W``.
+    # drives the Z-vector; evaluated at the relaxed density it is the energy-weighted density ``I``.
     # Basis-dispatched: antisymmetrized ``<pq||rs>`` (spin-orbital) vs the spin-adapted ``L``
     # (closed-shell).  ``Gam`` must carry the proper 2-PDM permutational symmetry (the caller's
     # densities -- MP2 seeds / :meth:`ccdensity.gradient_densities` -- ensure this).
@@ -185,7 +185,7 @@ class CorrelatedDerivs:
     # The field/nuclear derivative of I'(D, Gam), method-agnostic given the perturbed integrals
     # (df = d_x f, deri = d_x <pq|rs>, dL = 2 deri - deri.swap) and the density responses (dD, dGam).
     # Its ov-antisymmetric part is the perturbed Z-vector RHS; evaluated at the relaxed density (with
-    # its response) it is the perturbed energy-weighted density d_x W.  The termA derivative is the
+    # its response) it is the perturbed energy-weighted density d_x I.  The termA derivative is the
     # FULL Fock matrix product df @ (D + D.T) -- not the diagonal d_x(eps) stencil of the unperturbed
     # form (valid only at F=0); the off-diagonal df couples the ov/core-active blocks of a relaxed D
     # (zero for an unrelaxed MP2 D, nonzero for CC's Dov/Dvo).
@@ -262,10 +262,10 @@ class CorrelatedDerivs:
     #
     #     Drel = D  +  P_co (core<->active-occ)  +  P_oo/P_vv (extra oo/vv, e.g. (T))  -  z (ov),
     #
-    # with the Z-vector  A z = X,  X_ai = I'_ia - I'_ai (over the full occupied space).  The
+    # with the Z-vector  G z = X,  X_ai = I'_ia - I'_ai (over the full occupied space).  The
     # non-redundant core<->active-occupied rotation is a direct divide P_co = (I'_ci - I'_ic) /
     # (eps_c - eps_i) (the SCF energy is invariant to occ-occ rotations), coupled into X.  The orbital
-    # Hessian A is the all-electron SCF Hessian: borrowed from the reference HFwfn CPHF (spatial) or
+    # Hessian G is the all-electron SCF Hessian: borrowed from the reference HFwfn CPHF (spatial) or
     # built inline (spin-orbital, G_ia,jb = <aj||ib> + <ab||ij> + delta_ij delta_ab (eps_a - eps_i)).
     # Method-agnostic given the two leaf hooks below.
 
@@ -279,18 +279,18 @@ class CorrelatedDerivs:
         r"""Spatial (closed-shell) unperturbed orbital-response (Z-vector) solve (cached, frozen-core
         aware), returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM::
 
-            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X
+            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   G z = X
 
         .. math::
 
             D^\mathrm{rel} = D + P_\mathrm{co} + P_\mathrm{oo} + P_\mathrm{vv} - z,
-            \qquad X_{ai} = I'_{ia} - I'_{ai}, \qquad A z = X
+            \qquad X_{ai} = I'_{ia} - I'_{ai}, \qquad G z = X
 
         with the generalized-Fock Lagrangian ``I'`` from :meth:`_spatial_lagrangian` (spin-adapted
         ``L``), the frozen-core divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into ``X``,
         the canonical-perturbed-MO oo/vv rotations ``P_oo``/``P_vv`` (populated only for
-        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``A z = X`` solved with
-        the orbital Hessian ``A`` from the all-electron reference ``HFwfn`` CPHF (``mo_hessian`` =
+        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``G z = X`` solved with
+        the orbital Hessian ``G`` from the all-electron reference ``HFwfn`` CPHF (``mo_hessian`` =
         that ``HFwfn``; occupied space = the full ``ndocc``).  ``z`` is indexed ``(I, a)`` over the
         full occupied space.  The record's byproducts (``z``, ``mo_hessian``, ``Pco``, ``Poo``,
         ``Pvv``, ``D``) are reused by the perturbed (2n+1) machinery."""
@@ -339,18 +339,18 @@ class CorrelatedDerivs:
         r"""Spin-orbital unperturbed orbital-response (Z-vector) solve (cached, frozen-core aware),
         returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM::
 
-            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   A z = X
+            Drel = D + P_co + P_oo + P_vv - z,   X_ai = I'_ia - I'_ai,   G z = X
 
         .. math::
 
             D^\mathrm{rel} = D + P_\mathrm{co} + P_\mathrm{oo} + P_\mathrm{vv} - z,
-            \qquad X_{ai} = I'_{ia} - I'_{ai}, \qquad A z = X
+            \qquad X_{ai} = I'_{ia} - I'_{ai}, \qquad G z = X
 
         with the generalized-Fock Lagrangian ``I'`` from :meth:`_so_lagrangian` (antisymmetrized
         ``<pq||rs>``), the frozen-core divide ``P_co = (I'_ci - I'_ic)/(eps_c - eps_i)`` coupled into
         ``X``, the canonical-perturbed-MO oo/vv rotations ``P_oo``/``P_vv`` (populated only for
-        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``A z = X`` solved with
-        the orbital Hessian ``A = G`` built inline (``G_ia,jb = <aj||ib> + <ab||ij> + delta_ij
+        :attr:`perturbed_mo_gauge` ``== 'canonical'``), and the ov Z-vector ``G z = X`` solved with
+        the orbital Hessian ``G`` built inline (``G_ia,jb = <aj||ib> + <ab||ij> + delta_ij
         delta_ab (eps_a - eps_i)``, ``mo_hessian`` = that ``G``) -- there is no all-electron
         spin-orbital ``HFwfn`` CPHF to borrow (it orders the spins differently from the densities).
         ``z`` is indexed ``(I, a)`` over the full occupied space.  The record's byproducts (``z``,
@@ -424,7 +424,7 @@ class CorrelatedDerivs:
     # so CCSD(T)'s canonical oo/vv pairs enter but the code is common): the perturbed Lagrangian dI'
     # (with the perturbed integrals df/deri/dL), the perturbed frozen-core divide d_x P_co (a
     # Sylvester relation), the perturbed canonical-MO oo/vv rotations d_x P_oo/d_x P_vv (gauge-gated),
-    # and the perturbed ov Z-vector z^x = A^{-1}(dX - A^x z) reusing the unperturbed orbital Hessian A
+    # and the perturbed ov Z-vector z^x = G^{-1}(dX - G^x z) reusing the unperturbed orbital Hessian G
     # and z from the OrbitalResponse record.
 
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
@@ -438,15 +438,15 @@ class CorrelatedDerivs:
 
     def _perturbed_relaxed_density(self, pert):
         r"""Spatial perturbed (2n+1) orbital response for ``pert`` -- a :class:`PerturbedResponse`
-        ``(dDrel, dGam, dW)``.  The relaxed-1-PDM response (``nmo x nmo``) is::
+        ``(dDrel, dGam, dI)``.  The relaxed-1-PDM response (``nmo x nmo``) is::
 
-            d_x Drel = d_x D + d_x P_co + d_x P_oo + d_x P_vv - z^x,   A z^x = dX - A^x z
+            d_x Drel = d_x D + d_x P_co + d_x P_oo + d_x P_vv - z^x,   G z^x = dX - G^x z
 
         .. math::
 
             \partial_x D^\mathrm{rel} = \partial_x D + \partial_x P_\mathrm{co}
                 + \partial_x P_\mathrm{oo} + \partial_x P_\mathrm{vv} - z^{x},
-            \qquad A z^{x} = \partial_x X - A^{x} z
+            \qquad G z^{x} = \partial_x X - G^{x} z
 
         with the perturbed unrelaxed density ``d_x D`` (:meth:`_perturbed_unrelaxed_densities`), the
         perturbed Lagrangian ``dI'`` (:meth:`_perturbed_lagrangian`) giving the perturbed
@@ -455,10 +455,10 @@ class CorrelatedDerivs:
         ``dX``, the perturbed canonical-MO oo/vv rotations ``d_x P_oo``/``d_x P_vv``
         (:meth:`_perturbed_dependent_pairs`, populated only for :attr:`perturbed_mo_gauge` ``==
         'canonical'``) coupled into ``dX``, and the perturbed ov Z-vector ``z^x`` reusing the
-        unperturbed orbital Hessian ``A`` and ``z`` from :meth:`_orbital_response` (``A^x z`` the
+        unperturbed orbital Hessian ``G`` and ``z`` from :meth:`_orbital_response` (``G^x z`` the
         perturbed-Hessian response).  The perturbed integrals ``df``/``deri`` are canonical per
         :attr:`perturbed_mo_gauge`.  The same solve yields the unrelaxed cumulant-2-PDM response
-        ``dGam`` and the perturbed energy-weighted density ``dW = d_x I'(Drel, Gam)`` (the perturbed
+        ``dGam`` and the perturbed energy-weighted density ``dI = d_x I'(Drel, Gam)`` (the perturbed
         Lagrangian evaluated at the *relaxed* density), so the APT/Hessian assemblies need no extra
         perturbed solve."""
         wfn = self.wfn
@@ -507,13 +507,13 @@ class CorrelatedDerivs:
             dDrel[v, v] += dPvv
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
-        dW = self._perturbed_lagrangian(df, deri, dL, Drel0, dDrel, Gam0, dGam)
-        return PerturbedResponse(dDrel, dGam, dW)
+        dI = self._perturbed_lagrangian(df, deri, dL, Drel0, dDrel, Gam0, dGam)
+        return PerturbedResponse(dDrel, dGam, dI)
 
     def _so_perturbed_relaxed_density(self, pert):
         """Spin-orbital perturbed (2n+1) orbital response -- the spin-orbital analogue of
         :meth:`_perturbed_relaxed_density`, returning the same :class:`PerturbedResponse`
-        ``(dDrel, dGam, dW)`` (antisymmetrized ``<pq||rs>`` derivatives ``deri`` in the couplings;
+        ``(dDrel, dGam, dI)`` (antisymmetrized ``<pq||rs>`` derivatives ``deri`` in the couplings;
         the inline orbital Hessian ``G`` from :meth:`_so_orbital_response` solved with
         ``numpy.linalg.solve``)."""
         wfn = self.wfn
@@ -562,12 +562,12 @@ class CorrelatedDerivs:
             dDrel[v, v] += dPvv
         dDrel[v, ofull] += -zx.T
         dDrel[ofull, v] += -zx
-        dW = self._so_perturbed_lagrangian(df, deri, Drel0, dDrel, Gam0, dGam)
-        return PerturbedResponse(dDrel, dGam, dW)
+        dI = self._so_perturbed_lagrangian(df, deri, Drel0, dDrel, Gam0, dGam)
+        return PerturbedResponse(dDrel, dGam, dI)
 
     # ---- first-derivative properties: relaxed dipole and nuclear gradient ----
     # Both are contractions of the relaxed density against the property integrals, method-agnostic
-    # given (Drel, Gam) and the energy-weighted density W = I'(Drel).  The reference (SCF) and
+    # given (Drel, Gam) and the energy-weighted density I = I'(Drel).  The reference (SCF) and
     # nuclear contributions are kept separate and summed by the pycc.properties facade.
 
     def relaxed_dipole(self) -> np.ndarray:
@@ -601,7 +601,7 @@ class CorrelatedDerivs:
                 + \Gamma_{pqrs}\,\langle pq|rs\rangle^{(X)} + W_{pq}\,S^{(X)}_{pq}
 
         with the relaxed 1-PDM ``Drel``, cumulant 2-PDM ``Gamma`` (:meth:`_relaxed_density`), and the
-        energy-weighted density ``W = I'(Drel)`` (:meth:`_lagrangian`).  ``f^(X) = h^(X) + sum_m
+        energy-weighted density ``I = I'(Drel)`` (:meth:`_lagrangian`).  ``f^(X) = h^(X) + sum_m
         L[p,m,q,m]^(X)`` is the closed-shell skeleton Fock derivative (``m`` over the full occupied
         space), and ``S^(X)``/``<pq|rs>^(X)`` are the skeleton derivative integrals from
         ``wfn.derivatives`` (chemist ``(pq|rs)^(X)``, converted to physicist here) -- no
@@ -611,7 +611,7 @@ class CorrelatedDerivs:
             return self._so_gradient()
         ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
         Drel, Gam = self._relaxed_density()
-        W = self._lagrangian(Drel, Gam)
+        I = self._lagrangian(Drel, Gam)
         c = self.contract
         d = self.wfn.derivatives
         grad = np.zeros((d.natom, 3))
@@ -623,7 +623,7 @@ class CorrelatedDerivs:
                 fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])     # skeleton Fock deriv (full occ)
                 grad[atom, cart] = (c('pq,pq->', Drel, fx)
                                     + c('pqrs,pqrs->', Gam, phys)
-                                    + c('pq,pq->', W, Sx[cart]))
+                                    + c('pq,pq->', I, Sx[cart]))
         return grad
 
     def _so_gradient(self) -> np.ndarray:
@@ -642,7 +642,7 @@ class CorrelatedDerivs:
         """
         ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
         Drel, Gam = self._so_relaxed_density()
-        W = self._lagrangian(Drel, Gam)
+        I = self._lagrangian(Drel, Gam)
         c = self.contract
         d = self.wfn.derivatives
         grad = np.zeros((d.natom, 3))
@@ -652,7 +652,7 @@ class CorrelatedDerivs:
                 fx = hx[cart] + c('pmqm->pq', ERIx[cart][:, ofull, :, ofull])   # skeleton Fock deriv
                 grad[atom, cart] = (c('pq,pq->', Drel, fx)
                                     + c('pqrs,pqrs->', Gam, ERIx[cart])
-                                    + c('pq,pq->', W, Sx[cart]))
+                                    + c('pq,pq->', I, Sx[cart]))
         return grad
 
     # ---- second-derivative properties: polarizability, APT (dipole derivatives), Hessian ----
@@ -729,10 +729,10 @@ class CorrelatedDerivs:
                 + \mathrm{Tr}(D^\mathrm{rel}\,[\mu_a^{(X)} + \mathrm{rotate}(U^X, \mu_a)])
 
         Field side -- differentiate the relaxed nuclear gradient
-        ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + W S^(X)`` w.r.t. the field::
+        ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + I S^(X)`` w.r.t. the field::
 
             P[X,a] = -[ d_a D_rel f^(X) + D_rel d_a f^(X) + d_a Gamma <pq|rs>^(X)
-                        + Gamma d_a <pq|rs>^(X) + d_a W S^(X) + W d_a S^(X) ]
+                        + Gamma d_a <pq|rs>^(X) + d_a I S^(X) + I d_a S^(X) ]
 
         .. math::
 
@@ -744,7 +744,7 @@ class CorrelatedDerivs:
             \end{aligned}
 
         with the 3 field responses ``d_a D_rel``, ``d_a Gamma``, and the perturbed energy-weighted
-        density ``d_a W`` all from one :class:`PerturbedResponse` per field
+        density ``d_a I`` all from one :class:`PerturbedResponse` per field
         (:meth:`_perturbed_relaxed_density`).  The field-derivatives of the nuclear skeletons carry
         the orbital rotation ``rotate(U^a, .)`` plus, for ``d_a f^(X)``, the occupied-sum response and
         the ``-mu_a^(X)`` mixed skeleton (the field enters ``h``).  Both routes give the same tensor;
@@ -785,12 +785,12 @@ class CorrelatedDerivs:
 
         # route == '2n+1-field'
         Gam = rec.Gam
-        W = self._lagrangian(Drel, Gam)
+        I = self._lagrangian(Drel, Gam)
         field = [Perturbation('field', a) for a in range(3)]
         resp = [popdm(field[a]) for a in range(3)]                    # one perturbed solve per field
         dDrel = [r.dDrel for r in resp]
-        dGamF = [r.dGam for r in resp]
-        dW = [r.dW for r in resp]                                     # perturbed energy-weighted density
+        dGamF = [r.dGam for r in resp]                                # F = field-perturbation response
+        dI = [r.dI for r in resp]                                     # perturbed energy-weighted density
         U = [np.asarray(cphf.full_U(field[a], ncore, canonical=canonical)) for a in range(3)]
 
         def rot1(Um, M):
@@ -805,25 +805,26 @@ class CorrelatedDerivs:
             Sx = d.so_overlap(A) if so else d.overlap(A)
             dip = d.so_dipole(A) if so else d.dipole(A)
             if so:
-                eriF = [np.asarray(e) for e in d.so_eri(A)]          # <pq||rs>^(X) (Fock and Gamma)
-                gamX = eriF
+                eriL = [np.asarray(e) for e in d.so_eri(A)]          # <pq||rs>^(X) (Fock and Gamma)
+                eriX = eriL
             else:
                 phys = [np.asarray(ch) for ch in d.eri(A)]                        # <pq|rs>^(X) (Gamma)
-                eriF = [2.0 * p - p.transpose(0, 1, 3, 2) for p in phys]          # L^X (Fock)
-                gamX = phys
+                eriL = [2.0 * p - p.transpose(0, 1, 3, 2) for p in phys]          # L^X (Fock)
+                eriX = phys
             for beta in range(3):
-                fX = np.asarray(hx[beta]) + c('pmqm->pq', eriF[beta][:, ofull, :, ofull])
+                fX = np.asarray(hx[beta]) + c('pmqm->pq', eriL[beta][:, ofull, :, ofull])
                 SX = np.asarray(Sx[beta])
-                gX, eX = gamX[beta], eriF[beta]
+                eriXb, eriLb = eriX[beta], eriL[beta]                 # this Cartesian's X-skeletons
                 for alpha in range(3):
                     Um = U[alpha]
                     muX = np.asarray(dip[alpha * 3 + beta])
-                    occ = (c('rm,prqm->pq', Um[:, ofull], eX[:, :, :, ofull])
-                           + c('rm,pmqr->pq', Um[:, ofull], eX[:, ofull, :, :]))
+                    occ = (c('rm,prqm->pq', Um[:, ofull], eriLb[:, :, :, ofull])
+                           + c('rm,pmqr->pq', Um[:, ofull], eriLb[:, ofull, :, :]))
                     dfX = rot1(Um, fX) - muX + occ
                     P[A, beta, alpha] = -(c('pq,pq->', dDrel[alpha], fX) + c('pq,pq->', Drel, dfX)
-                                          + c('pqrs,pqrs->', dGamF[alpha], gX) + c('pqrs,pqrs->', Gam, rot4(Um, gX))
-                                          + c('pq,pq->', dW[alpha], SX) + c('pq,pq->', W, rot1(Um, SX)))
+                                          + c('pqrs,pqrs->', dGamF[alpha], eriXb)
+                                          + c('pqrs,pqrs->', Gam, rot4(Um, eriXb))
+                                          + c('pq,pq->', dI[alpha], SX) + c('pq,pq->', I, rot1(Um, SX)))
         return P
 
     def hessian(self) -> np.ndarray:
@@ -831,10 +832,10 @@ class CorrelatedDerivs:
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
         nuclear-nuclear analog of :meth:`polarizability` / :meth:`dipole_derivatives`, via the 2n+1
         route (both spin paths, frozen-core aware).  Differentiate the relaxed nuclear gradient
-        ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + W S^(X)`` w.r.t. a second nucleus ``Y``::
+        ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + I S^(X)`` w.r.t. a second nucleus ``Y``::
 
             H[X,Y] = d_Y D_rel f^(X) + D_rel d_Y f^(X) + d_Y Gamma <pq|rs>^(X)
-                     + Gamma d_Y <pq|rs>^(X) + d_Y W S^(X) + W d_Y S^(X)
+                     + Gamma d_Y <pq|rs>^(X) + d_Y I S^(X) + I d_Y S^(X)
 
         .. math::
 
@@ -847,7 +848,7 @@ class CorrelatedDerivs:
 
         the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`dipole_derivatives`).
         Only ``3N`` first-order solves -- the perturbed relaxed density ``d_Y D_rel``, the perturbed
-        energy-weighted density ``d_Y W``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
+        energy-weighted density ``d_Y I``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
         per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
 
         The field-derivatives of the nuclear skeletons carry (i) the full second integral skeletons
@@ -855,9 +856,21 @@ class CorrelatedDerivs:
         nonzero here, unlike the field case where only ``-mu^(X)`` survived), and (ii) the ``U^Y``
         orbital rotation of the ``X`` skeletons.  The rotations are hoisted off the ``O(N^2)`` pair
         loop onto the (per-``Y``) densities via ``sum A rot(U,B) = sum rot(U^T,A) B``:
-        ``Dtil = U D + D U^T``, ``Wtil`` likewise, ``Gtil = rotate4(U^T, Gamma)``, and the Fock
+        ``Drot = U D + D U^T``, ``Irot`` likewise, ``Gamrot = rot4(U^T, Gamma)``, and the Fock
         skeleton's occupied-sum response as the per-``X`` intermediate ``J^X`` contracted with
         ``U^Y`` (so no ``O(N^2)`` four-index rotation).
+
+        Local naming: a trailing ``X`` marks a *skeleton integral derivative* (``fX`` = ``f^(X)``,
+        ``SX`` = ``S^(X)``, ``eriX`` = ``<pq|rs>^(X)`` spatial / ``<pq||rs>^(X)`` spin-orbital) --
+        never a density derivative.  ``eriL``/``eL`` is the Fock-building companion of ``eriX``: the
+        spin-adapted ``L^(X) = 2<pq|rs>^(X) - <pq|sr>^(X)`` (closed-shell), or ``eriX`` itself when
+        the integrals are already antisymmetrized (spin-orbital).  A trailing ``rot`` marks a
+        ``U``-rotated *unperturbed* quantity
+        (``Drot``, ``Irot``, ``Gamrot``); this is the code's own rotation bookkeeping and is unrelated
+        to the tilde of the theory notes (which marks the relaxed 1-PDM ``D~`` = ``Drel`` and the
+        augmented ``I''~``).  A trailing ``N``/``F`` on a perturbed-response array names the
+        *perturbation* it responds to -- nuclear here (``dGamN`` = ``d_Y Gamma``), field in the
+        ``'2n+1-field'`` APT (``dGamF``); both are the ``dGam`` of :class:`PerturbedResponse`.
 
         The reference and nuclear parts are separate and summed with this correlation part by
         :func:`pycc.hessian`."""
@@ -874,7 +887,7 @@ class CorrelatedDerivs:
         nc = 3 * natom
         rec = self._so_orbital_response() if so else self._orbital_response()
         Drel, Gam = rec.Drel, rec.Gam
-        W = self._lagrangian(Drel, Gam)
+        I = self._lagrangian(Drel, Gam)
         popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
         pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
 
@@ -886,30 +899,30 @@ class CorrelatedDerivs:
         resp = [popdm(p) for p in pert]                              # one perturbed solve per nucleus
         dDrel = [r.dDrel for r in resp]
         dGamN = [r.dGam for r in resp]
-        dW = [r.dW for r in resp]
+        dI = [r.dI for r in resp]
         U = [np.asarray(cphf.full_U(p, ncore, canonical=canonical)) for p in pert]
-        Dtil = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
-        Wtil = [U[i] @ W + W @ U[i].T for i in range(nc)]
-        Gtil = [rot4(U[i].T, Gam) for i in range(nc)]
+        Drot = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
+        Irot = [U[i] @ I + I @ U[i].T for i in range(nc)]
+        Gamrot = [rot4(U[i].T, Gam) for i in range(nc)]
 
         # per-X first skeletons; J^X carries the Fock skeleton's occupied-sum rotation response
-        fX, gamX, SX, JX = [], [], [], []
+        fX, eriX, SX, JX = [], [], [], []
         for p in pert:
             A, ct = p.comp
             hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
             Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
             if so:
-                eF = np.asarray(d.so_eri(A)[ct])
-                gm = eF
+                eL = np.asarray(d.so_eri(A)[ct])
+                gm = eL
             else:
                 ph = np.asarray(d.eri(A)[ct])                           # <pq|rs>^(X) (Gamma)
-                eF = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
+                eL = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
                 gm = ph
-            fX.append(hx + c('pmqm->pq', eF[:, ofull, :, ofull]))
-            gamX.append(gm)
+            fX.append(hx + c('pmqm->pq', eL[:, ofull, :, ofull]))
+            eriX.append(gm)
             SX.append(Sx)
-            JX.append(c('pq,prqm->rm', Drel, eF[:, :, :, ofull])
-                      + c('pq,pmqr->rm', Drel, eF[:, ofull, :, :]))
+            JX.append(c('pq,prqm->rm', Drel, eL[:, :, :, ofull])
+                      + c('pq,pmqr->rm', Drel, eL[:, ofull, :, :]))
 
         H = np.zeros((nc, nc))
         for iy, py in enumerate(pert):
@@ -922,9 +935,9 @@ class CorrelatedDerivs:
                 e2 = blk['eri'][cx * 3 + cy]
                 L2 = e2 if so else 2.0 * e2 - e2.swapaxes(2, 3)
                 f2 = core2 + c('pmqm->pq', L2[:, ofull, :, ofull])       # f^(XY)
-                H[ix, iy] = (c('pq,pq->', dDrel[iy] + Dtil[iy], fX[ix]) + c('pq,pq->', Drel, f2)
-                             + c('pqrs,pqrs->', dGamN[iy] + Gtil[iy], gamX[ix]) + c('pqrs,pqrs->', Gam, e2)
-                             + c('pq,pq->', dW[iy] + Wtil[iy], SX[ix]) + c('pq,pq->', W, ov2)
+                H[ix, iy] = (c('pq,pq->', dDrel[iy] + Drot[iy], fX[ix]) + c('pq,pq->', Drel, f2)
+                             + c('pqrs,pqrs->', dGamN[iy] + Gamrot[iy], eriX[ix]) + c('pqrs,pqrs->', Gam, e2)
+                             + c('pq,pq->', dI[iy] + Irot[iy], SX[ix]) + c('pq,pq->', I, ov2)
                              + float(np.sum(U[iy][:, ofull] * JX[ix])))
         return H
 
