@@ -47,7 +47,6 @@ class ccdensity(object):
         The occ,vir,occ,vir block of the two-body density.
     Doovv : NumPy array
         The occ,occ,vir,vir block of the two-body density.
-        The occ,vir,occ,occ block of the two-body density.
 
     Methods
     -------
