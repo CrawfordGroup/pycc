@@ -25,8 +25,8 @@ def test_pade_sanity():
 
     assert np.real(i)[re_max] == 1
     assert np.imag(i)[im_max] == -1
-    assert (w[re_max] - 4) < 1E-4
-    assert (w[im_max] - 2) < 1E-4
+    assert abs(w[re_max] - 4) < 1E-4
+    assert abs(w[im_max] - 2) < 1E-4
 
 @pytest.mark.xfail
 def test_pade_sanity_xfail():
@@ -45,5 +45,5 @@ def test_pade_sanity_xfail():
     re_max = np.argmax(np.abs(np.real(i)))
     im_max = np.argmax(np.abs(np.imag(i)))
 
-    assert (w[re_max] - 4) < 1E-4
-    assert (w[im_max] - 2) < 1E-4
+    assert abs(w[re_max] - 4) < 1E-4
+    assert abs(w[im_max] - 2) < 1E-4
