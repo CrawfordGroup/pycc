@@ -40,6 +40,25 @@ import psi4
 import numpy as np
 
 
+def _complete_deriv2(chem: np.ndarray) -> np.ndarray:
+    r"""Recover the complete symmetric two-electron second derivative from Psi4's raw output.
+
+    For ``atom1 != atom2`` Psi4's ``mo_tei_deriv2`` returns *twice* the upper-triangular
+    (canonically ordered) center-pair second derivatives of ``(mu nu|la si)`` and none of the
+    lower-triangular ones.  The doubling makes it correct when contracted against the
+    bra<->ket-symmetric two-particle density (the molecular Hessian), but the raw array is not
+    itself the symmetric integral: it violates ``(mu nu|la si) = (la si|mu nu)`` by an O(1)
+    amount.  Averaging over the bra<->ket swap supplies the missing lower-triangular pairs and
+    cancels the factor of two, giving the true symmetric integral::
+
+        (mu nu|la si)^(XY) = 0.5 * [ raw + raw.transpose(2, 3, 0, 1) ]
+
+    Applied in chemist order (``chem``); the caller converts to physicist afterwards.  See
+    ``docs/derivative_integral_permutational_symmetry.tex``.
+    """
+    return 0.5 * (chem + chem.transpose(2, 3, 0, 1))
+
+
 class Derivatives(object):
     r"""MO-basis derivative-integral provider built on Psi4's MintsHelper.
 
@@ -263,14 +282,15 @@ class Derivatives(object):
                 = C^{\mu}_{p} C^{\nu}_{r}\,
                 \frac{\partial^2 (\mu\nu|\lambda\sigma)}{\partial X\,\partial Y}\,C^{\lambda}_{q} C^{\sigma}_{s}
 
-        The ``swapaxes(1, 2)`` converts Psi4's chemist ``mo_tei_deriv2`` to physicist order.
-        Unlike :meth:`so_eri2`, the bra<->ket symmetrization ``<pq|rs> = <qp|sr>`` (needed
-        because a single ``mo_tei_deriv2(A, B)`` is one ordering of ``d^2/dXA dXB``) is NOT
-        applied here; a caller that needs it (e.g. :mod:`~pycc.cphf`) enforces it itself.
+        The returned array is the *complete symmetric* integral: Psi4's raw ``mo_tei_deriv2``
+        is completed over the bra<->ket swap by :func:`_complete_deriv2` (in chemist order),
+        then ``swapaxes(1, 2)`` converts to physicist.  This matches :meth:`so_eri2`, so both
+        accessors return integrals that already satisfy the electron-exchange symmetry and no
+        caller need symmetrize.
 
         The Hessian skeleton needs only the occupied block, so callers pass ``'o'``
         (n_occ**4 per pair)."""
-        return [np.asarray(m).swapaxes(1, 2) for m in self.mints.mo_tei_deriv2(
+        return [_complete_deriv2(np.asarray(m)).swapaxes(1, 2) for m in self.mints.mo_tei_deriv2(
             atom1, atom2, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))]
 
     # ---- spin-orbital one-electron (spin-blocked from the spatial MO derivatives) ----
@@ -505,14 +525,11 @@ class Derivatives(object):
             \langle pq\Vert rs\rangle^{(XY)} = \langle pq|rs\rangle^{(XY)} - \langle pq|sr\rangle^{(XY)},
             \qquad \langle pq|rs\rangle^{(XY)} = (pr|qs)^{(XY)}
 
-        Psi4's ``mo_tei_deriv2(A, B)`` does not satisfy the integral's electron-exchange
-        symmetry ``(pq|rs) = (rs|pq)`` term by term -- a single (A, B) call is one ordering
-        of ``d^2/dXA dXB`` -- so the chemist integral is symmetrized over the bra<->ket
-        swap here (``0.5 (ch + ch.transpose(2,3,0,1))``), which (the geometric derivative of
-        a symmetric integral being symmetric) also restores the atom-pair-swap symmetry the
-        molecular Hessian needs. The symmetrization assumes matching bra/ket block pairs
-        (``b1,b2`` == ``b3,b4``), as in the occupied-block Hessian use; all four spin
-        combinations are built independently."""
+        The chemist integral is completed over the bra<->ket swap by :func:`_complete_deriv2`
+        (Psi4's raw ``mo_tei_deriv2`` is twice the upper-triangular center-pairs -- see that
+        helper) before conversion to physicist and ket antisymmetrization; the completion
+        assumes matching bra/ket block pairs (``b1,b2`` == ``b3,b4``), as in the occupied-block
+        Hessian use. All four spin combinations are built independently."""
         shape, sel = self._so_eri_blocks((b1, b2, b3, b4))
         chem = [np.zeros(shape) for _ in range(9)]
         for s12 in (0, 1):
@@ -530,8 +547,7 @@ class Derivatives(object):
                     chem[c][np.ix_(p1, p2, p3, p4)] = np.asarray(G[c])
         out = []
         for ch in chem:
-            ch = 0.5 * (ch + ch.transpose(2, 3, 0, 1))   # enforce (pq|rs) = (rs|pq)
-            phys = ch.swapaxes(1, 2)
+            phys = _complete_deriv2(ch).swapaxes(1, 2)   # complete over bra<->ket, then physicist
             out.append(phys - phys.swapaxes(2, 3))
         return out
 

@@ -544,12 +544,7 @@ class CPHF(object):
             else:
                 core = [np.asarray(m) for m in d.core2(a1, a2)]
                 overlap = [np.asarray(m) for m in d.overlap2(a1, a2)]
-                eri = []
-                for ph in d.eri2(a1, a2):                            # physicist <pq|rs>^{XY}
-                    ph = np.asarray(ph)
-                    # eri2 does not symmetrize a single (A, B) ordering; enforce the
-                    # electron-swap symmetry <pq|rs> = <qp|sr> (chemist (pq|rs) = (rs|pq)).
-                    eri.append(0.5 * (ph + ph.transpose(1, 0, 3, 2)))
+                eri = [np.asarray(m) for m in d.eri2(a1, a2)]        # physicist <pq|rs>^{XY}
             self._d2int[key] = {'core': core, 'overlap': overlap, 'eri': eri}
         return self._d2int[key]
 
