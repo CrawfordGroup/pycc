@@ -1,5 +1,5 @@
 """
-CISD static electric-dipole polarizability (correlation contribution), full 3x3 tensor -
+ISD static electric-dipole polarizability (correlation contribution), full 3x3 tensor -
 pycc.polarizability(pycc.CIderiv(ci)).correlation, the base 2n+1 machinery driven by CIderiv's
 density hooks - validated against a finite field of the ANALYTIC relaxed correlation dipole,
 alpha[:, b] = d mu / dF_b: the same oracle as CC's _findiff_alpha and MP2's _dipfd_alpha_diag,
@@ -56,23 +56,24 @@ def _alpha_analytic():
 
 
 def _dipfd_alpha_full():
-    """Full 3x3 alpha = d mu / dF via the 7-point O(h^6) central first-derivative stencil of the
-    analytic CISD relaxed correlation dipole - MP2's _dipfd_alpha_diag recipe, all components."""
+    """Full 3x3 alpha = -d(mu_rel)/d(lambda) via the 7-point O(h^6) central first-derivative
+    stencil of the analytic CISD relaxed correlation dipole under psi4's perturb_dipole (+lambda.mu
+    convention - see the module docstring for the sign)."""
     def mu(axis, Fval):
         field = [0.0, 0.0, 0.0]
         field[axis] = Fval
         return np.asarray(pycc.CIderiv(_solve(tuple(field))).relaxed_dipole())
     alpha = np.zeros((3, 3))
     for b in range(3):
-        alpha[:, b] = (-mu(b, -3 * H) + 9 * mu(b, -2 * H) - 45 * mu(b, -H)
-                       + 45 * mu(b, H) - 9 * mu(b, 2 * H) + mu(b, 3 * H)) / (60 * H)
+        alpha[:, b] = -(-mu(b, -3 * H) + 9 * mu(b, -2 * H) - 45 * mu(b, -H)
+                        + 45 * mu(b, H) - 9 * mu(b, 2 * H) + mu(b, 3 * H)) / (60 * H)
     return alpha
 
 
 def test_cisd_polarizability_vs_dipole_fd_full_631g():
     """Analytic full correlation polarizability tensor vs the 7-point finite field of the
-    analytic relaxed correlation dipole, every element, by magnitude, to 1e-10."""
-    diff = np.max(np.abs(np.abs(_alpha_analytic()) - np.abs(_dipfd_alpha_full())))
+    analytic relaxed correlation dipole, every element, SIGNED, to 1e-10."""
+    diff = np.max(np.abs(_alpha_analytic() - _dipfd_alpha_full()))
     assert diff < 1e-10, (diff, _alpha_analytic(), _dipfd_alpha_full())
 
 
