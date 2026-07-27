@@ -143,10 +143,6 @@ class CPHF(object):
         self._skel: dict = {}     # Perturbation -> (fx, Sx, gx) skeleton derivatives
         self._dfock: dict = {}    # (pert, ncore, canonical) -> (nmo, nmo) full perturbed Fock deriv
         self._deri: dict = {}     # (pert, ncore, canonical) -> (nmo^4) full perturbed <pq||rs> deriv
-        # Nuclear-nuclear skeleton second-derivative integrals, keyed by atom pair (atom1,
-        # atom2): the expensive mo_*_deriv2 calls are shared across the 3x3 Cartesian blocks
-        # of a pair, so memoize per pair rather than recompute per coordinate pair.
-        self._d2int: dict = {}    # (a1, a2) -> {'eri','core','overlap'}: 9-block lists
 
     # ---- orbital (MO) Hessian ----
     def _mo_hessian(self, kind: str = "electric") -> np.ndarray:
@@ -516,37 +512,6 @@ class CPHF(object):
                 + self.contract('tq,ptrs->pqrs', U, T)
                 + self.contract('tr,pqts->pqrs', U, T)
                 + self.contract('ts,pqrt->pqrs', U, T))
-
-    # ---- nuclear-nuclear skeleton second-derivative integrals (for the 2n+1 molecular Hessian) ----
-
-    def nuclear_hessian_skeletons(self, a1: int, a2: int) -> dict:
-        r"""Cached nuclear-nuclear skeleton second-derivative integrals for the atom pair
-        ``(a1, a2)``: the 9 ``(cart1, cart2)`` blocks of the core Hamiltonian ``h^{XY}``, the
-        overlap ``S^{XY}``, and the two-electron ``<pq||rs>^{XY}`` (in the basis's ERI
-        convention). The ``mo_*_deriv2`` calls -- ``mo_tei_deriv2`` especially -- are shared
-        across a pair's 3x3 Cartesian blocks, so compute once per atom pair (not per coordinate
-        pair). Returns ``{'core','overlap','eri'}`` -> lists of 9 arrays (indexed ``c1*3+c2``)::
-
-            core -> h^(XY)_pq,   overlap -> S^(XY)_pq,   eri -> <pq||rs>^(XY)
-
-        .. math::
-
-            h^{(XY)}_{pq}, \qquad S^{(XY)}_{pq}, \qquad \langle pq\Vert rs\rangle^{(XY)}
-        """
-        key = (a1, a2)
-        if key not in self._d2int:
-            so = self.wfn.orbital_basis == 'spinorbital'
-            d = self.wfn.derivatives
-            if so:
-                core = [np.asarray(m) for m in d.so_core2(a1, a2)]
-                overlap = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
-                eri = [np.asarray(m) for m in d.so_eri2(a1, a2)]     # <pq||rs>^{XY} (antisym)
-            else:
-                core = [np.asarray(m) for m in d.core2(a1, a2)]
-                overlap = [np.asarray(m) for m in d.overlap2(a1, a2)]
-                eri = [np.asarray(m) for m in d.eri2(a1, a2)]        # physicist <pq|rs>^{XY}
-            self._d2int[key] = {'core': core, 'overlap': overlap, 'eri': eri}
-        return self._d2int[key]
 
     # ---- magnetic-field perturbation (imaginary; for AATs) ----
     def _magnetic_dipole_ov(self, axis: int) -> np.ndarray:
