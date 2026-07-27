@@ -852,7 +852,7 @@ class CorrelatedDerivs:
         per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
 
         The field-derivatives of the nuclear skeletons carry (i) the full second integral skeletons
-        ``f^(XY)``/``<>^(XY)``/``S^(XY)`` (:meth:`CPHF.nuclear_hessian_skeletons`, cached per atom pair -- all
+        ``f^(XY)``/``<>^(XY)``/``S^(XY)`` (:meth:`Derivatives.nuclear_hessian_skeletons`, cached per atom pair -- all
         nonzero here, unlike the field case where only ``-mu^(X)`` survived), and (ii) the ``U^Y``
         orbital rotation of the ``X`` skeletons.  The rotations are hoisted off the ``O(N^2)`` pair
         loop onto the (per-``Y``) densities via ``sum A rot(U,B) = sum rot(U^T,A) B``:
@@ -929,7 +929,7 @@ class CorrelatedDerivs:
             Ay, cy = py.comp
             for ix, px in enumerate(pert):
                 Ax, cx = px.comp
-                blk = cphf.nuclear_hessian_skeletons(Ax, Ay)             # raw second skeletons (no U^{XY})
+                blk = d.nuclear_hessian_skeletons(Ax, Ay)                # raw second skeletons (no U^{XY})
                 core2 = blk['core'][cx * 3 + cy]
                 ov2 = blk['overlap'][cx * 3 + cy]
                 e2 = blk['eri'][cx * 3 + cy]
