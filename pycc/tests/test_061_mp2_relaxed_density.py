@@ -136,7 +136,7 @@ def _pycc_gradient(geom, basis, orbital_basis='spinorbital', freeze_core='false'
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    return np.asarray(pycc.gradient(mp).total)
+    return np.asarray(pycc.gradient(pycc.MPderiv(mp)).total)
 
 
 def _psi4_mp2_gradient(geom, basis, reference='rhf', occ=None):
@@ -252,7 +252,7 @@ def test_fc_mp2_gradient_vs_energy_fd_631g():
     mp = pycc.MPwfn(wfn, orbital_basis='spatial')
     mp.compute_energy()
     assert mp.nfzc > 0                                   # frozen core is actually active
-    gA = np.asarray(pycc.gradient(mp).total)             # total = SCF + correlation
+    gA = np.asarray(pycc.gradient(pycc.MPderiv(mp)).total)             # total = SCF + correlation
 
     h = 2.0e-3
     gF = np.zeros((3, 3))
@@ -322,7 +322,7 @@ def test_mp2_total_dipole_631g():
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis='spinorbital')
     mp.compute_energy()
-    total = np.asarray(pycc.dipole(mp).total)
+    total = np.asarray(pycc.dipole(pycc.MPderiv(mp)).total)
     assert abs(total[2] - FF_TOTAL_MU_Z_631) < 1e-8
 
 

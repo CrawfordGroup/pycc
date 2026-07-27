@@ -120,7 +120,7 @@ def test_ccsd_polarizability_water_631g(rhf_wfn):
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9              # symmetric
 
     # facade: total = nuclear (0) + reference (HF) + correlation, and correlation == analytic alpha
-    r = pycc.polarizability(cc)
+    r = pycc.polarizability(pycc.CCderiv(cc))
     assert np.max(np.abs(np.asarray(r.nuclear))) < 1e-14
     assert np.max(np.abs(np.asarray(r.correlation) - alpha)) < 1e-12
     assert np.max(np.abs(np.asarray(r.total) - (np.asarray(r.nuclear)
@@ -156,7 +156,7 @@ def test_ccsd_polarizability_hof_offdiagonal(rhf_wfn):
     assert abs(alpha[0, 1]) > 0.5                              # genuine in-plane off-diagonal
     assert abs(alpha[0, 2]) < 1e-9 and abs(alpha[1, 2]) < 1e-9  # out-of-plane block vanishes (Cs)
 
-    r = pycc.polarizability(cc)
+    r = pycc.polarizability(pycc.CCderiv(cc))
     total = np.asarray(r.total)
     assert np.all(np.linalg.eigvalsh(0.5 * (total + total.T)) > 0.0), np.linalg.eigvalsh(total)
     psi4.core.clean()
@@ -365,18 +365,16 @@ def test_ccsdt_polarizability_cfour(route, mol, fc):
 
 
 def test_ccsd_polarizability_guards(rhf_wfn):
-    """The misused paths raise rather than silently returning a wrong tensor: CCSD(T) (spatial or
-    spin-orbital) built without the (T) density intermediates, and an unknown route."""
-    import pytest
+    """Constructing a CCderiv sets the (T) density itself -- so a CCSD(T) property no longer needs
+    the user to pass make_t3_density (the former footgun).  Both the spatial and spin-orbital
+    CCSD(T) paths build without the flag."""
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn, model='ccsd(t)')                              # spatial CCSD(T), no make_t3_density
     cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                                   # (T) needs make_t3_density
-        pycc.CCderiv(cc).polarizability()
-    with pytest.raises(ValueError):                                   # unknown route
-        pycc.CCderiv(cc).polarizability(route='explicit')
+    d = pycc.CCderiv(cc)                                              # sets make_t3_density, builds the (T) density
+    assert cc.make_t3_density is True
+    d.polarizability()                                               # works without the user setting the flag
     cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
     cc_so.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):                                   # SO (T) needs make_t3_density
-        pycc.CCderiv(cc_so).polarizability()
+    pycc.CCderiv(cc_so).polarizability()                             # SO path likewise works without the flag
     psi4.core.clean()

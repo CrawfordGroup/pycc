@@ -125,12 +125,3 @@ def test_fc_so_mp2_corr_hessian_vs_spatial_631g():
     H_so = _mpwfn(BASE, 'spinorbital', freeze_core='true').hessian()
     H_sa = _mpwfn(BASE, 'spatial', freeze_core='true').hessian()
     assert np.max(np.abs(H_so - H_sa)) < 1e-11
-
-
-# ---- route argument guard ----
-
-def test_mp2_hessian_bad_route_raises():
-    """An unknown Hessian route raises (only '2n+1' is accepted)."""
-    import pytest
-    with pytest.raises(ValueError):
-        _mpwfn(BASE, 'spatial').hessian(route='bogus')

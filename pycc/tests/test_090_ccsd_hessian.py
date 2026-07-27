@@ -196,7 +196,7 @@ def _ccsd_hess(geom, freeze_core, orbital_basis):
     wfn = _cfour_wfn(geom, freeze_core)
     cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)      # model defaults to CCSD
     cc.solve_cc(1e-12, 1e-12, 100)
-    return pycc.hessian(cc)
+    return pycc.hessian(pycc.CCderiv(cc))
 
 
 def _check(r, corr_ref):
@@ -251,14 +251,4 @@ def test_so_ccsd_hessian_cfour_hof():
     _check(_ccsd_hess(HOF, 'false', 'spinorbital'), CFOUR_HESS_HOF)
     psi4.core.clean()
     _check(_ccsd_hess(HOF, 'true', 'spinorbital'), CFOUR_HESS_HOF_FC)
-    psi4.core.clean()
-
-
-def test_ccsd_hessian_route_guard():
-    """An unknown Hessian route raises rather than silently returning a wrong matrix (only '2n+1')."""
-    wfn = _cfour_wfn(WATER, 'false')
-    cc = pycc.ccwfn(wfn)
-    cc.solve_cc(1e-12, 1e-12, 100)
-    with pytest.raises(ValueError):
-        pycc.CCderiv(cc).hessian(route='bogus')
     psi4.core.clean()

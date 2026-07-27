@@ -186,13 +186,13 @@ class MPwfn(Wavefunction):
         """MP2 correlation nuclear gradient -- delegates to :meth:`MPderiv.gradient`."""
         return self.deriv.gradient()
 
-    def polarizability(self, route: str = '2n+1') -> np.ndarray:
+    def polarizability(self) -> np.ndarray:
         """MP2 correlation polarizability -- delegates to :meth:`MPderiv.polarizability`."""
-        return self.deriv.polarizability(route)
+        return self.deriv.polarizability()
 
-    def hessian(self, route: str = '2n+1') -> np.ndarray:
+    def hessian(self) -> np.ndarray:
         """MP2 correlation Hessian -- delegates to :meth:`MPderiv.hessian`."""
-        return self.deriv.hessian(route)
+        return self.deriv.hessian()
 
     def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
         """MP2 correlation length-gauge APT -- delegates to :meth:`MPderiv.dipole_derivatives`."""

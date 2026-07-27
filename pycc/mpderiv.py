@@ -36,9 +36,14 @@ class MPderiv(CorrelatedDerivs):
     spin-orbital (``_so_``) paths are frozen-core aware.
     """
 
-    def __init__(self, wfn) -> None:
+    def __init__(self, wfn, e_conv=None, r_conv=None, maxiter=None,
+                 max_diis=8, start_diis=1) -> None:
         """Bind the converged MPwfn (aliased as ``mp``; the base stores it as ``wfn``); the
-        reduced-density seeds and derivatives are built on demand from ``self.mp.t2``."""
+        reduced-density seeds and their derivatives are built on demand from ``self.mp.t2``.
+
+        The convergence / DIIS keyword arguments are accepted for signature parity with
+        :class:`~pycc.ccderiv.CCderiv` but have no effect -- MP2 amplitudes are closed-form
+        (non-iterative)."""
         super().__init__(wfn)
         self.mp = wfn                       # alias: the MP2 wavefunction whose densities we differentiate
 

@@ -115,13 +115,13 @@ def test_ccsdt_gradient_facade_components():
     contribution to the correlation gradient on top of plain CCSD."""
     basis = "6-31G"
     cc_t = _ccwfn_grad(REF, basis)
-    r = pycc.gradient(cc_t)
+    r = pycc.gradient(pycc.CCderiv(cc_t))
     assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
 
     cc = pycc.ccwfn(_scf_wfn(REF, basis))                # plain CCSD
     with open(os.devnull, 'w') as dn, contextlib.redirect_stdout(dn):
         cc.solve_cc(1e-12, 1e-12, 200)
-    r_ccsd = pycc.gradient(cc)
+    r_ccsd = pycc.gradient(pycc.CCderiv(cc))
     # the (T) contribution (density + dependent-pair orbital response) is nonzero
     assert np.max(np.abs(np.asarray(r.correlation) - np.asarray(r_ccsd.correlation))) > 1e-4
 
