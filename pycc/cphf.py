@@ -532,21 +532,41 @@ class CPHF(object):
         .. math::
 
             h^{(XY)}_{pq}, \qquad S^{(XY)}_{pq}, \qquad \langle pq\Vert rs\rangle^{(XY)}
+
+        The mixed second derivative is symmetric under the atom-pair swap
+        (``d^2/dA_i dB_j = d^2/dB_j dA_i``), so the cache is keyed on the canonical ``(min, max)``
+        pair; a reversed request ``(a2, a1)`` returns the stored arrays with the ``3x3`` Cartesian
+        grid transposed (``comp c1*3+c2 -> c2*3+c1``) -- no tensor is copied. Only the upper
+        triangle of atom pairs is stored and computed (halving both). For a diagonal pair
+        (``a1 == a2``) the two derivatives are on one atom, so only the 6 ``c1 <= c2`` Cartesian
+        components are unique and the 3 lower-triangle components alias their partners.
         """
-        key = (a1, a2)
+        lo, hi = (a1, a2) if a1 <= a2 else (a2, a1)
+        key = (lo, hi)
         if key not in self._d2int:
             so = self.wfn.orbital_basis == 'spinorbital'
             d = self.wfn.derivatives
             if so:
-                core = [np.asarray(m) for m in d.so_core2(a1, a2)]
-                overlap = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
-                eri = [np.asarray(m) for m in d.so_eri2(a1, a2)]     # <pq||rs>^{XY} (antisym)
+                core = [np.asarray(m) for m in d.so_core2(lo, hi)]
+                overlap = [np.asarray(m) for m in d.so_overlap2(lo, hi)]
+                eri = [np.asarray(m) for m in d.so_eri2(lo, hi)]     # <pq||rs>^{XY} (antisym)
             else:
-                core = [np.asarray(m) for m in d.core2(a1, a2)]
-                overlap = [np.asarray(m) for m in d.overlap2(a1, a2)]
-                eri = [np.asarray(m) for m in d.eri2(a1, a2)]        # physicist <pq|rs>^{XY}
-            self._d2int[key] = {'core': core, 'overlap': overlap, 'eri': eri}
-        return self._d2int[key]
+                core = [np.asarray(m) for m in d.core2(lo, hi)]
+                overlap = [np.asarray(m) for m in d.overlap2(lo, hi)]
+                eri = [np.asarray(m) for m in d.eri2(lo, hi)]        # physicist <pq|rs>^{XY}
+            blk = {'core': core, 'overlap': overlap, 'eri': eri}
+            if lo == hi:                        # same atom: comp (c1,c2) == (c2,c1), alias the dupes
+                for arrs in blk.values():
+                    for c1 in range(3):
+                        for c2 in range(c1):
+                            arrs[c1 * 3 + c2] = arrs[c2 * 3 + c1]
+            self._d2int[key] = blk
+        blk = self._d2int[key]
+        if a1 <= a2:
+            return blk
+        # reversed request: d^2/d(a1,c1)d(a2,c2) is the stored d^2/d(lo,c2)d(hi,c1) -- transpose comps
+        return {name: [arrs[c2 * 3 + c1] for c1 in range(3) for c2 in range(3)]
+                for name, arrs in blk.items()}
 
     # ---- magnetic-field perturbation (imaginary; for AATs) ----
     def _magnetic_dipole_ov(self, axis: int) -> np.ndarray:
