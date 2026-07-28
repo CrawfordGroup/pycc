@@ -12,6 +12,7 @@ conda (Psi4 is most easily installed that way). You will need:
 * `NumPy <https://numpy.org/>`_
 * `SciPy <https://scipy.org/>`_
 * `opt_einsum <https://optimized-einsum.readthedocs.io/>`_
+* `h5py <https://www.h5py.org/>`_ *(on-disk cache for derivative tensors; falls back to in-memory memoization if absent)*
 * `PyTorch <https://pytorch.org/>`_ *(optional; enables the GPU and mixed-precision paths)*
 
 With those in place, install PyCC in developer mode from the repository root::
