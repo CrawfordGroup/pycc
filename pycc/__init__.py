@@ -26,10 +26,7 @@ from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian,
 # driver (the CorrelatedDerivs leaf carrying the correlation-property methods).
 register_deriv(CCwfn, CCderiv)
 register_deriv(MPwfn, MPderiv)
-# CIderiv is a Phase-4 stub (density hooks not yet implemented); until they are, CISD properties
-# stay on the transitional CIwfn code. Uncomment to route CISD through the driver once the hooks in
-# cideriv.py work -- see the cideriv module docstring for the migration roadmap.
-# register_deriv(CIwfn, CIderiv)
+register_deriv(CIwfn, CIderiv)
 
 __all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'CCderiv', 'MPderiv', 'CIderiv', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability']
 
