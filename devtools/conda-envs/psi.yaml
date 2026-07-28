@@ -2,3 +2,5 @@ name: p4env
 channels:
   - conda-forge
   - nodefaults
+dependencies:
+  - h5py     # on-disk persistent store for derivative tensors (DerivStore)

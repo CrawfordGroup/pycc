@@ -142,7 +142,8 @@ class CPHF(object):
         self._U_field: dict = {}  # axis -> (no, nv) electric-field response U^a
         self._skel: dict = {}     # Perturbation -> (fx, Sx, gx) skeleton derivatives
         self._dfock: dict = {}    # (pert, ncore, canonical) -> (nmo, nmo) full perturbed Fock deriv
-        self._deri: dict = {}     # (pert, ncore, canonical) -> (nmo^4) full perturbed <pq||rs> deriv
+        # the (nmo^4) full perturbed <pq||rs> deriv now lives in wfn.derivatives.store (persistent,
+        # keyed on (pert, ncore, canonical)) rather than a per-CPHF RAM dict; see ``eri`` below.
 
     # ---- orbital (MO) Hessian ----
     def _mo_hessian(self, kind: str = "electric") -> np.ndarray:
@@ -483,14 +484,14 @@ class CPHF(object):
         ``('o','o','v','v')`` for the MP2 2PDM; the **default returns the full tensor** (CC
         consumers need the other blocks). ``canonical`` selects the canonical active-oo/vv
         perturbed orbitals (CCSD(T))."""
-        key = (pert, ncore, canonical)
-        full = self._deri.get(key)
-        if full is None:
+        def _build():
             ERI = np.asarray(self.wfn.H.ERI)
             _, _, gx = self._skeleton_derivatives(pert)
             U = self.full_U(pert, ncore, canonical)
-            full = gx + self._rotate_eri(U, ERI)
-            self._deri[key] = full
+            return gx + self._rotate_eri(U, ERI)
+        # persistent, perturbation-keyed store (disk when enabled, RAM when not) -- shared across
+        # property calls on this wavefunction, replacing the old per-CPHF ``_deri`` RAM dict.
+        full = self.wfn.derivatives.store.get_or_compute('deri', pert, _build, ctx=(ncore, canonical))
         if blocks is None:
             return full
         sl = tuple({'o': self.o, 'v': self.v}.get(b, slice(None)) for b in blocks)

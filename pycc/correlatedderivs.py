@@ -45,6 +45,10 @@ class CorrelatedDerivs:
     responses.
     """
 
+    #: process-lifetime counter yielding a distinct id per driver instance (deterministic, no RNG),
+    #: used to namespace this object's method-dependent perturbed responses in the shared store.
+    _obj_counter = 0
+
     def __init__(self, wfn) -> None:
         """Bind the converged correlated wavefunction and its (device-aware) contraction
         backend, and initialize the cached SCF-reference HFwfn handle (see
@@ -52,6 +56,8 @@ class CorrelatedDerivs:
         self.wfn = wfn
         self.contract = wfn.contract
         self._ref_hf = None
+        CorrelatedDerivs._obj_counter += 1
+        self._uid = CorrelatedDerivs._obj_counter
 
     def _reference_hf(self):
         """All-electron :class:`~pycc.hfwfn.HFwfn` for the SCF reference (cached) -- supplies the
@@ -565,6 +571,23 @@ class CorrelatedDerivs:
         dI = self._so_perturbed_lagrangian(df, deri, Drel0, dDrel, Gam0, dGam)
         return PerturbedResponse(dDrel, dGam, dI)
 
+    def _relaxed_response(self, pert):
+        """Per-perturbation :class:`PerturbedResponse` ``(dDrel, dGam, dI)`` for ``pert``,
+        dispatched to the spatial or spin-orbital solve and memoized in the persistent store
+        (:attr:`Derivatives.store`, disk when enabled, RAM otherwise).  The record is
+        method-dependent -- it consumes this driver's amplitudes through
+        :meth:`_perturbed_unrelaxed_densities` -- so it is keyed on the driver-instance id
+        ``_uid`` alongside the perturbation, gauge, and route.  A second property call on the
+        *same* driver then reads the record back (skipping the perturbed-amplitude / Z-vector
+        solve and the ``nmo^4`` cumulant-response build), while never colliding with a different
+        driver's response (e.g. CCSD vs CCSD(T)) on the same wavefunction."""
+        so = self.wfn.orbital_basis == 'spinorbital'
+        popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
+        ctx = (self._uid, self.perturbed_mo_gauge, 'so' if so else 'sp')
+        parts = self.wfn.derivatives.store.get_or_compute_group(
+            'resp', pert, lambda: tuple(popdm(pert)), ('dDrel', 'dGam', 'dI'), ctx=ctx)
+        return PerturbedResponse(*parts)
+
     # ---- first-derivative properties: relaxed dipole and nuclear gradient ----
     # Both are contractions of the relaxed density against the property integrals, method-agnostic
     # given (Drel, Gam) and the energy-weighted density I = I'(Drel).  The reference (SCF) and
@@ -693,15 +716,13 @@ class CorrelatedDerivs:
         cphf = self._full_occ_cphf()
         if wfn.orbital_basis == 'spinorbital':
             Drel = self._so_orbital_response().Drel
-            popdm = self._so_perturbed_relaxed_density
         else:
             Drel = self._orbital_response().Drel
-            popdm = self._perturbed_relaxed_density
         mu = [np.asarray(wfn.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
         for b in range(3):
             pert = Perturbation('field', b)
-            dDrel = popdm(pert).dDrel
+            dDrel = self._relaxed_response(pert).dDrel
             Ub = np.asarray(cphf.full_U(pert, ncore, canonical=canonical))
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
@@ -765,7 +786,6 @@ class CorrelatedDerivs:
         natom = d.natom
         rec = self._so_orbital_response() if so else self._orbital_response()
         Drel = rec.Drel
-        popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
         mu = [np.asarray(wfn.H.mu[a]) for a in range(3)]
         P = np.zeros((natom, 3, 3))
 
@@ -774,7 +794,7 @@ class CorrelatedDerivs:
                 dip = d.so_dipole(A) if so else d.dipole(A)          # [alpha*3 + beta]
                 for beta in range(3):
                     pX = Perturbation('nuclear', (A, beta))
-                    dDrel = popdm(pX).dDrel
+                    dDrel = self._relaxed_response(pX).dDrel
                     UX = np.asarray(cphf.full_U(pX, ncore, canonical=canonical))
                     for alpha in range(3):
                         dmu = np.asarray(dip[alpha * 3 + beta])       # skeleton d(mu_a)/dX_beta
@@ -787,7 +807,7 @@ class CorrelatedDerivs:
         Gam = rec.Gam
         I = self._lagrangian(Drel, Gam)
         field = [Perturbation('field', a) for a in range(3)]
-        resp = [popdm(field[a]) for a in range(3)]                    # one perturbed solve per field
+        resp = [self._relaxed_response(field[a]) for a in range(3)]   # one perturbed solve per field
         dDrel = [r.dDrel for r in resp]
         dGamF = [r.dGam for r in resp]                                # F = field-perturbation response
         dI = [r.dI for r in resp]                                     # perturbed energy-weighted density
@@ -888,57 +908,89 @@ class CorrelatedDerivs:
         rec = self._so_orbital_response() if so else self._orbital_response()
         Drel, Gam = rec.Drel, rec.Gam
         I = self._lagrangian(Drel, Gam)
-        popdm = self._so_perturbed_relaxed_density if so else self._perturbed_relaxed_density
         pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
 
         def rot4(Um, T):
             return (c('tp,tqrs->pqrs', Um, T) + c('tq,ptrs->pqrs', Um, T)
                     + c('tr,pqts->pqrs', Um, T) + c('ts,pqrt->pqrs', Um, T))
 
-        # first-order responses + hoisted per-Y rotated densities (sum A rot(U,B) = sum rot(U^T,A) B)
-        resp = [popdm(p) for p in pert]                              # one perturbed solve per nucleus
-        dDrel = [r.dDrel for r in resp]
-        dGamN = [r.dGam for r in resp]
-        dI = [r.dI for r in resp]
-        U = [np.asarray(cphf.full_U(p, ncore, canonical=canonical)) for p in pert]
+        # first-order responses + hoisted per-Y rotated densities (sum A rot(U,B) = sum rot(U^T,A) B).
+        # The large per-perturbation nmo^4 quantities live in the persistent store
+        # (wfn.derivatives.store): _relaxed_response persists each dGam and _eri_cached persists the
+        # per-atom eri stacks, so the assembly reads them back one atom pair at a time rather than
+        # holding 3*natom-long in-RAM lists.  Gamrot is recomputed per Y (not hoisted into a list).
+        # Only the small quantities (dDrel/dI/Drot/Irot/U and the nmo^2 fX/SX/JX) stay resident.
+        dDrel, dI, U = [], [], []
+        for i, p in enumerate(pert):
+            r = self._relaxed_response(p)                            # one perturbed solve; persists dGam
+            dDrel.append(r.dDrel)
+            dI.append(r.dI)
+            U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
         Drot = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
         Irot = [U[i] @ I + I @ U[i].T for i in range(nc)]
-        Gamrot = [rot4(U[i].T, Gam) for i in range(nc)]
 
-        # per-X first skeletons; J^X carries the Fock skeleton's occupied-sum rotation response
-        fX, eriX, SX, JX = [], [], [], []
-        for p in pert:
+        # per-X first skeletons; J^X carries the Fock skeleton's occupied-sum rotation response.
+        # Reading d.eri/d.so_eri here also warms the store's per-atom eri stacks for the assembly.
+        fX, SX, JX = [], [], []
+        for i, p in enumerate(pert):
             A, ct = p.comp
             hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
             Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
             if so:
                 eL = np.asarray(d.so_eri(A)[ct])
-                gm = eL
             else:
                 ph = np.asarray(d.eri(A)[ct])                           # <pq|rs>^(X) (Gamma)
                 eL = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
-                gm = ph
             fX.append(hx + c('pmqm->pq', eL[:, ofull, :, ofull]))
-            eriX.append(gm)
             SX.append(Sx)
             JX.append(c('pq,prqm->rm', Drel, eL[:, :, :, ofull])
                       + c('pq,pmqr->rm', Drel, eL[:, ofull, :, :]))
 
+        # ---- assembly: atom-pair-outer contract-and-discard ----
+        # Loop unique atom pairs, compute each pair's 2nd-deriv skeletons ONCE (cache=False, so
+        # _d2int never accumulates -- one pair's 9*nmo^4 resident at a time), contract the fixed-
+        # density scalar, and free the pair.  The second-skeleton scalar s = Drel.f2 + Gam.e2 +
+        # I.ov2 uses only Drel/Gam/I and is symmetric in the pair (d2/dA dB = d2/dB dA), so it is
+        # shared by H[ix,iy] and its transpose H[iy,ix]; only the response half differs.  The pair's
+        # nmo^4 working set (dGam + eriX for its <= 6 perturbations) is read from the store here.
+        def _dGs(j):        # stored cumulant response dGam[j] + the per-Y rotation (recomputed)
+            return self._relaxed_response(pert[j]).dGam + rot4(U[j].T, Gam)
+
+        def _resp(i, j, dGs_j, erX_i):     # perturbation-dependent half of H[i, j]
+            return (c('pq,pq->', dDrel[j] + Drot[j], fX[i]) + c('pqrs,pqrs->', dGs_j, erX_i)
+                    + c('pq,pq->', dI[j] + Irot[j], SX[i]) + float(np.sum(U[j][:, ofull] * JX[i])))
+
+        def _skel_scalar(blk, cx, cy):     # fixed-density second-skeleton scalar s for (cx, cy)
+            core2 = blk['core'][cx * 3 + cy]
+            ov2 = blk['overlap'][cx * 3 + cy]
+            e2 = blk['eri'][cx * 3 + cy]
+            L2 = e2 if so else 2.0 * e2 - e2.swapaxes(2, 3)
+            f2 = core2 + c('pmqm->pq', L2[:, ofull, :, ofull])          # f^(XY)
+            return c('pq,pq->', Drel, f2) + c('pqrs,pqrs->', Gam, e2) + c('pq,pq->', I, ov2)
+
+        def _erX_pair(a1, a2):             # both atoms' eriX, read once per atom (3-stack) and sliced
+            erX = {}
+            for A in {a1, a2}:
+                stk = d.so_eri(A) if so else d.eri(A)
+                for ct in range(3):
+                    erX[A * 3 + ct] = np.asarray(stk[ct])
+            return erX
+
         H = np.zeros((nc, nc))
-        for iy, py in enumerate(pert):
-            Ay, cy = py.comp
-            for ix, px in enumerate(pert):
-                Ax, cx = px.comp
-                blk = d.nuclear_hessian_skeletons(Ax, Ay)                # raw second skeletons (no U^{XY})
-                core2 = blk['core'][cx * 3 + cy]
-                ov2 = blk['overlap'][cx * 3 + cy]
-                e2 = blk['eri'][cx * 3 + cy]
-                L2 = e2 if so else 2.0 * e2 - e2.swapaxes(2, 3)
-                f2 = core2 + c('pmqm->pq', L2[:, ofull, :, ofull])       # f^(XY)
-                H[ix, iy] = (c('pq,pq->', dDrel[iy] + Drot[iy], fX[ix]) + c('pq,pq->', Drel, f2)
-                             + c('pqrs,pqrs->', dGamN[iy] + Gamrot[iy], eriX[ix]) + c('pqrs,pqrs->', Gam, e2)
-                             + c('pq,pq->', dI[iy] + Irot[iy], SX[ix]) + c('pq,pq->', I, ov2)
-                             + float(np.sum(U[iy][:, ofull] * JX[ix])))
+        for a1 in range(natom):
+            for a2 in range(a1, natom):
+                blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)   # one pair, transient nmo^4
+                erX = _erX_pair(a1, a2)
+                need = sorted(set(range(a1 * 3, a1 * 3 + 3)) | set(range(a2 * 3, a2 * 3 + 3)))
+                dGs = {j: _dGs(j) for j in need}                        # per-pair working set (bounded)
+                for cx in range(3):
+                    for cy in range(3):
+                        s = _skel_scalar(blk, cx, cy)
+                        ix, iy = a1 * 3 + cx, a2 * 3 + cy
+                        H[ix, iy] = s + _resp(ix, iy, dGs[iy], erX[ix])
+                        if a1 != a2:
+                            H[iy, ix] = s + _resp(iy, ix, dGs[ix], erX[iy])
+                del blk, dGs, erX                                       # free the pair's nmo^4
         return H
 
     @staticmethod
