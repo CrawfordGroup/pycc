@@ -1,5 +1,5 @@
 # Documentation build requirements (Sphinx + theme). The package itself and its
-# runtime dependencies (numpy, scipy, opt_einsum) are installed separately via
+# runtime dependencies (numpy, scipy, opt_einsum, h5py) are installed separately via
 # `pip install .`; psi4 is conda-only and is mocked in conf.py.
 sphinx
 sphinx_rtd_theme
