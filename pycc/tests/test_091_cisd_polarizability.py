@@ -1,5 +1,5 @@
 """
-ISD static electric-dipole polarizability (correlation contribution), full 3x3 tensor -
+CISD static electric-dipole polarizability (correlation contribution), full 3x3 tensor -
 pycc.polarizability(pycc.CIderiv(ci)).correlation, the base 2n+1 machinery driven by CIderiv's
 density hooks - validated against a finite field of the ANALYTIC relaxed correlation dipole,
 alpha[:, b] = d mu / dF_b: the same oracle as CC's _findiff_alpha and MP2's _dipfd_alpha_diag,
