@@ -88,14 +88,17 @@ def test_graceful_fallback_without_h5py(monkeypatch):
     assert store.enabled is False                                           # degraded to RAM memo
 
 
-def test_disk_matches_ram_hessian(rhf_wfn):
+@pytest.mark.parametrize("orbital_basis", ["spatial", "spinorbital"])
+def test_disk_matches_ram_hessian(rhf_wfn, orbital_basis):
     """The on-disk Hessian is bit-identical to the in-memory-memo Hessian (same driver machinery,
-    just disk vs RAM backing), and the disk path really is used (temp file created)."""
+    just disk vs RAM backing), and the disk path really is used (temp file created) -- checked on
+    both the spatial and spin-orbital routes, which the store keys distinctly (eri vs so_eri, and
+    the 'sp'/'so' response-context tag)."""
     pytest.importorskip("h5py")
     import pycc
 
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false")
-    cc = pycc.ccwfn(wfn)
+    cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)
     cc.solve_cc(1e-10, 1e-10, 100)
     store = pycc.CCderiv(cc).wfn.derivatives.store                          # shared per-wfn store
 
