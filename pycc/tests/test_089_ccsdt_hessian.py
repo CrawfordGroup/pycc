@@ -23,6 +23,19 @@ tighter: water/6-31G (C2v) carries the default suite -- spatial (AE + FC) and th
 all-electron case (the direct SO-(T) CFOUR anchor, ~55 s).  The spin-orbital frozen-core water case
 and the HOF (Cs) spatial cross-check are marked slow.  The spin-orbital HOF CCSD(T) Hessian (~8.5 min
 per build) is not included; SO-(T) is anchored on water and HOF-(T) spatially.
+
+Open-shell UHF-CCSD(T) is anchored on H2O+ (X2B1, charge +1) / STO-3G via the spin-orbital route, but
+NOT against CFOUR: CFOUR's analytic open-shell (T) second derivative departs from the (T) energy
+derivative by ~1e-5 (it omits part of the (T) orbital-relaxation / Z-vector response that pycc's
+canonical perturbed-MO route retains), so it is not a valid oracle for the open-shell (T) Hessian.
+This was localized on both NH2 and H2O+: the CCSD(T) *energy* is identical in both codes (energy-FD
+gradients agree to 1e-11) and pycc's analytic (T) gradient equals its own energy-FD to 8e-12, while
+CFOUR's analytic (T) gradient departs from its own energy-FD by ~8e-6.  pycc's derivatives are the
+energy-consistent ones, so the reference below is pycc's own analytic Hessian, frozen here and
+validated once by a full energy-2nd-derivative finite difference (max|analytic - energy-FD| = 3.4e-7,
+gate-artifact-free because the energy is smooth).  This mirrors the open-shell CCSD(T) polarizability
+(test_084), which is likewise frozen against pycc's energy-FD rather than CFOUR.  UHF-CCSD (no (T)) is
+CFOUR-anchorable and is tested directly against CFOUR in test_090.
 """
 
 import psi4
@@ -85,6 +98,28 @@ P   1   1.00
 ****
 """
 
+# CFOUR's exact GENBAS STO-3G for O and H (cartesian), for the open-shell H2O+ reference.  Transcribed
+# from the GENBAS in the CFOUR run directory so the AO basis matches to all printed digits.
+CFOUR_STO3G_OH = """cartesian
+****
+H     0
+S   3   1.00
+      3.4252509             0.15432897
+      0.6239137             0.53532814
+      0.1688554             0.44463454
+****
+O     0
+S   3   1.00
+    130.7093200             0.15432897
+     23.8088610             0.53532814
+      6.4436083             0.44463454
+SP   3   1.00
+      5.0331513            -0.09996723            0.15591627
+      1.1695961             0.39951283            0.60768372
+      0.3803890             0.70011547            0.39195739
+****
+"""
+
 WATER = """
 O  0.00000  0.00000  0.00000
 H  0.00000  1.43121 -1.10664
@@ -99,6 +134,19 @@ HOF = """
 O  0.00000  0.00000  0.00000
 F  2.56070  0.93200  0.00000
 H -0.83450  1.62360  0.00000
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+# H2O+ (X2B1, charge +1, doublet), CFOUR's own full-precision MOL-file geometry (bohr).  Unpinned UHF
+# converges directly to the 2B1 ground state, so no occupation pinning is needed.
+H2OP = """
+1 2
+O  0.000000000000000  0.000000000000000  0.121304822742269
+H  0.000000000000000 -1.547973342552033 -0.962597780660347
+H  0.000000000000000  1.547973342552033 -0.962597780660347
 symmetry c1
 units bohr
 no_com
@@ -183,6 +231,30 @@ CFOUR_HESS_T_HOF_FC = np.array(
      [-0.          ,  0.          ,  0.0163053083,  0.          ,  0.          , -0.00019344  ,
        0.          ,  0.          , -0.0161118684]])
 
+# pycc's own analytic open-shell UHF-CCSD(T) correlation Hessian for H2O+ (X2B1) / STO-3G, frozen
+# here as the reference (see the module docstring: CFOUR is not a valid open-shell (T) oracle).
+# Validated once by a full energy-2nd-derivative FD (max|analytic - energy-FD| = 3.4e-7).
+H2OP_CCSDT_AE = np.array(
+    [[-3.2003153876e-02, -2.1847722154e-17,  9.2770747197e-19,  1.6001576938e-02,  1.8460151464e-17,  6.9826403308e-18,  1.6001576938e-02,  3.3875706898e-18, -7.9103478027e-18],
+     [ 4.1325807474e-18, -8.9893155631e-03,  4.1339118871e-16, -1.6811646560e-17,  4.4946577815e-03, -8.0572315348e-03,  1.2679065813e-17,  4.4946577815e-03,  8.0572315348e-03],
+     [ 9.4663910050e-18,  8.6830448364e-17, -3.9652604282e-02, -6.5529635229e-18,  3.6208663809e-03,  1.9826302141e-02, -2.8181460277e-18, -3.6208663809e-03,  1.9826302141e-02],
+     [ 1.6001576938e-02,  1.3811129174e-17,  1.6830284458e-18, -1.2958569389e-02, -1.2881170491e-17,  4.8272280062e-19, -3.0430075491e-03, -9.2995868292e-19, -2.1657512465e-18],
+     [-1.3718381632e-17,  4.4946577816e-03,  3.6208663809e-03,  1.4552037922e-17, -9.2081728214e-03,  2.2181825770e-03, -7.4252421564e-19,  4.7135150399e-03, -5.8390489578e-03],
+     [-1.5289824601e-17, -8.0572315348e-03,  1.9826302141e-02,  6.9418650514e-18,  2.2181825770e-03, -1.2050064861e-02,  8.3003188226e-18,  5.8390489578e-03, -7.7762372796e-03],
+     [ 1.6001576938e-02,  8.0365929800e-18, -2.6107359178e-18, -3.0430075491e-03, -5.5789809731e-18, -7.4653631314e-18, -1.2958569389e-02, -2.4576120068e-18,  1.0076099049e-17],
+     [ 9.5858008848e-18,  4.4946577816e-03, -3.6208663809e-03,  2.2596086382e-18,  4.7135150399e-03,  5.8390489578e-03, -1.1936541597e-17, -9.2081728214e-03, -2.2181825770e-03],
+     [ 5.8234335962e-18,  8.0572315348e-03,  1.9826302141e-02, -3.8890152853e-19, -5.8390489578e-03, -7.7762372796e-03, -5.4821727949e-18, -2.2181825770e-03, -1.2050064861e-02]])
+H2OP_CCSDT_FC = np.array(
+    [[-3.2042039965e-02, -2.1869917155e-17,  9.3100390710e-19,  1.6021019983e-02,  1.8462276957e-17,  6.9870368077e-18,  1.6021019983e-02,  3.4076401985e-18, -7.9180407148e-18],
+     [ 4.1304216438e-18, -8.9807355642e-03,  4.6218141648e-16, -1.6839431338e-17,  4.4903677821e-03, -8.0738495912e-03,  1.2709009695e-17,  4.4903677821e-03,  8.0738495912e-03],
+     [ 9.4974166938e-18,  4.6668452606e-17, -3.9649177607e-02, -6.5742135583e-18,  3.5974046254e-03,  1.9824588803e-02, -2.8280635781e-18, -3.5974046254e-03,  1.9824588803e-02],
+     [ 1.6021019983e-02,  1.3747850460e-17,  1.6734928684e-18, -1.2976434276e-02, -1.2839244221e-17,  5.1748452377e-19, -3.0445857068e-03, -9.0860623873e-19, -2.1909773921e-18],
+     [-1.3808480062e-17,  4.4903677821e-03,  3.5974046254e-03,  1.4612998160e-17, -9.1986338596e-03,  2.2382224829e-03, -7.1355454542e-19,  4.7082660774e-03, -5.8356271083e-03],
+     [-1.5283423715e-17, -8.0738495912e-03,  1.9824588803e-02,  6.9571700056e-18,  2.2382224829e-03, -1.2051533513e-02,  8.2786839310e-18,  5.8356271083e-03, -7.7730552903e-03],
+     [ 1.6021019983e-02,  8.1220666951e-18, -2.6044967755e-18, -3.0445857068e-03, -5.6230327353e-18, -7.5045213314e-18, -1.2976434276e-02, -2.4990339598e-18,  1.0109018107e-17],
+     [ 9.6780584184e-18,  4.4903677821e-03, -3.5974046254e-03,  2.2264331784e-18,  4.7082660774e-03,  5.8356271083e-03, -1.1995455149e-17, -9.1986338596e-03, -2.2382224829e-03],
+     [ 5.7860070214e-18,  8.0738495912e-03,  1.9824588803e-02, -3.8295644722e-19, -5.8356271083e-03, -7.7730552903e-03, -5.4506203529e-18, -2.2382224829e-03, -1.2051533513e-02]])
+
 
 def _cfour_wfn(geom, freeze_core):
     """RHF reference in CFOUR's exact GENBAS 6-31G (via basis_helper), for the CFOUR-oracle tests."""
@@ -201,6 +273,21 @@ def _ccsdt_hess(geom, freeze_core, orbital_basis):
     wfn = _cfour_wfn(geom, freeze_core)
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=orbital_basis, make_t3_density=True)
     cc.solve_cc(1e-12, 1e-12, 100)
+    return pycc.hessian(pycc.CCderiv(cc))
+
+
+def _h2op_ccsdt_hess(freeze_core):
+    """Converged open-shell UHF-CCSD(T) Hessian PropertyComponents for H2O+ (spin-orbital route).
+    Tightly converged (1e-13) to reproduce the frozen pycc reference to well within the tolerance."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(H2OP)
+    psi4.set_options({'scf_type': 'pk', 'reference': 'uhf', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'r_convergence': 1e-13})
+    psi4.basis_helper(CFOUR_STO3G_OH, name='cfoursto3g')
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
     return pycc.hessian(pycc.CCderiv(cc))
 
 
@@ -253,6 +340,20 @@ def test_ccsdt_hessian_cfour_hof_spatial():
     _check(_ccsdt_hess(HOF, 'false', 'spatial'), CFOUR_HESS_T_HOF)
     psi4.core.clean()
     _check(_ccsdt_hess(HOF, 'true', 'spatial'), CFOUR_HESS_T_HOF_FC)
+    psi4.core.clean()
+
+
+def test_so_ccsdt_hessian_h2op():
+    """Open-shell UHF-CCSD(T) Hessian for H2O+ (X2B1) / STO-3G vs pycc's own energy-FD-validated
+    reference (all-electron and frozen core) -- the suite's only open-shell (T) Hessian anchor.
+    CFOUR is not usable here (its analytic open-shell (T) second derivative departs from the (T)
+    energy derivative by ~1e-5; see the module docstring), so the frozen reference is pycc's own
+    analytic Hessian, validated once against a full energy-2nd-derivative FD (3.4e-7).  Exercises the
+    SO (T) perturbed amplitudes/Lambda/intermediates and the canonical perturbed-MO dependent pairs on
+    a genuine UHF reference; also checks the facade decomposition, symmetry, and the sum rule."""
+    _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE)
+    psi4.core.clean()
+    _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC)
     psi4.core.clean()
 
 
