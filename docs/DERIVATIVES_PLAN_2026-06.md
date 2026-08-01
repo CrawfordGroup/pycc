@@ -257,8 +257,8 @@ Conventions: spatial methods unlabeled, spin-orbital prefixed `_so_`.
   MP2, CC, and CISD all run through the base. The second-derivative **orbital response was recast onto
   the reference-doc form and the `rot4`/`Gamrot` path removed (#220)**. **Remaining:** the smaller §9
   follow-ups — hoisting AAT/VG-APT into the base (parked; the real gate is a CC-AAT carryover that does
-  not exist yet), the `make_t3_density`/solver-knobs UX, and confirming the magnetic-Hessian
-  unification merged. A test gap remains: no open-shell **UHF-CC APT/Hessian** test (the SO CC
+  not exist yet) and the `make_t3_density`/solver-knobs UX. (The magnetic-Hessian unification is
+  merged, #209.) A test gap remains: no open-shell **UHF-CC APT/Hessian** test (the SO CC
   second-derivative tests are RHF-reference).
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
   and does not reproduce the restricted ROHF response; `CPHF.solve` raises for ROHF. The CPHF-free
@@ -631,8 +631,9 @@ dependent-pair route, §7), `'non-canonical'` otherwise (MP2, CCSD, CISD — inv
 - **Done since:** CISD hook implementation + validation + retiring the transitional `CIwfn` derivative
   code (#216); the naming/notation sweep vs `docs/cc_gradients_orbital_response.tex` — the `.tex` and
   the second-derivative orbital-response code were reconciled in #220 (the reference-doc form, `\alloc`
-  all-occ limits, `c→d` virtual index). The magnetic-Hessian orbital-Hessian unification is done on a
-  branch (`refactor/cphf-magnetic-hessian`) — confirm it merged.
+  all-occ limits, `c→d` virtual index). The magnetic-Hessian orbital-Hessian unification is merged
+  (#209): one Hessian build + one ov solve shared by the magnetic and momentum responses
+  (`_antisym_field_ints` → `solve(kind='magnetic')`).
 - **Still open:** hoisting AAT/VG-APT into the base (parked — the real gate is a CC-AAT carryover that
   does not exist yet); a `make_t3_density`/fold-the-solve-in UX change and the solver-knobs
   (convergence/DIIS) plumbing; and an open-shell **UHF-CC APT/Hessian** test (the SO CC
