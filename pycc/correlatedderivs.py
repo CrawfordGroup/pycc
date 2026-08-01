@@ -84,6 +84,8 @@ class CorrelatedDerivs:
         a future non-canonical-(T) route (building the full (T) density) would override this.  The
         frozen-core core<->active-occupied divide ``P_co`` is always canonical, independent of this
         choice."""
+        if getattr(self, '_gauge_override', None) is not None:
+            return self._gauge_override   # test/validation override (e.g. force canonical for CCSD)
         return 'canonical' if getattr(self.wfn, 'model', '').upper() == 'CCSD(T)' else 'non-canonical'
 
     def _full_occ_cphf(self):
@@ -766,10 +768,13 @@ class CorrelatedDerivs:
 
         with the 3 field responses ``d_a D_rel``, ``d_a Gamma``, and the perturbed energy-weighted
         density ``d_a I`` all from one :class:`PerturbedResponse` per field
-        (:meth:`_perturbed_relaxed_density`).  The field-derivatives of the nuclear skeletons carry
-        the orbital rotation ``rotate(U^a, .)`` plus, for ``d_a f^(X)``, the occupied-sum response and
-        the ``-mu_a^(X)`` mixed skeleton (the field enters ``h``).  Both routes give the same tensor;
-        ``'2n+1-field'`` is cheaper (3 field responses vs ``3N`` nuclear)."""
+        (:meth:`_perturbed_relaxed_density`).  The orbital-response term ``D_rel d_a f^(X)`` is
+        assembled in the reference-doc form (eq:d2E-canon-final line 2): with the field skeleton
+        ``f^(a) = -mu``, ``S^(a) = 0``, ``<>^(a) = 0``, the only surviving pieces are ``2 U^a_bi
+        X~^(X)_bi`` and ``P^(X)_pq f^(a)_pq`` (from :meth:`_skeleton_lagrangian` and
+        :meth:`_augment_with_canonical_pair_rotations`), plus the fixed-density mixed skeleton
+        ``D_rel f^(Xa)`` with ``f^(Xa) = -mu^(X)`` (the field enters ``h``).  Both routes give the same
+        tensor; ``'2n+1-field'`` is cheaper (3 field responses vs ``3N`` nuclear)."""
         if route not in ('2n+1-nuclear', '2n+1-field'):
             raise ValueError(f"unknown dipole-derivative route {route!r} "
                              "(use '2n+1-nuclear' or '2n+1-field')")
@@ -777,7 +782,7 @@ class CorrelatedDerivs:
         wfn = self.wfn
         c = self.contract
         so = wfn.orbital_basis == 'spinorbital'
-        o = wfn.o
+        o, v = wfn.o, wfn.v
         ofull = slice(0, o.stop)
         ncore = o.stop - wfn.no
         canonical = self.perturbed_mo_gauge == 'canonical'
@@ -813,13 +818,6 @@ class CorrelatedDerivs:
         dI = [r.dI for r in resp]                                     # perturbed energy-weighted density
         U = [np.asarray(cphf.full_U(field[a], ncore, canonical=canonical)) for a in range(3)]
 
-        def rot1(Um, M):
-            return Um.T @ M + M @ Um
-
-        def rot4(Um, T):
-            return (c('tp,tqrs->pqrs', Um, T) + c('tq,ptrs->pqrs', Um, T)
-                    + c('tr,pqts->pqrs', Um, T) + c('ts,pqrt->pqrs', Um, T))
-
         for A in range(natom):
             hx = d.so_core(A) if so else d.core(A)
             Sx = d.so_overlap(A) if so else d.overlap(A)
@@ -835,16 +833,27 @@ class CorrelatedDerivs:
                 fX = np.asarray(hx[beta]) + c('pmqm->pq', eriL[beta][:, ofull, :, ofull])
                 SX = np.asarray(Sx[beta])
                 eriXb, eriLb = eriX[beta], eriL[beta]                 # this Cartesian's X-skeletons
+                # Reference-doc form (eq:d2E-canon-final): build the nuclear (X) orbital-response
+                # carriers once per (A, beta) from the X-skeletons, then contract with the field (F)
+                # per alpha.  The field skeleton is f^(F) = -mu, S^(F) = 0, <>^(F) = 0, so the only
+                # surviving orbital-response terms are 2 U^F X~^(X) and P^(X) f^(F); the fixed-density
+                # mixed skeleton is D~ f^(XF) with f^(XF) = d(-mu)/dX = -muX (no <>^(XF)/S^(XF)).
+                Ip, xov, i2 = self._skeleton_lagrangian(fX, SX, eriLb, eriXb, Drel, Gam, I)
+                if canonical or ncore:
+                    Xt, _, Pf = self._augment_with_canonical_pair_rotations(Ip, xov, i2)
+                else:
+                    Xt, Pf = xov, None
                 for alpha in range(3):
                     Um = U[alpha]
                     muX = np.asarray(dip[alpha * 3 + beta])
-                    occ = (c('rm,prqm->pq', Um[:, ofull], eriLb[:, :, :, ofull])
-                           + c('rm,pmqr->pq', Um[:, ofull], eriLb[:, ofull, :, :]))
-                    dfX = rot1(Um, fX) - muX + occ
-                    P[A, beta, alpha] = -(c('pq,pq->', dDrel[alpha], fX) + c('pq,pq->', Drel, dfX)
-                                          + c('pqrs,pqrs->', dGamF[alpha], eriXb)
-                                          + c('pqrs,pqrs->', Gam, rot4(Um, eriXb))
-                                          + c('pq,pq->', dI[alpha], SX) + c('pq,pq->', I, rot1(Um, SX)))
+                    orb = 2.0 * c('ai,ai->', Um[v, ofull], Xt[v, ofull])          # 2 U^F_ai X~^(X)_ai
+                    if Pf is not None:
+                        orb = orb - c('pq,pq->', Pf, mu[alpha])                   # P^(X)_pq f^(F)_pq, f^(F)=-mu
+                    P[A, beta, alpha] = -(c('pq,pq->', dDrel[alpha], fX)          # 2n+1 D response
+                                          + c('pqrs,pqrs->', dGamF[alpha], eriXb)   # 2n+1 Gamma response
+                                          + c('pq,pq->', dI[alpha], SX)           # 2n+1 I response
+                                          - c('pq,pq->', Drel, muX)               # D~ f^(XF), f^(XF) = -muX
+                                          + orb)
         return P
 
     def hessian(self) -> np.ndarray:
@@ -871,26 +880,26 @@ class CorrelatedDerivs:
         energy-weighted density ``d_Y I``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
         per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
 
-        The field-derivatives of the nuclear skeletons carry (i) the full second integral skeletons
-        ``f^(XY)``/``<>^(XY)``/``S^(XY)`` (:meth:`Derivatives.nuclear_hessian_skeletons`, cached per atom pair -- all
-        nonzero here, unlike the field case where only ``-mu^(X)`` survived), and (ii) the ``U^Y``
-        orbital rotation of the ``X`` skeletons.  The rotations are hoisted off the ``O(N^2)`` pair
-        loop onto the (per-``Y``) densities via ``sum A rot(U,B) = sum rot(U^T,A) B``:
-        ``Drot = U D + D U^T``, ``Irot`` likewise, ``Gamrot = rot4(U^T, Gamma)``, and the Fock
-        skeleton's occupied-sum response as the per-``X`` intermediate ``J^X`` contracted with
-        ``U^Y`` (so no ``O(N^2)`` four-index rotation).
+        The mixed second derivative assembles three groups (reference-doc eq:d2E-noncanon /
+        eq:d2E-canon-final): (i) the fixed-density second integral skeletons contracted with the
+        unperturbed relaxed densities, ``D~ f^(XY) + Gamma <>^(XY) + I S^(XY)``
+        (:meth:`Derivatives.nuclear_hessian_skeletons`, cached per atom pair -- all nonzero here,
+        unlike the field case where only ``-mu^(X)`` survives); (ii) the orbital response in the doc
+        form ``2 U^Y_ai X~^(X)_ai + S^(Y)_pq I~''^(X)_pq + P^(X)_pq f^(Y)_pq``, built per ``X`` from the
+        skeleton Lagrangian (:meth:`_skeleton_lagrangian`, :meth:`_augment_with_canonical_pair_rotations`);
+        and (iii) the 2n+1 density response ``d_Y D~ f^(X) + d_Y Gamma <>^(X) + d_Y I S^(X)``.
 
-        Local naming: a trailing ``X`` marks a *skeleton integral derivative* (``fX`` = ``f^(X)``,
-        ``SX`` = ``S^(X)``, ``eriX`` = ``<pq|rs>^(X)`` spatial / ``<pq||rs>^(X)`` spin-orbital) --
-        never a density derivative.  ``eriL``/``eL`` is the Fock-building companion of ``eriX``: the
-        spin-adapted ``L^(X) = 2<pq|rs>^(X) - <pq|sr>^(X)`` (closed-shell), or ``eriX`` itself when
-        the integrals are already antisymmetrized (spin-orbital).  A trailing ``rot`` marks a
-        ``U``-rotated *unperturbed* quantity
-        (``Drot``, ``Irot``, ``Gamrot``); this is the code's own rotation bookkeeping and is unrelated
-        to the tilde of the theory notes (which marks the relaxed 1-PDM ``D~`` = ``Drel`` and the
-        augmented ``I''~``).  A trailing ``N``/``F`` on a perturbed-response array names the
-        *perturbation* it responds to -- nuclear here (``dGamN`` = ``d_Y Gamma``), field in the
-        ``'2n+1-field'`` APT (``dGamF``); both are the ``dGam`` of :class:`PerturbedResponse`.
+        Local naming: a trailing ``X``/``x`` marks a *skeleton integral derivative* (``fX`` = ``f^(X)``,
+        ``SX`` = ``S^(X)``, ``erix``/``erX`` = ``<pq|rs>^(X)`` spatial / ``<pq||rs>^(X)`` spin-orbital) --
+        never a density derivative.  ``wx`` is the Fock-building companion of ``erix``: the
+        spin-adapted ``L^(X) = 2<pq|rs>^(X) - <pq|sr>^(X)`` (closed-shell), or ``erix`` itself when
+        the integrals are already antisymmetrized (spin-orbital).  (:meth:`dipole_derivatives` builds
+        the same two kernels under the names ``eriX``/``eriL``.)  ``X~``/``I~''`` (``Xx``/``I2x``) and
+        ``P^(x)`` (``Pf_x``) are the dependent-pair-augmented skeleton carriers from
+        :meth:`_augment_with_canonical_pair_rotations`; ``D~`` = ``Drel`` is the relaxed 1-PDM of the
+        theory notes.  A trailing ``N``/``F`` on a perturbed-response array names the *perturbation* it
+        responds to -- nuclear here (``dGamN`` = ``d_Y Gamma``), field in the ``'2n+1-field'`` APT
+        (``dGamF``); both are the ``dGam`` of :class:`PerturbedResponse`.
 
         The reference and nuclear parts are separate and summed with this correlation part by
         :func:`pycc.hessian`."""
@@ -898,8 +907,17 @@ class CorrelatedDerivs:
         wfn = self.wfn
         c = self.contract
         so = wfn.orbital_basis == 'spinorbital'
-        ofull = slice(0, wfn.o.stop)
+        o, v, ofull = wfn.o, wfn.v, slice(0, wfn.o.stop)
         ncore = wfn.o.stop - wfn.no
+        co = slice(0, ncore)                                  # frozen core (independent core<->active rot.)
+        eps = np.diag(np.asarray(wfn.H.F))                    # orbital energies (dependent pairs)
+        w = np.asarray(wfn.H.ERI if so else wfn.H.L)          # orbital-Hessian weight (<pq||rs> / L)
+        # The orbital response uses the reference-doc form (eq:d2E-noncanon line 2, or
+        # eq:d2E-canon-final when canonical) via the skeleton Lagrangian I'^(x).  The gauge follows
+        # perturbed_mo_gauge (canonical for CCSD(T)); the relaxed densities Drel/dDrel already fold in
+        # P_oo/P_vv (they are D~), so the canonical branch adds only the *orbital*-response
+        # augmentation (Sum P^(x) f^(y), X~^(x), I~''^(x)).  To exercise canonical for a CCSD wfn
+        # (valid, oo/vv-invariant) set self._gauge_override = 'canonical' on a fresh driver.
         canonical = self.perturbed_mo_gauge == 'canonical'
         cphf = self._full_occ_cphf()
         d = wfn.derivatives
@@ -910,41 +928,41 @@ class CorrelatedDerivs:
         I = self._lagrangian(Drel, Gam)
         pert = [Perturbation('nuclear', (A, ct)) for A in range(natom) for ct in range(3)]
 
-        def rot4(Um, T):
-            return (c('tp,tqrs->pqrs', Um, T) + c('tq,ptrs->pqrs', Um, T)
-                    + c('tr,pqts->pqrs', Um, T) + c('ts,pqrt->pqrs', Um, T))
-
-        # first-order responses + hoisted per-Y rotated densities (sum A rot(U,B) = sum rot(U^T,A) B).
-        # The large per-perturbation nmo^4 quantities live in the persistent store
-        # (wfn.derivatives.store): _relaxed_response persists each dGam and _eri_cached persists the
-        # per-atom eri stacks, so the assembly reads them back one atom pair at a time rather than
-        # holding 3*natom-long in-RAM lists.  Gamrot is recomputed per Y (not hoisted into a list).
-        # Only the small quantities (dDrel/dI/Drot/Irot/U and the nmo^2 fX/SX/JX) stay resident.
+        # first-order responses.  The large per-perturbation nmo^4 quantities live in the persistent
+        # store (wfn.derivatives.store): _relaxed_response persists each dGam and _eri_cached persists
+        # the per-atom eri stacks, so the assembly reads them back one atom pair at a time rather than
+        # holding 3*natom-long in-RAM lists.  Only the small quantities (dDrel/dI/U and the nmo^2
+        # fX/SX/Xx/I2x/Pf_x) stay resident.
         dDrel, dI, U = [], [], []
         for i, p in enumerate(pert):
             r = self._relaxed_response(p)                            # one perturbed solve; persists dGam
             dDrel.append(r.dDrel)
             dI.append(r.dI)
             U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
-        Drot = [U[i] @ Drel + Drel @ U[i].T for i in range(nc)]
-        Irot = [U[i] @ I + I @ U[i].T for i in range(nc)]
 
-        # per-X first skeletons; J^X carries the Fock skeleton's occupied-sum rotation response.
-        # Reading d.eri/d.so_eri here also warms the store's per-atom eri stacks for the assembly.
-        fX, SX, JX = [], [], []
+        # per-X first skeletons.  wx = the 1-PDM two-electron kernel (L^(x) closed-shell /
+        # <pq||rs>^(x) spin-orbital); erix = the 2-PDM ERI skeleton (<pq|rs>^(x) closed-shell /
+        # <pq||rs>^(x) SO -- in SO the single antisymmetrized <pq||rs>^(x) serves both).  The per-X
+        # skeleton Lagrangian I'^(x) gives X^(x)/I''^(x) (X~^(x)/I~''^(x)/P^(x) when canonical or
+        # frozen-core).  Reading d.eri/d.so_eri here also warms the store.
+        fX, SX, Xx, I2x, Pf_x = [], [], [], [], []
         for i, p in enumerate(pert):
             A, ct = p.comp
             hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
             Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
             if so:
-                eL = np.asarray(d.so_eri(A)[ct])
+                erix = np.asarray(d.so_eri(A)[ct]); wx = erix          # <pq||rs>^(X): both kernels
             else:
-                ph = np.asarray(d.eri(A)[ct])                           # <pq|rs>^(X) (Gamma)
-                eL = 2.0 * ph - ph.transpose(0, 1, 3, 2)                # L^X (Fock)
-            fX.append(hx + c('pmqm->pq', eL[:, ofull, :, ofull]))
+                erix = np.asarray(d.eri(A)[ct])                        # <pq|rs>^(X) (2-PDM / Gamma)
+                wx = 2.0 * erix - erix.transpose(0, 1, 3, 2)           # L^X (1-PDM / Fock)
+            fX.append(hx + c('pmqm->pq', wx[:, ofull, :, ofull]))
             SX.append(Sx)
-            JX.append(c('pq,prqm->rm', Drel, eL[:, :, :, ofull])
-                      + c('pq,pmqr->rm', Drel, eL[:, ofull, :, :]))
+            Ip, xov, i2 = self._skeleton_lagrangian(fX[i], Sx, wx, erix, Drel, Gam, I)
+            if canonical or ncore:        # independent core<->active (FC) and/or redundant oo/vv (canon.)
+                xt, it, pf = self._augment_with_canonical_pair_rotations(Ip, xov, i2)
+                Xx.append(xt); I2x.append(it); Pf_x.append(pf)
+            else:
+                Xx.append(xov); I2x.append(i2); Pf_x.append(None)
 
         # ---- assembly: atom-pair-outer contract-and-discard ----
         # Loop unique atom pairs, compute each pair's 2nd-deriv skeletons ONCE (cache=False, so
@@ -953,12 +971,16 @@ class CorrelatedDerivs:
         # I.ov2 uses only Drel/Gam/I and is symmetric in the pair (d2/dA dB = d2/dB dA), so it is
         # shared by H[ix,iy] and its transpose H[iy,ix]; only the response half differs.  The pair's
         # nmo^4 working set (dGam + eriX for its <= 6 perturbations) is read from the store here.
-        def _dGs(j):        # stored cumulant response dGam[j] + the per-Y rotation (recomputed)
-            return self._relaxed_response(pert[j]).dGam + rot4(U[j].T, Gam)
+        def _dGs(j):        # bare cumulant response dGam[j] (the doc form needs no U^y rotation)
+            return self._relaxed_response(pert[j]).dGam
 
-        def _resp(i, j, dGs_j, erX_i):     # perturbation-dependent half of H[i, j]
-            return (c('pq,pq->', dDrel[j] + Drot[j], fX[i]) + c('pqrs,pqrs->', dGs_j, erX_i)
-                    + c('pq,pq->', dI[j] + Irot[j], SX[i]) + float(np.sum(U[j][:, ofull] * JX[i])))
+        def _resp(i, j, dGam_j, erX_i):   # 2n+1 density response + doc orbital response (line 2)
+            orb = (2.0 * c('ai,ai->', U[j][v, ofull], Xx[i][v, ofull])  # 2 U^y_ai X(~)^(x)_ai
+                   + c('pq,pq->', SX[j], I2x[i]))                       # S^(y)_pq I(~)''^(x)_pq
+            if Pf_x[i] is not None:
+                orb = orb + c('pq,pq->', Pf_x[i], fX[j])               # + Sum P^(x)_pq f^(y)_pq
+            return (c('pq,pq->', dDrel[j], fX[i]) + c('pqrs,pqrs->', dGam_j, erX_i)
+                    + c('pq,pq->', dI[j], SX[i]) + orb)
 
         def _skel_scalar(blk, cx, cy):     # fixed-density second-skeleton scalar s for (cx, cy)
             core2 = blk['core'][cx * 3 + cy]
@@ -1007,9 +1029,12 @@ class CorrelatedDerivs:
         Numerator-gated (``|Delta I'| < thresh`` -> 0), skipping the diagonal (``m=n``) and
         near-degenerate pairs.  ``P`` is symmetric (numerator and denominator both antisymmetric).
 
-        This is the frozen-core core<->active-occupied divide generalized to an arbitrary square
-        block; it also supplies the active oo/vv rotations of the canonical perturbed-MO gauge
-        (:attr:`perturbed_mo_gauge`, used by :meth:`_orbital_response` / :meth:`_so_orbital_response`)."""
+        Supplies the *redundant* active oo/vv canonical rotations of the canonical perturbed-MO gauge
+        (:attr:`perturbed_mo_gauge`; used by :meth:`_orbital_response` / :meth:`_so_orbital_response`
+        and the Hessian ``_pair_augment``).  The same divide also fixes the *independent* (non-redundant)
+        frozen-core core<->active-occupied rotation ``P_co``, but that off-diagonal block is built
+        separately as an ungated *direct* divide (its gap is large, so numerator-gating and the
+        degeneracy skip are unnecessary) -- see :meth:`_orbital_response`."""
         num = np.asarray(Iblock) - np.asarray(Iblock).T
         den = eps_block[:, None] - eps_block[None, :]
         P = np.zeros_like(num)
@@ -1037,3 +1062,99 @@ class CorrelatedDerivs:
         m = np.abs(gap) > thresh
         dP[m] = (dnum[m] - np.asarray(Pblock0)[m] * dgap[m]) / gap[m]
         return dP
+
+    # ---- shared per-perturbation orbital-response builders (used by both hessian() and
+    #      dipole_derivatives() when they run in the reference-doc form) ----
+
+    def _skeleton_lagrangian(self, fXx, SXx, wx, erix, Drel, Gam, I):
+        r"""Skeleton-perturbed orbital Lagrangian ``I'^(x)`` for one perturbation ``x`` -- the
+        integral-derivative half of :meth:`_perturbed_lagrangian`, evaluated at *fixed* (unperturbed)
+        relaxed densities ``Drel``/``Gam``/``I``.  Returns the triple ``(I'^(x), X^(x), I''^(x))``
+        with the occupied-virtual orbital-response driver ``X^(x)_ai = I'^(x)_ia - I'^(x)_ai`` and the
+        energy-weighted rewrite ``I''^(x)`` (``I'^(x)`` with its virtual-occupied block transposed into
+        the occupied-virtual position)::
+
+            I'^(x)_pq = -1/2 [ Drel_qr f^(x)_pr + Drel_rq f^(x)_rp
+                               + delta_{q in ofull} Drel_rs ( w^(x)_rpsq + w^(x)_rqsp )
+                               + 4 <pr||st>^(x) Gam_qrst + I_qr S^(x)_pr + I_rq S^(x)_rp ]
+
+        The kernels are the per-perturbation skeleton integral derivatives: ``fXx`` = ``f^(x)``,
+        ``SXx`` = ``S^(x)``, ``wx`` = the 1-PDM two-electron kernel (spin-adapted ``L^(x)`` closed-shell
+        / antisymmetrized ``<pq||rs>^(x)`` spin-orbital), ``erix`` = the 2-PDM ERI skeleton
+        (``<pq|rs>^(x)`` closed-shell / ``<pq||rs>^(x)`` spin-orbital).  Perturbation-agnostic: the
+        caller supplies the nuclear or field skeletons."""
+        c = self.contract
+        wfn = self.wfn
+        v, ofull = wfn.v, slice(0, wfn.o.stop)
+        termA = c('qr,pr->pq', Drel, fXx) + c('rq,rp->pq', Drel, fXx)
+        termB = np.zeros_like(fXx)
+        termB[:, ofull] = (c('rs,rpsq->pq', Drel, wx[:, :, :, ofull])
+                           + c('rs,rqsp->pq', Drel, wx[:, ofull, :, :]))
+        termC = 4.0 * c('prst,qrst->pq', erix, Gam)
+        termD = c('qr,pr->pq', I, SXx) + c('rq,rp->pq', I, SXx)
+        Ip = -0.5 * (termA + termB + termC + termD)
+        I2 = Ip.copy(); I2[v, ofull] = Ip[ofull, v].T
+        return Ip, Ip.T - Ip, I2
+
+    def _augment_with_canonical_pair_rotations(self, Ip, Xov, I2):
+        r"""Add the closed-form (canonical Brillouin) orbital-rotation contributions to the skeleton
+        ``X^(x)``/``I''^(x)`` of :meth:`_skeleton_lagrangian`, for the rotations the CPHF
+        occupied-virtual solve does *not* provide (reference-doc eq:d2E-canon-final line 2, doc lines
+        862-882; the frozen-core (c,i) extension per the Frozen Core section, doc lines 1745-1776).
+
+        Two kinds of rotation enter, both fixed by the canonical condition ``d_x f_pq = 0`` and sharing
+        the divide ``P^(x)_pq = (I'^(x)_pq - I'^(x)_qp)/(eps_p - eps_q)``:
+
+        * the INDEPENDENT (non-redundant) core<->active-occupied rotation ``P^(x)_ci`` -- the energy is
+          not invariant to core<->active mixing, so it is ALWAYS present when there is a frozen core
+          (doc lines 1739-1743); built here as an ungated *direct* divide (its gap is large, so the
+          numerator-gate and degeneracy skip are unnecessary), matching the density's ``Pco``;
+        * the REDUNDANT (dependent) active occ-occ / virt-virt rotations ``P^(x)_ij``/``P^(x)_ab`` --
+          present only in the canonical gauge (CCSD(T)); for CCSD they vanish by invariance and the
+          non-canonical ``-1/2 S`` is used instead.  Built via the numerator-gated
+          :meth:`_dependent_pairs` (degeneracy-safe).
+
+        ``P^(x)`` is folded into the three carriers of the doc's line 2 (occupied pair-sums ``k,l`` run
+        over the full occupied space; ``A_pqrs = w_pqrs + w_psrq`` with ``w`` the unperturbed
+        orbital-Hessian weight, matching :meth:`cphf.CPHF.full_U`)::
+
+            X~^(x)_ai = X^(x)_ai + 1/2 [ Sum_kl P^(x)_kl A_kali + Sum_de P^(x)_de A_daei ]  (eq:Xtilde)
+            I~''^(x)_ij = I''^(x)_ij - P^(x)_ij eps_j
+                          - 1/2 [ Sum_kl P^(x)_kl A_kilj + Sum_de P^(x)_de A_diej ]         (eq:Idouble-tilde)
+            I~''^(x)_ab = I''^(x)_ab - P^(x)_ab eps_b
+
+        Returns ``(X~^(x), I~''^(x), P^(x))`` -- the augmented occupied-virtual Z-vector driver, the
+        augmented energy-weighted skeleton density, and the full-MO ``P^(x)`` (the latter for the
+        leading ``Sum P^(x)_pq f^(y)_pq`` term of eq:d2E-canon-final, which has no first-derivative
+        counterpart)."""
+        c = self.contract
+        wfn = self.wfn
+        so = wfn.orbital_basis == 'spinorbital'
+        o, v, ofull = wfn.o, wfn.v, slice(0, wfn.o.stop)
+        ncore = wfn.o.stop - wfn.no
+        co = slice(0, ncore)
+        eps = np.diag(np.asarray(wfn.H.F))
+        w = np.asarray(wfn.H.ERI if so else wfn.H.L)          # unperturbed orbital-Hessian weight
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        Pof = np.zeros_like(Ip[ofull, ofull])                 # P^(x) over the full occupied space
+        Pvv = np.zeros_like(Ip[v, v])
+        if ncore:                                             # INDEPENDENT core<->active-occ (always)
+            Pof[co, o] = (Ip[co, o] - Ip[o, co].T) / (eps[co][:, None] - eps[o][None, :])
+            Pof[o, co] = Pof[co, o].T
+        if canonical:                                         # REDUNDANT active oo/vv (CCSD(T) gauge)
+            Pof[o, o] = self._dependent_pairs(Ip[o, o], eps[o])
+            Pvv = self._dependent_pairs(Ip[v, v], eps[v])
+        Pf = np.zeros_like(Ip); Pf[ofull, ofull] = Pof; Pf[v, v] = Pvv
+        # X~^(x)_ai (eq:Xtilde): occupied pair-sum over the FULL occupied space
+        Xk = (c('kl,kali->ai', Pof, w[ofull, v, ofull, ofull])
+              + c('kl,kila->ai', Pof, w[ofull, ofull, ofull, v]))
+        Xd = c('de,daei->ai', Pvv, w[v, v, v, ofull]) + c('de,diea->ai', Pvv, w[v, ofull, v, v])
+        Xt = Xov.copy(); Xt[v, ofull] = Xov[v, ofull] + 0.5 * (Xk + Xd)
+        # I~''^(x) (eq:Idouble-tilde): full occupied-occupied block
+        Aoo = (c('kl,kilj->ij', Pof, w[ofull, ofull, ofull, ofull])
+               + c('kl,kjli->ij', Pof, w[ofull, ofull, ofull, ofull]))
+        Avv = c('de,diej->ij', Pvv, w[v, ofull, v, ofull]) + c('de,djei->ij', Pvv, w[v, ofull, v, ofull])
+        It = I2.copy()
+        It[ofull, ofull] = I2[ofull, ofull] - Pof * eps[ofull][None, :] - 0.5 * (Aoo + Avv)
+        It[v, v] = I2[v, v] - Pvv * eps[v][None, :]
+        return Xt, It, Pf

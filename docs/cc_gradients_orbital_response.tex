@@ -16,6 +16,7 @@
 \newcommand{\so}{\text{all}}
 \newcommand{\occ}{\text{occ}}
 \newcommand{\vir}{\text{vir}}
+\newcommand{\alloc}{\text{all occ}}   % occupied summation over core + active (frozen-core aware)
 
 \begin{document}
 
@@ -56,7 +57,7 @@ elements and of the two-electron integrals are
 \begin{align}
 \frac{\partial f_{pq}}{\partial x}
 &= f^{(x)}_{pq} + U^x_{qp} f_{qq} + U^x_{pq} f_{pp}
-+ \sum_{t}^{\so}\sum_{m}^{\occ} U^x_{tm}A_{ptqm},
++ \sum_{t}^{\so}\sum_{m}^{\alloc} U^x_{tm}A_{ptqm},
 \label{eq:dfpq}\\[4pt]
 \frac{\partial \adb{pq}{rs}}{\partial x}
 &= \adb{pq}{rs}^{(x)}
@@ -77,7 +78,7 @@ the terms with and without $U^{x}$,
 + \sum_{pq} D_{pq}\left[U^x_{qp} f_{qq} + U^x_{pq} f_{pp}\right]
 \nonumber\\
 &\quad
-+ \sum_{pq}\sum_{t}^{\so}\sum_{m}^{\occ} D_{pq}\,U^x_{tm}A_{ptqm}
++ \sum_{pq}\sum_{t}^{\so}\sum_{m}^{\alloc} D_{pq}\,U^x_{tm}A_{ptqm}
 \nonumber\\
 &\quad
 + \sum_{pqrs}\sum_{t}^{\so}\Gamma_{pqrs}\left(U^x_{tp}\adb{tq}{rs}
@@ -204,7 +205,7 @@ The total gradient may therefore be written as
 \frac{\partial E}{\partial x}
 = \sum_{pq} D_{pq} f^{(x)}_{pq}
 + \sum_{pqrs}\Gamma_{pqrs}\adb{pq}{rs}^{(x)}
-+ 2\sum_{a}^{\vir}\sum_{i}^{\occ} U^x_{ai} X_{ai}
++ 2\sum_{a}^{\vir}\sum_{i}^{\alloc} U^x_{ai} X_{ai}
 + \sum_{pq} S^{(x)}_{pq} I''_{pq},
 \qquad X_{ai} \equiv I'_{ia} - I'_{ai}
 \label{eq:grad-U}
@@ -218,7 +219,7 @@ The first-order CPHF equations for $U^x_{ai}$ are
 \begin{equation}
 -f^{(x)}_{ai} + S^{(x)}_{ai}\varepsilon_i
 + \tfrac{1}{2}\sum_{jk} S^{(x)}_{jk}A_{ajik}
-= \sum_{b}^{\vir}\sum_{j}^{\occ} U^x_{bj}
+= \sum_{b}^{\vir}\sum_{j}^{\alloc} U^x_{bj}
 \left[(\varepsilon_a-\varepsilon_i)\delta_{ab}\delta_{ij} + A_{abij}\right].
 \end{equation}
 Defining
@@ -281,7 +282,7 @@ where
 \tilde{D}_{ai} &= D_{ai} - Z_{ai}, & \tilde{D}_{ia} &= D_{ia} - Z_{ai}, \\
 \tilde{D}_{ij} &= D_{ij}, & \tilde{D}_{ab} &= D_{ab}, \\
 I_{ai} &= I''_{ai} + Z_{ai}\varepsilon_i, & I_{ia} &= I''_{ia} + Z_{ai}\varepsilon_i, \\
-I_{ij} &= I''_{ij} + \sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj}, & I_{ab} &= I''_{ab}.
+I_{ij} &= I''_{ij} + \sum_{a}^{\vir}\sum_{k}^{\alloc} Z_{ak}A_{aikj}, & I_{ab} &= I''_{ab}.
 \end{align}
 
 \noindent
@@ -359,8 +360,8 @@ determines $U^x_{ij}$ ($i\neq j$) fully:
 U^x_{ij}
 = \frac{1}{\varepsilon_i-\varepsilon_j}\left[
 -f^{(x)}_{ij} + S^{(x)}_{ij}\varepsilon_j
-+ \tfrac12\sum_{nm}^{\occ} S^{(x)}_{nm}\,A_{injm}
-- \sum_{c}^{\vir}\sum_{m}^{\occ} U^x_{cm}\,A_{icjm}
++ \tfrac12\sum_{nm}^{\alloc} S^{(x)}_{nm}\,A_{injm}
+- \sum_{d}^{\vir}\sum_{m}^{\alloc} U^x_{dm}\,A_{idjm}
 \right], \qquad i\neq j,
 \label{eq:canon-oo}
 \end{equation}
@@ -369,8 +370,8 @@ and, analogously, the virtual block
 U^x_{ab}
 = \frac{1}{\varepsilon_a-\varepsilon_b}\left[
 -f^{(x)}_{ab} + S^{(x)}_{ab}\varepsilon_b
-+ \tfrac12\sum_{nm}^{\occ} S^{(x)}_{nm}\,A_{anbm}
-- \sum_{c}^{\vir}\sum_{m}^{\occ} U^x_{cm}\,A_{acbm}
++ \tfrac12\sum_{nm}^{\alloc} S^{(x)}_{nm}\,A_{anbm}
+- \sum_{d}^{\vir}\sum_{m}^{\alloc} U^x_{dm}\,A_{adbm}
 \right], \qquad a\neq b.
 \label{eq:canon-vv}
 \end{equation}
@@ -428,18 +429,18 @@ P_{ij} \equiv \frac{X_{ij}}{\varepsilon_i-\varepsilon_j}
 \end{equation}
 the occupied block becomes
 \begin{equation}
--\sum_{ij}U^x_{ij}X_{ij}
-= \sum_{ij}P_{ij}f^{(x)}_{ij}
-- \sum_{ij}P_{ij}S^{(x)}_{ij}\varepsilon_j
-- \tfrac12\sum_{ij}\sum_{nm}^{\occ}P_{ij}S^{(x)}_{nm}A_{injm}
-+ \sum_{ij}\sum_{c}^{\vir}\sum_{m}^{\occ}P_{ij}U^x_{cm}A_{icjm}.
+-\sum_{ij}^{\alloc}U^x_{ij}X_{ij}
+= \sum_{ij}^{\alloc}P_{ij}f^{(x)}_{ij}
+- \sum_{ij}^{\alloc}P_{ij}S^{(x)}_{ij}\varepsilon_j
+- \tfrac12\sum_{ij}^{\alloc}\sum_{nm}^{\alloc}P_{ij}S^{(x)}_{nm}A_{injm}
++ \sum_{ij}^{\alloc}\sum_{d}^{\vir}\sum_{m}^{\alloc}P_{ij}U^x_{dm}A_{idjm}.
 \label{eq:oo-sub}
 \end{equation}
 The four terms have distinct
 destinations: the first adds $P_{ij}$ to the effective
 one-particle density that contracts the skeleton Fock derivative; the second and
 third are overlap-derivative contributions that join the energy-weighted density
-$I''$; and the fourth couples the occ-vir response $U^x_{cm}$, so it augments the
+$I''$; and the fourth couples the occ-vir response $U^x_{dm}$, so it augments the
 Z-vector right-hand side.
 
 \noindent
@@ -449,8 +450,8 @@ $P_{ab}\equiv X_{ab}/(\varepsilon_a-\varepsilon_b)$,
 -\sum_{ab}U^x_{ab}X_{ab}
 = \sum_{ab}P_{ab}f^{(x)}_{ab}
 - \sum_{ab}P_{ab}S^{(x)}_{ab}\varepsilon_b
-- \tfrac12\sum_{ab}\sum_{nm}^{\occ}P_{ab}S^{(x)}_{nm}A_{anbm}
-+ \sum_{ab}\sum_{c}^{\vir}\sum_{m}^{\occ}P_{ab}U^x_{cm}A_{acbm}.
+- \tfrac12\sum_{ab}\sum_{nm}^{\alloc}P_{ab}S^{(x)}_{nm}A_{anbm}
++ \sum_{ab}\sum_{d}^{\vir}\sum_{m}^{\alloc}P_{ab}U^x_{dm}A_{adbm}.
 \label{eq:vv-sub}
 \end{equation}
 
@@ -470,8 +471,8 @@ The terms carrying an overlap derivative $S^{(x)}$ match the energy-weighted
 density $\sum_{pq}S^{(x)}_{pq}I''_{pq}$, so they join $I''$,
 \begin{equation}
 \tilde{I}''_{ij} = I''_{ij} - P_{ij}\varepsilon_j
-- \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kilj}
-- \tfrac12\sum_{cd}^{\vir}P_{cd}A_{cidj},
+- \tfrac12\sum_{kl}^{\alloc}P_{kl}A_{kilj}
+- \tfrac12\sum_{de}^{\vir}P_{de}A_{diej},
 \qquad
 \tilde{I}''_{ab} = I''_{ab} - P_{ab}\varepsilon_b
 \label{eq:Idouble-tilde}
@@ -480,19 +481,19 @@ density $\sum_{pq}S^{(x)}_{pq}I''_{pq}$, so they join $I''$,
 Eqs.~\eqref{eq:oo-sub} and \eqref{eq:vv-sub}, which multiply an
 occupied--occupied overlap $S^{(x)}_{nm}$).
 
-The final terms carry an occ-vir rotation coefficient $U^x_{cm}$ ($c$ virtual, $m$
+The final terms carry an occ-vir rotation coefficient $U^x_{dm}$ ($d$ virtual, $m$
 occupied).  Unlike the occ-occ and vir-vir rotations, which the canonical conditions fix
 in closed form through Eqs.~\eqref{eq:canon-oo} and \eqref{eq:canon-vv}, the
 occ-vir
 rotations remain the unknowns of the CPHF problem, so these terms cannot be
 evaluated directly and must instead be carried through the Z-vector.  Because
-$U^x_{cm}$ sits in the same occ-vir block as the orbital term
-$2\sum_{ai}U^x_{ai}X_{ai}$, renaming the dummy label $(c,m)\to(a,i)$ lets the two
+$U^x_{dm}$ sits in the same occ-vir block as the orbital term
+$2\sum_{ai}U^x_{ai}X_{ai}$, renaming the dummy label $(d,m)\to(a,i)$ lets the two
 be added under a single sum $\sum_{ai}U^x_{ai}(\cdots)$; factoring the common $2$
 then augments the Z-vector right-hand side $X_{ai}$ of \S\ref{sec:cphf-z} to
 \begin{equation}
 \tilde{X}_{ai} = X_{ai}
-+ \tfrac12\sum_{kl}^{\occ}P_{kl}\,A_{kali}
++ \tfrac12\sum_{kl}^{\alloc}P_{kl}\,A_{kali}
 + \tfrac12\sum_{de}^{\vir}P_{de}\,A_{daei}.
 \label{eq:Xtilde}
 \end{equation}
@@ -530,7 +531,7 @@ with $X_{ai}=I'_{ia}-I'_{ai}$.
 \begin{equation*}
 I_{ai}=I''_{ai}+Z_{ai}\varepsilon_i,\quad
 I_{ia}=I''_{ia}+Z_{ai}\varepsilon_i,\quad
-I_{ij}=I''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj},\quad
+I_{ij}=I''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\alloc} Z_{ak}A_{aikj},\quad
 I_{ab}=I''_{ab}.
 \end{equation*}
 \end{enumerate}
@@ -552,15 +553,15 @@ solve.  Augment the one-particle density,
 the energy-weighted density,
 \begin{equation*}
 \tilde{I}''_{ij} = I''_{ij} - P_{ij}\varepsilon_j
-- \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kilj}
-- \tfrac12\sum_{cd}^{\vir}P_{cd}A_{cidj},
+- \tfrac12\sum_{kl}^{\alloc}P_{kl}A_{kilj}
+- \tfrac12\sum_{de}^{\vir}P_{de}A_{diej},
 \qquad
 \tilde{I}''_{ab} = I''_{ab} - P_{ab}\varepsilon_b;
 \end{equation*}
 and the Z-vector right-hand side,
 \begin{equation*}
 \tilde{X}_{ai} = X_{ai}
-+ \tfrac12\sum_{kl}^{\occ}P_{kl}A_{kali}
++ \tfrac12\sum_{kl}^{\alloc}P_{kl}A_{kali}
 + \tfrac12\sum_{de}^{\vir}P_{de}A_{daei}.
 \end{equation*}
 \item Solve the single Z-vector equation
@@ -573,7 +574,7 @@ blocks from step~3 and $\tilde{I}''$ in place of $I''$,
 \begin{equation*}
 I_{ai}=\tilde{I}''_{ai}+Z_{ai}\varepsilon_i,\quad
 I_{ia}=\tilde{I}''_{ia}+Z_{ai}\varepsilon_i,\quad
-I_{ij}=\tilde{I}''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\occ} Z_{ak}A_{aikj},\quad
+I_{ij}=\tilde{I}''_{ij}+\sum_{a}^{\vir}\sum_{k}^{\alloc} Z_{ak}A_{aikj},\quad
 I_{ab}=\tilde{I}''_{ab}.
 \end{equation*}
 \end{enumerate}
@@ -673,7 +674,7 @@ the MO basis:
 \frac{\partial f^{(x)}_{pq}}{\partial y}
 &= f^{(xy)}_{pq}
 + \sum_{t}^{\so}\left(U^y_{tp} f^{(x)}_{tq} + U^y_{tq} f^{(x)}_{pt}\right)
-+ \sum_{t}^{\so}\sum_{m}^{\occ} U^y_{tm}\,A^{(x)}_{ptqm},
++ \sum_{t}^{\so}\sum_{m}^{\alloc} U^y_{tm}\,A^{(x)}_{ptqm},
 \label{eq:df-skel-dy}\\
 \frac{\partial \adb{pq}{rs}^{(x)}}{\partial y}
 &= \adb{pq}{rs}^{(xy)}
@@ -692,7 +693,7 @@ counterpart of the pair combination $A_{pqrs}$ of \S\ref{sec:first-derivs}, and 
 $\adb{pq}{rs}^{(xy)}$, and $S^{(xy)}$ are the doubly-skeleton integrals.  The
 occupied-sum term of \eqref{eq:df-skel-dy} arises from the $y$-rotation of the
 summed occupied index in the two-electron part of the skeleton Fock derivative
-$f^{(x)}_{pq}=h^{(x)}_{pq}+\sum_m^{\occ}\adb{pm}{qm}^{(x)}$.
+$f^{(x)}_{pq}=h^{(x)}_{pq}+\sum_m^{\alloc}\adb{pm}{qm}^{(x)}$.
 
 In the next three terms, the {\em first-order responses} of the densities,
 $\partial\tilde D/\partial y$, $\partial \Gamma/\partial y$, and
@@ -765,7 +766,7 @@ second derivative becomes
 + \sum_{pq} I_{pq} S^{(xy)}_{pq}
 \nonumber\\
 &\quad
-+ 2\sum_{a}^{\vir}\sum_{i}^{\occ} U^y_{ai}\,X^{(x)}_{ai}
++ 2\sum_{a}^{\vir}\sum_{i}^{\alloc} U^y_{ai}\,X^{(x)}_{ai}
 + \sum_{pq} S^{(y)}_{pq}\,I''^{(x)}_{pq}
 \nonumber\\
 &\quad
@@ -809,9 +810,9 @@ perturbation $y$.  In direct analogy to the canonical first-derivative gradient
 + \sum_{pq} I_{pq} S^{(xy)}_{pq}
 \nonumber\\
 &\quad
-- \sum_{ij} U^y_{ij} X^{(x)}_{ij}
+- \sum_{ij}^{\alloc} U^y_{ij} X^{(x)}_{ij}
 - \sum_{ab} U^y_{ab} X^{(x)}_{ab}
-+ 2\sum_{a}^{\vir}\sum_{i}^{\occ} U^y_{ai} X^{(x)}_{ai}
++ 2\sum_{a}^{\vir}\sum_{i}^{\alloc} U^y_{ai} X^{(x)}_{ai}
 + \sum_{pq} S^{(y)}_{pq} I''^{(x)}_{pq}
 \nonumber\\
 &\quad
@@ -825,7 +826,7 @@ $X^{(x)}_{ab}=I'^{(x)}_{ab}-I'^{(x)}_{ba}$ joining the $X^{(x)}_{ai}$ and
 $I''^{(x)}_{pq}$ of Eq.~\eqref{eq:d2E-noncanon}.  The occupied--occupied and
 virtual--virtual coefficients $U^y_{ij}$, $U^y_{ab}$ are now evaluated in closed
 form from Eqs.~\eqref{eq:canon-oo}--\eqref{eq:canon-vv} (in terms of $f^{(y)}$,
-$S^{(y)}$, and the occupied--virtual $U^y_{cm}$ that the CPHF solve supplies),
+$S^{(y)}$, and the occupied--virtual $U^y_{dm}$ that the CPHF solve supplies),
 while $U^y_{ai}$ is the same CPHF solution required in the non-canonical case.
 
 As in \S\ref{sec:cphf-z-canon}, the explicit $U^y_{ij}$ and $U^y_{ab}$ may be eliminated in favor of
@@ -834,13 +835,13 @@ for $U^y_{ij}$ and introducing the occupied--occupied dependent pair
 $P^{(x)}_{ij}=X^{(x)}_{ij}/(\varepsilon_i-\varepsilon_j)$ [cf.\ Eq.~\eqref{eq:Poo}],
 the occupied--occupied orbital-response term becomes
 \begin{align}
--\sum_{ij}U^y_{ij}X^{(x)}_{ij}
-&= \sum_{ij}P^{(x)}_{ij}f^{(y)}_{ij}
-- \sum_{ij}P^{(x)}_{ij}S^{(y)}_{ij}\varepsilon_j
+-\sum_{ij}^{\alloc}U^y_{ij}X^{(x)}_{ij}
+&= \sum_{ij}^{\alloc}P^{(x)}_{ij}f^{(y)}_{ij}
+- \sum_{ij}^{\alloc}P^{(x)}_{ij}S^{(y)}_{ij}\varepsilon_j
 \nonumber\\
 &\quad
-- \tfrac12\sum_{ij}\sum_{nm}^{\occ}P^{(x)}_{ij}S^{(y)}_{nm}A_{injm}
-+ \sum_{ij}\sum_{c}^{\vir}\sum_{m}^{\occ}P^{(x)}_{ij}U^y_{cm}A_{icjm},
+- \tfrac12\sum_{ij}^{\alloc}\sum_{nm}^{\alloc}P^{(x)}_{ij}S^{(y)}_{nm}A_{injm}
++ \sum_{ij}^{\alloc}\sum_{d}^{\vir}\sum_{m}^{\alloc}P^{(x)}_{ij}U^y_{dm}A_{idjm},
 \label{eq:oo-sub-2}
 \end{align}
 and the virtual block follows identically with
@@ -849,7 +850,7 @@ groups go where their \S\ref{sec:cphf-z-canon} counterparts did, now driven by $
 overlap and rotation coefficients of the {\em second} perturbation: the
 overlap-derivative terms (second and third) augment $I''^{(x)}$ to
 $\tilde I''^{(x)}$ [the analog of Eq.~\eqref{eq:Idouble-tilde}], and the term
-carrying $U^y_{cm}$ augments $X^{(x)}_{ai}$ to $\tilde X^{(x)}_{ai}$ [the analog
+carrying $U^y_{dm}$ augments $X^{(x)}_{ai}$ to $\tilde X^{(x)}_{ai}$ [the analog
 of Eq.~\eqref{eq:Xtilde}], which the CPHF solution $U^y_{ai}$ then multiplies.
 The leading group, however, has no first-derivative counterpart:
 $\sum_{ij}P^{(x)}_{ij}f^{(y)}_{ij}+\sum_{ab}P^{(x)}_{ab}f^{(y)}_{ab}$ contracts the
@@ -866,9 +867,9 @@ mixed second derivative is
 + \sum_{pq} I_{pq} S^{(xy)}_{pq}
 \nonumber\\
 &\quad
-+ \sum_{ij}P^{(x)}_{ij}f^{(y)}_{ij}
++ \sum_{ij}^{\alloc}P^{(x)}_{ij}f^{(y)}_{ij}
 + \sum_{ab}P^{(x)}_{ab}f^{(y)}_{ab}
-+ 2\sum_{a}^{\vir}\sum_{i}^{\occ} U^y_{ai}\,\tilde X^{(x)}_{ai}
++ 2\sum_{a}^{\vir}\sum_{i}^{\alloc} U^y_{ai}\,\tilde X^{(x)}_{ai}
 + \sum_{pq} S^{(y)}_{pq}\,\tilde I''^{(x)}_{pq}
 \nonumber\\
 &\quad
@@ -970,7 +971,7 @@ terms
 \begin{align}
 \frac{\partial\tilde X_{ai}}{\partial y}
 &= \frac{\partial X_{ai}}{\partial y}
-+ \tfrac12\sum_{kl}^{\occ}\left(\frac{\partial P_{kl}}{\partial y}A_{kali}
++ \tfrac12\sum_{kl}^{\alloc}\left(\frac{\partial P_{kl}}{\partial y}A_{kali}
    + P_{kl}\frac{\partial A_{kali}}{\partial y}\right)
 \nonumber\\
 &\quad
@@ -1119,7 +1120,7 @@ Take $U^y_{ij}=-\tfrac12 S^{(y)}_{ij}$ and $U^y_{ab}=-\tfrac12 S^{(y)}_{ab}$.
 \item The orbital-response term is
 \begin{equation*}
 (\text{orbital response}) =
-2\sum_{a}^{\vir}\sum_{i}^{\occ}U^y_{ai}\,X^{(x)}_{ai}
+2\sum_{a}^{\vir}\sum_{i}^{\alloc}U^y_{ai}\,X^{(x)}_{ai}
 + \sum_{pq}S^{(y)}_{pq}\,I''^{(x)}_{pq}.
 \end{equation*}
 \item Solve the perturbed Z-vector
@@ -1164,24 +1165,24 @@ P^{(x)}_{ab}=\frac{X^{(x)}_{ab}}{\varepsilon_a-\varepsilon_b};
 fold them into the energy-weighted density,
 \begin{equation*}
 \tilde I''^{(x)}_{ij} = I''^{(x)}_{ij} - P^{(x)}_{ij}\varepsilon_j
-- \tfrac12\sum_{kl}^{\occ}P^{(x)}_{kl}A_{kilj}
-- \tfrac12\sum_{cd}^{\vir}P^{(x)}_{cd}A_{cidj},
+- \tfrac12\sum_{kl}^{\alloc}P^{(x)}_{kl}A_{kilj}
+- \tfrac12\sum_{de}^{\vir}P^{(x)}_{de}A_{diej},
 \qquad
 \tilde I''^{(x)}_{ab} = I''^{(x)}_{ab} - P^{(x)}_{ab}\varepsilon_b,
 \end{equation*}
 and into the occupied--virtual combination,
 \begin{equation*}
 \tilde X^{(x)}_{ai} = X^{(x)}_{ai}
-+ \tfrac12\sum_{kl}^{\occ}P^{(x)}_{kl}A_{kali}
++ \tfrac12\sum_{kl}^{\alloc}P^{(x)}_{kl}A_{kali}
 + \tfrac12\sum_{de}^{\vir}P^{(x)}_{de}A_{daei}.
 \end{equation*}
 \item The orbital-response term is
 \begin{equation*}
 \begin{split}
 (\text{orbital response}) = {}&
-\sum_{ij}P^{(x)}_{ij}f^{(y)}_{ij}
+\sum_{ij}^{\alloc}P^{(x)}_{ij}f^{(y)}_{ij}
 + \sum_{ab}P^{(x)}_{ab}f^{(y)}_{ab} \\
-&+ 2\sum_{a}^{\vir}\sum_{i}^{\occ}U^y_{ai}\,\tilde X^{(x)}_{ai}
+&+ 2\sum_{a}^{\vir}\sum_{i}^{\alloc}U^y_{ai}\,\tilde X^{(x)}_{ai}
 + \sum_{pq}S^{(y)}_{pq}\,\tilde I''^{(x)}_{pq}.
 \end{split}
 \end{equation*}
@@ -1201,7 +1202,7 @@ $\mathbf{G}^{T}\,\partial\mathbf{Z}/\partial y
 with the dependent-pair-augmented source
 \begin{align*}
 \frac{\partial\tilde X_{ai}}{\partial y}=\frac{\partial X_{ai}}{\partial y}
-&+ \tfrac12\sum_{kl}^{\occ}\Big(\frac{\partial P_{kl}}{\partial y}A_{kali}
+&+ \tfrac12\sum_{kl}^{\alloc}\Big(\frac{\partial P_{kl}}{\partial y}A_{kali}
    + P_{kl}\frac{\partial A_{kali}}{\partial y}\Big)\\
 &+ \tfrac12\sum_{de}^{\vir}\Big(\frac{\partial P_{de}}{\partial y}A_{daei}
    + P_{de}\frac{\partial A_{daei}}{\partial y}\Big),
@@ -1731,6 +1732,7 @@ blocks vanishing.  As in the CCSD case the $\Gamma$ responses carry the overall
 $\frac14$; $\partial_x D$ needs no prefactor.
 
 \section{Frozen Core}
+\label{sec:frozen-core}
 
 The frozen-core approximation removes a set of low-lying (core) orbitals from
 the correlation treatment, splitting the occupied space into core
@@ -1762,7 +1764,10 @@ relaxed density as the occupied dependent pair of \S\ref{sec:cphf-z-canon} does,
 \end{equation}
 with the overlap-derivative terms folded into $\tilde{I}''$ and the occ-vir-response
 coupling into $\tilde{X}$ through Eqs.~\eqref{eq:Idouble-tilde} and
-\eqref{eq:Xtilde}, the pair-sum now running over $(c,i)$.  Two further
+\eqref{eq:Xtilde}.  No new terms appear: the occupied dependent-pair sums in those
+equations already carry the $\alloc$ limit (core plus active), so the
+core$\leftrightarrow$active pairs enter simply as the extra nonzero entries of $P$
+that the $\alloc$ range now covers.  Two further
 adjustments distinguish the frozen-core case: (1) 
 either the canonical or non-canonical perturbed MO conditions must be applied
 to the core-core block; and (2) the occupied$\leftrightarrow$virtual orbital
