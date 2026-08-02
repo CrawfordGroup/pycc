@@ -195,6 +195,28 @@ class MPderiv(CorrelatedDerivs):
                - c('ik,kjab->ijab', dfoo, t2) - c('jk,ikab->ijab', dfoo, t2))
         return num / np.asarray(self.mp.Dijab)
 
+    def _perturbed_t2_stored(self, pert):
+        r"""Store-memoized :meth:`_perturbed_t2`, shared across derivative properties on this
+        wavefunction.
+
+        The closed-form perturbed amplitudes are a pure function of ``pert`` and the
+        (wavefunction-bound) ``self.mp.t2``, so the record is keyed on ``(pert, ncore, route)``
+        and deliberately **omits** the driver instance id ``_uid`` that the relaxed-response
+        record (:meth:`CorrelatedDerivs._relaxed_response`) carries.  Dropping ``_uid`` is what
+        lets the AAT, the velocity-gauge APT, and the 2n+1 perturbed-density build all reuse one
+        nuclear ``d_x t2`` per perturbation: unlike the CC amplitudes (CCSD vs CCSD(T) on one
+        wavefunction), the MP2 amplitudes cannot differ between two drivers on the same
+        wavefunction, so the id is not needed to keep records apart.  The gauge is fixed (the
+        nuclear ``-1/2 S`` response of :meth:`CPHF.full_U`, ``canonical=False``), so it is not part
+        of the key; ``route`` ('sp'/'so') guards only the differing spin-adapted vs spin-orbital
+        amplitude shapes.  The heavy ``nmo^4`` perturbed ERI underneath is memoized on its own key
+        (:meth:`CPHF.perturbed_eri`, quantity ``'deri'``); this entry memoizes the remaining
+        closed-form divide and Fock fold on top of it."""
+        ncore = self.mp.o.stop - self.mp.no
+        route = 'so' if self.mp.orbital_basis == 'spinorbital' else 'sp'
+        return self.wfn.derivatives.store.get_or_compute(
+            'pt2', pert, lambda: self._perturbed_t2(pert), ctx=(ncore, route))
+
     def _perturbed_unrelaxed_densities(self, pert, df=None, deri=None, dL=None):
         r"""First-order response of the unrelaxed correlation densities to ``pert``: returns
         ``(d_x gamma, d_x Gamma)`` (full-MO arrays), from the perturbed amplitudes ``ta = d_x t2``
@@ -221,7 +243,7 @@ class MPderiv(CorrelatedDerivs):
         default to ``None`` so the closed form can also be called directly with just ``pert``."""
         o, v, nmo = self.mp.o, self.mp.v, self.mp.nmo
         t2 = np.asarray(self.mp.t2)
-        ta = self._perturbed_t2(pert)
+        ta = self._perturbed_t2_stored(pert)
         c = self.contract
         dgam = np.zeros((nmo, nmo))
         dGam = np.zeros((nmo, nmo, nmo, nmo))
@@ -357,7 +379,7 @@ class MPderiv(CorrelatedDerivs):
             hs = d.overlap_half(A)                             # 3 x (nmo, nmo), full
             for cart in range(3):
                 pX = Perturbation('nuclear', (A, cart))
-                dt2R = np.asarray(self._perturbed_t2(pX))      # -1/2 S gauge
+                dt2R = np.asarray(self._perturbed_t2_stored(pX))      # -1/2 S gauge
                 dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
@@ -448,7 +470,7 @@ class MPderiv(CorrelatedDerivs):
             hs = d.so_overlap_half(A)
             for cart in range(3):
                 pX = Perturbation('nuclear', (A, cart))
-                dt2R = np.asarray(self._perturbed_t2(pX))
+                dt2R = np.asarray(self._perturbed_t2_stored(pX))
                 dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[cart]).T
@@ -527,7 +549,7 @@ class MPderiv(CorrelatedDerivs):
             hs = d.overlap_half(A)
             for beta in range(3):
                 pX = Perturbation('nuclear', (A, beta))
-                dt2R = np.asarray(self._perturbed_t2(pX))
+                dt2R = np.asarray(self._perturbed_t2_stored(pX))
                 dc0R = -c0**3 * c('ijab,ijab->', tau, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 tauR = 2.0 * dc2R - dc2R.swapaxes(2, 3)
@@ -608,7 +630,7 @@ class MPderiv(CorrelatedDerivs):
             hs = d.so_overlap_half(A)
             for beta in range(3):
                 pX = Perturbation('nuclear', (A, beta))
-                dt2R = np.asarray(self._perturbed_t2(pX))
+                dt2R = np.asarray(self._perturbed_t2_stored(pX))
                 dc0R = -0.25 * c0**3 * c('ijab,ijab->', t2, dt2R)
                 dc2R = dc0R * t2 + c0 * dt2R
                 UReff = np.asarray(cphf.full_U(pX, ncore)) + np.asarray(hs[beta]).T
