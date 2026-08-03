@@ -10,7 +10,6 @@ from typing import Any, TYPE_CHECKING
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .mpwfn import MPwfn
 from .utils import helper_diis, clone, sqrt, zeros_like
 from .exceptions import InvalidKeywordError
 
@@ -26,8 +25,6 @@ class CIwfn(Wavefunction):
     ----------
     model : str
         'CISD' (singles + doubles) or 'CID' (doubles only)
-    mp : MPwfn
-        composed MP2 wavefunction supplying ``Dijab`` and the MP1 guess
     Dia, Dijab : Tensor
         one- and two-electron energy denominators (from ``diag(F)``)
     c1, c2 : Tensor
@@ -48,17 +45,19 @@ class CIwfn(Wavefunction):
 
         super().__init__(scf_wfn, **kwargs)
         mgr = self.device_manager
+        o, v = self.o, self.v
 
-        # The MP2 wavefunction supplies the energy denominators and the CISD initial
-        # guess (MP1 doubles), reusing this object's base - the same pattern ccwfn
-        # uses. CI's singles denominator (Dia) is built from the MP2 orbital energies.
-        self.mp = MPwfn.from_wavefunction(self)
-        self.Dijab = self.mp.Dijab
-        self.Dia = self.mp.eps_occ.reshape(-1, 1) - self.mp.eps_vir
+        # Energy denominators from the orbital energies (the Fock diagonal); these
+        # precondition the CI update.
+        eps_o, eps_v = self.H.eps[o], self.H.eps[v]
+        self.Dijab = (eps_o.reshape(-1, 1, 1, 1) + eps_o.reshape(-1, 1, 1)
+                      - eps_v.reshape(-1, 1) - eps_v)
+        self.Dia = eps_o.reshape(-1, 1) - eps_v
 
-        # Initial guess: c1 = 0, c2 = MP1 doubles (CI mutates c2 in place, so copy).
+        # Initial guess: c1 = 0, c2 = MP1 doubles <ij||ab>/Dijab (CI mutates c2 in
+        # place while iterating, so it is its own array).
         self.c1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
-        self.c2 = clone(self.mp.t2)
+        self.c2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
         print("CIWFN object initialized in %.3f seconds." % (time.time() - time_init))
 

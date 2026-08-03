@@ -9,7 +9,7 @@ from typing import Any, TYPE_CHECKING
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .utils import diag, clone
+from .utils import clone
 
 if TYPE_CHECKING:
     from ._typing import Tensor
@@ -20,14 +20,11 @@ class MPwfn(Wavefunction):
 
     Holds the energy denominators and the first-order (MP2) doubles amplitudes,
     derived from the base's seeded MO integrals, and computes the MP2 correlation
-    energy. It is also the canonical home for that denominator/amplitude code:
-    ``ccwfn`` composes one of these (via :meth:`from_wavefunction`) to obtain its
-    energy denominators and CC initial guess without building the Hamiltonian twice.
+    energy.
 
     The analytic derivative-property code (gradient, polarizability, APT, Hessian, AAT,
     VG-APT) lives on :class:`~pycc.mpderiv.MPderiv`, reached through the cached
-    :attr:`deriv` driver; the property methods here are thin delegators kept for the
-    historical ``mpwfn.<property>()`` call sites.
+    :attr:`deriv` driver; the property methods here are thin delegators.
 
     Attributes
     ----------
@@ -48,15 +45,6 @@ class MPwfn(Wavefunction):
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
         super().__init__(scf_wfn, **kwargs)
         self._build_mp2()
-
-    @classmethod
-    def from_wavefunction(cls, wfn: "Wavefunction") -> "MPwfn":
-        """Build an MPwfn that reuses ``wfn``'s already-constructed base (reference,
-        orbitals, seeded integrals, device manager) -- no second integral transform.
-        """
-        mp = cls._from_shared_base(wfn)
-        mp._build_mp2()
-        return mp
 
     def _build_mp2(self) -> None:
         r"""Build the energy denominators and MP2 doubles amplitudes from the seeded
@@ -81,8 +69,8 @@ class MPwfn(Wavefunction):
         """
         o = self.o
         v = self.v
-        self.eps_occ = diag(self.H.F)[o]
-        self.eps_vir = diag(self.H.F)[v]
+        self.eps_occ = self.H.eps[o]
+        self.eps_vir = self.H.eps[v]
         self.Dijab = (self.eps_occ.reshape(-1, 1, 1, 1) + self.eps_occ.reshape(-1, 1, 1)
                       - self.eps_vir.reshape(-1, 1) - self.eps_vir)
         self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
@@ -168,11 +156,10 @@ class MPwfn(Wavefunction):
         wavefunction (built lazily).  ``MPderiv`` is the MP2 leaf of
         :class:`~pycc.correlatedderivs.CorrelatedDerivs` and carries the analytic
         derivative-property code; the thin property methods below (:meth:`gradient`,
-        :meth:`polarizability`, :meth:`hessian`, ...) delegate to it so the historical
+        :meth:`polarizability`, :meth:`hessian`, ...) delegate to it so the
         ``mpwfn.<property>()`` call sites keep working, and the :mod:`pycc.properties` facade routes
         through the registry (``pycc/__init__.py``) to the same driver.  A single cached instance,
-        so its ``_full_occ_cphf`` / Z-vector caches are shared across the MP2 property calls and the
-        ``CCderiv`` cross-calls that reach it via ``cc.mp.deriv``."""
+        so its ``_full_occ_cphf`` / Z-vector caches are shared across the MP2 property calls."""
         if getattr(self, '_deriv', None) is None:
             from .mpderiv import MPderiv
             self._deriv = MPderiv(self)

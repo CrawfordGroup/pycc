@@ -43,7 +43,9 @@ def _findiff_alpha_zz(cc, d=0.001):
     it does not contribute to the second derivative).  Restores cc.H.F on return."""
     F0 = np.asarray(cc.H.F).copy()
     muz = np.asarray(cc.H.mu[2])
-    g1, g2 = cc.mp.t1.copy(), cc.mp.t2.copy()
+    o, v = cc.o, cc.v
+    g1 = (np.asarray(cc.H.F)[o, v] / np.asarray(cc.Dia)).copy()
+    g2 = (np.asarray(cc.H.ERI)[o, o, v, v] / np.asarray(cc.Dijab)).copy()
 
     def ecc(Fstr):
         cc.H.F = F0 - Fstr * muz
