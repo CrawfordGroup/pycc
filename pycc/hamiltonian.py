@@ -58,6 +58,10 @@ class Hamiltonian(object):
         F_ao = np.asarray(ref.Fa_subset("AO"))
         self.F = npCp.T @ F_ao @ npCr
 
+        # MO orbital energies (the Fock diagonal), used by the correlated methods for
+        # their energy denominators and MP1 guess.
+        self.eps = np.diagonal(self.F).copy()
+
         # Get MO two-electron integrals in Dirac notation.
         # mo_eri() expects AO-basis C matrices, which Cp and Cr already are.
         mints = psi4.core.MintsHelper(ref.basisset())
@@ -184,6 +188,11 @@ class SpinOrbitalHamiltonian(object):
         F[np.ix_(a, a)] = Fa[np.ix_(sa, sa)]
         F[np.ix_(b, b)] = Fb[np.ix_(sb, sb)]
         self.F = F
+
+        # MO orbital energies (the diagonal of the canonical Fock, taken before any
+        # static field perturbs F below), used by the correlated methods for their
+        # energy denominators and MP1 guess.
+        self.eps = np.diagonal(self.F).copy()
 
         # All subsequent AO->MO transforms use the semicanonical MOs. Keep them (and the
         # spin/spatial maps) so consumers -- e.g. the spin-orbital MP2 gradient's

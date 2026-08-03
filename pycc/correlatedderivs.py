@@ -95,8 +95,7 @@ class CorrelatedDerivs:
         can't supply; building it here -- rather than borrowing an all-electron ``HFwfn`` -- keeps
         the spin-orbital ordering consistent with the densities.  For ``nfzc=0`` it coincides with
         ``wfn.cphf``.  CPHF depends only on the shared reference/orbitals/integrals, so building it on
-        ``self.wfn`` is equivalent for MP2 (``self.wfn`` is the MPwfn) and CC (the CCwfn shares those
-        with its ``cc.mp``)."""
+        ``self.wfn`` works uniformly for the MPwfn and the CCwfn."""
         if getattr(self, '_focphf', None) is None:
             from .cphf import CPHF
             self._focphf = CPHF(self.wfn, full_occ=True)

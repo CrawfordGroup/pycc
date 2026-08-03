@@ -115,11 +115,6 @@ class Wavefunction(object):
             raise TypeError(
                 "the 'frozen_core' argument was removed; the frozen core is taken from "
                 "the psi4 reference -- set psi4's 'freeze_core' option when running the SCF.")
-        # A subclass may set its own attributes before calling super().__init__;
-        # snapshot them so _base_attrs (recorded at the end) captures only what the
-        # base itself adds -- which _from_shared_base then replicates.
-        _preexisting = set(vars(self))
-
         # The general kwargs (device/precision/localize_occ/local_mos) are owned
         # here; subclasses pop only their own kwargs and forward the rest, so this
         # is the single place they are parsed. local_mos is validated up front (a
@@ -163,13 +158,14 @@ class Wavefunction(object):
         # real-cast to float32; on GPU they become real torch tensors at the
         # matching width. The spin-adapted L exists only in the spatial path.
         self.H.F = mgr.seed_compute(self.H.F)
+        self.H.eps = mgr.seed_compute(self.H.eps)
         self.H.ERI = mgr.seed_store(self.H.ERI)
         if self.orbital_basis == 'spatial':
             self.H.L = mgr.seed_store(self.H.L)
 
         # Derivative-integral provider: built lazily on first access (see the
         # ``derivatives`` property), so methods that never take derivatives pay
-        # nothing. Recorded here as part of the base so _from_shared_base carries it.
+        # nothing.
         self._derivatives = None
         # Coupled-perturbed-HF orbital-response solver, likewise lazy (see ``cphf``).
         self._cphf = None
@@ -179,11 +175,6 @@ class Wavefunction(object):
         # unrecognized keyword -- flag it instead of silently ignoring it.
         if kwargs:
             raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))
-
-        # Record exactly which attributes the base set (excluding anything the
-        # subclass set first), so _from_shared_base can replicate this base onto a
-        # new instance without re-running __init__ (and re-transforming integrals).
-        self._base_attrs = tuple(k for k in vars(self) if k not in _preexisting)
 
     def _resolve_orbital_basis(self, orbital_basis: Any) -> str:
         """Resolve the orbital basis from an explicit override or the reference.
@@ -389,18 +380,3 @@ class Wavefunction(object):
             self._cphf = CPHF(self)
         return self._cphf
 
-    @classmethod
-    def _from_shared_base(cls, source: "Wavefunction") -> "Wavefunction":
-        """Create a ``cls`` instance that REUSES ``source``'s already-built base --
-        reference, orbital spaces, seeded integrals, device manager -- by bypassing
-        ``__init__`` so the Hamiltonian is not transformed a second time. The caller
-        adds its own method-specific state afterward.
-
-        Lets one wavefunction compose another over the same base (e.g. ccwfn holds an
-        MPwfn for its MP2 guess/denominators) with a single integral build.
-        """
-        obj = cls.__new__(cls)
-        for name in source._base_attrs:
-            setattr(obj, name, getattr(source, name))
-        obj._base_attrs = source._base_attrs
-        return obj

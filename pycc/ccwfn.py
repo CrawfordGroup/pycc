@@ -21,7 +21,6 @@ from typing import Any
 
 from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples
 from .wavefunction import Wavefunction
-from .mpwfn import MPwfn
 from .local import Local
 from . import cctriples
 from .cctriples import t_tjl, t3c_ijk, t3_pert_ijk
@@ -181,28 +180,26 @@ class CCwfn(Wavefunction):
                 self.Local.overlaps(self.Local.QL)
                 self.lccwfn = lccwfn(self.o, self.v,self.no, self.nv, self.H, self.local, self.model, self.eref, self.Local)
 
-        # The MP2 wavefunction supplies the energy denominators and the CC initial
-        # guess. from_wavefunction reuses this object's already-built base (no second
-        # integral transform), so the denominator/MP2-amplitude code lives only in
-        # MPwfn. CC's singles denominator (Dia) is built here from the MP2 wfn's
-        # orbital energies -- MP2 has no singles.
-        self.mp = MPwfn.from_wavefunction(self)
-        self.Dijab = self.mp.Dijab
-        self.Dia = self.mp.eps_occ.reshape(-1, 1) - self.mp.eps_vir
+        # Energy denominators from the orbital energies (the Fock diagonal). These
+        # precondition the CC update; the singles denominator Dia is needed for the
+        # spin-orbital t1 (canonical references have f_ia = 0, so t1 vanishes there).
+        eps_o, eps_v = self.H.eps[o], self.H.eps[v]
+        self.Dijab = (eps_o.reshape(-1, 1, 1, 1) + eps_o.reshape(-1, 1, 1)
+                      - eps_v.reshape(-1, 1) - eps_v)
+        self.Dia = eps_o.reshape(-1, 1) - eps_v
 
-        # CC initial-guess amplitudes. CC mutates t2 in place while iterating, so it
-        # takes its own copy of the MP2 doubles (the local path filters instead).
+        # Initial-guess amplitudes: the MP1 doubles t2 = <ij||ab>/Dijab (and, in the
+        # spin-orbital path, singles t1 = f_ia/Dia). CC mutates them in place while
+        # iterating, so each is its own array; the local path filters the raw ERI.
         if local is not None:
             self.t1, self.t2 = self.Local.filter_amps(np.zeros((self.no, self.nv)),
-                                                       self.H.ERI[o,o,v,v])
+                                                       self.H.ERI[o, o, v, v])
         elif self.orbital_basis == 'spinorbital':
-            # Start from the MP1 guess: doubles from MP2 and singles t1 = f_ia/Dia
-            # (zero for a canonical reference, nonzero for ROHF).
-            self.t1 = clone(self.mp.t1)
-            self.t2 = clone(self.mp.t2)
+            self.t1 = clone(self.H.F[o, v], device=self.device1) / self.Dia
+            self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
         else:
             self.t1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
-            self.t2 = clone(self.mp.t2)
+            self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
         print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
 
