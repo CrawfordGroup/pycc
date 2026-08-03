@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from opt_einsum import contract
-from .utils import helper_diis, zeros, zeros_like, clone, sqrt, permute_triples
+from .utils import helper_diis, zeros, zeros_like, clone, sqrt, permute_triples, title, iteration, converged
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
@@ -118,7 +118,9 @@ class cclambda(object):
 
         lecc = self.pseudoenergy(o, v, ERI, l2)
 
-        print("\nLCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E" % (0, lecc, -lecc))
+        name = "Lambda-amplitudes (%s)" % self.ccwfn.model
+        print(title(name))
+        print(iteration(0, energy=lecc, de=-lecc, e_label="LCC PseudoE"))
 
         diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
 
@@ -176,15 +178,15 @@ class cclambda(object):
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
-            print("LCC Iter %3d: LCC PseudoE = %.15f  dE = % .5E  rms = % .5E" % (niter, lecc, ediff, rms))
+            print(iteration(niter, energy=lecc, de=ediff, rms=rms, e_label="LCC PseudoE"))
 
             if HAS_TORCH and isinstance(self.l1, torch.Tensor):
                 if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    print(converged(name, time.time() - lambda_tstart))
                     return lecc
             else:
                 if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                    print("\nLambda-CC has converged in %.3f seconds.\n" % (time.time() - lambda_tstart))
+                    print(converged(name, time.time() - lambda_tstart))
                     return lecc
 
             diis.add_error_vector(self.l1, self.l2)

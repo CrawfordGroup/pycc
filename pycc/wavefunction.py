@@ -110,7 +110,7 @@ class Wavefunction(object):
 
     def __init__(self, scf_wfn: Any, *, device: str = 'CPU', precision: str = 'DP',
                  localize_occ: bool = False, local_mos: str = 'PIPEK_MEZEY',
-                 orbital_basis: Any = None, **kwargs) -> None:
+                 orbital_basis: Any = None, quiet: bool = False, **kwargs) -> None:
         if 'frozen_core' in kwargs:
             raise TypeError(
                 "the 'frozen_core' argument was removed; the frozen core is taken from "
@@ -127,6 +127,11 @@ class Wavefunction(object):
 
         self.ref = scf_wfn
         self.eref = self.ref.energy()
+
+        # Suppress the constructor's MO-summary print -- set for internally-built wavefunctions
+        # (e.g. the HFwfn reference the derivative machinery constructs) whose MO table would just
+        # duplicate the one the user's own wavefunction already printed.
+        self.quiet = quiet
 
         # Closed-shell RHF takes the spin-adapted spatial path; open-shell
         # (UHF/ROHF) takes the spin-orbital path. An explicit orbital_basis overrides
@@ -176,6 +181,98 @@ class Wavefunction(object):
         if kwargs:
             raise PyCCError("Unexpected keyword argument(s): %s" % sorted(kwargs))
 
+        # Everything is now set up (molecule, basis, orbital spaces, device, integrals), so the
+        # preamble can report the full computational setup.  Suppressed for internally-built
+        # wavefunctions (the HFwfn reference), whose preamble would duplicate the user's own.
+        if not self.quiet:
+            self._report_preamble()
+
+    def _report_preamble(self) -> None:
+        """Print the run preamble: molecule, basis, reference, and computation parameters, then the
+        MO-by-energy table.  Every value comes from state set during :meth:`__init__` (the psi4
+        reference / molecule / basis, the resolved orbital spaces, and the device manager) plus the
+        psi4 SCF options; coordinates and energies are shown to 12 decimals."""
+        import psi4
+        from . import __version__
+        from .utils import field
+        mol, bset = self.ref.molecule(), self.ref.basisset()
+        method = getattr(self, 'method', type(self).__name__)
+        ref_type = psi4.core.get_option('SCF', 'REFERENCE')
+        e_conv = float(psi4.core.get_option('SCF', 'E_CONVERGENCE'))
+        d_conv = float(psi4.core.get_option('SCF', 'D_CONVERGENCE'))
+        puream = 'spherical' if bset.has_puream() else 'cartesian'
+        geom = mol.geometry().np                          # computational frame, bohr
+        units = mol.units().lower()
+        rule = "=" * 68
+
+        print("\n" + rule)
+        print("PyCC %s  --  %s wavefunction" % (__version__, method))
+        print(rule)
+        print("Molecule")
+        print(field("charge, multiplicity", "%d, %d" % (mol.molecular_charge(), mol.multiplicity())))
+        print(field("point group", mol.point_group().symbol()))
+        print("  geometry (%s):" % units)
+        for A in range(mol.natom()):
+            x, y, z = geom[A]
+            print("      %-2s  %18.12f  %18.12f  %18.12f" % (mol.symbol(A), x, y, z))
+        print(field("nuclear repulsion", "%.12f Eh" % mol.nuclear_repulsion_energy()))
+        print("Basis")
+        print(field("set", bset.name()))
+        print(field("functions", "%d (%s)" % (bset.nbf(), puream)))
+        print("Reference")
+        print(field("type", ref_type))
+        print(field("SCF energy", "%.12f Eh" % self.eref))
+        print(field("frozen core", "%d" % self.nfzc))
+        print(field("active occ / vir", "%d / %d   (nmo = %d)" % (self.no, self.nv, self.nmo)))
+        print("Computation")
+        print(field("orbital basis", self.orbital_basis))
+        print(field("device, precision", "%s, %s" % (self.device, self.precision)))
+        print(field("SCF E/D convergence", "%.2E / %.2E" % (e_conv, d_conv)))
+        print(rule)
+        self._print_mo_table()
+
+    def _print_mo_table(self) -> None:
+        """The MO-by-energy table (orbital energies to 12 decimals), dispatched to the spatial
+        (single-column) or spin-orbital (alpha | beta) layout."""
+        ref = self.ref
+        nirrep = ref.nirrep()
+        irrep_labels = ref.molecule().irrep_labels()
+        nmopi = ref.nmopi()
+        mo_irreps = np.array([h for h in range(nirrep) for _ in range(nmopi[h])])
+
+        if self.orbital_basis == 'spatial':
+            eps_active_so = np.concatenate([np.array(ref.epsilon_a_subset("SO", "ALL").nph[h])
+                                            for h in range(nirrep)])
+            sort_idx = np.argsort(eps_active_so, kind='stable')
+            eps_active = eps_active_so[sort_idx]
+            labels = [irrep_labels[mo_irreps[sort_idx][i]] for i in range(len(sort_idx))]
+            ndocc = self.nfzc + self.no
+            print("\nMOs by energy:")
+            print(f"  {'#':>4}  {'Irrep':>6}  {'Energy':>18}")
+            print(f"  {'-'*4}  {'-'*6}  {'-'*18}")
+            for i, (eps, label) in enumerate(zip(eps_active, labels)):
+                if i == ndocc:
+                    print(f"  {'.'*4}  {'.'*6}  {'.'*18}")
+                idx = i if i < ndocc else i - ndocc
+                print(f"  {idx:>4}  {label:>6}  {eps:>18.12f}")
+        else:
+            def _spin_mos(eps_subset):
+                eps = np.concatenate([np.array(eps_subset.nph[h]) for h in range(nirrep)])
+                order = np.argsort(eps, kind='stable')
+                return eps[order], [irrep_labels[mo_irreps[i]] for i in order]
+
+            a_eps, a_lab = _spin_mos(ref.epsilon_a_subset("SO", "ALL"))
+            b_eps, b_lab = _spin_mos(ref.epsilon_b_subset("SO", "ALL"))
+            na, nb = ref.nalpha(), ref.nbeta()
+            print("\nMOs by energy (alpha | beta):")
+            print(f"  {'#':>4}   {'irr':>5} {'o':>1} {'energy':>18}    {'irr':>5} {'o':>1} {'energy':>18}")
+            print(f"  {'-'*4}   {'-'*5} {'-'*1} {'-'*18}    {'-'*5} {'-'*1} {'-'*18}")
+            for i in range(ref.nmo()):
+                aocc = 'o' if i < na else ' '
+                bocc = 'o' if i < nb else ' '
+                print(f"  {i:>4}   {a_lab[i]:>5} {aocc:>1} {a_eps[i]:>18.12f}"
+                      f"    {b_lab[i]:>5} {bocc:>1} {b_eps[i]:>18.12f}")
+
     def _resolve_orbital_basis(self, orbital_basis: Any) -> str:
         """Resolve the orbital basis from an explicit override or the reference.
 
@@ -210,37 +307,12 @@ class Wavefunction(object):
         self.nv   = self.nmo - self.no - self.nfzc
         self.nact = self.no + self.nv
 
-        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
-
         ndocc = self.nfzc + self.no
         self.o = slice(self.nfzc, ndocc)
         self.v = slice(ndocc, self.nmo)
 
         # Full MO space, global energy order; the frozen core sits at columns [0:nfzc].
         self.C = self.ref.Ca_subset("AO", "ALL")
-
-        eps_so_blocked  = self.ref.epsilon_a_subset("SO", "ALL")
-        eps_active_so   = np.concatenate([np.array(eps_so_blocked.nph[h])
-                                          for h in range(self.ref.nirrep())])
-        sort_idx        = np.argsort(eps_active_so, kind='stable')
-
-        irrep_labels    = self.ref.molecule().irrep_labels()
-        nirrep          = self.ref.nirrep()
-        nmopi           = self.ref.nmopi()
-        mo_irreps       = np.array([h for h in range(nirrep) for _ in range(nmopi[h])])
-        mo_irreps       = mo_irreps[sort_idx]
-        mo_irrep_labels = [irrep_labels[h] for h in mo_irreps]
-        eps_active      = eps_active_so[sort_idx]
-
-        # Print MO summary
-        print("\nMOs by energy:")
-        print(f"  {'#':>4}  {'Irrep':>6}  {'Energy':>16}")
-        print(f"  {'-'*4}  {'-'*6}  {'-'*16}")
-        for i, (eps, label) in enumerate(zip(eps_active, mo_irrep_labels)):
-            if i == ndocc:
-                print(f"  {'.'*4}  {'.'*6}  {'.'*16}")
-            idx = i if i < ndocc else i - ndocc
-            print(f"  {idx:>4}  {label:>6}  {eps:>16.10f}")
 
         # Localize the occupied MOs if requested (used consistently for the single H
         # build below, so all methods share the same integrals). Only the ACTIVE
@@ -284,36 +356,6 @@ class Wavefunction(object):
         self.nv   = nav + nbv
         self.nmo  = 2 * ref.nmo()
         self.nact = self.no + self.nv
-
-        print("NMO = %d; NACT = %d; NO = %d; NV = %d" % (self.nmo, self.nact, self.no, self.nv))
-
-        # Reference MO summary, alpha and beta side by side -- the spin-orbital analog of
-        # the _init_spatial table. Shows the symmetry-adapted SCF MOs Psi4 produced (their
-        # irreps and energies) with an occupied marker per spin. These are the reference
-        # orbital energies; for ROHF the semicanonical energies actually used in the
-        # correlation are the diagonal of the (rotated) per-spin Fock, self.H.F.
-        nirrep = ref.nirrep()
-        irrep_labels = ref.molecule().irrep_labels()
-        nmopi = ref.nmopi()
-        mo_irreps = np.array([h for h in range(nirrep) for _ in range(nmopi[h])])
-
-        def _spin_mos(eps_subset):
-            eps = np.concatenate([np.array(eps_subset.nph[h]) for h in range(nirrep)])
-            order = np.argsort(eps, kind='stable')
-            return eps[order], [irrep_labels[mo_irreps[i]] for i in order]
-
-        a_eps, a_lab = _spin_mos(ref.epsilon_a_subset("SO", "ALL"))
-        b_eps, b_lab = _spin_mos(ref.epsilon_b_subset("SO", "ALL"))
-        na, nb = ref.nalpha(), ref.nbeta()
-
-        print("\nMOs by energy (alpha | beta):")
-        print(f"  {'#':>4}   {'irr':>5} {'o':>1} {'energy':>16}    {'irr':>5} {'o':>1} {'energy':>16}")
-        print(f"  {'-'*4}   {'-'*5} {'-'*1} {'-'*16}    {'-'*5} {'-'*1} {'-'*16}")
-        for i in range(ref.nmo()):
-            aocc = 'o' if i < na else ' '
-            bocc = 'o' if i < nb else ' '
-            print(f"  {i:>4}   {a_lab[i]:>5} {aocc:>1} {a_eps[i]:>16.10f}"
-                  f"    {b_lab[i]:>5} {bocc:>1} {b_eps[i]:>16.10f}")
 
         # Full spin-orbital MO space, ordered [a-core, b-core, a-occ, b-occ, a-vir, b-vir]
         # with the frozen core first (mirrors _init_spatial); the active slices skip it.

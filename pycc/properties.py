@@ -18,6 +18,18 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
+import qcelemental as qcel
+
+from .utils import field
+
+#: Dipole polarizability atomic units (Bohr^3) to Angstrom^3 (= (a0 in Angstrom)^3), and the photon
+#: wavelength (nm) per field frequency omega (Eh): ``lambda = NM_PER_EH / omega`` (= 1e7 nm/cm over
+#: the Hartree-to-wavenumber relation).  Sourced from qcelemental so they track the same CODATA
+#: revision as every other constant psi4 uses.
+ANG3_PER_AU = (qcel.constants.get('bohr radius') * 1e10) ** 3
+NM_PER_EH = 1e7 / (qcel.constants.get('hartree-inverse meter relationship') / 100.0)
+#: Electric dipole moment atomic units (e a0) to Debye.
+DEBYE_PER_AU = qcel.constants.conversion_factor('e * bohr', 'debye')
 
 
 @dataclass(frozen=True)
@@ -60,6 +72,34 @@ class PropertyComponents:
     def hf(self) -> np.ndarray:
         """Alias of :attr:`reference`."""
         return self.reference
+
+    def report(self, name: str, unit: str = "a.u.", params=None, summary=None) -> "PropertyComponents":
+        """Print the property as an SCF / correlation / total breakdown and return ``self``
+        (so a facade can ``return components.report(...)``).  ``SCF`` is the full SCF-level value
+        ``nuclear + reference`` (what a bare Hartree-Fock calculation gives), ``correlation`` the
+        post-SCF correction, and ``total`` their sum -- so ``SCF + correlation = total``.
+
+        ``params`` is an optional list of ``(label, value)`` rows printed above the tensor (e.g. the
+        field frequency of a polarizability); ``summary`` an optional list printed below it (e.g. the
+        isotropic invariant)."""
+        scf = self.nuclear + self.reference
+        pre = " " * 17
+
+        def fmt(a):
+            return np.array2string(np.asarray(a), precision=8, suppress_small=True,
+                                   separator=", ", prefix=pre)
+
+        print("\n" + "=" * 70)
+        print("%s  (%s)" % (name, unit))
+        print("=" * 70)
+        for label, value in (params or []):
+            print(field(label, value))
+        print("  SCF          : " + fmt(scf))
+        print("  correlation  : " + fmt(self.correlation))
+        print("  total        : " + fmt(self.total))
+        for label, value in (summary or []):
+            print(field(label, value))
+        return self
 
 
 # ------------------------------------------------------------------------------------------------
@@ -151,6 +191,19 @@ def _wfn_of(obj):
     return obj.wfn if isinstance(obj, CorrelatedDerivs) else obj
 
 
+def _method_name(obj) -> str:
+    """The method label for a property report -- ``'SCF'``, ``'MP2'``, or the model of the
+    underlying wavefunction (``'CCSD'`` / ``'CCSD(T)'`` / ``'CISD'`` / ...)."""
+    from .hfwfn import HFwfn
+    from .mpwfn import MPwfn
+    if isinstance(obj, HFwfn):
+        return "SCF"
+    w = _wfn_of(obj)
+    if isinstance(w, MPwfn):
+        return "MP2"
+    return getattr(w, 'model', type(w).__name__)
+
+
 def _dispatch(obj, hf_method, corr_method, corr_kwargs=None):
     """Reference (SCF electronic) and correlation blocks of a property, computed apart.  ``obj`` is
     a derivative driver or (transitionally) a correlated wavefunction: the reference is the
@@ -169,9 +222,17 @@ def _dispatch(obj, hf_method, corr_method, corr_kwargs=None):
 
 def dipole(wfn) -> PropertyComponents:
     """Electric-dipole moment as a :class:`PropertyComponents` (``nuclear + reference +
-    correlation``, shape ``(3,)`` each) for any supported wavefunction type."""
+    correlation``, shape ``(3,)`` each) for any supported wavefunction type.  The report gives the
+    SCF/correlation/total vectors in a.u. and, for the total, the vector and magnitude in Debye."""
     reference, correlation = _dispatch(wfn, '_dipole_electronic', 'relaxed_dipole')
-    return PropertyComponents(_nuclear_dipole(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    pc = PropertyComponents(_nuclear_dipole(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    total = np.asarray(pc.total)
+    mag = float(np.linalg.norm(total))
+    debye = np.array2string(total * DEBYE_PER_AU, precision=8, suppress_small=True, separator=", ")
+    return pc.report(
+        "%s dipole moment" % _method_name(wfn),
+        summary=[("total (Debye)", debye),
+                 ("|mu|", "%.6f a.u.   %.6f Debye" % (mag, mag * DEBYE_PER_AU))])
 
 
 def gradient(wfn) -> PropertyComponents:
@@ -180,14 +241,89 @@ def gradient(wfn) -> PropertyComponents:
     derivative ``dV_NN/dX``."""
     reference, correlation = _dispatch(wfn, '_gradient_electronic', 'gradient')
     nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion())
-    return PropertyComponents(nuclear, reference, correlation)
+    pc = PropertyComponents(nuclear, reference, correlation)
+    return pc.report("%s gradient" % _method_name(wfn))
 
 
-def polarizability(wfn) -> PropertyComponents:
-    """Static electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)``
-    each.  A pure electronic response property: the nuclear block is zero."""
-    reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability')
-    return PropertyComponents(np.zeros((3, 3)), reference, correlation)
+def polarizability(wfn, omega: float = 0.0, relaxed: bool = None) -> PropertyComponents:
+    """Electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)`` each.  A
+    pure electronic response property: the nuclear block is zero.  The report also prints the field
+    frequency (in Eh and nm) and the isotropic invariant ``(1/3) Tr(alpha)`` in a.u. and Angstrom^3.
+
+    Two routes, selected by ``omega`` and ``relaxed``:
+
+    * **relaxed** -- the orbital-relaxed analytic second derivative (2n+1 route), the default at
+      ``omega = 0``.  Available for MP2 / CISD / CCSD.  Static only: a relaxed value at ``omega != 0``
+      is undefined and raises.
+    * **unrelaxed** -- the CC linear-response value (:meth:`CCderiv.dynamic_polarizability`), which
+      omits the orbital (MO) response.  This is the convention for *dynamic* response properties --
+      including the orbital relaxation introduces spurious poles -- so it is the default at
+      ``omega != 0``.  **CCSD only** (needs a :class:`~pycc.ccderiv.CCderiv`).  Because there is no
+      MO response, there is no Hartree-Fock contribution: the value is correlation-only, so the SCF
+      block is zero.
+
+    ``omega`` is the external-field frequency in Eh (0 = static).  ``relaxed`` overrides the route:
+    the default (``None``) picks relaxed at ``omega = 0`` and unrelaxed otherwise; ``relaxed=False``
+    takes the unrelaxed route at ``omega = 0`` too."""
+    if relaxed is None:
+        relaxed = (omega == 0.0)
+    if relaxed and omega != 0.0:
+        raise ValueError(
+            "a relaxed polarizability at omega != 0 is not defined: dynamic response omits the "
+            "orbital relaxation (which introduces spurious poles).  Use the default (relaxed=None) "
+            "or relaxed=False for the unrelaxed dynamic value.")
+
+    freq = "%.6f Eh   (static)" % omega if omega == 0.0 else \
+           "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)
+
+    if relaxed:
+        reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability')
+        pc = PropertyComponents(np.zeros((3, 3)), reference, correlation)
+        route = "relaxed (orbital-relaxed derivative)"
+    else:
+        if not hasattr(wfn, 'dynamic_polarizability'):
+            raise NotImplementedError(
+                "the dynamic (unrelaxed) polarizability is implemented for CCSD only; pass a "
+                "pycc.CCderiv for a CCSD wavefunction (got %s)." % type(wfn).__name__)
+        # Correlation-only: no MO response, hence no HF/SCF contribution (see the docstring).
+        correlation = np.asarray(wfn.dynamic_polarizability(omega))
+        pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), correlation)
+        route = "unrelaxed (no orbital relaxation; correlation only)"
+
+    iso_au = float(np.trace(np.asarray(pc.total)).real) / 3.0
+    return pc.report(
+        "%s polarizability" % _method_name(wfn),
+        params=[("frequency (omega)", freq), ("response", route)],
+        summary=[("isotropic (1/3 Tr)", "%.6f a.u.   %.6f Angstrom^3" % (iso_au, iso_au * ANG3_PER_AU))])
+
+
+def optical_rotation(wfn, omega) -> PropertyComponents:
+    """Optical-rotation (optical-activity) tensor ``G'(omega)`` as a :class:`PropertyComponents`,
+    shape ``(3, 3)`` -- the unrelaxed CC linear response of the electric dipole to the magnetic
+    dipole (:meth:`~pycc.ccderiv.CCderiv.optical_rotation`).
+
+    **CCSD only** (needs a :class:`~pycc.ccderiv.CCderiv`), and ``omega`` must be nonzero -- there is
+    no static optical rotation.  Like the dynamic polarizability it omits the orbital (MO) response,
+    so it carries no Hartree-Fock contribution: the SCF block is zero and correlation = total.  The
+    report prints the field frequency (Eh and nm), ``Tr(G')`` in a.u., and the specific rotation
+    ``[alpha]`` in deg/(dm (g/mL))."""
+    if omega == 0.0:
+        raise ValueError("optical rotation requires a nonzero field frequency; there is no static "
+                         "optical rotation.")
+    if not hasattr(wfn, 'optical_rotation'):
+        raise NotImplementedError(
+            "optical rotation is implemented for CCSD only; pass a pycc.CCderiv for a CCSD "
+            "wavefunction (got %s)." % type(wfn).__name__)
+    g = np.asarray(wfn.optical_rotation(omega))
+    pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), g)
+    trace = float(np.trace(g).real)
+    alpha = _specific_rotation(trace, omega, _wfn_of(wfn).ref.molecule())
+    return pc.report(
+        "%s optical rotation, G'" % _method_name(wfn),
+        params=[("frequency (omega)", "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)),
+                ("response", "unrelaxed (no orbital relaxation; correlation only)")],
+        summary=[("Tr(G')", "%.6f a.u." % trace),
+                 ("specific rotation", "%.4f deg/(dm (g/mL))" % alpha)])
 
 
 def hessian(wfn) -> PropertyComponents:
@@ -196,7 +332,8 @@ def hessian(wfn) -> PropertyComponents:
     repulsion second derivative ``d^2 V_NN/dX dY``."""
     reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian')
     nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion2())
-    return PropertyComponents(nuclear, reference, correlation)
+    pc = PropertyComponents(nuclear, reference, correlation)
+    return pc.report("%s Hessian" % _method_name(wfn))
 
 
 def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') -> PropertyComponents:
@@ -222,7 +359,8 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
                                            'velocity_dipole_derivatives', {'gauge': orbital_gauge})
     else:
         raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
-    return PropertyComponents(_nuclear_apt(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    pc = PropertyComponents(_nuclear_apt(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    return pc.report("%s APT (%s gauge)" % (_method_name(wfn), gauge))
 
 
 def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
@@ -266,4 +404,26 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     else:
         raise TypeError(f"pycc.aat: unsupported wavefunction type {type(wfn).__name__!r}")
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)
-    return PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
+    pc = PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
+    return pc.report("%s AAT" % _method_name(wfn))
+
+
+def _specific_rotation(trace_G, omega, mol):
+    r"""Specific rotation ``[alpha]`` in deg/(dm (g/mL)) from the trace of the optical-activity
+    tensor ``G'`` (a.u.), the field frequency ``omega`` (Eh), and the molecule (for its molar mass),
+    via the Rosenfeld expression (Barron, *Molecular Light Scattering and Optical Activity*, 2nd ed.,
+    p. 143; see the specific-rotation-units derivation)::
+
+        [alpha] = -(3.60e4 / 6 pi) (omega/tau) mu0 N_A (e^2 a0^3 / hbar) Tr(G') / M
+
+    ``omega/tau`` is ``omega`` in rad/s (``tau`` = atomic unit of time = hbar/Eh, so Eh/hbar = 1/tau,
+    equivalently ``2 pi c / lambda``); ``M`` is the molar mass in kg/mol; ``Tr(G')`` is the full
+    trace (the 1/3 of the isotropic average is folded into the 3.60e4).  Constants from qcelemental."""
+    tau = qcel.constants.get('atomic unit of time')
+    mu0 = qcel.constants.get('mag. constant')
+    n_a = qcel.constants.get('Avogadro constant')
+    e = qcel.constants.get('elementary charge')
+    a0 = qcel.constants.get('Bohr radius')
+    hbar = qcel.constants.get('Planck constant over 2 pi')
+    m_kg = sum(mol.mass(atom) for atom in range(mol.natom())) * 1e-3
+    return -(3.60e4) / (6.0 * np.pi) * (omega / tau) * mu0 * n_a * (e ** 2 * a0 ** 3 / hbar) / m_kg * trace_G

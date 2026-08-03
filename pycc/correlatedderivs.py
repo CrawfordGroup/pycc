@@ -65,7 +65,7 @@ class CorrelatedDerivs:
         and the CPHF orbital Hessian used by the Z-vector solve."""
         if self._ref_hf is None:
             from .hfwfn import HFwfn
-            self._ref_hf = HFwfn(self.wfn.ref, orbital_basis=self.wfn.orbital_basis)
+            self._ref_hf = HFwfn(self.wfn.ref, orbital_basis=self.wfn.orbital_basis, quiet=True)
         return self._ref_hf
 
     @property

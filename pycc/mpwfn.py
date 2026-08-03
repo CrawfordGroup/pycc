@@ -4,12 +4,13 @@ mpwfn.py: Moller-Plesset perturbation-theory (MP2) wavefunction.
 
 from __future__ import annotations
 
+import time
 from typing import Any, TYPE_CHECKING
 
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .utils import clone
+from .utils import clone, timing
 
 if TYPE_CHECKING:
     from ._typing import Tensor
@@ -43,8 +44,11 @@ class MPwfn(Wavefunction):
     """
 
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
+        time_init = time.time()
+        self.method = 'MP2'                 # preamble label (see Wavefunction._report_preamble)
         super().__init__(scf_wfn, **kwargs)
         self._build_mp2()
+        print(timing("MPwfn", time.time() - time_init))
 
     def _build_mp2(self) -> None:
         r"""Build the energy denominators and MP2 doubles amplitudes from the seeded
@@ -205,5 +209,5 @@ class MPwfn(Wavefunction):
         (electronic) contribution to the total MP2 properties via the pycc property facade."""
         if getattr(self, '_ref_hf', None) is None:
             from .hfwfn import HFwfn
-            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis)
+            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis, quiet=True)
         return self._ref_hf

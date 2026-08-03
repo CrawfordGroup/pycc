@@ -15,7 +15,7 @@ from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
 from .cctriples import t3c_ijk, t3c_abc, l3_ijk, l3_abc, t3c_bc, l3_bc, t3_pert_ijk, t3_pert_bc
-from .utils import zeros, zeros_like, clone
+from .utils import zeros, zeros_like, clone, timing
 
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
@@ -108,7 +108,7 @@ class ccdensity(object):
                 self.Dovov = self.build_Dovov(t1, t2, l1, l2)
                 self.Doovv = self.build_Doovv(t1, t2, l1, l2)
 
-        print("\nCCDENSITY constructed in %.3f seconds.\n" % (time.time() - time_init))
+        print(timing("CC density", time.time() - time_init))
 
     def compute_energy(self) -> float:
         r"""
