@@ -191,6 +191,69 @@ def concatenate(arrays):
     return np.concatenate(arrays)
 
 
+# ---- iterative-solver output ----
+# Single source for the text every iterative solve prints, so the format lives in one place and
+# each solve is self-identifying.  A solve announces itself once with title(), then prints one
+# iteration() row per cycle, and (if it tracks a wall time) a converged() footer.  Plain string
+# builders -- the caller still print()s them; no logging, no verbosity state, no shared object.
+
+def title(text):
+    r"""A blank line then a solve title naming what an iterative sequence solves -- e.g.
+    ``'T-amplitudes (CCSD)'``, ``'perturbed Lambda'``, ``'EOM-CCSD (RIGHT)'``.  Printed once above
+    the iteration rows so a run that stacks many solves (the 3N perturbed solves behind a Hessian,
+    say) stays legible: each block says what it is rather than being an anonymous table of numbers."""
+    return "\n" + text
+
+
+def iteration(niter, energy=None, de=None, rms=None, e_label="Ecorr", note=None):
+    r"""One iteration row, e.g.::
+
+        Iter   3: Ecorr =   -0.070680088785123  dE = -1.20000E-07  rms =  3.40000E-08
+
+    Only the supplied columns print, so an energy-bearing solve (CC, CI) and a residual-only solve
+    (the perturbed-amplitude / Z-vector equations, which have no energy) share one formatter:
+    ``energy`` (labeled ``e_label``), ``de``, and ``rms`` are each shown only when given.  ``note``
+    (e.g. ``'MP2'``) is appended -- used on an initial-guess line in place of ``rms``."""
+    cols = []
+    if energy is not None:
+        cols.append("%s = %.15f" % (e_label, energy))
+    if de is not None:
+        cols.append("dE = % .5E" % de)
+    if rms is not None:
+        cols.append("rms = % .5E" % rms)
+    if note is not None:
+        cols.append(note)
+    return "Iter %3d: %s" % (niter, "  ".join(cols))
+
+
+def converged(name, elapsed):
+    r"""A convergence footer for a timed solve, e.g. ``'CCwfn converged in 0.420 seconds.'``."""
+    return "%s converged in %.3f seconds." % (name, elapsed)
+
+
+def timing(label, seconds):
+    r"""A build-timing line for a major component, e.g. ``'CCwfn built in 0.005 seconds.'`` --
+    a uniform report (one verb, one format) so a run's build steps read consistently and give the
+    user a sense of how long the calculation will take."""
+    return "%s built in %.3f seconds." % (label, seconds)
+
+
+def field(label, value, width=22):
+    r"""A colon-aligned ``label : value`` row for a preamble block, e.g.
+    ``'  SCF energy             : -74.959948270260 Eh'``."""
+    return "  %-*s : %s" % (width, label, value)
+
+
+def solve_params(method, e_conv, r_conv, maxiter, max_diis, start_diis):
+    r"""The wfn-specific solve preamble: the convergence limits and DIIS options a solve runs with,
+    printed above its iteration table."""
+    return "\n".join(("\n%s solve" % method,
+                      field("energy convergence", "%.2E" % e_conv),
+                      field("residual convergence", "%.2E" % r_conv),
+                      field("max iterations", "%d" % maxiter),
+                      field("DIIS max / start", "%d / %d" % (max_diis, start_diis))))
+
+
 class helper_diis(object):
     r"""DIIS (Pulay direct inversion of the iterative subspace) extrapolator for the CC / Lambda /
     response amplitude iterations.  Keeps a rolling window (``max_diis``) of amplitude iterates and
@@ -265,11 +328,14 @@ class helper_diis(object):
         B[-1, -1] = 0
 
         for n1, e1 in enumerate(self.diis_errors):
-            B[n1, n1] = dot(e1, e1)
+            # For complex amplitudes (e.g. ccresponse) the error overlaps are complex; B is the
+            # real overlap matrix by construction (see above), so take the real part explicitly
+            # rather than let the assignment truncate it (which numpy flags as a ComplexWarning).
+            B[n1, n1] = dot(e1, e1).real
             for n2, e2 in enumerate(self.diis_errors):
                 if n1 >= n2:
                     continue
-                B[n1, n2] = dot(e1, e2)
+                B[n1, n2] = dot(e1, e2).real
                 B[n2, n1] = B[n1, n2]
 
         B[:-1, :-1] /= absolute(B[:-1, :-1]).max()

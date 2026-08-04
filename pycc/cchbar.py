@@ -15,7 +15,7 @@ import numpy as np
 from pycc.ccwfn import HAS_TORCH
 if HAS_TORCH:
     import torch
-from pycc.utils import clone
+from pycc.utils import clone, timing
 
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
@@ -80,7 +80,7 @@ class cchbar(object):
 
         if ccwfn.orbital_basis == 'spinorbital':
             self._so_build(o, v, F, ERI, t1, t2)
-            print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
+            print(timing("HBAR", time.time() - time_init))
             return
 
         self.Hov = self.build_Hov(o, v, F, L, t1)
@@ -95,7 +95,7 @@ class cchbar(object):
         self.Hvvvo = self.build_Hvvvo(o, v, ERI, L, self.Hov, self.Hvvvv, t1, t2)
         self.Hovoo = self.build_Hovoo(o, v, ERI, L, self.Hov, self.Hoooo, t1, t2)
 
-        print("\nHBAR constructed in %.3f seconds." % (time.time() - time_init))
+        print(timing("HBAR", time.time() - time_init))
 
     """
     For GPU implementation:

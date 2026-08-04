@@ -10,11 +10,14 @@ downstream of `ccwfn`, so the wavefunction never reaches forward to build them. 
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
+from .cphf import perturbation_label
+from .utils import title, iteration, converged
 
 if TYPE_CHECKING:
     from .ccwfn import CCwfn
@@ -121,18 +124,19 @@ class CCderiv(CorrelatedDerivs):
         lam = self.cclambda
         hbar = self.hbar
         is_t = cc.model.upper() == 'CCSD(T)'
+        label = perturbation_label(pert, cc.ref.molecule())
         if cc.orbital_basis == 'spinorbital':
-            dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar)
+            dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar, label=label)
             dt3 = self._so_perturbed_t3_intermediates(df, deri, dt1, dt2) if is_t else None
             dl1, dl2 = self._so_perturbed_lambda(df, deri, dt1, dt2, hbar, lam,
                                                  dS1=(dt3['S1'] if is_t else None),
-                                                 dS2=(dt3['S2'] if is_t else None))
+                                                 dS2=(dt3['S2'] if is_t else None), label=label)
         else:
-            dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar)
+            dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar, label=label)
             dt3 = self._perturbed_t3_intermediates(df, deri, dL, dt1, dt2) if is_t else None
             dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam,
                                               dS1=(dt3['S1'] if is_t else None),
-                                              dS2=(dt3['S2'] if is_t else None))
+                                              dS2=(dt3['S2'] if is_t else None), label=label)
         return self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
 
     def _ccsd_jacobian(self, X1, X2, hbar):
@@ -206,7 +210,7 @@ class CCderiv(CorrelatedDerivs):
         r2 += tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3) + tmp.swapaxes(0, 1).swapaxes(2, 3)
         return r1, r2
 
-    def _perturbed_amplitudes(self, df, deri, dL, hbar, omega=0.0, maxiter=None, rconv=None):
+    def _perturbed_amplitudes(self, df, deri, dL, hbar, omega=0.0, maxiter=None, rconv=None, label=None):
         r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
         equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation ``x`` splits into the
         ``d_x t`` part (the CCSD Jacobian :meth:`_ccsd_jacobian`, ``<mu|[HBAR, d_x t]|0>``) and the
@@ -249,20 +253,26 @@ class CCderiv(CorrelatedDerivs):
         B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
-        for _ in range(maxiter):
+        name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
+        print(title(name))
+        t0 = time.time()
+        for niter in range(1, maxiter + 1):
             j1, j2 = self._ccsd_jacobian(X1, X2, hbar)
             r1 = B1 + j1 - omega * X1
             r2 = 0.5 * (B2 - omega * X2) + j2
             r2 = r2 + r2.swapaxes(0, 1).swapaxes(2, 3)
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
-            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+            rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
+            print(iteration(niter, rms=rms))
+            if rms < rconv:
+                print(converged(name, time.time() - t0))
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
         return X1, X2
 
-    def _so_perturbed_amplitudes(self, df, deri, hbar, omega=0.0, maxiter=None, rconv=None):
+    def _so_perturbed_amplitudes(self, df, deri, hbar, omega=0.0, maxiter=None, rconv=None, label=None):
         r"""Spin-orbital perturbed CCSD amplitudes ``dt/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
         no 0.5 and no final symmetrization)::
@@ -297,12 +307,18 @@ class CCderiv(CorrelatedDerivs):
         B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
-        for _ in range(maxiter):
+        name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
+        print(title(name))
+        t0 = time.time()
+        for niter in range(1, maxiter + 1):
             j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
             r1, r2 = B1 + j1 - omega * X1, B2 + j2 - omega * X2
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
-            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+            rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
+            print(iteration(niter, rms=rms))
+            if rms < rconv:
+                print(converged(name, time.time() - t0))
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
@@ -511,7 +527,7 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None,
-                          omega=0.0, maxiter=None, rconv=None):
+                          omega=0.0, maxiter=None, rconv=None, label=None):
         r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear): a single inhomogeneous linear solve
         that reuses ``cclambda``'s ground-state Lambda residual ``r_L`` as the operator (no separate
         perturbed-multiplier amplitudes).  Differentiating the Lambda
@@ -571,7 +587,10 @@ class CCderiv(CorrelatedDerivs):
         rL2_0 = rL2(zl1, zl2, L0, H0, zGvv, zGoo)       # = SYM[L]
         dl1, dl2 = B1 / Dia, B2 / Dijab
         diis = helper_diis(dl1, dl2, 8)
-        for _ in range(maxiter):
+        name = "perturbed Lambda" + (" (%s)" % label if label else "")
+        print(title(name))
+        t0 = time.time()
+        for niter in range(1, maxiter + 1):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
             j1 = rL1(dl1, dl2, H0, Gvv_d, Goo_d) - rL1_0
             j2 = rL2(dl1, dl2, L0, H0, Gvv_d, Goo_d) - rL2_0
@@ -579,14 +598,17 @@ class CCderiv(CorrelatedDerivs):
             r2 = B2 + j2 + omega * dl2
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
-            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+            rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
+            print(iteration(niter, rms=rms))
+            if rms < rconv:
+                print(converged(name, time.time() - t0))
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)
         return dl1, dl2
 
     def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None,
-                             omega=0.0, maxiter=None, rconv=None):
+                             omega=0.0, maxiter=None, rconv=None, label=None):
         r"""Spin-orbital perturbed Lambda ``dLambda/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_lambda` (SO ``_so_r_L``; inhomogeneity = ``r_L`` with perturbed HBAR +
         perturbed ERI, unperturbed G, plus the ``dG.H`` / ``dG.<pq||rs>`` product-rule halves)::
@@ -638,14 +660,20 @@ class CCderiv(CorrelatedDerivs):
         rL2_0 = rL2(zl1, zl2, ERI0, H0, zGvv, zGoo)
         dl1, dl2 = B1 / Dia, B2 / Dijab
         diis = helper_diis(dl1, dl2, 8)
-        for _ in range(maxiter):
+        name = "perturbed Lambda" + (" (%s)" % label if label else "")
+        print(title(name))
+        t0 = time.time()
+        for niter in range(1, maxiter + 1):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
             j1 = rL1(dl1, dl2, H0, Gvv_d, Goo_d) - rL1_0
             j2 = rL2(dl1, dl2, ERI0, H0, Gvv_d, Goo_d) - rL2_0
             r1, r2 = B1 + j1 + omega * dl1, B2 + j2 + omega * dl2
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
-            if np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2)) < rconv:
+            rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
+            print(iteration(niter, rms=rms))
+            if rms < rconv:
+                print(converged(name, time.time() - t0))
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)
@@ -963,7 +991,7 @@ class CCderiv(CorrelatedDerivs):
 
     def linear_response(self, a, b, omega=0.0):
         r"""Orbital-unrelaxed CC linear response function ``<<a; b>>_omega`` -- the
-        general engine behind :meth:`response_polarizability` / :meth:`optical_rotation`.
+        general engine behind :meth:`dynamic_polarizability` / :meth:`optical_rotation`.
         The 3x3 tensor is assembled by the density route::
 
             <<a; b>>_omega[i,j] = Tr(d_bj D(omega) . a_i)
@@ -980,14 +1008,19 @@ class CCderiv(CorrelatedDerivs):
         ``omega`` is a single field frequency (a sweep loops at the call site).  This is
         the CC response (unrelaxed) value, not the relaxed derivative :meth:`polarizability`."""
         a_ints = self._perturbation_ints(a)
-        dD = [self._response_density(self._perturbation_ints(b)[j], omega) for j in range(3)]
+        b_ints = self._perturbation_ints(b)
+        xyz = 'xyz'
+        dD = []
+        for j in range(3):
+            label = "%s_%s" % (b, xyz[j]) + ("" if omega == 0.0 else ", omega=%.4f" % omega)
+            dD.append(self._response_density(b_ints[j], omega, label=label))
         tensor = np.zeros((3, 3))
         for i in range(3):
             for j in range(3):
                 tensor[i, j] = self.contract('pq,qp->', dD[j], a_ints[i])
         return tensor
 
-    def response_polarizability(self, omega=0.0):
+    def dynamic_polarizability(self, omega=0.0):
         r"""Orbital-unrelaxed dynamic dipole polarizability ``alpha(omega)``, a 3x3 array::
 
             alpha_ab(omega) = -<<mu; mu>>_omega = -Tr(d_b D(omega) . mu_a)
@@ -1044,7 +1077,7 @@ class CCderiv(CorrelatedDerivs):
             return [np.real(-1.0j * np.asarray(cc.H.m[x])) for x in range(3)]
         raise KeyError(f"Unknown perturbation operator key: {key!r} (expected 'mu' or 'm').")
 
-    def _response_density(self, op_ints, omega=0.0):
+    def _response_density(self, op_ints, omega=0.0, label=None):
         r"""Orbital-unrelaxed perturbed 1-PDM ``d_op D(omega)`` for a bare one-electron
         operator ``op_ints`` (full-MO ``nmo x nmo``).  Solves the perturbed amplitudes and
         multipliers with the BARE operator as the perturbation (``df = op_ints``, no
@@ -1067,11 +1100,11 @@ class CCderiv(CorrelatedDerivs):
                 f"not {cc.model} (CCSD(T) response is a later phase).")
         zero_eri = np.zeros_like(np.asarray(cc.H.ERI))
         if cc.orbital_basis == 'spinorbital':
-            dt1, dt2 = self._so_perturbed_amplitudes(op_ints, zero_eri, hbar, omega=omega)
-            dl1, dl2 = self._so_perturbed_lambda(op_ints, zero_eri, dt1, dt2, hbar, lam, omega=omega)
+            dt1, dt2 = self._so_perturbed_amplitudes(op_ints, zero_eri, hbar, omega=omega, label=label)
+            dl1, dl2 = self._so_perturbed_lambda(op_ints, zero_eri, dt1, dt2, hbar, lam, omega=omega, label=label)
         else:
             zero_L = np.zeros_like(np.asarray(cc.H.L))
-            dt1, dt2 = self._perturbed_amplitudes(op_ints, zero_eri, zero_L, hbar, omega=omega)
-            dl1, dl2 = self._perturbed_lambda(op_ints, zero_eri, zero_L, dt1, dt2, hbar, lam, omega=omega)
+            dt1, dt2 = self._perturbed_amplitudes(op_ints, zero_eri, zero_L, hbar, omega=omega, label=label)
+            dl1, dl2 = self._perturbed_lambda(op_ints, zero_eri, zero_L, dt1, dt2, hbar, lam, omega=omega, label=label)
         dD, _ = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
         return dD

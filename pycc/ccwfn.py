@@ -19,7 +19,7 @@ except ImportError:
 
 from typing import Any
 
-from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples
+from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples, title, iteration, converged, timing, solve_params
 from .wavefunction import Wavefunction
 from .local import Local
 from . import cctriples
@@ -84,6 +84,7 @@ class CCwfn(Wavefunction):
         if model not in valid_cc_models:
             raise InvalidKeywordError('model', model, valid_cc_models)
         self.model = model
+        self.method = model                 # preamble label (see Wavefunction._report_preamble)
 
         # Convergence criteria (overwritten by solve_cc with the values actually used); defaulted
         # here so downstream code that inherits them (the derivative drivers' Lambda / perturbed
@@ -201,7 +202,7 @@ class CCwfn(Wavefunction):
             self.t1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
             self.t2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
-        print("CCWFN object initialized in %.3f seconds." % (time.time() - time_init))
+        print(timing("CCwfn", time.time() - time_init))
 
 
     def solve_cc(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> float:
@@ -249,7 +250,10 @@ class CCwfn(Wavefunction):
             self.t3 = np.zeros((self.no, self.no, self.no, self.nv, self.nv, self.nv))
 
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
-        print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  MP2" % (0, ecc, -ecc))
+        name = "T-amplitudes (%s)" % self.model
+        print(solve_params(self.model, e_conv, r_conv, maxiter, max_diis, start_diis))
+        print(title(name))
+        print(iteration(0, energy=ecc, de=-ecc, e_label="CC Ecorr", note="MP2"))
 
         diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
 
@@ -273,7 +277,7 @@ class CCwfn(Wavefunction):
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
-            print("CC Iter %3d: CC Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, ecc, ediff, rms))
+            print(iteration(niter, energy=ecc, de=ediff, rms=rms, e_label="CC Ecorr"))
 
             # check for convergence. abs() dispatches to __abs__ on both NumPy scalars
             # and 0-d torch tensors, so this single block (and the (T) correction below)
@@ -281,7 +285,7 @@ class CCwfn(Wavefunction):
             # silently skipped the (T) step, so CCSD(T) on a torch tensor returned the
             # bare CCSD energy.
             if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                print("\nCCWFN converged in %.3f seconds.\n" % (time.time() - ccsd_tstart))
+                print(converged(name, time.time() - ccsd_tstart))
                 print("E(REF)  = %20.15f" % self.eref)
                 if (self.model == 'CCSD(T)'):
                     print("E(CCSD) = %20.15f" % ecc)

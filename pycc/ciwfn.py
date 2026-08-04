@@ -10,7 +10,7 @@ from typing import Any, TYPE_CHECKING
 import numpy as np
 
 from .wavefunction import Wavefunction
-from .utils import helper_diis, clone, sqrt, zeros_like
+from .utils import helper_diis, clone, sqrt, zeros_like, title, iteration, converged, timing, solve_params
 from .exceptions import InvalidKeywordError
 
 if TYPE_CHECKING:
@@ -41,6 +41,7 @@ class CIwfn(Wavefunction):
         if model not in valid_ci_models:
             raise InvalidKeywordError('model', model, valid_ci_models)
         self.model = model
+        self.method = model                 # preamble label (see Wavefunction._report_preamble)
         self.need_singles = model in ['CISD']
 
         super().__init__(scf_wfn, **kwargs)
@@ -59,7 +60,7 @@ class CIwfn(Wavefunction):
         self.c1 = mgr.seed_compute(np.zeros((self.no, self.nv)))
         self.c2 = clone(self.H.ERI[o, o, v, v], device=self.device1) / self.Dijab
 
-        print("CIWFN object initialized in %.3f seconds." % (time.time() - time_init))
+        print(timing("CIwfn", time.time() - time_init))
 
     def solve_ci(self, e_conv: float = 1e-7, r_conv: float = 1e-7, maxiter: int = 100, max_diis: int = 8, start_diis: int = 1) -> "Tensor":
         """Iterate the projected CISD equations to convergence and return E_c.
@@ -73,7 +74,10 @@ class CIwfn(Wavefunction):
         contract = self.contract
 
         eci = self.ci_energy(o, v, F, L, self.c1, self.c2)
-        print("CI Iter %3d: CI Ecorr = %.15f  dE = % .5E  MP2" % (0, eci, -eci))
+        name = "CI-amplitudes (%s)" % self.model
+        print(solve_params(self.model, e_conv, r_conv, maxiter, max_diis, start_diis))
+        print(title(name))
+        print(iteration(0, energy=eci, de=-eci, e_label="CI Ecorr", note="MP2"))
 
         diis = helper_diis(self.c1, self.c2, max_diis, self.precision)
 
@@ -94,10 +98,10 @@ class CIwfn(Wavefunction):
 
             eci = self.ci_energy(o, v, F, L, self.c1, self.c2)
             ediff = eci - eci_last
-            print("CI Iter %3d: CI Ecorr = %.15f  dE = % .5E  rms = % .5E" % (niter, eci, ediff, rms))
+            print(iteration(niter, energy=eci, de=ediff, rms=rms, e_label="CI Ecorr"))
 
             if (abs(ediff) < e_conv) and abs(rms) < r_conv:
-                print("\nCIWFN converged in %.3f seconds.\n" % (time.time() - ci_tstart))
+                print(converged(name, time.time() - ci_tstart))
                 print("E(REF)   = %20.15f" % self.eref)
                 print("E(%s)  = %20.15f" % (self.model, eci))
                 print("E(TOT)   = %20.15f" % (eci + self.eref))
