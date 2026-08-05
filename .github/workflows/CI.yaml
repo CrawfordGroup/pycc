@@ -61,7 +61,11 @@ jobs:
         conda list --show-channel-urls
         hash -r
         env
-        conda install psi4 python=${{ matrix.python-version }} pip numpy=2 -c conda-forge
+        # Pin libxc-c to 7.0.0: libxc 7.1.2 dropped the XC_GGA_XC_TH_FL functional that psi4's
+        # DFT table still references, which breaks `import psi4`. 7.0.0 still provides it and
+        # satisfies gauxc's exact requirement (per the psi4 devs). Temporary -- drop once
+        # conda-forge ships a psi4 build matched to libxc 7.1.x.
+        conda install psi4 "libxc-c=7.0.0" python=${{ matrix.python-version }} pip numpy=2 -c conda-forge
         ls -l $CONDA
 
     - name: Test Psi4 Python Loading
