@@ -244,14 +244,21 @@ class CIwfn(Wavefunction):
 
     def _cisd_densities(self):
         """Cache (D_pq, D_pq_corr, D_pqrs): full 1-PDM, correlation-only
-        1-PDM, and 2-PDM."""
+        1-PDM, and 2-PDM.
+
+        The reference block ``2 delta_ij`` spans the FULL occupied space (frozen core +
+        active, ``slice(0, o.stop)``) - the correlation blocks below are active-only
+        (placed by ``o``/``v``), but the doubly occupied core still carries its two
+        electrons, so ``Tr(D) = 2 (nfzc + no)``. ``D_corr`` subtracts the same reference
+        block back off and is therefore the pure correlation density in either case."""
         if getattr(self, '_ci_dens', None) is None:
             c = self.contract
-            o, v, nmo, no = self.o, self.v, self.nmo, self.no
+            o, v, nmo = self.o, self.v, self.nmo
+            ndocc = o.stop                      # nfzc + no: the full occupied space
             n0, n1, n2, tau_n = self._normalized_amplitudes()
 
             D = np.zeros((nmo, nmo), dtype=n1.dtype)
-            for i in range(no):
+            for i in range(ndocc):
                 D[i, i] += 2.0
             D[o, o] -= 2.0 * c('ja,ia->ij', n1.conj(), n1)
             D[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n.conj(), n2)
@@ -260,7 +267,7 @@ class CIwfn(Wavefunction):
             D[o, v] += (2.0 * n0 * n1 + 2.0 * c('jb,ijab->ia', n1.conj(), 2.0 * n2 - n2.swapaxes(2, 3)))
             D[v, o] += (2.0 * n0 * n1.conj().T + 2.0 * c('ijab,jb->ai', (2.0 * n2 - n2.swapaxes(2, 3)).conj(), n1))
             D_corr = D.copy()
-            for i in range(no):
+            for i in range(ndocc):
                 D_corr[i, i] -= 2.0
 
             G = np.zeros((nmo, nmo, nmo, nmo), dtype=n1.dtype)

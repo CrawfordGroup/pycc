@@ -10,28 +10,13 @@ the genuinely CISD-specific wave-function-overlap properties - `atomic_axial_ten
 `velocity_dipole_derivatives` - are custom code, together with the coupled-perturbed-CI (CPCI)
 response machinery they (and the two density hooks) are built from.
 
-DENSITY HOOKS
--------------
-Both hooks return the correlation 1-PDM and the Klein-four-symmetrized PURE cumulant 2-PDM (a
-0.25*(4-permutation) average, NO correlation-density cross term, no HF block -- see
-`_cisd_symmetrize` for the convention derivation), true-normalized. The base's generalized-Fock
-Lagrangian is built on the Fock-convention partitioning E_corr = Tr(D f) + Tr(Gam ERI) (like
-MP2's densities); the mean-field coupling of the 1-PDM is supplied by the Lagrangian's own
-termA/termB, not folded into Gam.
-
-`_perturbed_unrelaxed_densities` solves the CPCI response directly from the base's own canonical,
-full-occupied-space perturbed integrals (`df`, `deri`) via `_solve_cpci_ints` -- the CISD analog of
-`CCderiv._perturbed_amplitudes`. This is the piece that used to be dead code: the base's second-
-derivative path was previously bypassed by CISD-specific overrides of `dipole_derivatives`/`hessian`/
-`polarizability`, which have been removed in favor of the base's inherited implementations.
-
 CPCI/MAGNETIC/VECPOT MACHINERY
 -------------------------------
 `_cpci_ints`/`_solve_cpci`/`_solve_cpci_ints`/`_cpci_raw`, the magnetic/vector-potential integral
-builders, and the raw perturbed-density builders live here (not on `CIwfn`) - they are about
-derivatives, not the wavefunction. `_solve_cpci_ints` is the core iterative solve, taking already-
-built perturbed integrals directly; `_solve_cpci` is the `Perturbation`-keyed, cached entry point
-used by the AAT/VG-APT overlap code (magnetic/vecpot/nuclear, via `_cpci_ints`).
+builders, and the raw perturbed-density builders live here (not on `CIwfn`). 
+`_solve_cpci_ints` is the core iterative solve, taking already built perturbed integrals directly;
+`_solve_cpci` is the `Perturbation`-keyed, cached entry point used by the AAT/VG-APT overlap 
+code (magnetic/vecpot/nuclear, via `_cpci_ints`).
 
 """
 
@@ -47,7 +32,9 @@ class CIderiv(CorrelatedDerivs):
     `self.ci`). `relaxed_dipole`/`gradient`/`polarizability`/`dipole_derivatives`/
     `hessian` are inherited from `CorrelatedDerivs`, driven by the two density hooks below.
     `atomic_axial_tensors`/`velocity_dipole_derivatives` are custom wave-function-overlap
-    constructions. Spatial (closed-shell RHF), all-electron only."""
+    constructions. Spatial (closed-shell RHF); frozen-core aware throughout (the correlation
+    amplitudes/densities stay in the active space while every orbital response spans the full
+    occupied space - see `_cpci_ints`), matching MPderiv."""
 
     def __init__(self, ciwfn) -> None:
         super().__init__(ciwfn)
@@ -66,7 +53,8 @@ class CIderiv(CorrelatedDerivs):
     def _perturbed_unrelaxed_densities(self, pert, df, deri, dL):
         """First-order response (d_x D, d_x Gam) of the CISD unrelaxed reduced densities to
         pert, in the same convention as _unrelaxed_densities. Solves the coupled-perturbed-CI
-        response directly from the base's own canonical, full-occupied-space perturbed integrals. """
+        response directly from the base's own full-occupied-space (frozen-core aware)
+        perturbed integrals. """
         dc1, dc2, dc0v, _dt1, _dt2 = self._solve_cpci_ints(df, deri, imaginary=False)
         dD_corr = self._perturbed_cisd_corr_opdm(dc1, dc2)
         dG_raw = self._perturbed_cisd_tpdm(dc1, dc2, dc0v)
@@ -75,28 +63,37 @@ class CIderiv(CorrelatedDerivs):
 
     # coupled-perturbed-CI response 
 
-    def _cpci_ints(self, pert, gauge='canonical'):
+    def _cpci_ints(self, pert, gauge='non-canonical'):
         """(dF, dERI, U) for a cphf.Perturbation. Used for magnetic/vecpot (AAT/VG-APT) and for
-        CIwfn's own (canonical, active-space) nuclear response - NOT for the field/nuclear
-        perturbations that feed the base's second-derivative machinery, which instead thread the
-        base's own canonical, full-occupied-space (df, deri) directly into _solve_cpci_ints."""
+        CIwfn's own nuclear response - NOT for the field/nuclear perturbations that feed the
+        base's second-derivative machinery, which instead thread the base's own
+        full-occupied-space (df, deri) directly into _solve_cpci_ints.
+
+        Frozen-core aware, matching MPderiv: every branch takes its orbital response from the
+        base's full-occupied-space CPHF (`_full_occ_cphf`, core + active) with `ncore`, so the
+        nuclear side carries the non-redundant core<->active-occupied rotation and the
+        core-virtual CPHF response that the active-only `ci.cphf` cannot supply - and so the
+        nuclear and magnetic/vecpot sides of the overlap span the SAME occupied space. For
+        `nfzc = 0` the full-occupied CPHF coincides with `ci.cphf`, so all-electron results are
+        unchanged. Sharing `_full_occ_cphf` with the base also shares its cached (nmo^4)
+        perturbed-ERI store across the AAT/VG-APT and the inherited second-derivative
+        properties."""
         if getattr(self, '_cpci_ints_cache', None) is None:
             self._cpci_ints_cache = {}
         key = (pert, gauge)
         if key in self._cpci_ints_cache:
             return self._cpci_ints_cache[key]
+        ncore = self.ci.o.stop - self.ci.no
         if pert.kind == 'nuclear':
-            cphf = self.ci.cphf
-            dF = np.asarray(cphf.perturbed_fock(pert))
-            dERI = np.asarray(cphf.perturbed_eri(pert))
-            U = np.asarray(cphf.full_U(pert))
+            cphf = self._full_occ_cphf()
+            dF = np.asarray(cphf.perturbed_fock(pert, ncore))
+            dERI = np.asarray(cphf.perturbed_eri(pert, ncore))
+            U = np.asarray(cphf.full_U(pert, ncore))
             result = (dF, dERI, U)
         elif pert.kind == 'magnetic':
-            ncore = self.ci.o.stop - self.ci.no
             U, dF, dERI = self._full_occ_cphf().magnetic_ints(pert.comp, ncore, gauge)
             result = (dF, dERI, U)
         elif pert.kind == 'vecpot':
-            ncore = self.ci.o.stop - self.ci.no
             U, dF, dERI = self._full_occ_cphf().momentum_ints(pert.comp, ncore, gauge)
             result = (-dF, -dERI, -U)          # +Del -> -Del (see docstring)
         else:
@@ -109,7 +106,7 @@ class CIderiv(CorrelatedDerivs):
         """Core coupled-perturbed-CI iterative solve given already-built perturbed integrals
         (dF, dERI) - the CISD analog of CCderiv._perturbed_amplitudes, factored out so both
         CIderiv's own _cpci_ints-driven entry point (_solve_cpci, below) and the base's
-        canonical/full-occupied-space (df, deri) (via _perturbed_unrelaxed_densities) can drive
+        full-occupied-space (df, deri) (via _perturbed_unrelaxed_densities) can drive
         the same solve. Returns (dc1, dc2, dc0v, dt1, dt2): the true-normalized response
         (dc1, dc2, dc0v) and the raw intermediate-normalized response (dt1, dt2).
 
@@ -261,13 +258,13 @@ class CIderiv(CorrelatedDerivs):
 
         return dc1, dc2, dc0v, dt1, dt2
 
-    def _solve_cpci(self, pert, gauge='canonical', maxiter=100, diis_start=2, diis_max=8,
+    def _solve_cpci(self, pert, gauge='non-canonical', maxiter=100, diis_start=2, diis_max=8,
                      e_convergence=1e-11, d_convergence=1e-11):
         """Coupled-perturbed CI, entry point keyed by Perturbation - used by the AAT/VG-APT
         overlap code below (magnetic/vecpot/nuclear via _cpci_ints). Cached by pert. Returns
         (dc1, dc2, dc0v). The base's second-derivative machinery does NOT go through this -
         see _perturbed_unrelaxed_densities, which calls _solve_cpci_ints directly with the
-        base's own canonical (df, deri)."""
+        base's own full-occupied-space (df, deri)."""
         if getattr(self, '_cpci_cache', None) is None:
             self._cpci_cache = {}
         key = (pert, gauge)
@@ -285,7 +282,7 @@ class CIderiv(CorrelatedDerivs):
         self._cpci_cache[key] = result
         return result
 
-    def _cpci_raw(self, pert, gauge='canonical'):
+    def _cpci_raw(self, pert, gauge='non-canonical'):
         if getattr(self, '_cpci_raw_cache', None) is None or (pert, gauge) not in self._cpci_raw_cache:
             self._solve_cpci(pert, gauge)
         return self._cpci_raw_cache[(pert, gauge)]
@@ -354,11 +351,11 @@ class CIderiv(CorrelatedDerivs):
         R[v, o] += 2.0 * c('ijab,jb->ai', tau_n, dc1)
         return R
 
-    def _aat_dc_normalized(self, pert, gauge='canonical'):
+    def _aat_dc_normalized(self, pert, gauge='non-canonical'):
         dc1, dc2, dc0v = self._solve_cpci(pert, gauge)
         return dc0v, dc1, dc2
 
-    def compute_Icc_AATs(self, gauge='canonical'):
+    def compute_Icc_AATs(self, gauge='non-canonical'):
         """Term 1 of the AAT: direct state-vector overlap <dPsi_R|dPsi_H>."""
         from .cphf import Perturbation
         c = self.contract
@@ -376,7 +373,7 @@ class CIderiv(CorrelatedDerivs):
                 I_cc[la, beta] = term.real
         return I_cc
 
-    def compute_Iphic_AATs(self, gauge='canonical'):
+    def compute_Iphic_AATs(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -394,7 +391,7 @@ class CIderiv(CorrelatedDerivs):
                 AAT_phic[la, beta] = c('pq,qp->', R_pq, Ur_eff)
         return AAT_phic.real
 
-    def compute_Iphiphi_AATs(self, gauge='canonical'):
+    def compute_Iphiphi_AATs(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -411,7 +408,7 @@ class CIderiv(CorrelatedDerivs):
                 I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff).real
         return I_pp
 
-    def compute_Icphi_AATs(self, gauge='canonical'):
+    def compute_Icphi_AATs(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -426,17 +423,24 @@ class CIderiv(CorrelatedDerivs):
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
         return AAT_cphi.real
 
-    def atomic_axial_tensors(self, gauge: str = 'canonical') -> np.ndarray:
+    def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
         """CISD correlation AAT, shape (natom, 3, 3): the four electronic overlap blocks with the
         correlation 1-PDM in Iphiphi. The SCF reference and the nuclear term (Z_A/4) eps_abc R_c
         are supplied by the pycc.aat facade (HFwfn.atomic_axial_tensors + _nuclear_aat), matching
-        MPderiv."""
+        MPderiv.
+
+        `gauge` selects the redundant magnetic oo/vv orbital response (see
+        `CPHF.magnetic_ints`); the AAT is invariant to it. `'non-canonical'` (default, matching
+        MPderiv and the pycc.aat facade) leaves the redundant within-space rotations at zero and
+        fills only the non-redundant core<->active-occupied block from the canonical condition,
+        avoiding the near-degenerate divides of `'canonical'` among close-lying core orbitals.
+        Frozen-core aware."""
         natom = self.ci.ref.molecule().natom()
         total = (self.compute_Icc_AATs(gauge) + self.compute_Iphic_AATs(gauge)
                  + self.compute_Iphiphi_AATs(gauge) + self.compute_Icphi_AATs(gauge))
         return total.reshape(natom, 3, 3)
 
-    def compute_Icc_VG_APT(self, gauge='canonical'):
+    def compute_Icc_VG_APT(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -452,7 +456,7 @@ class CIderiv(CorrelatedDerivs):
                                        (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_A))
         return I_cc
 
-    def compute_Icphi_VG_APT(self, gauge='canonical'):
+    def compute_Icphi_VG_APT(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -466,7 +470,7 @@ class CIderiv(CorrelatedDerivs):
                 Icphi[la, gamma] = c('pq,pq->', D_tilde_R, U_A)
         return Icphi
 
-    def compute_Iphic_VG_APT(self, gauge='canonical'):
+    def compute_Iphic_VG_APT(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -484,7 +488,7 @@ class CIderiv(CorrelatedDerivs):
                 Iphic[la, gamma] = c('pq,qp->', D_tilde_A.conj(), Ur_eff)
         return Iphic
 
-    def compute_Iphiphi_VG_APT(self, gauge='canonical'):
+    def compute_Iphiphi_VG_APT(self, gauge='non-canonical'):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
@@ -500,10 +504,14 @@ class CIderiv(CorrelatedDerivs):
                 I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
         return I_pp
 
-    def velocity_dipole_derivatives(self, gauge: str = 'canonical') -> np.ndarray:
+    def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         """CISD correlation velocity-gauge APT, shape (natom, 3, 3): -2 times the four overlap
         blocks with the correlation 1-PDM in Iphiphi. The SCF reference and the Z_A delta nuclear
-        term are supplied by the pycc.apt(gauge='velocity') facade, matching MPderiv."""
+        term are supplied by the pycc.apt(gauge='velocity') facade, matching MPderiv.
+
+        `gauge` selects the redundant momentum oo/vv orbital response (see
+        `CPHF.momentum_ints`), `'non-canonical'` (default) or `'canonical'`; the VG APT is
+        invariant to it. Frozen-core aware."""
         natom = self.ci.ref.molecule().natom()
         overlap_total = (self.compute_Icc_VG_APT(gauge) + self.compute_Icphi_VG_APT(gauge)
                           + self.compute_Iphic_VG_APT(gauge) + self.compute_Iphiphi_VG_APT(gauge))

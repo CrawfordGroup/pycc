@@ -178,13 +178,14 @@ no_reorient
 
 @pytest.fixture
 def cisd_h2o2(psi4_environment):
-    """A solved spatial all-electron CISD wavefunction for
-    (P)-H2O2 at the CISD-VCD validation geometry, at the requested basis."""
-    def _make(basis='sto-3g'):
+    """A solved spatial CISD wavefunction for (P)-H2O2 at the CISD-VCD validation
+    geometry, at the requested basis.  All-electron by default; ``freeze_core=True``
+    freezes the two oxygen 1s orbitals (the frozen-core derivative path)."""
+    def _make(basis='sto-3g', freeze_core=False):
         psi4.core.clean()
         psi4.core.clean_options()
         psi4.geometry(CISD_H2O2_GEOM)
-        psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': False,
+        psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
                           'e_convergence': 1e-13, 'd_convergence': 1e-13})
         _, wfn = psi4.energy('scf', return_wfn=True)
         import pycc
