@@ -191,6 +191,20 @@ def _wfn_of(obj):
     return obj.wfn if isinstance(obj, CorrelatedDerivs) else obj
 
 
+def _record(obj, key: str, pc: "PropertyComponents") -> "PropertyComponents":
+    """Stash a computed property on the underlying wavefunction so a checkpoint can harvest it
+    later (see :func:`~pycc.checkpoint.save_checkpoint`).  Recording via :func:`_wfn_of` puts the
+    deriv-based facades and the wavefunction-based ``aat`` in one place, so everything computed on
+    a single point accumulates together in ``wfn._property_results`` (a name -> PropertyComponents
+    dict).  Returns ``pc`` so a facade can chain ``return _record(...).report(...)``."""
+    w = _wfn_of(obj)
+    cache = getattr(w, '_property_results', None)
+    if cache is None:
+        cache = w._property_results = {}
+    cache[key] = pc
+    return pc
+
+
 def _method_name(obj) -> str:
     """The method label for a property report -- ``'SCF'``, ``'MP2'``, or the model of the
     underlying wavefunction (``'CCSD'`` / ``'CCSD(T)'`` / ``'CISD'`` / ...)."""
@@ -229,6 +243,7 @@ def dipole(wfn) -> PropertyComponents:
     total = np.asarray(pc.total)
     mag = float(np.linalg.norm(total))
     debye = np.array2string(total * DEBYE_PER_AU, precision=8, suppress_small=True, separator=", ")
+    _record(wfn, 'dipole', pc)
     return pc.report(
         "%s dipole moment" % _method_name(wfn),
         summary=[("total (Debye)", debye),
@@ -242,6 +257,7 @@ def gradient(wfn) -> PropertyComponents:
     reference, correlation = _dispatch(wfn, '_gradient_electronic', 'gradient')
     nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion())
     pc = PropertyComponents(nuclear, reference, correlation)
+    _record(wfn, 'gradient', pc)
     return pc.report("%s gradient" % _method_name(wfn))
 
 
@@ -291,6 +307,7 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None) -> PropertyCom
         route = "unrelaxed (no orbital relaxation; correlation only)"
 
     iso_au = float(np.trace(np.asarray(pc.total)).real) / 3.0
+    _record(wfn, 'polarizability' if omega == 0.0 else 'polarizability(omega=%g)' % omega, pc)
     return pc.report(
         "%s polarizability" % _method_name(wfn),
         params=[("frequency (omega)", freq), ("response", route)],
@@ -318,6 +335,7 @@ def optical_rotation(wfn, omega) -> PropertyComponents:
     pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), g)
     trace = float(np.trace(g).real)
     alpha = _specific_rotation(trace, omega, _wfn_of(wfn).ref.molecule())
+    _record(wfn, "optical_rotation(omega=%g)" % omega, pc)
     return pc.report(
         "%s optical rotation, G'" % _method_name(wfn),
         params=[("frequency (omega)", "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)),
@@ -333,6 +351,7 @@ def hessian(wfn) -> PropertyComponents:
     reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian')
     nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion2())
     pc = PropertyComponents(nuclear, reference, correlation)
+    _record(wfn, 'hessian', pc)
     return pc.report("%s Hessian" % _method_name(wfn))
 
 
@@ -360,6 +379,7 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     else:
         raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
     pc = PropertyComponents(_nuclear_apt(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    _record(wfn, 'apt' if gauge == 'length' else 'apt_velocity', pc)
     return pc.report("%s APT (%s gauge)" % (_method_name(wfn), gauge))
 
 
@@ -405,6 +425,7 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
         raise TypeError(f"pycc.aat: unsupported wavefunction type {type(wfn).__name__!r}")
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)
     pc = PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
+    _record(wfn, 'aat', pc)
     return pc.report("%s AAT" % _method_name(wfn))
 
 
