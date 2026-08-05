@@ -18,6 +18,15 @@ digits; pycc reproduces the 10-digit FCMFINAL to ~1e-10 (the FCMFINAL truncation
 
 Water/6-31G (C2v) is the primary anchor and, being cheap, carries the default (non-slow) suite for
 both the spatial and spin-orbital routes; HOF/6-31G (Cs) is a slower second-geometry cross-check.
+
+Open-shell UHF-CCSD is anchored on H2O+ (X2B1, charge +1, isoelectronic to NH2) / STO-3G via the
+spin-orbital route (the only route for an open-shell reference).  This is the suite's sole open-shell
+CC Hessian; the closed-shell SO cases above run the SO machinery on an RHF reference, so H2O+ is what
+exercises a genuine UHF reference at Hessian order.  CFOUR's exact GENBAS STO-3G is transcribed here
+(the O/H contraction coefficients match GENBAS to all printed digits), the geometry is CFOUR's own
+full-precision MOL-file geometry, and CFOUR is run with LINEQ_CONV=12 so the FCMFINAL is fully
+converged; pycc reproduces it to ~1e-10.  The Hessian is origin-independent, so the charged molecule
+raises no complication here (unlike the APT, whose origin dependence for Q != 0 is a separate matter).
 """
 
 import psi4
@@ -80,6 +89,28 @@ P   1   1.00
 ****
 """
 
+# CFOUR's exact GENBAS STO-3G for O and H (cartesian), for the open-shell H2O+ oracle.  Transcribed
+# from the GENBAS in the CFOUR run directory so the AO basis matches to all printed digits.
+CFOUR_STO3G_OH = """cartesian
+****
+H     0
+S   3   1.00
+      3.4252509             0.15432897
+      0.6239137             0.53532814
+      0.1688554             0.44463454
+****
+O     0
+S   3   1.00
+    130.7093200             0.15432897
+     23.8088610             0.53532814
+      6.4436083             0.44463454
+SP   3   1.00
+      5.0331513            -0.09996723            0.15591627
+      1.1695961             0.39951283            0.60768372
+      0.3803890             0.70011547            0.39195739
+****
+"""
+
 WATER = """
 O  0.00000  0.00000  0.00000
 H  0.00000  1.43121 -1.10664
@@ -94,6 +125,20 @@ HOF = """
 O  0.00000  0.00000  0.00000
 F  2.56070  0.93200  0.00000
 H -0.83450  1.62360  0.00000
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+# H2O+ (X2B1, charge +1, doublet), CFOUR's own full-precision MOL-file geometry (bohr).  Unpinned UHF
+# converges directly to the 2B1 ground state (HOMO is the out-of-plane b1 lone pair), so no occupation
+# pinning is needed.
+H2OP = """
+1 2
+O  0.000000000000000  0.000000000000000  0.121304822742269
+H  0.000000000000000 -1.547973342552033 -0.962597780660347
+H  0.000000000000000  1.547973342552033 -0.962597780660347
 symmetry c1
 units bohr
 no_com
@@ -178,6 +223,29 @@ CFOUR_HESS_HOF_FC = np.array(
      [-0.          ,  0.          ,  0.015430659 ,  0.          ,  0.          , -0.0001393381,
        0.          ,  0.          , -0.015291321 ]])
 
+# CFOUR open-shell UHF-CCSD correlation Hessians for H2O+ (X2B1) / STO-3G, FCMFINAL(CCSD) -
+# FCMFINAL(SCF), row-major.
+H2OP_CCSD_AE = np.array(
+    [[-3.1804161900e-02,  0.0000000000e+00,  0.0000000000e+00,  1.5902081000e-02,  0.0000000000e+00,  0.0000000000e+00,  1.5902081000e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00, -8.5914756000e-03,  0.0000000000e+00,  0.0000000000e+00,  4.2957378000e-03, -8.1268490000e-03,  0.0000000000e+00,  4.2957378000e-03,  8.1268490000e-03],
+     [ 0.0000000000e+00,  0.0000000000e+00, -3.8808461800e-02,  0.0000000000e+00,  3.5219942000e-03,  1.9404231000e-02,  0.0000000000e+00, -3.5219942000e-03,  1.9404231000e-02],
+     [ 1.5902081000e-02,  0.0000000000e+00,  0.0000000000e+00, -1.2852648400e-02,  0.0000000000e+00,  0.0000000000e+00, -3.0494326000e-03,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  4.2957378000e-03,  3.5219942000e-03,  0.0000000000e+00, -8.8463345000e-03,  2.3024273000e-03,  0.0000000000e+00,  4.5505966000e-03, -5.8244216000e-03],
+     [ 0.0000000000e+00, -8.1268490000e-03,  1.9404231000e-02,  0.0000000000e+00,  2.3024273000e-03, -1.1758482800e-02,  0.0000000000e+00,  5.8244216000e-03, -7.6457481000e-03],
+     [ 1.5902081000e-02,  0.0000000000e+00,  0.0000000000e+00, -3.0494326000e-03,  0.0000000000e+00,  0.0000000000e+00, -1.2852648400e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  4.2957378000e-03, -3.5219942000e-03,  0.0000000000e+00,  4.5505966000e-03,  5.8244216000e-03,  0.0000000000e+00, -8.8463345000e-03, -2.3024273000e-03],
+     [ 0.0000000000e+00,  8.1268490000e-03,  1.9404231000e-02,  0.0000000000e+00, -5.8244216000e-03, -7.6457481000e-03,  0.0000000000e+00, -2.3024273000e-03, -1.1758482800e-02]])
+H2OP_CCSD_FC = np.array(
+    [[-3.1842635900e-02,  0.0000000000e+00,  0.0000000000e+00,  1.5921318000e-02,  0.0000000000e+00,  0.0000000000e+00,  1.5921318000e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00, -8.5833696000e-03,  0.0000000000e+00,  0.0000000000e+00,  4.2916848000e-03, -8.1431568000e-03,  0.0000000000e+00,  4.2916848000e-03,  8.1431568000e-03],
+     [ 0.0000000000e+00,  0.0000000000e+00, -3.8806760900e-02,  0.0000000000e+00,  3.4983886000e-03,  1.9403380600e-02,  0.0000000000e+00, -3.4983886000e-03,  1.9403380600e-02],
+     [ 1.5921318000e-02,  0.0000000000e+00,  0.0000000000e+00, -1.2870368000e-02,  0.0000000000e+00,  0.0000000000e+00, -3.0509500000e-03,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  4.2916848000e-03,  3.4983886000e-03,  0.0000000000e+00, -8.8369443000e-03,  2.3223840000e-03,  0.0000000000e+00,  4.5452594000e-03, -5.8207727000e-03],
+     [ 0.0000000000e+00, -8.1431568000e-03,  1.9403380600e-02,  0.0000000000e+00,  2.3223840000e-03, -1.1760449300e-02,  0.0000000000e+00,  5.8207727000e-03, -7.6429312000e-03],
+     [ 1.5921318000e-02,  0.0000000000e+00,  0.0000000000e+00, -3.0509500000e-03,  0.0000000000e+00,  0.0000000000e+00, -1.2870368000e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  4.2916848000e-03, -3.4983886000e-03,  0.0000000000e+00,  4.5452594000e-03,  5.8207727000e-03,  0.0000000000e+00, -8.8369443000e-03, -2.3223840000e-03],
+     [ 0.0000000000e+00,  8.1431568000e-03,  1.9403380600e-02,  0.0000000000e+00, -5.8207727000e-03, -7.6429312000e-03,  0.0000000000e+00, -2.3223840000e-03, -1.1760449300e-02]])
+
 
 def _cfour_wfn(geom, freeze_core):
     """RHF reference in CFOUR's exact GENBAS 6-31G (via basis_helper), for the CFOUR-oracle tests."""
@@ -195,6 +263,20 @@ def _ccsd_hess(geom, freeze_core, orbital_basis):
     """Converged CCSD Hessian PropertyComponents for the CFOUR-basis reference."""
     wfn = _cfour_wfn(geom, freeze_core)
     cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)      # model defaults to CCSD
+    cc.solve_cc(1e-12, 1e-12, 100)
+    return pycc.hessian(pycc.CCderiv(cc))
+
+
+def _h2op_ccsd_hess(freeze_core):
+    """Converged open-shell UHF-CCSD Hessian PropertyComponents for H2O+ (spin-orbital route)."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(H2OP)
+    psi4.set_options({'scf_type': 'pk', 'reference': 'uhf', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'r_convergence': 1e-13})
+    psi4.basis_helper(CFOUR_STO3G_OH, name='cfoursto3g')
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')     # model defaults to CCSD
     cc.solve_cc(1e-12, 1e-12, 100)
     return pycc.hessian(pycc.CCderiv(cc))
 
@@ -251,4 +333,15 @@ def test_so_ccsd_hessian_cfour_hof():
     _check(_ccsd_hess(HOF, 'false', 'spinorbital'), CFOUR_HESS_HOF)
     psi4.core.clean()
     _check(_ccsd_hess(HOF, 'true', 'spinorbital'), CFOUR_HESS_HOF_FC)
+    psi4.core.clean()
+
+
+def test_so_ccsd_hessian_cfour_h2op():
+    """Open-shell UHF-CCSD Hessian for H2O+ (X2B1) / STO-3G vs the CFOUR oracle (all-electron and
+    frozen core) -- the suite's only open-shell CC Hessian anchor, exercising the SO 2n+1 assembly
+    on a genuine UHF reference (the closed-shell SO cases above run on an RHF reference).  Verifies
+    the full correlation matrix, the facade decomposition, symmetry, and the translational sum rule."""
+    _check(_h2op_ccsd_hess('false'), H2OP_CCSD_AE)
+    psi4.core.clean()
+    _check(_h2op_ccsd_hess('true'), H2OP_CCSD_FC)
     psi4.core.clean()

@@ -11,7 +11,8 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-from .utils import helper_diis, permute_triples
+import qcelemental as qcel
+from .utils import helper_diis, permute_triples, title, iteration, converged, field
 from .cclambda import cclambda
 from .cctriples import t3c_ijk_so, t3c_abc_so, l3_ijk_so
 from ._typing import Tensor
@@ -19,6 +20,13 @@ from ._typing import Tensor
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
     from pycc.ccdensity import ccdensity
+
+# Physical constants for the polarizability report (repeated from pycc.properties -- minor, not worth
+# a shared import/module): field frequency omega (Eh) -> wavelength (nm), and dipole polarizability
+# atomic units (Bohr^3) -> Angstrom^3.  From qcelemental, for CODATA consistency with the rest of psi4.
+_NM_PER_EH = 1e7 / (qcel.constants.get('hartree-inverse meter relationship') / 100.0)
+_ANG3_PER_AU = (qcel.constants.get('bohr radius') * 1e10) ** 3
+
 
 class ccresponse(object):
     """
@@ -136,12 +144,10 @@ class ccresponse(object):
         for axis in range(3):
             pertkey = "MU_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
             X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
@@ -149,12 +155,10 @@ class ccresponse(object):
         for axis in range(3):
             pertkey = "M_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
             X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
@@ -162,12 +166,10 @@ class ccresponse(object):
         for axis in range(3):
             pertkey = "M*_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
             X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
@@ -175,12 +177,10 @@ class ccresponse(object):
         for axis in range(3):
             pertkey = "P_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
             X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
@@ -188,12 +188,10 @@ class ccresponse(object):
         for axis in range(3):
             pertkey = "P*_" + self.cart[axis]
             X_key = pertkey + "_" + f"{omega:0.6f}"
-            print("Solving right-hand perturbed wave function for %s:" % (X_key))
             X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
             check[X_key] = polar
             if (omega != 0.0):
                 X_key = pertkey + "_" + f"{-omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
 
@@ -202,12 +200,10 @@ class ccresponse(object):
             for axis2 in range(3):
                 pertkey = "Q_" + self.cart[axis1] + self.cart[axis2]
                 X_key = pertkey + "_" + f"{omega:0.6f}"
-                print("Solving right-hand perturbed wave function for %s:" % (X_key))
                 X[X_key], polar = self.solve_right(self.pertbar[pertkey], omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                 check[X_key] = polar
                 if (omega != 0.0):
                     X_key = pertkey + "_" + f"{-omega:0.6f}"
-                    print("Solving right-hand perturbed wave function for %s:" % (X_key))
                     X[X_key], polar = self.solve_right(self.pertbar[pertkey], -omega, e_conv, r_conv, maxiter, max_diis, start_diis)
                     check[X_key] = polar
 
@@ -259,8 +255,12 @@ class ccresponse(object):
         X1 = pertbar.Avo.T/(Dia + omega)
         X2 = pertbar.Avvoo/(Dijab + omega)
 
+        name = "right-hand perturbed amplitudes (%s)" % (
+            pertbar.name + ("" if omega == 0.0 else ", omega=%.4f" % omega))
+
         pseudo = self.pseudoresponse(pertbar, X1, X2)
-        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
+        print(title(name))
+        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"))
 
         diis = helper_diis(X1, X2, max_diis)
         contract = self.ccwfn.contract
@@ -299,16 +299,16 @@ class ccresponse(object):
             self.X1 += r1/(Dia + omega)
             self.X2 += r2/(Dijab + omega)
 
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+            rms = contract('ia,ia->', r1/(Dia+omega), r1/(Dia+omega))
+            rms += contract('ijab,ijab->', r2/(Dijab+omega), r2/(Dijab+omega))
             rms = np.sqrt(rms)
 
             pseudo = self.pseudoresponse(pertbar, self.X1, self.X2)
             pseudodiff = np.abs(pseudo - pseudo_last)
-            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
+            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"))
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
-                print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
+                print(converged(name, time.time() - solver_start))
                 if self.ccwfn.model == 'CC3':
                     if self.ccwfn.store_triples:
                         # full X3 was formed and stored each iteration
@@ -573,7 +573,29 @@ class ccresponse(object):
             for b in range(3):
                 B = self.pertbar["MU_" + self.cart[b]]
                 polar[a, b] = -1.0 * self.linresp_sym(A, Xm[a], B, Xp[b])
+        self._report_polarizability(polar, omega)
         return polar
+
+    def _report_polarizability(self, polar, omega):
+        """Print the symmetric-response polarizability report -- the same layout the
+        :func:`pycc.polarizability` facade prints (frequency in Eh and nm, the SCF/correlation/total
+        tensor, and the isotropic invariant).  The response route omits the orbital relaxation, so it
+        carries no Hartree-Fock contribution: the SCF block is zero and correlation = total."""
+        freq = "%.6f Eh   (static)" % omega if omega == 0.0 else \
+               "%.6f Eh   (%.2f nm)" % (omega, _NM_PER_EH / omega)
+        iso = float(np.trace(polar).real) / 3.0
+        pre = " " * 17
+        fmt = lambda a: np.array2string(np.asarray(a), precision=8, suppress_small=True,
+                                        separator=", ", prefix=pre)
+        print("\n" + "=" * 70)
+        print("%s polarizability  (a.u.)" % self.ccwfn.model)
+        print("=" * 70)
+        print(field("frequency (omega)", freq))
+        print(field("response", "symmetric linear response (unrelaxed)"))
+        print("  SCF          : " + fmt(np.zeros((3, 3))))
+        print("  correlation  : " + fmt(polar))
+        print("  total        : " + fmt(polar))
+        print(field("isotropic (1/3 Tr)", "%.6f a.u.   %.6f Angstrom^3" % (iso, iso * _ANG3_PER_AU)))
 
     def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
                max_diis=7, start_diis=1):
@@ -628,7 +650,38 @@ class ccresponse(object):
             for b in range(3):
                 B = self.pertbar["M*_" + self.cart[b]]
                 tensor[a, b] += 0.5 * self.linresp_sym(A, Xmu_p[a], B, Xmstar_m[b])
+        self._report_optrot(tensor, omega)
         return tensor
+
+    def _report_optrot(self, tensor, omega):
+        """Print the symmetric-response optical-rotation (G') report: frequency (Eh and nm), the
+        SCF/correlation/total tensor (unrelaxed, so no HF term and SCF = 0), the trace Tr(G'), and
+        the specific rotation [alpha] in deg/(dm (g/mL)).  The specific-rotation conversion (Rosenfeld
+        expression; see pycc.properties._specific_rotation and the notes) is repeated inline here."""
+        mol = self.ccwfn.ref.molecule()
+        freq = "%.6f Eh   (%.2f nm)" % (omega, _NM_PER_EH / omega)
+        trace = float(np.trace(tensor).real)
+        tau = qcel.constants.get('atomic unit of time')
+        mu0 = qcel.constants.get('mag. constant')
+        n_a = qcel.constants.get('Avogadro constant')
+        e = qcel.constants.get('elementary charge')
+        a0 = qcel.constants.get('Bohr radius')
+        hbar = qcel.constants.get('Planck constant over 2 pi')
+        m_kg = sum(mol.mass(atom) for atom in range(mol.natom())) * 1e-3
+        alpha = -(3.60e4) / (6.0 * np.pi) * (omega / tau) * mu0 * n_a * (e ** 2 * a0 ** 3 / hbar) / m_kg * trace
+        pre = " " * 17
+        fmt = lambda a: np.array2string(np.asarray(a), precision=8, suppress_small=True,
+                                        separator=", ", prefix=pre)
+        print("\n" + "=" * 70)
+        print("%s optical rotation, G'  (a.u.)" % self.ccwfn.model)
+        print("=" * 70)
+        print(field("frequency (omega)", freq))
+        print(field("response", "symmetric linear response (unrelaxed)"))
+        print("  SCF          : " + fmt(np.zeros((3, 3))))
+        print("  correlation  : " + fmt(tensor))
+        print("  total        : " + fmt(tensor))
+        print(field("Tr(G')", "%.6f a.u." % trace))
+        print(field("specific rotation", "%.4f deg/(dm (g/mL))" % alpha))
 
     # ------------------------------------------------------------------
     # Symmetric linear-response assembly. Each component dispatches on
@@ -1714,9 +1767,12 @@ class ccresponse(object):
         Y2 = 4.0 * X2_guess.copy()
         Y2 -= 2.0 * X2_guess.copy().swapaxes(2,3)
 
-        # need to understand this
+        name = "left-hand perturbed amplitudes (%s)" % (
+            pertbar.name + ("" if omega == 0.0 else ", omega=%.4f" % omega))
+
         pseudo = self.pseudoresponse(pertbar, Y1, Y2)
-        print(f"Iter {0:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudo.real:.5E}")
+        print(title(name))
+        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"))
 
         diis = helper_diis(Y1, Y2, max_diis)
         contract = self.ccwfn.contract
@@ -1740,16 +1796,16 @@ class ccresponse(object):
             self.Y1 += r1/(Dia + omega)
             self.Y2 += r2/(Dijab + omega)
 
-            rms = contract('ia,ia->', np.conj(r1/(Dia+omega)), r1/(Dia+omega))
-            rms += contract('ijab,ijab->', np.conj(r2/(Dijab+omega)), r2/(Dijab+omega))
+            rms = contract('ia,ia->', r1/(Dia+omega), r1/(Dia+omega))
+            rms += contract('ijab,ijab->', r2/(Dijab+omega), r2/(Dijab+omega))
             rms = np.sqrt(rms)
 
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
-            print(f"Iter {niter:3d}: CC Pseudoresponse = {pseudo.real:.15f} dP = {pseudodiff:.5E} rms = {rms.real:.5E}")
+            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"))
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
-                print("\nPerturbed wave function converged in %.3f seconds.\n" % (time.time() - solver_start))
+                print(converged(name, time.time() - solver_start))
                 return self.Y1, self.Y2 , pseudo
 
             diis.add_error_vector(self.Y1, self.Y2)
@@ -2298,5 +2354,6 @@ class _PertbarCache(dict):
         """Build the requested pertbar on first access via the owner's
         _build_pertbar, cache it under ``key``, and return it."""
         value = self._owner._build_pertbar(key)
+        value.name = key                        # its perturbation key (e.g. 'MU_X'), for solver labels
         self[key] = value
         return value

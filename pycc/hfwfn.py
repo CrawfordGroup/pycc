@@ -37,6 +37,7 @@ class HFwfn(Wavefunction):
     _all_electron = True
 
     def __init__(self, scf_wfn: Any, **kwargs) -> None:
+        self.method = 'HF'                  # preamble label (see Wavefunction._report_preamble)
         super().__init__(scf_wfn, **kwargs)
         # The derivative-integral provider and the CPHF orbital-response solver now live
         # on the base, built lazily (``self.derivatives`` / ``self.cphf``).

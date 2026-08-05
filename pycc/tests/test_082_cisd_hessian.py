@@ -108,19 +108,29 @@ HESS_COL = {
 
 
 
-class _CIderivCanonicalMO(pycc.CIderiv):
-    """CIderiv forced onto the CANONICAL perturbed-MO route.
+# Water / 6-31G for the perturbed-MO gauge-invariance check below. 
+GAUGE_WATER = """
+O -0.000000000000000   0.000000000000000   0.128444410656440
+H  0.000000000000000  -1.415531238764228  -1.019253001167221
+H  0.000000000000000   1.415531238764228  -1.019253001167221
+units bohr
+symmetry c1
+no_com
+no_reorient
+"""
 
-    ``CorrelatedDerivs.perturbed_mo_gauge`` is a property, not a per-call argument: it returns
-    ``'canonical'`` only for CCSD(T) (whose (T) kernels are not oo/vv-rotation invariant) and
-    ``'non-canonical'`` otherwise, so CISD never takes the canonical route in production. 
-    But the CISD energy IS invariant to occ-occ and virt-virt rotations, so both must give the
-    same property.  Subclassing here lets the tests below assert that.
-    """
 
-    @property
-    def perturbed_mo_gauge(self):
-        return 'canonical'
+def _cideriv_water(freeze_core='false', basis='6-31G'):
+    """CISD derivative driver on water (no near-degenerate occupied orbitals)."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(GAUGE_WATER)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    ci = pycc.CIwfn(wfn, model='CISD', orbital_basis='spatial')
+    ci.solve_ci(e_conv=1e-13, r_conv=1e-13, maxiter=250)
+    return pycc.CIderiv(ci)
 
 def test_cisd_hessian_vs_reference(cisd_h2o2):
     """The facade total (nuclear repulsion + HF reference + CISD correlation)
@@ -172,10 +182,11 @@ def test_cisd_hessian_symmetry_sum_rule_frozen_core(cisd_h2o2):
 
 
 def test_cisd_hessian_perturbed_mo_gauge_invariance():
-    """The correlation Hessian is invariant to the perturbed-MO gauge (non-canonical default vs
-    the canonical dependent-pair route), all-electron and frozen-core."""
+    """The correlation Hessian is invariant to the perturbed-MO gauge (non-canonical default vs the
+    canonical dependent-pair route), all-electron and frozen-core."""
     for fc in ('false', 'true'):
-        cd = _cideriv(freeze_core=fc)
-        nc = np.asarray(cd.hessian())
-        ca = np.asarray(_CIderivCanonicalMO(cd.ci).hessian())
+        nc = np.asarray(_cideriv_water(fc).hessian())
+        cd = _cideriv_water(fc)
+        cd._gauge_override = 'canonical'
+        ca = np.asarray(cd.hessian())
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

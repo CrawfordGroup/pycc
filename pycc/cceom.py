@@ -8,6 +8,7 @@ import pycc
 from pycc.data.molecules import *
 import numpy as np
 from pycc.exceptions import InvalidKeywordError
+from pycc.utils import title
 
 if TYPE_CHECKING:
     from pycc.ccwfn import CCwfn
@@ -122,6 +123,7 @@ class cceom(object):
         V = np.hstack((np.reshape(C1, (nguess, s1_len)), np.zeros((nguess, s2_len))))
         V = self._orthonormalize(V)
         W = np.empty((0, sigma_len), float)     # sigma vectors, in lockstep with V
+        print(title("EOM-CCSD (%s)" % eom_type))
         print("Guess vectors obtained from %s." % (guess))
 
         E = np.zeros((N))

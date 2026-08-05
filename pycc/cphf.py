@@ -75,6 +75,26 @@ from .utils import diag
 Perturbation = namedtuple('Perturbation', ['kind', 'comp'])
 
 
+def perturbation_label(pert, mol=None):
+    """A short human label for a :data:`Perturbation`, for solver output -- e.g. ``'O1y'``
+    (nuclear: atom 1, Cartesian y), ``'mu_x'`` (electric field), ``'m_z'`` (magnetic dipole),
+    ``'p_x'`` (vector potential / linear momentum).  ``mol`` supplies the element symbols for a
+    nuclear perturbation; without it the atom index is used."""
+    xyz = 'xyz'
+    kind, comp = pert.kind, pert.comp
+    if kind == 'nuclear':
+        atom, cart = comp
+        sym = mol.symbol(atom) if mol is not None else 'atom%d' % atom
+        return "%s%d%s" % (sym, atom + 1, xyz[cart])
+    if kind == 'field':
+        return "mu_%s" % xyz[comp]
+    if kind == 'magnetic':
+        return "m_%s" % xyz[comp]
+    if kind == 'vecpot':
+        return "p_%s" % xyz[comp]
+    return "%s(%s)" % (kind, comp)
+
+
 class CPHF(object):
     """RHF coupled-perturbed Hartree-Fock orbital-response solver (MO basis).
 

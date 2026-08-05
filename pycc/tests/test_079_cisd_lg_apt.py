@@ -102,19 +102,29 @@ APT_CORR = {
 
 
 
-class _CIderivCanonicalMO(pycc.CIderiv):
-    """CIderiv forced onto the CANONICAL perturbed-MO route.
+# The apyib reference water geometry
+GAUGE_WATER = """
+O -0.000000000000000   0.000000000000000   0.128444410656440
+H  0.000000000000000  -1.415531238764228  -1.019253001167221
+H  0.000000000000000   1.415531238764228  -1.019253001167221
+units bohr
+symmetry c1
+no_com
+no_reorient
+"""
 
-    ``CorrelatedDerivs.perturbed_mo_gauge`` is a property, not a per-call argument: it returns
-    ``'canonical'`` only for CCSD(T) (whose (T) kernels are not oo/vv-rotation invariant) and
-    ``'non-canonical'`` otherwise, so CISD never takes the canonical route in production. 
-    But the CISD energy IS invariant to occ-occ and virt-virt rotations, so both must give the
-    same property.  Subclassing here lets the tests below assert that.
-    """
 
-    @property
-    def perturbed_mo_gauge(self):
-        return 'canonical'
+def _cideriv_water(freeze_core='false', basis='6-31G'):
+    """CISD derivative driver on water (no near-degenerate occupied orbitals)."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(GAUGE_WATER)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    ci = pycc.CIwfn(wfn, model='CISD', orbital_basis='spatial')
+    ci.solve_ci(e_conv=1e-13, r_conv=1e-13, maxiter=250)
+    return pycc.CIderiv(ci)
 
 def test_cisd_lg_apt_vs_reference(cisd_h2o2):
     """The facade total (nuclear + HF reference + CISD correlation) reproduces
@@ -158,7 +168,7 @@ def test_cisd_lg_apt_translational_sum_rule(cisd_h2o2):
 def test_cisd_lg_apt_2n1_routes_agree(cisd_h2o2):
     """The two 2n+1 routes give the same correlation LG APT, all-electron and frozen-core -
     the CISD analogue of test_068's ``test_mp2_apt_2n1_routes_agree_631g``.  ``'2n+1-field'``
-    (the default, 3 field responses) and ``'2n+1-nuclear'`` (3N nuclear responses) share the
+    (the default, 3 field responses) and '2n+1-nuclear' (3N nuclear responses) share the
     density hooks but drive entirely different perturbed solves, so agreement is a genuine
     cross-check of the frozen-core perturbed Z-vector rather than a restatement."""
     for fc in (False, True):
@@ -169,10 +179,11 @@ def test_cisd_lg_apt_2n1_routes_agree(cisd_h2o2):
 
 
 def test_cisd_lg_apt_perturbed_mo_gauge_invariance():
-    """The correlation LG APT is invariant to the perturbed-MO gauge (non-canonical vs
-    the canonical route), all-electron and frozen-core."""
+    """The correlation LG APT is invariant to the perturbed-MO gauge (non-canonical vs the
+    canonical dependent-pair route), all-electron and frozen-core. """
     for fc in ('false', 'true'):
-        cd = _cideriv(freeze_core=fc)
-        nc = np.asarray(cd.dipole_derivatives())
-        ca = np.asarray(_CIderivCanonicalMO(cd.ci).dipole_derivatives())
+        nc = np.asarray(_cideriv_water(fc).dipole_derivatives())
+        cd = _cideriv_water(fc)
+        cd._gauge_override = 'canonical'
+        ca = np.asarray(cd.dipole_derivatives())
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

@@ -22,9 +22,13 @@ code (magnetic/vecpot/nuclear, via `_cpci_ints`).
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
+from .cphf import perturbation_label
+from .utils import title, iteration, converged
 
 
 class CIderiv(CorrelatedDerivs):
@@ -55,7 +59,8 @@ class CIderiv(CorrelatedDerivs):
         pert, in the same convention as _unrelaxed_densities. Solves the coupled-perturbed-CI
         response directly from the base's own full-occupied-space (frozen-core aware)
         perturbed integrals. """
-        dc1, dc2, dc0v, _dt1, _dt2 = self._solve_cpci_ints(df, deri, imaginary=False)
+        label = perturbation_label(pert, self.ci.ref.molecule())
+        dc1, dc2, dc0v, _dt1, _dt2 = self._solve_cpci_ints(df, deri, imaginary=False, label=label)
         dD_corr = self._perturbed_cisd_corr_opdm(dc1, dc2)
         dG_raw = self._perturbed_cisd_tpdm(dc1, dc2, dc0v)
         dGam = self._cisd_symmetrize(dG_raw)
@@ -102,7 +107,7 @@ class CIderiv(CorrelatedDerivs):
         return result
 
     def _solve_cpci_ints(self, dF, dERI, imaginary=False, maxiter=100, diis_start=2, diis_max=8,
-                          e_convergence=1e-11, d_convergence=1e-11):
+                          e_convergence=1e-11, d_convergence=1e-11, label=None):
         """Core coupled-perturbed-CI iterative solve given already-built perturbed integrals
         (dF, dERI) - the CISD analog of CCderiv._perturbed_amplitudes, factored out so both
         CIderiv's own _cpci_ints-driven entry point (_solve_cpci, below) and the base's
@@ -163,7 +168,10 @@ class CIderiv(CorrelatedDerivs):
 
         diis = helper_diis(dt1, dt2, diis_max, getattr(ci, 'precision', 1e-12))
 
-        for iteration in range(1, maxiter + 1):
+        name = "CISD perturbed amplitudes" + (" (%s)" % label if label else "")
+        print(title(name))
+        t0 = time.time()
+        for niter in range(1, maxiter + 1):
             dE_proj_old = dE_proj
             dt1_old, dt2_old = dt1.copy(), dt2.copy()
 
@@ -227,7 +235,7 @@ class CIderiv(CorrelatedDerivs):
             dt2 = dt2 + dRt2 / Dijab
 
             diis.add_error_vector(dt1, dt2)
-            if iteration >= diis_start:
+            if niter >= diis_start:
                 dt1, dt2 = diis.extrapolate(dt1, dt2)
 
             dE_proj = (2.0 * c('ia,ia->', t1, dF[o, v])
@@ -238,8 +246,10 @@ class CIderiv(CorrelatedDerivs):
             delta_dE = abs(dE_proj - dE_proj_old)
             rms_dt1 = np.sqrt(np.sum((dt1 - dt1_old) ** 2))
             rms_dt2 = np.sqrt(np.sum((dt2 - dt2_old) ** 2))
-            if iteration > 1 and (delta_dE < e_convergence and rms_dt1 < d_convergence
-                                   and rms_dt2 < d_convergence):
+            print(iteration(niter, de=delta_dE, rms=np.sqrt(abs(rms_dt1) ** 2 + abs(rms_dt2) ** 2)))
+            if niter > 1 and (delta_dE < e_convergence and rms_dt1 < d_convergence
+                              and rms_dt2 < d_convergence):
+                print(converged(name, time.time() - t0))
                 break
 
         dc0 = ci._cisd_dn0(dt1, dt2)
@@ -274,7 +284,8 @@ class CIderiv(CorrelatedDerivs):
         imaginary = pert.kind in ('magnetic', 'vecpot')
         dc1, dc2, dc0v, dt1, dt2 = self._solve_cpci_ints(
             dF, dERI, imaginary=imaginary, maxiter=maxiter, diis_start=diis_start,
-            diis_max=diis_max, e_convergence=e_convergence, d_convergence=d_convergence)
+            diis_max=diis_max, e_convergence=e_convergence, d_convergence=d_convergence,
+            label=perturbation_label(pert, self.ci.ref.molecule()))
         if getattr(self, '_cpci_raw_cache', None) is None:
             self._cpci_raw_cache = {}
         self._cpci_raw_cache[key] = (dt1, dt2)
