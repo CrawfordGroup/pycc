@@ -85,6 +85,27 @@ P   3   1.00
 P   1   1.00
       0.3581514             1.0000000
 ****
+C     0
+S   6   1.00
+   3047.5248800             0.0018347
+    457.3695180             0.0140373
+    103.9486850             0.0688426
+     29.2101553             0.2321844
+      9.2866630             0.4679413
+      3.1639270             0.3623120
+S   3   1.00
+      7.8682724            -0.1193324
+      1.8812885            -0.1608542
+      0.5442493             1.1434564
+S   1   1.00
+      0.1687145             1.0000000
+P   3   1.00
+      7.8682724             0.0689991
+      1.8812885             0.3164240
+      0.5442493             0.7443083
+P   1   1.00
+      0.1687145             1.0000000
+****
 """
 
 # Planar HOF (Cs, molecular plane xy), tilted off the axes so the in-plane APT block is full; the
@@ -197,6 +218,69 @@ CFOUR_APT_T_WATER_631G_TOTAL_FC = np.array(
       [0.0, -0.1972108654, 0.1331212723]]])
 
 
+# Ethylene, one CH2 twisted 0.2 deg about the C=C axis: a NEAR-symmetric geometry, run in C1.  The
+# tiny twist leaves the canonical CCSD(T) perturbed-MO oo/vv dependent-pair rotations with
+# tiny-but-nonzero (< 1e-8) (T)-Lagrangian numerators over near-degenerate gaps -- exactly the case
+# where the _dependent_pairs GATE matters.  This is the regression anchor for that gate: the old
+# NUMERATOR gate hard-zeroed those rotations and gave a wrong APT (off from CFOUR by ~6e-8 here),
+# while the GAP gate matches CFOUR to ~1e-10.  The existing symmetric molecules (water/HOF) cannot
+# catch a revert -- their cross-irrep numerators are exactly zero, so both gates agree there.  Frame
+# and atom order are CFOUR's (it reorients to principal axes); pycc runs at that frame under c1.
+ETHYLENE_TWIST = """
+C  -1.265000000000  0.000000000000  0.000000000000
+C   1.265000000000  0.000000000000  0.000000000000
+H  -2.331053217577  1.753346848929  0.003060170651
+H   2.331053217577 -1.753346848929  0.003060170652
+H  -2.331053217577 -1.753346848929 -0.003060170651
+H   2.331053217577  1.753346848929 -0.003060170652
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+# CFOUR CCSD(T) APT oracles (a.u.), twisted ethylene (C, C, H, H, H, H) / CFOUR GENBAS 6-31G, indexed
+# [A, beta, alpha].  Correlation = DIPDER(CCSD(T)) - DIPDER(SCF); total = DIPDER(CCSD(T)).
+CFOUR_APT_T_ETHYLENE_TWIST_631G = np.array(
+    [[[1.86092944e-02, 0.0, 0.0],
+      [0.0, 6.05099580e-03, -4.22979000e-05],
+      [0.0, -4.34355000e-05, 6.07212215e-02]],
+     [[1.86092944e-02, 0.0, 0.0],
+      [0.0, 6.05099580e-03, 4.22979000e-05],
+      [0.0, 4.34355000e-05, 6.07212215e-02]],
+     [[-9.30464720e-03, 3.37710620e-03, 2.40413000e-05],
+      [-5.24072820e-03, -3.02549790e-03, -6.60630000e-06],
+      [-9.14680000e-06, 7.35210000e-06, -3.03606108e-02]],
+     [[-9.30464720e-03, 3.37710620e-03, -2.40413000e-05],
+      [-5.24072820e-03, -3.02549790e-03, 6.60630000e-06],
+      [9.14680000e-06, -7.35210000e-06, -3.03606108e-02]],
+     [[-9.30464720e-03, -3.37710620e-03, -2.40413000e-05],
+      [5.24072820e-03, -3.02549790e-03, -6.60630000e-06],
+      [9.14680000e-06, 7.35210000e-06, -3.03606108e-02]],
+     [[-9.30464720e-03, -3.37710620e-03, 2.40413000e-05],
+      [5.24072820e-03, -3.02549790e-03, 6.60630000e-06],
+      [-9.14680000e-06, -7.35210000e-06, -3.03606108e-02]]])
+CFOUR_APT_T_ETHYLENE_TWIST_631G_TOTAL = np.array(
+    [[[1.99678123e-02, 0.0, 0.0],
+      [0.0, 1.59978253e-01, 6.52847200e-04],
+      [0.0, 6.44087900e-04, -2.93791771e-01]],
+     [[1.99678123e-02, 0.0, 0.0],
+      [0.0, 1.59978253e-01, -6.52847200e-04],
+      [0.0, -6.44087900e-04, -2.93791771e-01]],
+     [[-9.98390610e-03, 6.77998677e-02, 7.07126000e-05],
+      [8.18439889e-02, -7.99891263e-02, -2.30329200e-04],
+      [1.42844900e-04, -2.63771300e-04, 1.46895885e-01]],
+     [[-9.98390610e-03, 6.77998677e-02, -7.07126000e-05],
+      [8.18439889e-02, -7.99891263e-02, 2.30329200e-04],
+      [-1.42844900e-04, 2.63771300e-04, 1.46895885e-01]],
+     [[-9.98390610e-03, -6.77998677e-02, -7.07126000e-05],
+      [-8.18439889e-02, -7.99891263e-02, -2.30329200e-04],
+      [-1.42844900e-04, -2.63771300e-04, 1.46895885e-01]],
+     [[-9.98390610e-03, -6.77998677e-02, 7.07126000e-05],
+      [-8.18439889e-02, -7.99891263e-02, 2.30329200e-04],
+      [1.42844900e-04, 2.63771300e-04, 1.46895885e-01]]])
+
+
 def _cfour_wfn(geom, freeze_core):
     """RHF reference in CFOUR's exact GENBAS 6-31G (via basis_helper), for the CFOUR-oracle tests."""
     psi4.core.clean()
@@ -269,6 +353,32 @@ def test_ccsdt_apt_cfour_water_spatial():
     psi4.core.clean()
     _check(_ccsdt_apt(WATER, 'true', 'spatial'),
            CFOUR_APT_T_WATER_631G_FC, CFOUR_APT_T_WATER_631G_TOTAL_FC, [8.0, 1.0, 1.0], perp=0)
+    psi4.core.clean()
+
+
+def test_ccsdt_apt_dependent_pair_gap_gate_ethylene_twist():
+    """Regression test for the canonical perturbed-MO dependent-pair GAP gate
+    (:meth:`correlatedderivs.CorrelatedDerivs._dependent_pairs`).  Ethylene with one CH2 twisted
+    0.2 deg is *near*-symmetric, so the (T) oo/vv dependent-pair rotations carry tiny-but-nonzero
+    numerators over near-degenerate MO gaps -- the regime where the gate choice matters.  The
+    discarded numerator gate (skip a pair if ``|I'_pq - I'_qp| < 1e-8``) disagrees there with the
+    gap gate (skip if ``|eps_p - eps_q| < 1e-8``): the gap gate reproduces the CFOUR DIPDER oracle
+    to ~1e-10, while the numerator gate was off by ~6e-8 and would fail this test.  The symmetric
+    molecules above (water/HOF) cannot catch a revert -- their cross-irrep numerators are exactly
+    zero, so the two gates agree.  All-electron spatial CCSD(T)."""
+    r = _ccsdt_apt(ETHYLENE_TWIST, 'false', 'spatial')
+    corr = np.asarray(r.correlation)
+    total = np.asarray(r.total)
+    assert np.max(np.abs(corr - CFOUR_APT_T_ETHYLENE_TWIST_631G)) < 1e-9, corr
+    assert np.max(np.abs(total - CFOUR_APT_T_ETHYLENE_TWIST_631G_TOTAL)) < 1e-9, total
+    # facade decomposition is exact; nuclear block is Z_A delta
+    parts = np.asarray(r.nuclear) + np.asarray(r.reference) + np.asarray(r.correlation)
+    assert np.max(np.abs(total - parts)) < 1e-12
+    Z = np.array([6.0, 6.0, 1.0, 1.0, 1.0, 1.0])
+    assert np.max(np.abs(np.asarray(r.nuclear) - Z[:, None, None] * np.eye(3))) < 1e-12
+    # translational (acoustic) sum rule: sum over atoms vanishes for a neutral molecule
+    assert np.max(np.abs(np.sum(total, axis=0))) < 1e-8
+    assert np.max(np.abs(np.sum(corr, axis=0))) < 1e-8
     psi4.core.clean()
 
 

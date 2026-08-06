@@ -1025,19 +1025,31 @@ class CorrelatedDerivs:
 
             P_{mn} = \frac{I'_{mn} - I'_{nm}}{\epsilon_m - \epsilon_n}
 
-        Numerator-gated (``|Delta I'| < thresh`` -> 0), skipping the diagonal (``m=n``) and
-        near-degenerate pairs.  ``P`` is symmetric (numerator and denominator both antisymmetric).
+        Gated on the MO-energy **gap** (``|eps_m - eps_n| <= thresh`` -> 0), which skips the diagonal
+        (``m=n``) and any near-degenerate pair; the divide is taken for every other pair.  ``P`` is
+        symmetric (numerator and denominator both antisymmetric).
+
+        The gap gate (not a numerator gate) is required for consistency with the derivative
+        :meth:`_perturbed_dependent_pairs`, which gates the same way.  Gating instead on a small
+        *numerator* would hard-zero small-but-nonzero rotations whose derivative ``dP = dnum/gap`` is
+        nonzero, leaving ``P`` and ``dP`` inconsistent; that makes the (T) density non-smooth in
+        geometry/field and is a genuine gradient/Hessian error at low-symmetry (C1) references, where
+        such small-nonzero numerators occur (a numerator gate is only harmless at symmetric geometries,
+        where the affected pairs are symmetry-zero).  A near-degeneracy (small gap) is the one place the
+        divide is ill-conditioned; there the numerator vanishes by the same symmetry, so gating it to
+        zero is the correct regularization.
 
         Supplies the *redundant* active oo/vv canonical rotations of the canonical perturbed-MO gauge
         (:attr:`perturbed_mo_gauge`; used by :meth:`_orbital_response` / :meth:`_so_orbital_response`
-        and the Hessian ``_pair_augment``).  The same divide also fixes the *independent* (non-redundant)
+        and the Hessian :meth:`_augment_with_canonical_pair_rotations`).  The same divide also fixes the
+        *independent* (non-redundant)
         frozen-core core<->active-occupied rotation ``P_co``, but that off-diagonal block is built
-        separately as an ungated *direct* divide (its gap is large, so numerator-gating and the
-        degeneracy skip are unnecessary) -- see :meth:`_orbital_response`."""
+        separately as an ungated *direct* divide (its gap is always large, so the degeneracy skip is
+        unnecessary) -- see :meth:`_orbital_response`."""
         num = np.asarray(Iblock) - np.asarray(Iblock).T
         den = eps_block[:, None] - eps_block[None, :]
         P = np.zeros_like(num)
-        m = np.abs(num) > thresh
+        m = np.abs(den) > thresh
         P[m] = num[m] / den[m]
         return P
 
@@ -1106,12 +1118,16 @@ class CorrelatedDerivs:
 
         * the INDEPENDENT (non-redundant) core<->active-occupied rotation ``P^(x)_ci`` -- the energy is
           not invariant to core<->active mixing, so it is ALWAYS present when there is a frozen core
-          (doc lines 1739-1743); built here as an ungated *direct* divide (its gap is large, so the
-          numerator-gate and degeneracy skip are unnecessary), matching the density's ``Pco``;
+          (doc lines 1739-1743); built here as an ungated *direct* divide (its gap is always large, so
+          the degeneracy skip is unnecessary), matching the density's ``Pco``;
         * the REDUNDANT (dependent) active occ-occ / virt-virt rotations ``P^(x)_ij``/``P^(x)_ab`` --
           present only in the canonical gauge (CCSD(T)); for CCSD they vanish by invariance and the
-          non-canonical ``-1/2 S`` is used instead.  Built via the numerator-gated
-          :meth:`_dependent_pairs` (degeneracy-safe).
+          non-canonical ``-1/2 S`` is used instead.  Built via the gap-gated :meth:`_dependent_pairs`
+          -- the *same* routine that forms the unperturbed ``P``, here fed the perturbed (skeleton)
+          Lagrangian ``I'^(x)`` instead of ``I'``, so ``P`` and ``P^(x)`` share one gate on the MO-energy
+          gap (see :meth:`_dependent_pairs`; a numerator gate here would key ``P^(x)`` on the
+          *perturbed* numerator, inconsistent with both ``P`` and the ``dP`` of
+          :meth:`_perturbed_dependent_pairs`).
 
         ``P^(x)`` is folded into the three carriers of the doc's line 2 (occupied pair-sums ``k,l`` run
         over the full occupied space; ``A_pqrs = w_pqrs + w_psrq`` with ``w`` the unperturbed
