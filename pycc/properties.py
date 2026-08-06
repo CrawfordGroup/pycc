@@ -367,8 +367,9 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     O(N)-cheaper route, 3 field solves) or ``'2n+1-nuclear'``; both give the same tensor.
 
     ``orbital_gauge`` (velocity gauge only; **expert only**) selects the redundant momentum
-    orbital-rotation gauge, ``'non-canonical'`` (default, numerically stable) or ``'canonical'``.
-    The velocity APT is invariant to this choice, so it exists only for verification/debugging.
+    orbital-rotation gauge of the correlation VG APT (MP2 or CISD), ``'non-canonical'`` (default,
+    numerically stable) or ``'canonical'``.  The velocity APT is invariant to this choice, so it
+    exists only for verification/debugging.
     Both extra knobs are ignored for an ``HFwfn`` (no correlation)."""
     if gauge == 'length':
         reference, correlation = _dispatch(wfn, '_dipole_derivatives_electronic',
@@ -401,9 +402,9 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     matching electronic-gauge shift is a planned follow-up).
 
     ``orbital_gauge`` (**expert only**) selects the redundant magnetic orbital-rotation gauge of
-    the MP2 correlation AAT, ``'non-canonical'`` (default, numerically stable) or ``'canonical'``.
-    The AAT is invariant to this choice, so it exists only for verification/debugging; it is
-    ignored for an ``HFwfn`` (no correlation)."""
+    the correlation AAT (MP2 or CISD), ``'non-canonical'`` (default, numerically stable) or
+    ``'canonical'``.  The AAT is invariant to this choice, so it exists only for
+    verification/debugging; it is ignored for an ``HFwfn`` (no correlation)."""
     from .hfwfn import HFwfn
     from .mpwfn import MPwfn
     from .ciwfn import CIwfn

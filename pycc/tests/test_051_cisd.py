@@ -11,6 +11,8 @@ converged RHF (1e-12) the comparison is essentially code/version-independent, so
 1e-10 tolerance is comfortable (the CID tests, hardcoded CFOUR values, pass at 1e-11).
 """
 
+import pytest
+
 import pycc
 
 # Exact H2O geometry behind the references (bohr); identical to magpy's test_004_CID.
@@ -62,6 +64,26 @@ def test_cid_h2o_frozen_core(rhf_wfn):
                   e_convergence=1e-12, d_convergence=1e-12)
     ecid = pycc.CIwfn(wfn, model="CID").solve_ci(e_conv=1e-12, r_conv=1e-12)
     assert abs(ecid - CID_REF_FC) < 1e-11
+
+
+@pytest.mark.parametrize("freeze_core", ["false", "true"])
+def test_cisd_density_particle_number(rhf_wfn, freeze_core):
+    """The CISD 1-PDM traces to the electron count, all-electron and frozen-core.
+
+    The reference block ``2 delta_ij`` spans the FULL occupied space -- the correlation
+    blocks are active-only, but the frozen core still holds its two electrons each.  Under
+    a frozen core the correlation-only 1-PDM (what the derivative hooks consume) must stay
+    traceless: CISD conserves particle number, so the occupied depletion exactly balances
+    the virtual accumulation."""
+    import numpy as np
+    wfn = rhf_wfn(H2O, "cc-pVDZ", freeze_core=freeze_core,
+                  e_convergence=1e-12, d_convergence=1e-12)
+    ci = pycc.CIwfn(wfn)
+    ci.solve_ci(e_conv=1e-11, r_conv=1e-11)
+    D, D_corr, _ = ci._cisd_densities()
+    nelec = 2 * (ci.nfzc + ci.no)
+    assert abs(np.trace(np.asarray(D)) - nelec) < 1e-10
+    assert abs(np.trace(np.asarray(D_corr))) < 1e-10
 
 
 # --- Spin-orbital CISD/CID (UHF/ROHF) -------------------------------------------
