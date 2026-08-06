@@ -36,6 +36,12 @@ validated once by a full energy-2nd-derivative finite difference (max|analytic -
 gate-artifact-free because the energy is smooth).  This mirrors the open-shell CCSD(T) polarizability
 (test_084), which is likewise frozen against pycc's energy-FD rather than CFOUR.  UHF-CCSD (no (T)) is
 CFOUR-anchorable and is tested directly against CFOUR in test_090.
+
+The symmetric open-shell references above (H2O+ C2v; NH2 C2v in the gradient tests) leave the canonical
+perturbed-MO dependent-pair GAP gate (correlatedderivs._dependent_pairs) unexercised on the UHF/SO path
+-- their dependent-pair numerators are symmetry-zero, so the numerator and gap gates agree bit-for-bit.
+A low-symmetry open-shell case, twisted C2H4+, closes that gap (test_so_ccsdt_hessian_c2h4p_twist_
+dependent_pair_gate); its reference is FD-of-analytic-gradient-validated rather than CFOUR-anchored.
 """
 
 import psi4
@@ -291,6 +297,67 @@ def _h2op_ccsdt_hess(freeze_core):
     return pycc.hessian(pycc.CCderiv(cc))
 
 
+# Twisted ethylene cation C2H4+ (doublet, one CH2 twisted 0.2 deg about C=C) / STO-3G: a low-symmetry
+# OPEN-SHELL geometry that exercises the canonical perturbed-MO dependent-pair GAP gate in the UHF/
+# spin-orbital path.  Every other open-shell CC-derivative test uses a symmetric reference (H2O+ C2v,
+# NH2 C2v) where the dependent-pair numerators are symmetry-zero and the gate is a no-op; the
+# near-symmetric twist here makes them tiny-but-nonzero, so reverting to the old numerator gate shifts
+# this Hessian by ~1.3e-7 (the gap gate is the fix in correlatedderivs._dependent_pairs).  Not
+# CFOUR-anchored (CFOUR's open-shell (T) 2nd derivative is itself unreliable -- see module docstring);
+# the reference is pycc's own gap-gate analytic Hessian, validated against the div-h FD of the analytic
+# (T) gradient (5-point, max|analytic - FD| ~ 1e-9 across representative C and H columns).
+C2H4P_TWIST = """
+1 2
+C  -1.2650000000  0.0000000000  0.0000000000
+C   1.2650000000  0.0000000000  0.0000000000
+H  -2.3310532176  1.7533388374  0.0061203320
+H  -2.3310532176 -1.7533388374 -0.0061203320
+H   2.3310532176  1.7533495194  0.0000000000
+H   2.3310532176 -1.7533495194  0.0000000000
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+# pycc's own analytic open-shell UHF-CCSD(T) correlation Hessian for twisted C2H4+ / STO-3G (gap gate),
+# frozen here as the reference (FD-of-analytic-gradient validated, see above).
+C2H4P_CCSDT_HESS = np.array([
+    [-6.2706283077e-02, 6.8993613355e-12, 4.6438998858e-14, 2.8911693777e-02, 6.8965920523e-12, -2.2341402536e-14, 1.7211640706e-02, 1.0610098429e-03, -1.7941811081e-04, 1.7211640709e-02, -1.0610098497e-03, 1.7941811078e-04, -3.1434605504e-04, -1.0387887209e-03, 1.8312063337e-04, -3.1434605778e-04, 1.0387887140e-03, -1.8312063337e-04],
+    [6.9061008667e-12, -5.9482167842e-02, -5.7712738740e-05, -6.8785227755e-12, 2.8305422005e-02, -4.6159264763e-05, 7.5666424923e-04, 1.7641865426e-02, 2.6542093783e-05, -7.5666425276e-04, 1.7641865419e-02, 2.6542093770e-05, 1.9884635295e-03, -2.0534924986e-03, 2.5393894291e-05, -1.9884635232e-03, -2.0534925028e-03, 2.5393894294e-05],
+    [4.6428953058e-14, -5.7712733079e-05, -4.3143617967e-02, -4.6243882854e-14, 9.1754123240e-05, 1.5243509557e-02, 2.1596504143e-05, -1.9288615016e-06, 1.3866367680e-02, -2.1596504167e-05, -1.9288615464e-06, 1.3866367680e-02, 1.4822035395e-05, -1.5091833617e-05, 8.3686525295e-05, -1.4822035355e-05, -1.5091833645e-05, 8.3686525290e-05],
+    [2.8911693777e-02, -6.8986903187e-12, -4.6428217909e-14, -6.2706283077e-02, -6.9029845245e-12, 2.2379041714e-14, -3.1434605506e-04, 1.0381431819e-03, 1.8674556720e-04, -3.1434605782e-04, -1.0381431750e-03, -1.8674556717e-04, 1.7211640706e-02, -1.0603770927e-03, -1.8312063338e-04, 1.7211640709e-02, 1.0603770996e-03, 1.8312063338e-04],
+    [6.9032328222e-12, 2.8305422037e-02, 9.1754117903e-05, -6.8831365555e-12, -5.9482371702e-02, 6.7948930163e-07, -1.9885031511e-03, -2.0534305073e-03, -3.2853880026e-05, 1.9885031475e-03, -2.0534305141e-03, -3.2853880038e-05, -7.5673502275e-04, 1.7641905349e-02, -1.3362937251e-05, 7.5673502897e-04, 1.7641905345e-02, -1.3362937248e-05],
+    [-2.2406848294e-14, -4.6159262221e-05, 1.5243509557e-02, 2.2356163835e-14, 6.7949183203e-07, -4.3143414139e-02, 7.8809120308e-06, 7.6318575621e-06, 8.3624523826e-05, -7.8809120221e-06, 7.6318575850e-06, 8.3624523828e-05, 1.8955121421e-05, 1.5108027596e-05, 1.3866327767e-02, -1.8955121441e-05, 1.5108027609e-05, 1.3866327767e-02],
+    [1.7211640705e-02, 7.5666424298e-04, 2.1596505352e-05, -3.1434605543e-04, -1.9885031509e-03, 7.8809124859e-06, -1.4996879429e-02, -7.5736697975e-05, -2.5380649047e-06, -2.7181394088e-03, 1.1065603919e-03, -2.1387375121e-05, 3.4049764686e-04, 5.5897846818e-04, -1.4264077406e-05, 4.7722653928e-04, -3.5796325539e-04, 8.7121051130e-06],
+    [1.0610098435e-03, 1.7641865420e-02, -1.9288586918e-06, 1.0381431826e-03, -2.0534304977e-03, 7.6318588215e-06, -7.5736699599e-05, -1.5250021969e-02, 7.2244392775e-06, -1.1065603867e-03, -2.8055742410e-04, -8.8350028290e-06, -5.5892527305e-04, -1.1475687371e-03, -7.5061767819e-06, -3.5793066590e-04, 1.0897132056e-03, 3.4137538850e-06],
+    [-1.7941811099e-04, 2.6542102828e-05, 1.3866367680e-02, 1.8674556712e-04, -3.2853870866e-05, 8.3624523779e-05, -2.5380664118e-06, 7.2244352064e-06, -1.4618008450e-02, 2.1387377296e-05, -8.8350078102e-06, 1.8230577751e-03, -1.6215189854e-05, -6.8920025374e-06, 2.9771890305e-03, -9.9615771635e-06, 1.4814343243e-05, -4.1322305597e-03],
+    [1.7211640708e-02, -7.5666424540e-04, -2.1596505368e-05, -3.1434605820e-04, 1.9885031485e-03, -7.8809124781e-06, -2.7181394090e-03, -1.1065603893e-03, 2.1387375129e-05, -1.4996879430e-02, 7.5736697781e-05, 2.5380649071e-06, 4.7722654007e-04, 3.5796325744e-04, -8.7121051140e-06, 3.4049764858e-04, -5.5897846781e-04, 1.4264077406e-05],
+    [-1.0610098504e-03, 1.7641865418e-02, -1.9288587027e-06, -1.0381431758e-03, -2.0534304993e-03, 7.6318588266e-06, 1.1065603888e-03, -2.8055742680e-04, -8.8350028313e-06, 7.5736701022e-05, -1.5250021965e-02, 7.2244392878e-06, 3.5793066252e-04, 1.0897132043e-03, 3.4137538860e-06, 5.5892527020e-04, -1.1475687342e-03, -7.5061767834e-06],
+    [1.7941811096e-04, 2.6542102820e-05, 1.3866367680e-02, -1.8674556709e-04, -3.2853870873e-05, 8.3624523778e-05, -2.1387377275e-05, -8.8350078194e-06, 1.8230577751e-03, 2.5380664047e-06, 7.2244352229e-06, -1.4618008450e-02, 9.9615771426e-06, 1.4814343238e-05, -4.1322305597e-03, 1.6215189852e-05, -6.8920025253e-06, 2.9771890305e-03],
+    [-3.1434605540e-04, 1.9884635332e-03, 1.4822034241e-05, 1.7211640705e-02, -7.5673502544e-04, 1.8955121047e-05, 3.4049764736e-04, -5.5892527382e-04, -1.6215191520e-05, 4.7722653932e-04, 3.5793066106e-04, 9.9615750848e-06, -1.4996879428e-02, 7.5745098109e-05, -2.2736809222e-06, -2.7181394087e-03, -1.1064789919e-03, -2.5249863451e-05],
+    [-1.0387887216e-03, -2.0534925152e-03, -1.5091830879e-05, -1.0603770935e-03, 1.7641905348e-02, 1.5108028904e-05, 5.5897846817e-04, -1.1475687321e-03, -6.8919978570e-06, 3.5796325758e-04, 1.0897132119e-03, 1.4814347658e-05, 7.5745096478e-05, -1.5249963838e-02, -9.4303836507e-06, 1.1064789892e-03, -2.8059347819e-04, 1.4918495053e-06],
+    [1.8312063342e-04, 2.5393894825e-05, 8.3686525242e-05, -1.8312063343e-04, -1.3362936667e-05, 1.3866327767e-02, -1.4264077760e-05, -7.5061777057e-06, 2.9771890305e-03, -8.7121052863e-06, 3.4137542575e-06, -4.1322305596e-03, -2.2736805269e-06, -9.4303835961e-06, -1.4618066586e-02, 2.5249863588e-05, 1.4918489169e-06, 1.8230938228e-03],
+    [-3.1434605818e-04, -1.9884635308e-03, -1.4822034225e-05, 1.7211640708e-02, 7.5673502787e-04, -1.8955121055e-05, 4.7722653955e-04, -3.5793066368e-04, -9.9615750918e-06, 3.4049764856e-04, 5.5892527395e-04, 1.6215191518e-05, -2.7181394095e-03, 1.1064789899e-03, 2.5249863452e-05, -1.4996879430e-02, -7.5745098490e-05, 2.2736809221e-06],
+    [1.0387887147e-03, -2.0534925168e-03, -1.5091830890e-05, 1.0603771004e-03, 1.7641905346e-02, 1.5108028909e-05, -3.5796325552e-04, 1.0897132094e-03, 1.4814347654e-05, -5.5897846671e-04, -1.1475687278e-03, -6.8919978486e-06, -1.1064789927e-03, -2.8059347945e-04, 1.4918495065e-06, -7.5745099214e-05, -1.5249963835e-02, -9.4303836524e-06],
+    [-1.8312063342e-04, 2.5393894827e-05, 8.3686525241e-05, 1.8312063343e-04, -1.3362936665e-05, 1.3866327767e-02, 8.7121052734e-06, 3.4137542583e-06, -4.1322305596e-03, 1.4264077774e-05, -7.5061777089e-06, 2.9771890305e-03, -2.5249863577e-05, 1.4918489165e-06, 1.8230938228e-03, 2.2736805201e-06, -9.4303835977e-06, -1.4618066586e-02]])
+
+
+def _c2h4p_ccsdt_hess():
+    """Converged open-shell UHF-CCSD(T) Hessian PropertyComponents for twisted C2H4+ (doublet cation,
+    STO-3G, spin-orbital route).  Unpinned UHF (the near-planar 2B state is the ground state and is
+    guess-reproducible); converged to 1e-11 to reproduce the frozen pycc reference within tolerance."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(C2H4P_TWIST)
+    psi4.set_options({'scf_type': 'pk', 'reference': 'uhf', 'basis': 'STO-3G', 'freeze_core': 'false',
+                      'e_convergence': 1e-11, 'd_convergence': 1e-11, 'r_convergence': 1e-11})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
+    cc.solve_cc(1e-11, 1e-11, 100)
+    return pycc.hessian(pycc.CCderiv(cc))
+
+
 def _check(r, corr_ref):
     """Shared assertions for a CCSD(T) Hessian run vs the CFOUR oracle: the full 9x9 correlation
     matrix, the facade decomposition (total == nuclear + reference + correlation), and the FD-free
@@ -298,12 +365,13 @@ def _check(r, corr_ref):
     uniform translation, so summing over the second atom vanishes)."""
     corr = np.asarray(r.correlation)
     total = np.asarray(r.total)
-    assert corr.shape == (9, 9)
+    natom = corr.shape[0] // 3
+    assert corr.shape == (3 * natom, 3 * natom)
     assert np.max(np.abs(corr - corr_ref)) < 1e-9, np.max(np.abs(corr - corr_ref))
     parts = np.asarray(r.nuclear) + np.asarray(r.reference) + np.asarray(r.correlation)
     assert np.max(np.abs(total - parts)) < 1e-12
     assert np.max(np.abs(corr - corr.T)) < 1e-8
-    assert np.max(np.abs(corr.reshape(3, 3, 3, 3).sum(axis=2))) < 1e-8
+    assert np.max(np.abs(corr.reshape(natom, 3, natom, 3).sum(axis=2))) < 1e-8
 
 
 def test_ccsdt_hessian_cfour_water_spatial():
@@ -354,6 +422,20 @@ def test_so_ccsdt_hessian_h2op():
     _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE)
     psi4.core.clean()
     _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC)
+    psi4.core.clean()
+
+
+@pytest.mark.slow
+def test_so_ccsdt_hessian_c2h4p_twist_dependent_pair_gate():
+    """Open-shell UHF-CCSD(T) Hessian for twisted C2H4+ (doublet) / STO-3G -- the regression anchor for
+    the canonical perturbed-MO dependent-pair GAP gate (:meth:`correlatedderivs.CorrelatedDerivs.
+    _dependent_pairs`) on the UHF/spin-orbital path.  The symmetric open-shell cases (H2O+ here, NH2 in
+    the gradient tests) CANNOT catch a revert -- their dependent-pair numerators are symmetry-zero, so
+    the numerator and gap gates agree bit-for-bit.  The near-symmetric twist makes the numerators
+    tiny-but-nonzero, so the old numerator gate shifts this Hessian by ~1.3e-7 (fails the 1e-9 check).
+    vs pycc's own FD-of-analytic-gradient-validated gap-gate reference; also checks the facade
+    decomposition, symmetry, and the acoustic sum rule.  Marked slow (~5 min for the SO (T) Hessian)."""
+    _check(_c2h4p_ccsdt_hess(), C2H4P_CCSDT_HESS)
     psi4.core.clean()
 
 
