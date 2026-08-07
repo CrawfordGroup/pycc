@@ -13,12 +13,15 @@ from .utils import diag
 
 
 class HFwfn(Wavefunction):
-    """An RHF wavefunction on the shared :class:`Wavefunction` base, and the home
-    for MO-basis HF analytic derivative properties (gradient now; Hessian, APTs,
-    AATs, and a CPHF solver to follow).
+    """An RHF wavefunction on the shared :class:`Wavefunction` base, and the home for
+    the MO-basis HF analytic derivative properties: gradient, (relaxed) dipole,
+    polarizability, dipole derivatives (APTs), Hessian, and atomic axial tensors (AATs).
 
-    The SCF energy is the base's reference energy (``self.eref``); this class adds
-    the response/derivative engine, including a :class:`Derivatives` provider.
+    The SCF energy is the base's reference energy (``self.eref``).  The
+    response/derivative *engine* these build on -- the :class:`~pycc.cphf.CPHF`
+    orbital-response solver and the :class:`~pycc.derivatives.Derivatives` integral
+    provider -- lives on the :class:`Wavefunction` base, not on this class; it is reached
+    through ``self.cphf`` / ``self.derivatives``.
 
     Attributes
     ----------
@@ -26,8 +29,8 @@ class HFwfn(Wavefunction):
         MO-basis derivative-integral provider, inherited from the :class:`Wavefunction`
         base (lazy ``self.derivatives``)
     cphf : CPHF
-        coupled-perturbed HF orbital-response solver (promotable to the base later,
-        once a correlated-gradient consumer fixes the solver/assembly seam)
+        coupled-perturbed HF orbital-response solver, inherited from the
+        :class:`Wavefunction` base (lazy ``self.cphf``)
     grad : numpy.ndarray
         the most recently computed nuclear gradient, shape (natom, 3)
     """
