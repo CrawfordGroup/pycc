@@ -21,6 +21,10 @@ class CIwfn(Wavefunction):
     """A configuration-interaction (CISD) wavefunction on the shared
     :class:`Wavefunction` base.
 
+    The analytic derivative properties are not on this class -- they live on the
+    :class:`~pycc.cideriv.CIderiv` driver (a :class:`CorrelatedDerivs`); build it with
+    ``pycc.CIderiv(wfn)`` and pass it to the ``pycc`` property facade.
+
     Attributes
     ----------
     model : str

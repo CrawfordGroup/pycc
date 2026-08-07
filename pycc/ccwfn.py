@@ -31,7 +31,15 @@ from .exceptions import InvalidKeywordError
 
 class CCwfn(Wavefunction):
     """
-    An RHF-CC wave function and energy object.
+    A coupled-cluster wave function and energy object on the shared
+    :class:`Wavefunction` base.  The closed-shell RHF path is spatial-orbital; open-shell
+    UHF/ROHF references use the spin-orbital path (selected by the ``orbital_basis``
+    kwarg).  Supports CCD/CC2/CCSD/CCSD(T)/CC3.
+
+    The analytic derivative properties are not on this class -- they live on the
+    :class:`~pycc.ccderiv.CCderiv` driver (a :class:`CorrelatedDerivs`); build it with
+    ``pycc.CCderiv(wfn)`` and pass it to the ``pycc`` property facade, e.g.
+    ``pycc.gradient(pycc.CCderiv(wfn))``.
 
     Attributes
     ----------

@@ -166,11 +166,10 @@ def _correlated(obj):
     """Resolve ``obj`` to ``(reference_hf, target)``: the SCF-reference ``HFwfn`` carrying the
     reference derivative, and the driver carrying the correlation-derivative methods.
 
-    ``obj`` must be a derivative driver (``CCderiv``/``MPderiv``): the property is computed on it and
-    the solve cost lives in its explicit constructor.  A bare **registered** correlated wavefunction
-    (``CCwfn``/``MPwfn``) is rejected -- construct the driver yourself.  A correlated wavefunction
-    with no registered driver (CISD, whose ``CIderiv`` is still a stub) is used as its own target
-    (transitional; removed once CISD has a real driver)."""
+    ``obj`` must be a derivative driver (``CCderiv``/``MPderiv``/``CIderiv``): the property is computed
+    on it and the solve cost lives in its explicit constructor.  A bare **registered** correlated
+    wavefunction (``CCwfn``/``MPwfn``/``CIwfn``) is rejected -- construct the driver yourself.  Any
+    other object is used as its own target."""
     from .correlatedderivs import CorrelatedDerivs
     if isinstance(obj, CorrelatedDerivs):
         return obj._reference_hf(), obj
