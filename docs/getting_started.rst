@@ -135,16 +135,30 @@ Frequency-dependent response (CCSD)
 The static polarizability above has dynamic (frequency-dependent) counterparts from CCSD linear
 response, evaluated on a CCSD derivative driver::
 
-    dcc = pycc.CCderiv(cc)                       # CCSD derivative driver (cc solved above)
+    dcc = pycc.CCderiv(cc)                          # CCSD derivative driver (cc solved above)
 
-    pycc.polarizability(dcc, omega=0.07)         # dynamic polarizability alpha(omega)  (3, 3)
-    pycc.optical_rotation(dcc, omega=0.07)       # optical-rotation tensor G'(omega)    (3, 3)
+    pycc.polarizability(dcc, omega=0.07)            # dynamic polarizability alpha(omega)  (3, 3)
+    pycc.optical_rotation(dcc, omega=0.07)          # optical-rotation tensor G'(omega)    (3, 3)
 
-``omega`` is the field frequency in hartree (0 = static). The dynamic polarizability defaults to
-the unrelaxed linear-response value (it omits the orbital relaxation, which would introduce
-spurious poles), so it is correlation-only with a zero reference block. Optical rotation is
-CCSD-only and requires a nonzero ``omega`` (there is no static optical rotation); its report also
-prints the specific rotation ``[alpha]``.
+    pycc.optical_rotation(dcc, omega=589, units='nm')   # same, with omega given as a wavelength
+
+``omega`` is the field frequency in hartree (``0 = static``); pass ``units='nm'`` to give it as a
+wavelength in nm instead (a positive wavelength -- the static value has none). The dynamic
+polarizability defaults to the unrelaxed linear-response value (it omits the orbital relaxation,
+which would introduce spurious poles), so it is correlation-only with a zero reference block.
+Optical rotation is CCSD-only and requires a nonzero ``omega`` (there is no static optical
+rotation); its report also prints the specific rotation ``[alpha]``.
+
+These facade calls are the high-level route. The lower-level :class:`~pycc.ccresponse.ccresponse`
+object computes the same linear-response tensors and reaches further -- both spin paths (spatial
+and spin-orbital) and CC3, in addition to CCSD -- at the cost of assembling the intermediates by
+hand and returning raw arrays. It is built from the ``density`` created above and takes the same
+``units`` toggle::
+
+    resp = pycc.ccresponse(density)
+    resp.polarizability(0.07)              # length-gauge alpha(omega)   (3, 3) ndarray
+    resp.optrot(0.07)                      # length-gauge G'(omega); note the name is .optrot
+    resp.optrot(589, units='nm')           # omega as a wavelength, as on the facade
 
 GPU and mixed precision
 ~~~~~~~~~~~~~~~~~~~~~~~~~

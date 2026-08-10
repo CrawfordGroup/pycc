@@ -260,7 +260,26 @@ def gradient(wfn) -> PropertyComponents:
     return pc.report("%s gradient" % _method_name(wfn))
 
 
-def polarizability(wfn, omega: float = 0.0, relaxed: bool = None) -> PropertyComponents:
+def _omega_to_hartree(omega, units):
+    """Interpret a response frequency given in ``units`` and return it in hartree (Eh).
+
+    ``units='Eh'`` (aliases ``'hartree'`` / ``'au'``) leaves ``omega`` unchanged; ``units='nm'``
+    treats ``omega`` as a wavelength in nm and converts it (``omega_Eh = NM_PER_EH / lambda_nm``),
+    which requires a positive wavelength (there is no static ``omega = 0`` wavelength)."""
+    u = str(units).lower()
+    if u in ('eh', 'hartree', 'au', 'a.u.'):
+        return float(omega)
+    if u == 'nm':
+        if omega <= 0.0:
+            raise ValueError(
+                "a wavelength in nm must be positive; there is no static (omega=0) wavelength.  "
+                "For the static value use the default units='Eh' with omega=0.")
+        return NM_PER_EH / float(omega)
+    raise ValueError("unknown frequency units %r; use 'Eh' (hartree/au) or 'nm'." % (units,))
+
+
+def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
+                   units: str = 'Eh') -> PropertyComponents:
     """Electric-dipole polarizability as a :class:`PropertyComponents`, shape ``(3, 3)`` each.  A
     pure electronic response property: the nuclear block is zero.  The report also prints the field
     frequency (in Eh and nm) and the isotropic invariant ``(1/3) Tr(alpha)`` in a.u. and Angstrom^3.
@@ -277,9 +296,12 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None) -> PropertyCom
       MO response, there is no Hartree-Fock contribution: the value is correlation-only, so the SCF
       block is zero.
 
-    ``omega`` is the external-field frequency in Eh (0 = static).  ``relaxed`` overrides the route:
+    ``omega`` is the external-field frequency, in hartree by default (``0 = static``).  Set
+    ``units='nm'`` to give ``omega`` as a wavelength in nm instead (converted internally; a positive
+    wavelength only, since the static value has no wavelength).  ``relaxed`` overrides the route:
     the default (``None``) picks relaxed at ``omega = 0`` and unrelaxed otherwise; ``relaxed=False``
     takes the unrelaxed route at ``omega = 0`` too."""
+    omega = _omega_to_hartree(omega, units)
     if relaxed is None:
         relaxed = (omega == 0.0)
     if relaxed and omega != 0.0:
@@ -313,7 +335,7 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None) -> PropertyCom
         summary=[("isotropic (1/3 Tr)", "%.6f a.u.   %.6f Angstrom^3" % (iso_au, iso_au * ANG3_PER_AU))])
 
 
-def optical_rotation(wfn, omega) -> PropertyComponents:
+def optical_rotation(wfn, omega, units: str = 'Eh') -> PropertyComponents:
     """Optical-rotation (optical-activity) tensor ``G'(omega)`` as a :class:`PropertyComponents`,
     shape ``(3, 3)`` -- the unrelaxed CC linear response of the electric dipole to the magnetic
     dipole (:meth:`~pycc.ccderiv.CCderiv.optical_rotation`).
@@ -322,7 +344,11 @@ def optical_rotation(wfn, omega) -> PropertyComponents:
     no static optical rotation.  Like the dynamic polarizability it omits the orbital (MO) response,
     so it carries no Hartree-Fock contribution: the SCF block is zero and correlation = total.  The
     report prints the field frequency (Eh and nm), ``Tr(G')`` in a.u., and the specific rotation
-    ``[alpha]`` in deg/(dm (g/mL))."""
+    ``[alpha]`` in deg/(dm (g/mL)).
+
+    ``omega`` is in hartree by default; set ``units='nm'`` to give it as a wavelength in nm instead
+    (converted internally)."""
+    omega = _omega_to_hartree(omega, units)
     if omega == 0.0:
         raise ValueError("optical rotation requires a nonzero field frequency; there is no static "
                          "optical rotation.")
