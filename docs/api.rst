@@ -102,7 +102,7 @@ MP2 derivative driver (MPderiv)
 .. automodule:: pycc.mpderiv
    :members:
 
-CISD derivative driver (scaffold / stub)
+CISD derivative driver (CIderiv)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: pycc.cideriv
    :members:
@@ -115,6 +115,19 @@ MO derivative integrals (Derivatives)
 Coupled-perturbed Hartree-Fock (cphf)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: pycc.cphf
+   :members:
+
+Vibrational analysis and spectra
+--------------------------------
+
+Harmonic analysis, IR, VCD (vibanalysis)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. automodule:: pycc.vibanalysis
+   :members:
+
+Property checkpoint (checkpoint)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. automodule:: pycc.checkpoint
    :members:
 
 Real-time CC
