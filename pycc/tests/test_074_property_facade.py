@@ -115,11 +115,11 @@ def _facade_and_pieces(hf, mp):
     correlation method) that reconstruct the physical total, for the composition check."""
     d = pycc.MPderiv(mp)
     return [
-        ("dipole",         pycc.dipole(d),                hf.dipole(),                     mp.relaxed_dipole()),
-        ("gradient",       pycc.gradient(d),              hf.gradient(),                   mp.gradient()),
-        ("polarizability", pycc.polarizability(d),        hf.polarizability(),             mp.polarizability()),
-        ("hessian",        pycc.hessian(d),               hf.hessian(),                    mp.hessian()),
-        ("apt-length",     pycc.apt(d, 'length'),         hf.dipole_derivatives(),         mp.dipole_derivatives()),
+        ("dipole",         pycc.dipole(d),                hf.dipole(),                     d.relaxed_dipole()),
+        ("gradient",       pycc.gradient(d),              hf.gradient(),                   d.gradient()),
+        ("polarizability", pycc.polarizability(d),        hf.polarizability(),             d.polarizability()),
+        ("hessian",        pycc.hessian(d),               hf.hessian(),                    d.hessian()),
+        ("apt-length",     pycc.apt(d, 'length'),         hf.dipole_derivatives(),         d.dipole_derivatives()),
         ("apt-velocity",   pycc.apt(d, 'velocity'),       hf.velocity_dipole_derivatives(), mp.velocity_dipole_derivatives()),
     ]
 

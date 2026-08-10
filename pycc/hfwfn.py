@@ -142,7 +142,7 @@ class HFwfn(Wavefunction):
         same ``Tr(D mu)`` convention as :meth:`MPwfn.relaxed_dipole`, with the SCF density's occupied
         block). The prefactor is the orbital occupancy: ``k = 2`` on the spatial closed-shell path,
         ``k = 1`` for spin orbitals. Kept separate from the correlation dipole so the total MP2
-        dipole is ``HFwfn.dipole() + MPwfn.relaxed_dipole()`` (mirroring the gradient split).
+        dipole is ``HFwfn.dipole() + MPderiv.relaxed_dipole()`` (mirroring the gradient split).
         Basis-aware. The :func:`pycc.dipole` facade exposes the nuclear/reference/correlation
         pieces as :class:`pycc.PropertyComponents`."""
         mol = self.ref.molecule()

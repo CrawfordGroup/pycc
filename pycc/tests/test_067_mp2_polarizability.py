@@ -61,7 +61,7 @@ def _pycc_alpha(basis, orbital_basis='spatial', freeze_core='false', geom=WATER,
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    return np.asarray(mp.polarizability())
+    return np.asarray(pycc.MPderiv(mp).polarizability())
 
 
 def _dipfd_alpha_diag(basis, axis, orbital_basis='spatial', freeze_core='false', h=0.002):
@@ -85,7 +85,7 @@ def _dipfd_alpha_diag(basis, axis, orbital_basis='spatial', freeze_core='false',
         _, wfn = psi4.energy('scf', return_wfn=True)
         mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
         mp.compute_energy()
-        return mp.relaxed_dipole()[axis]
+        return pycc.MPderiv(mp).relaxed_dipole()[axis]
     d1 = (-mu(-3 * h) + 9 * mu(-2 * h) - 45 * mu(-h)
           + 45 * mu(h) - 9 * mu(2 * h) + mu(3 * h)) / (60 * h)
     return abs(d1)

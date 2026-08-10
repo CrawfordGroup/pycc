@@ -23,9 +23,12 @@ class MPwfn(Wavefunction):
     derived from the base's seeded MO integrals, and computes the MP2 correlation
     energy.
 
-    The analytic derivative-property code (gradient, polarizability, APT, Hessian, AAT,
-    VG-APT) lives on :class:`~pycc.mpderiv.MPderiv`, reached through the cached
-    :attr:`deriv` driver; the property methods here are thin delegators.
+    The analytic derivative-property code lives on :class:`~pycc.mpderiv.MPderiv`, a
+    :class:`~pycc.correlatedderivs.CorrelatedDerivs` driver.  Build it with
+    ``pycc.MPderiv(wfn)`` and pass it to the ``pycc`` property facade, e.g.
+    ``pycc.gradient(pycc.MPderiv(wfn))`` -- the same pattern as CCwfn/CIwfn.  (The cached
+    :attr:`deriv` accessor and the ``atomic_axial_tensors`` / ``velocity_dipole_derivatives``
+    wfn methods below remain only for the not-yet-migrated AAT / velocity-gauge-APT path.)
 
     Attributes
     ----------
@@ -168,26 +171,6 @@ class MPwfn(Wavefunction):
             from .mpderiv import MPderiv
             self._deriv = MPderiv(self)
         return self._deriv
-
-    def relaxed_dipole(self) -> np.ndarray:
-        """MP2 correlation dipole -- delegates to :meth:`MPderiv.relaxed_dipole`."""
-        return self.deriv.relaxed_dipole()
-
-    def gradient(self) -> np.ndarray:
-        """MP2 correlation nuclear gradient -- delegates to :meth:`MPderiv.gradient`."""
-        return self.deriv.gradient()
-
-    def polarizability(self) -> np.ndarray:
-        """MP2 correlation polarizability -- delegates to :meth:`MPderiv.polarizability`."""
-        return self.deriv.polarizability()
-
-    def hessian(self) -> np.ndarray:
-        """MP2 correlation Hessian -- delegates to :meth:`MPderiv.hessian`."""
-        return self.deriv.hessian()
-
-    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
-        """MP2 correlation length-gauge APT -- delegates to :meth:`MPderiv.dipole_derivatives`."""
-        return self.deriv.dipole_derivatives(route)
 
     def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         """MP2 correlation velocity-gauge APT -- delegates to
