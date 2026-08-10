@@ -617,7 +617,7 @@ class CPHF(object):
     def magnetic_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
         """Magnetic-field-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
         ``(U^H, dF^H, dERI^H)`` used by the MP2 atomic axial tensors
-        (:meth:`MPwfn.atomic_axial_tensors`). Cached per ``(axis, ncore, gauge)``.
+        (:meth:`~pycc.mpderiv.MPderiv.atomic_axial_tensors`). Cached per ``(axis, ncore, gauge)``.
 
         The magnetic perturbation ``H' = -m.H`` (``m = -1/2 L``, the real antisymmetric
         magnetic-dipole matrix, stripped of the ``i`` carried in ``H.m``) is imaginary, so the
@@ -647,7 +647,7 @@ class CPHF(object):
     def momentum_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
         """Linear-momentum-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
         ``(U^A, dF^A, dERI^A)`` used by the MP2 velocity-gauge atomic polar tensors
-        (:meth:`MPwfn.velocity_dipole_derivatives`). Cached per ``(axis, ncore, gauge)``.
+        (:meth:`~pycc.mpderiv.MPderiv.velocity_dipole_derivatives`). Cached per ``(axis, ncore, gauge)``.
 
         This is the magnetic engine (:meth:`magnetic_ints`) with the magnetic-dipole operator
         replaced by the linear-momentum operator ``p = -i nabla`` (stripped of the ``i`` carried

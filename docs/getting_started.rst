@@ -88,12 +88,10 @@ once and reuse it across properties::
     pycc.polarizability(d)             # static dipole polarizability (3, 3)
     pycc.apt(d, gauge='length')        # atomic polar tensors         (natom, 3, 3)
     pycc.apt(d, gauge='velocity')      # velocity-gauge APTs          (natom, 3, 3)
-    pycc.aat(mp)                       # atomic axial tensors (VCD)   (natom, 3, 3)
+    pycc.aat(d)                        # atomic axial tensors (VCD)   (natom, 3, 3)
 
 The reference-only (SCF) property takes the :class:`~pycc.hfwfn.HFwfn` directly --
-``pycc.hessian(hf)`` -- with a zero ``correlation`` block. One current wrinkle:
-:func:`pycc.aat` still takes the *wavefunction* (``pycc.aat(mp)``), not the driver, pending
-its migration to the driver interface.
+``pycc.hessian(hf)`` -- with a zero ``correlation`` block.
 
 Every property is available for both spin paths (spin-adapted closed-shell RHF and
 spin-orbital, selected by ``orbital_basis`` on the wavefunction), all-electron and frozen

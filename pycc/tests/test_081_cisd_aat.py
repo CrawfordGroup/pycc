@@ -61,7 +61,7 @@ AAT_REF_CCPVDZ = np.array([
 def test_cisd_aat_vs_reference(cisd_h2o2):
     """The facade total reproduces the standalone validated reference, every
     element (STO-3G)."""
-    P = np.asarray(pycc.aat(cisd_h2o2()).total).reshape(-1, 3)
+    P = np.asarray(pycc.aat(pycc.CIderiv(cisd_h2o2())).total).reshape(-1, 3)
     print(P)
     assert np.max(np.abs(P - AAT_REF)) < 1e-8, np.max(np.abs(P - AAT_REF))
 
@@ -69,7 +69,7 @@ def test_cisd_aat_vs_reference(cisd_h2o2):
 def test_cisd_aat_ccpvdz_vs_reference(cisd_h2o2):
     """Larger basis (cc-pVDZ): the facade total reproduces the standalone
     validated reference, every element."""
-    P = np.asarray(pycc.aat(cisd_h2o2(basis='cc-pVDZ')).total).reshape(-1, 3)
+    P = np.asarray(pycc.aat(pycc.CIderiv(cisd_h2o2(basis='cc-pVDZ'))).total).reshape(-1, 3)
     print(P)
     assert np.max(np.abs(P - AAT_REF_CCPVDZ)) < 1e-9, np.max(np.abs(P - AAT_REF_CCPVDZ))
 
@@ -138,8 +138,9 @@ def test_cisd_aat_all_electron_vs_apyib():
     """All-electron spatial CISD electronic AAT (SCF reference + correlation, via the pycc.aat
     facade) reproduces the apyib reference for (P)-H2O2/STO-3G, in both orbital gauges."""
     ci = _ciwfn()
+    cd = pycc.CIderiv(ci)
     for gauge in GAUGES:
-        P = np.asarray(pycc.aat(ci, orbital_gauge=gauge).electronic).reshape(-1, 3)
+        P = np.asarray(pycc.aat(cd, orbital_gauge=gauge).electronic).reshape(-1, 3)
         d = np.max(np.abs(P - AAT_APYIB_H2O2['false']))
         assert d < APYIB_TOL_H2O2, (gauge, d)
 
@@ -149,8 +150,9 @@ def test_cisd_aat_frozen_core_vs_apyib():
     reference (all-electron SCF reference + frozen-core correlation), in both orbital gauges."""
     ci = _ciwfn(freeze_core='true')
     assert ci.nfzc == 2, ci.nfzc
+    cd = pycc.CIderiv(ci)
     for gauge in GAUGES:
-        P = np.asarray(pycc.aat(ci, orbital_gauge=gauge).electronic).reshape(-1, 3)
+        P = np.asarray(pycc.aat(cd, orbital_gauge=gauge).electronic).reshape(-1, 3)
         d = np.max(np.abs(P - AAT_APYIB_H2O2['true']))
         assert d < APYIB_TOL_H2O2, (gauge, d)
 

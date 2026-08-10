@@ -80,7 +80,7 @@ def _ff_corr_dipole(geom, basis, F=0.0005, freeze_core='false', reference='rhf',
 
 def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='false', reference='rhf', occ=None):
     """PyCC relaxed-MP2 electronic correlation mu_z (spin-orbital or spin-adapted),
-    via the user-API :meth:`MPwfn.relaxed_dipole`."""
+    via the user-API :meth:`~pycc.correlatedderivs.CorrelatedDerivs.relaxed_dipole`."""
     psi4.core.clean()
     psi4.core.clean_options()
     psi4.geometry(geom)

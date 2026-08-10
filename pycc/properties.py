@@ -385,14 +385,16 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
 
 def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     """Atomic axial tensors (AATs, for VCD) as a :class:`PropertyComponents`
-    (``nuclear + reference + correlation``), shape ``(natom, 3, 3)`` each, for any supported
-    wavefunction type.
+    (``nuclear + reference + correlation``), shape ``(natom, 3, 3)`` each.  Like the other property
+    facades, ``wfn`` is a derivative driver (:class:`~pycc.mpderiv.MPderiv` /
+    :class:`~pycc.cideriv.CIderiv`) for a correlated method, or an :class:`~pycc.hfwfn.HFwfn` for the
+    SCF reference; a bare correlated wavefunction is rejected.
 
-    The correlation block is the genuine correlation contribution
-    (:meth:`MPwfn.atomic_axial_tensors`, which excludes the reference density), the reference
-    block is the independent SCF AAT (:meth:`HFwfn.atomic_axial_tensors`), and the nuclear block
-    is ``(Z_A/4) eps R``.  Each block is orbital-gauge invariant, so the decomposition is well
-    defined independent of the magnetic oo/vv gauge.
+    The correlation block is the genuine correlation contribution (the driver's
+    ``atomic_axial_tensors``, which excludes the reference density), the reference block is the
+    independent SCF AAT (:meth:`HFwfn.atomic_axial_tensors`), and the nuclear block is
+    ``(Z_A/4) eps R``.  Each block is orbital-gauge invariant, so the decomposition is well defined
+    independent of the magnetic oo/vv gauge.
 
     ``origin`` is the coordinate origin for the nuclear term; ``None`` (default) uses the current
     coordinate origin ``(0, 0, 0)`` in the molecule's input frame (honoring ``no_com`` /
@@ -404,25 +406,10 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     the correlation AAT (MP2 or CISD), ``'non-canonical'`` (default, numerically stable) or
     ``'canonical'``.  The AAT is invariant to this choice, so it exists only for
     verification/debugging; it is ignored for an ``HFwfn`` (no correlation)."""
-    from .hfwfn import HFwfn
-    from .mpwfn import MPwfn
-    from .ciwfn import CIwfn
-
-    mol = wfn.ref.molecule()
+    mol = _wfn_of(wfn).ref.molecule()
     nuclear = _nuclear_aat(mol, origin)
-    if isinstance(wfn, MPwfn):
-        reference = np.asarray(wfn._reference_hf().atomic_axial_tensors())
-        correlation = np.asarray(wfn.atomic_axial_tensors(gauge=orbital_gauge))
-    elif isinstance(wfn, HFwfn):
-        reference = np.asarray(wfn.atomic_axial_tensors())
-        correlation = np.zeros_like(reference)
-    elif isinstance(wfn, CIwfn):
-        from .cideriv import CIderiv
-        cd = CIderiv(wfn)
-        reference = np.asarray(cd._reference_hf().atomic_axial_tensors())
-        correlation = np.asarray(cd.atomic_axial_tensors(gauge=orbital_gauge))
-    else:
-        raise TypeError(f"pycc.aat: unsupported wavefunction type {type(wfn).__name__!r}")
+    reference, correlation = _dispatch(wfn, 'atomic_axial_tensors', 'atomic_axial_tensors',
+                                       {'gauge': orbital_gauge})
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)
     pc = PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
     _record(wfn, 'aat', pc)

@@ -139,7 +139,7 @@ class HFwfn(Wavefunction):
             \end{aligned}
 
         The electronic part is the occupied trace of the MO dipole integrals (``H.mu`` = ``-e r``;
-        same ``Tr(D mu)`` convention as :meth:`MPwfn.relaxed_dipole`, with the SCF density's occupied
+        same ``Tr(D mu)`` convention as :meth:`~pycc.correlatedderivs.CorrelatedDerivs.relaxed_dipole`, with the SCF density's occupied
         block). The prefactor is the orbital occupancy: ``k = 2`` on the spatial closed-shell path,
         ``k = 1`` for spin orbitals. Kept separate from the correlation dipole so the total MP2
         dipole is ``HFwfn.dipole() + MPderiv.relaxed_dipole()`` (mirroring the gradient split).
