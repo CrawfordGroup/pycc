@@ -89,13 +89,15 @@ def test_optical_rotation_ccresponse():
 
 def test_response_frequency_units_nm():
     """The field frequency may be given as a wavelength in nm (``units='nm'``): it must match the
-    equivalent hartree input for both optical rotation and the dynamic polarizability, and an
-    unusable frequency (a wavelength at the static point, or unknown units) is rejected."""
+    equivalent hartree input, on BOTH the facade (optical rotation and dynamic polarizability) and
+    the lower-level ``ccresponse`` object, and an unusable frequency (a wavelength at the static
+    point, or unknown units) is rejected on both."""
     from pycc.properties import NM_PER_EH
     wfn, cc = _h2o2_ccsd()
     d = pycc.CCderiv(cc)
     lam_nm = NM_PER_EH / OMEGA                            # the wavelength equivalent to OMEGA (Eh)
 
+    # --- facade (pycc.optical_rotation / pycc.polarizability) ---
     g_eh = np.asarray(pycc.optical_rotation(d, OMEGA).total)
     g_nm = np.asarray(pycc.optical_rotation(d, lam_nm, units='nm').total)
     assert np.max(np.abs(g_eh - g_nm)) < 1e-12, np.max(np.abs(g_eh - g_nm))
@@ -108,4 +110,14 @@ def test_response_frequency_units_nm():
         pycc.optical_rotation(d, 0.0, units='nm')        # the static point has no wavelength
     with pytest.raises(ValueError):
         pycc.polarizability(d, omega=OMEGA, units='THz')  # unknown frequency units
+
+    # --- lower-level ccresponse object honors the same units toggle ---
+    hbar = pycc.cchbar(cc)
+    clam = pycc.cclambda(cc, hbar); clam.solve_lambda(1e-12, 1e-12, 100)
+    dens = pycc.ccdensity(cc, clam)
+    rg_eh = np.asarray(pycc.ccresponse(dens).optrot(OMEGA))
+    rg_nm = np.asarray(pycc.ccresponse(dens).optrot(lam_nm, units='nm'))
+    assert np.max(np.abs(rg_eh - rg_nm)) < 1e-11, np.max(np.abs(rg_eh - rg_nm))
+    with pytest.raises(ValueError):
+        pycc.ccresponse(dens).optrot(0.0, units='nm')
     psi4.core.clean()

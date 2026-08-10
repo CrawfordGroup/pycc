@@ -152,11 +152,13 @@ rotation); its report also prints the specific rotation ``[alpha]``.
 These facade calls are the high-level route. The lower-level :class:`~pycc.ccresponse.ccresponse`
 object computes the same linear-response tensors and reaches further -- both spin paths (spatial
 and spin-orbital) and CC3, in addition to CCSD -- at the cost of assembling the intermediates by
-hand and returning raw arrays. It is built from the ``density`` created above::
+hand and returning raw arrays. It is built from the ``density`` created above and takes the same
+``units`` toggle::
 
     resp = pycc.ccresponse(density)
-    resp.polarizability(0.07)        # length-gauge alpha(omega)   (3, 3) ndarray
-    resp.optrot(0.07)                # length-gauge G'(omega); note the name is .optrot
+    resp.polarizability(0.07)              # length-gauge alpha(omega)   (3, 3) ndarray
+    resp.optrot(0.07)                      # length-gauge G'(omega); note the name is .optrot
+    resp.optrot(589, units='nm')           # omega as a wavelength, as on the facade
 
 GPU and mixed precision
 ~~~~~~~~~~~~~~~~~~~~~~~~~

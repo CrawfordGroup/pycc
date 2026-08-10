@@ -534,7 +534,7 @@ class ccresponse(object):
     # ==================================================================
 
     def polarizability(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-                       max_diis=7, start_diis=1):
+                       max_diis=7, start_diis=1, units='Eh'):
         r"""Dipole polarizability tensor (length gauge) at frequency omega via the
         symmetric response function (right-hand perturbed amplitudes only)::
 
@@ -552,7 +552,12 @@ class ccresponse(object):
         assembled from the right-hand perturbed amplitudes X(mu,-w) and X(mu,+w).
         Returns a 3x3 array. Basis-agnostic: all basis-specific work lives in
         solve_right and linresp_sym.
+
+        ``omega`` is in hartree by default; set ``units='nm'`` to give it as a
+        wavelength in nm instead.
         """
+        from .properties import _omega_to_hartree   # single source of truth for frequency units
+        omega = _omega_to_hartree(omega, units)
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
         Xp, Xm = [], []
         # solve_right returns (X, pseudo) where X is the list [X1, X2] (CCSD) or
@@ -598,7 +603,7 @@ class ccresponse(object):
         print(field("isotropic (1/3 Tr)", "%.6f a.u.   %.6f Angstrom^3" % (iso, iso * _ANG3_PER_AU)))
 
     def optrot(self, omega, e_conv=1e-12, r_conv=1e-12, maxiter=200,
-               max_diis=7, start_diis=1):
+               max_diis=7, start_diis=1, units='Eh'):
         r"""Optical-rotation tensor (length gauge) at frequency omega via the symmetric
         response function (right-hand perturbed amplitudes only)::
 
@@ -619,7 +624,12 @@ class ccresponse(object):
         assembled from the right-hand perturbed amplitudes X(mu,-w), X(m,+w),
         X(mu,+w), X(m*,-w). Returns a 3x3 array. Basis-agnostic: all basis-specific
         work lives in solve_right and linresp_sym.
+
+        ``omega`` is in hartree by default; set ``units='nm'`` to give it as a
+        wavelength in nm instead.
         """
+        from .properties import _omega_to_hartree   # single source of truth for frequency units
+        omega = _omega_to_hartree(omega, units)
         if omega == 0.0:
             raise ValueError("Optical rotation requires a nonzero field frequency.")
         args = (e_conv, r_conv, maxiter, max_diis, start_diis)
