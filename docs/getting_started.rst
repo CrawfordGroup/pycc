@@ -54,14 +54,23 @@ density matrices::
     lcc = cclambda.solve_lambda(e_conv=1e-8, r_conv=1e-7)
     density = pycc.ccdensity(cc, cclambda)
 
+Excited states (EOM-CCSD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Vertical excitation energies come from the equation-of-motion solver, which diagonalizes the
+similarity-transformed Hamiltonian in the singles-and-doubles space (it reuses the ground-state
+amplitudes and ``hbar`` from above)::
+
+    eom = pycc.cceom(cc, hbar)
+    E, R = eom.solve_eom(N=3)          # N lowest roots; E = excitation energies (hartree), R the vectors
+
 MP2 energy
 ~~~~~~~~~~
 ::
 
     emp2 = pycc.MPwfn(wfn).compute_energy()
 
-Derivative properties (IR / VCD)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Derivative properties
+~~~~~~~~~~~~~~~~~~~~~~~
 PyCC computes analytic MO-basis derivative properties for the Hartree-Fock reference
 (:class:`~pycc.hfwfn.HFwfn`) and the correlated methods MP2, CISD, and CCSD/CCSD(T) --
 the ingredients for IR and VCD spectra. The :mod:`pycc.properties` facade is the interface:
@@ -99,6 +108,43 @@ core. The length-gauge APT has two equivalent algorithms, ``route='2n+1-field'``
 the ``O(N)``-cheaper 3-field-solve route) and ``route='2n+1-nuclear'`` -- a mutual
 cross-check. Because the response solves are cached on the driver, computing several
 properties from one driver does not repeat that work.
+
+Vibrational spectra (IR / VCD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The :func:`~pycc.vibanalysis.ir` and :func:`~pycc.vibanalysis.vcd` drivers turn those tensors into
+an actual spectrum in one call: they compute the Hessian (plus the length-gauge APT, and -- for
+VCD -- the AAT) from the driver, run the harmonic analysis, and return the frequencies and
+intensities::
+
+    spec = pycc.vcd(d, project_trans=True, project_rot=True)   # d = pycc.MPderiv(mp), from above
+
+    spec['frequencies']          # harmonic frequencies         (cm^-1)
+    spec['ir_intensities']       # IR intensities               (km/mol)
+    spec['rotatory_strengths']   # VCD rotatory strengths        (10^-44 esu^2 cm^2)
+
+``project_trans`` / ``project_rot`` remove the rigid-body (translational/rotational) modes so only
+the vibrations remain. :func:`~pycc.vibanalysis.ir` is the same call without the AAT /
+rotatory-strength step.
+Either driver also accepts an :class:`~pycc.hfwfn.HFwfn` (an SCF spectrum); the VCD path currently
+supports HF, MP2, and CISD sources (CCSD AATs are not yet available). Pass ``checkpoint="mol.npz"``
+to archive the computed tensors, then re-run the analysis later straight from the file with
+``pycc.vcd("mol.npz")`` (nothing is recomputed).
+
+Frequency-dependent response (CCSD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The static polarizability above has dynamic (frequency-dependent) counterparts from CCSD linear
+response, evaluated on a CCSD derivative driver::
+
+    dcc = pycc.CCderiv(cc)                       # CCSD derivative driver (cc solved above)
+
+    pycc.polarizability(dcc, omega=0.07)         # dynamic polarizability alpha(omega)  (3, 3)
+    pycc.optical_rotation(dcc, omega=0.07)       # optical-rotation tensor G'(omega)    (3, 3)
+
+``omega`` is the field frequency in hartree (0 = static). The dynamic polarizability defaults to
+the unrelaxed linear-response value (it omits the orbital relaxation, which would introduce
+spurious poles), so it is correlation-only with a zero reference block. Optical rotation is
+CCSD-only and requires a nonzero ``omega`` (there is no static optical rotation); its report also
+prints the specific rotation ``[alpha]``.
 
 GPU and mixed precision
 ~~~~~~~~~~~~~~~~~~~~~~~~~
