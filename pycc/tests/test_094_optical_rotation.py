@@ -85,3 +85,27 @@ def test_optical_rotation_ccresponse():
     G = np.asarray(pycc.ccresponse(dens).optrot(OMEGA))
     assert np.max(np.abs(G - G_REF)) < 1e-11, G
     psi4.core.clean()
+
+
+def test_response_frequency_units_nm():
+    """The field frequency may be given as a wavelength in nm (``units='nm'``): it must match the
+    equivalent hartree input for both optical rotation and the dynamic polarizability, and an
+    unusable frequency (a wavelength at the static point, or unknown units) is rejected."""
+    from pycc.properties import NM_PER_EH
+    wfn, cc = _h2o2_ccsd()
+    d = pycc.CCderiv(cc)
+    lam_nm = NM_PER_EH / OMEGA                            # the wavelength equivalent to OMEGA (Eh)
+
+    g_eh = np.asarray(pycc.optical_rotation(d, OMEGA).total)
+    g_nm = np.asarray(pycc.optical_rotation(d, lam_nm, units='nm').total)
+    assert np.max(np.abs(g_eh - g_nm)) < 1e-12, np.max(np.abs(g_eh - g_nm))
+
+    a_eh = np.asarray(pycc.polarizability(d, omega=OMEGA).total)
+    a_nm = np.asarray(pycc.polarizability(d, omega=lam_nm, units='nm').total)
+    assert np.max(np.abs(a_eh - a_nm)) < 1e-12, np.max(np.abs(a_eh - a_nm))
+
+    with pytest.raises(ValueError):
+        pycc.optical_rotation(d, 0.0, units='nm')        # the static point has no wavelength
+    with pytest.raises(ValueError):
+        pycc.polarizability(d, omega=OMEGA, units='THz')  # unknown frequency units
+    psi4.core.clean()
