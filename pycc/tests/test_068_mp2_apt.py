@@ -76,7 +76,7 @@ def _corr_dipfd(basis, orbital_basis, alpha, atom, cart, freeze_core='false', h=
     nuclear coordinate (atom, cart)."""
     def mu(delta):
         c = BASE.copy(); c[atom, cart] += delta
-        return _mpwfn(c, basis, orbital_basis, freeze_core).relaxed_dipole()[alpha]
+        return pycc.MPderiv(_mpwfn(c, basis, orbital_basis, freeze_core)).relaxed_dipole()[alpha]
     return (-mu(-3*h) + 9*mu(-2*h) - 45*mu(-h)
             + 45*mu(h) - 9*mu(2*h) + mu(3*h)) / (60*h)
 
@@ -124,31 +124,31 @@ def test_mp2_nuclear_t2_response_631g():
 def test_mp2_corr_apt_dipfd_631g():
     """Spatial correlation APT vs its frozen reference (validated once against a 7-point dipole-
     over-nuclear FD to ~1e-12), representative components, H2O/6-31G."""
-    P = _mpwfn(BASE, '6-31G', 'spatial').dipole_derivatives()
+    P = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial')).dipole_derivatives()
     for (alpha, atom, cart), ref in APT_631G.items():
         assert abs(P[atom, cart, alpha] - ref) < 1e-9
 
 
 def test_so_mp2_corr_apt_vs_spatial_631g():
     """Keystone (6-31G): closed-shell spin-orbital == spin-adapted correlation APT."""
-    P_so = _mpwfn(BASE, '6-31G', 'spinorbital').dipole_derivatives()
-    P_sa = _mpwfn(BASE, '6-31G', 'spatial').dipole_derivatives()
+    P_so = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spinorbital')).dipole_derivatives()
+    P_sa = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial')).dipole_derivatives()
     assert np.max(np.abs(P_so - P_sa)) < 1e-11
 
 
 def test_so_mp2_corr_apt_vs_spatial_ccpvdz():
     """Keystone (cc-pVDZ): spin-orbital == spin-adapted correlation APT."""
-    P_so = _mpwfn(BASE, 'cc-pVDZ', 'spinorbital').dipole_derivatives()
-    P_sa = _mpwfn(BASE, 'cc-pVDZ', 'spatial').dipole_derivatives()
+    P_so = pycc.MPderiv(_mpwfn(BASE, 'cc-pVDZ', 'spinorbital')).dipole_derivatives()
+    P_sa = pycc.MPderiv(_mpwfn(BASE, 'cc-pVDZ', 'spatial')).dipole_derivatives()
     assert np.max(np.abs(P_so - P_sa)) < 1e-11
 
 
 def test_mp2_apt_translational_sum_rule_631g():
     """Acoustic (translational) sum rule: for a neutral molecule the sum over atoms of the
     total APT vanishes (the correlation APT sums to zero on its own -- Tr(gamma_corr) = 0)."""
-    mp0 = _mpwfn(BASE, '6-31G', 'spatial')
-    P_corr = mp0.dipole_derivatives()
-    P_tot = np.asarray(pycc.apt(pycc.MPderiv(mp0)).total)
+    d0 = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial'))
+    P_corr = d0.dipole_derivatives()
+    P_tot = np.asarray(pycc.apt(d0).total)
     assert np.max(np.abs(np.sum(P_corr, axis=0))) < 1e-10
     assert np.max(np.abs(np.sum(P_tot, axis=0))) < 1e-10
 
@@ -162,24 +162,24 @@ def test_fc_mp2_corr_apt_dipfd_631g():
     Exercises the mixed field/nuclear core<->active response: the frozen-core nuclear density
     response over the active space, coupled to the core<->active orbital relaxation. Works with no
     APT-specific code change -- the ncore machinery carries over from the gradient/polarizability."""
-    P = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true').dipole_derivatives()
+    P = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')).dipole_derivatives()
     for (alpha, atom, cart), ref in APT_631G_FC.items():
         assert abs(P[atom, cart, alpha] - ref) < 1e-9
 
 
 def test_fc_so_mp2_corr_apt_vs_spatial_631g():
     """Keystone (6-31G, frozen core): spin-orbital == spin-adapted correlation APT."""
-    P_so = _mpwfn(BASE, '6-31G', 'spinorbital', freeze_core='true').dipole_derivatives()
-    P_sa = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true').dipole_derivatives()
+    P_so = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spinorbital', freeze_core='true')).dipole_derivatives()
+    P_sa = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')).dipole_derivatives()
     assert np.max(np.abs(P_so - P_sa)) < 1e-11
 
 
 def test_fc_mp2_apt_translational_sum_rule_631g():
     """Frozen-core acoustic sum rule: sum over atoms of the total (and correlation) APT
     vanishes for neutral water."""
-    mp0 = _mpwfn(BASE, '6-31G', 'spatial', freeze_core='true')
-    assert np.max(np.abs(np.sum(mp0.dipole_derivatives(), axis=0))) < 1e-10
-    assert np.max(np.abs(np.sum(np.asarray(pycc.apt(pycc.MPderiv(mp0)).total), axis=0))) < 1e-10
+    d0 = pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial', freeze_core='true'))
+    assert np.max(np.abs(np.sum(d0.dipole_derivatives(), axis=0))) < 1e-10
+    assert np.max(np.abs(np.sum(np.asarray(pycc.apt(d0).total), axis=0))) < 1e-10
 
 
 # ---- the two 2n+1 routes agree with each other ----
@@ -194,9 +194,9 @@ def test_mp2_apt_2n1_routes_agree_631g():
     import pytest
     for ob in ('spinorbital', 'spatial'):
         for fc in ('false', 'true'):
-            mp = _mpwfn(BASE, '6-31G', ob, freeze_core=fc)
-            Pn = np.asarray(mp.dipole_derivatives(route='2n+1-nuclear'))
-            Pf = np.asarray(mp.dipole_derivatives(route='2n+1-field'))
+            d = pycc.MPderiv(_mpwfn(BASE, '6-31G', ob, freeze_core=fc))
+            Pn = np.asarray(d.dipole_derivatives(route='2n+1-nuclear'))
+            Pf = np.asarray(d.dipole_derivatives(route='2n+1-field'))
             assert np.max(np.abs(Pn - Pf)) < 1e-11
     with pytest.raises(ValueError):
-        _mpwfn(BASE, '6-31G', 'spatial').dipole_derivatives(route='bogus')
+        pycc.MPderiv(_mpwfn(BASE, '6-31G', 'spatial')).dipole_derivatives(route='bogus')

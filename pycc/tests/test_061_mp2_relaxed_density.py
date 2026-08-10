@@ -92,7 +92,7 @@ def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='fal
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    return mp.relaxed_dipole()[2]
+    return pycc.MPderiv(mp).relaxed_dipole()[2]
 
 
 def test_mp2_relaxed_dipole_631g():
@@ -265,7 +265,7 @@ def test_fc_mp2_gradient_vs_energy_fd_631g():
 
 # ---- SCF dipole (HFwfn.dipole) and the total MP2 dipole ----
 # The reference dipole is kept separate from the correlation dipole (as for the gradient):
-# the total MP2 dipole is HFwfn.dipole() + MPwfn.relaxed_dipole().
+# the total MP2 dipole is HFwfn.dipole() + MPderiv.relaxed_dipole().
 
 def _scf_dipole(geom, basis):
     """PyCC HFwfn.dipole() (spatial + spin-orbital) and Psi4's analytic SCF dipole."""
@@ -311,7 +311,7 @@ def _ff_total_dipole(geom, basis, model, F=0.0005):
 
 
 def test_mp2_total_dipole_631g():
-    """Total MP2 dipole = HFwfn.dipole() + MPwfn.relaxed_dipole() vs the frozen finite-field
+    """Total MP2 dipole = HFwfn.dipole() + MPderiv.relaxed_dipole() vs the frozen finite-field
     oracle of the total MP2 energy, H2O/6-31G (C1) -- validates the reference/correlation split."""
     geom = WATER + "symmetry c1\n"
     psi4.core.clean()
