@@ -1,5 +1,5 @@
 """
-MP2 atomic axial tensors (AATs) -- MPwfn.atomic_axial_tensors(), the density/wave-function-
+MP2 atomic axial tensors (AATs) -- MPderiv.atomic_axial_tensors(), the density/wave-function-
 overlap formulation (Krishnan, Shumberger & Crawford, in prep.), built on the diagonal
 Born-Oppenheimer correction of Gauss, Tajti, Kallay, Stanton & Szalay, J. Chem. Phys. 125,
 144111 (2006) [Eqs. (16), (18), (19)].
@@ -73,7 +73,7 @@ def _mpwfn(orbital_basis='spatial', freeze_core='false', geom=H2O2, basis='STO-3
 def test_mp2_aat_all_electron():
     """All-electron spatial MP2 electronic AAT (SCF reference + correlation, via the pycc.aat
     facade) reproduces the apyib reference for (P)-H2O2/STO-3G."""
-    P = np.asarray(pycc.aat(_mpwfn()).electronic).reshape(-1, 3)
+    P = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn())).electronic).reshape(-1, 3)
     for (row, col), ref in AAT_REF['false'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
@@ -81,7 +81,7 @@ def test_mp2_aat_all_electron():
 def test_mp2_aat_frozen_core():
     """Frozen-core spatial MP2 electronic AAT reproduces the independent apyib frozen-core
     reference (all-electron SCF reference + frozen-core correlation)."""
-    P = np.asarray(pycc.aat(_mpwfn(freeze_core='true')).electronic).reshape(-1, 3)
+    P = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn(freeze_core='true'))).electronic).reshape(-1, 3)
     for (row, col), ref in AAT_REF['true'].items():
         assert abs(P[row, col] - ref) < 1e-6, (row, col, P[row, col], ref)
 
@@ -90,10 +90,10 @@ def test_mp2_aat_so_equals_spatial():
     """Spin-orbital MP2 correlation AAT == spin-adapted (the keystone), all-electron and
     frozen-core; the electronic total also matches the apyib reference."""
     for fc in ('false', 'true'):
-        P = np.asarray(_mpwfn(freeze_core=fc).atomic_axial_tensors()).reshape(-1, 3)
-        P_so = np.asarray(_mpwfn('spinorbital', fc).atomic_axial_tensors()).reshape(-1, 3)
+        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)).atomic_axial_tensors()).reshape(-1, 3)
+        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)).atomic_axial_tensors()).reshape(-1, 3)
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
-        E_so = np.asarray(pycc.aat(_mpwfn('spinorbital', fc)).electronic).reshape(-1, 3)
+        E_so = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn('spinorbital', fc))).electronic).reshape(-1, 3)
         for (row, col), ref in AAT_REF[fc].items():
             assert abs(E_so[row, col] - ref) < 1e-6, (fc, row, col, E_so[row, col], ref)
 
@@ -102,8 +102,8 @@ def test_mp2_aat_ccpvdz_vs_apyib():
     """Larger basis (cc-pVDZ): the electronic MP2 AAT (H2O -- a real virtual space with polarization
     functions and several virtuals per irrep, unlike STO-3G/H2O) reproduces the independent apyib
     reference, for BOTH the spin-adapted and the spin-orbital paths (so SO == spatial as well)."""
-    P = np.asarray(pycc.aat(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')).electronic).reshape(-1, 3)
-    P_so = np.asarray(pycc.aat(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')).electronic).reshape(-1, 3)
+    P = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ'))).electronic).reshape(-1, 3)
+    P_so = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ'))).electronic).reshape(-1, 3)
     for (row, col), ref in AAT_REF_CCPVDZ.items():
         assert abs(P[row, col] - ref) < 1e-6, ('spatial', row, col, P[row, col], ref)
         assert abs(P_so[row, col] - ref) < 1e-6, ('SO', row, col, P_so[row, col], ref)
@@ -115,9 +115,9 @@ def test_mp2_aat_gauge_invariance():
     (The dropped SCF-reference block is itself gauge invariant, so the correlation is too.)"""
     for fc in ('false', 'true'):
         for ob in ('spatial', 'spinorbital'):
-            mp = _mpwfn(ob, fc)
-            nc = np.asarray(mp.atomic_axial_tensors(gauge='non-canonical'))
-            ca = np.asarray(mp.atomic_axial_tensors(gauge='canonical'))
+            d = pycc.MPderiv(_mpwfn(ob, fc))
+            nc = np.asarray(d.atomic_axial_tensors(gauge='non-canonical'))
+            ca = np.asarray(d.atomic_axial_tensors(gauge='canonical'))
             assert np.max(np.abs(nc - ca)) < 1e-9, (fc, ob, np.max(np.abs(nc - ca)))
 
 

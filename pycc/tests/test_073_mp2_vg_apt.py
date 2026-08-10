@@ -1,5 +1,5 @@
 """
-MP2 velocity-gauge (VG) atomic polar tensors -- MPwfn.velocity_dipole_derivatives(), the
+MP2 velocity-gauge (VG) atomic polar tensors -- MPderiv.velocity_dipole_derivatives(), the
 density/wave-function-overlap formulation.  This is the atomic-axial-tensor machinery
 (test_072_mp2_aat) with the magnetic-dipole operator replaced by the linear momentum p = -i nabla
 and the Levi-Civita nuclear term replaced by the length-gauge Z_A delta.
@@ -88,8 +88,8 @@ def test_mp2_vg_apt_so_equals_spatial():
     """Spin-orbital MP2 VG APT correlation == spin-adapted (the keystone), all-electron and
     frozen-core."""
     for fc in ('false', 'true'):
-        P = np.asarray(_mpwfn(freeze_core=fc)[0].velocity_dipole_derivatives())
-        P_so = np.asarray(_mpwfn('spinorbital', fc)[0].velocity_dipole_derivatives())
+        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)[0]).velocity_dipole_derivatives())
+        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)[0]).velocity_dipole_derivatives())
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
 
 
@@ -97,8 +97,8 @@ def test_mp2_vg_apt_so_equals_spatial_ccpvdz():
     """Larger basis (cc-pVDZ): the spin-orbital MP2 VG APT equals the spin-adapted, for a real
     virtual space (polarization functions, several virtuals per irrep) that STO-3G lacks.  Analytic
     keystone (H2O; molecule-agnostic) -- apyib provides no MP2 VG APT oracle at this basis."""
-    P = np.asarray(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')[0].velocity_dipole_derivatives())
-    P_so = np.asarray(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')[0].velocity_dipole_derivatives())
+    P = np.asarray(pycc.MPderiv(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')[0]).velocity_dipole_derivatives())
+    P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')[0]).velocity_dipole_derivatives())
     assert np.max(np.abs(P_so - P)) < 1e-9, np.max(np.abs(P_so - P))
 
 
@@ -107,7 +107,7 @@ def test_mp2_vg_apt_gauge_invariance():
     (non-canonical default vs canonical), all-electron and frozen-core, both spin paths."""
     for fc in ('false', 'true'):
         for ob in ('spatial', 'spinorbital'):
-            mp = _mpwfn(ob, fc)[0]
-            nc = np.asarray(mp.velocity_dipole_derivatives(gauge='non-canonical'))
-            ca = np.asarray(mp.velocity_dipole_derivatives(gauge='canonical'))
+            d = pycc.MPderiv(_mpwfn(ob, fc)[0])
+            nc = np.asarray(d.velocity_dipole_derivatives(gauge='non-canonical'))
+            ca = np.asarray(d.velocity_dipole_derivatives(gauge='canonical'))
             assert np.max(np.abs(nc - ca)) < 1e-9, (fc, ob, np.max(np.abs(nc - ca)))

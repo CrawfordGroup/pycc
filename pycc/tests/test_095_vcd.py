@@ -92,7 +92,7 @@ def test_vcd_mp2_h2o2(rhf_wfn):
 
     hessian = np.genfromtxt(_HESSIAN_FILE, skip_header=1).reshape(12, 12)
     apt = np.asarray(pycc.apt(d).total)
-    aat = np.asarray(pycc.aat(mp).total)
+    aat = np.asarray(pycc.aat(d).total)
 
     res = pycc.harmonic_analysis(wfn.molecule(), hessian, apt=apt, aat=aat,
                                  project_trans=True, project_rot=True)

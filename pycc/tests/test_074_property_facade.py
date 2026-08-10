@@ -40,7 +40,7 @@ def test_aat_decomposition_identities():
     """total == nuclear + reference + correlation; electronic == reference + correlation; the
     derived accessors and the scf/hf aliases are self-consistent."""
     _, mp = _wfns()
-    r = pycc.aat(mp)
+    r = pycc.aat(pycc.MPderiv(mp))
     assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-14
     assert np.max(np.abs(r.electronic - (r.reference + r.correlation))) < 1e-14
     assert np.array_equal(r.scf, r.reference) and np.array_equal(r.hf, r.reference)
@@ -51,16 +51,16 @@ def test_aat_genuine_separation():
     """The reference block is exactly the independent SCF AAT, and the correlation block is a
     real, nonzero contribution computed apart from it."""
     hf, mp = _wfns()
-    r = pycc.aat(mp)
+    r = pycc.aat(pycc.MPderiv(mp))
     assert np.max(np.abs(r.reference - np.asarray(hf.atomic_axial_tensors()))) < 1e-12
-    assert np.max(np.abs(r.correlation - np.asarray(mp.atomic_axial_tensors()))) < 1e-12
+    assert np.max(np.abs(r.correlation - np.asarray(pycc.MPderiv(mp).atomic_axial_tensors()))) < 1e-12
     assert np.max(np.abs(r.correlation)) > 1e-4      # correlation really present
 
 
 def test_aat_nuclear_term():
     """The nuclear block is (Z_A/4) eps_{alpha,beta,gamma} R_{A,gamma}."""
     _, mp = _wfns()
-    r = pycc.aat(mp)
+    r = pycc.aat(pycc.MPderiv(mp))
     mol = mp.ref.molecule()
     R = mol.geometry().np
     for A in range(mol.natom()):
@@ -84,9 +84,9 @@ def test_aat_origin_argument():
     """A non-default origin shifts only the nuclear block (electronic terms unchanged), by the
     expected -(Z_A/4) eps O."""
     _, mp = _wfns()
-    r0 = pycc.aat(mp)
+    r0 = pycc.aat(pycc.MPderiv(mp))
     O = (0.5, -0.3, 0.1)
-    rO = pycc.aat(mp, origin=O)
+    rO = pycc.aat(pycc.MPderiv(mp), origin=O)
     assert np.max(np.abs(rO.electronic - r0.electronic)) < 1e-14
     mol = mp.ref.molecule()
     ox, oy, oz = O
@@ -101,7 +101,7 @@ def test_aat_frozen_core_total():
     reference is unaffected by freezing (it is the all-electron SCF AAT)."""
     _, mp_ae = _wfns('false')
     _, mp_fc = _wfns('true')
-    r_ae, r_fc = pycc.aat(mp_ae), pycc.aat(mp_fc)
+    r_ae, r_fc = pycc.aat(pycc.MPderiv(mp_ae)), pycc.aat(pycc.MPderiv(mp_fc))
     assert np.max(np.abs(r_fc.reference - r_ae.reference)) < 1e-12
     assert np.max(np.abs(r_fc.nuclear - r_ae.nuclear)) < 1e-14
     # freezing changes the correlation (and hence the total) a little, but not wildly
@@ -120,7 +120,7 @@ def _facade_and_pieces(hf, mp):
         ("polarizability", pycc.polarizability(d),        hf.polarizability(),             d.polarizability()),
         ("hessian",        pycc.hessian(d),               hf.hessian(),                    d.hessian()),
         ("apt-length",     pycc.apt(d, 'length'),         hf.dipole_derivatives(),         d.dipole_derivatives()),
-        ("apt-velocity",   pycc.apt(d, 'velocity'),       hf.velocity_dipole_derivatives(), mp.velocity_dipole_derivatives()),
+        ("apt-velocity",   pycc.apt(d, 'velocity'),       hf.velocity_dipole_derivatives(), d.velocity_dipole_derivatives()),
     ]
 
 
@@ -201,10 +201,9 @@ def test_facade_orbital_gauge_option():
     """orbital_gauge (expert-only) is exposed on aat / apt(velocity); the tensor is invariant to
     it (the knob reaches the correlation method, which is gauge invariant), ignored for HF."""
     hf, mp = _wfns()
-    # aat keeps its wavefunction-based interface for now (pending the AAT/VG-APT hoist)
-    assert np.max(np.abs(pycc.aat(mp, orbital_gauge='non-canonical').total
-                         - pycc.aat(mp, orbital_gauge='canonical').total)) < 1e-9
     d = pycc.MPderiv(mp)
+    assert np.max(np.abs(pycc.aat(d, orbital_gauge='non-canonical').total
+                         - pycc.aat(d, orbital_gauge='canonical').total)) < 1e-9
     assert np.max(np.abs(pycc.apt(d, 'velocity', orbital_gauge='non-canonical').total
                          - pycc.apt(d, 'velocity', orbital_gauge='canonical').total)) < 1e-9
     assert np.all(pycc.apt(hf, 'velocity', orbital_gauge='canonical').correlation == 0.0)

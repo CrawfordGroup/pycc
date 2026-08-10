@@ -490,7 +490,7 @@ def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
     deriv = source
     hess = np.asarray(properties.hessian(deriv).total)
     apt = np.asarray(properties.apt(deriv).total)
-    aat = np.asarray(properties.aat(properties._wfn_of(deriv)).total)
+    aat = np.asarray(properties.aat(deriv).total)
     molecule = properties._wfn_of(deriv).ref.molecule()
 
     if checkpoint is not None:

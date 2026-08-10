@@ -26,9 +26,8 @@ class MPwfn(Wavefunction):
     The analytic derivative-property code lives on :class:`~pycc.mpderiv.MPderiv`, a
     :class:`~pycc.correlatedderivs.CorrelatedDerivs` driver.  Build it with
     ``pycc.MPderiv(wfn)`` and pass it to the ``pycc`` property facade, e.g.
-    ``pycc.gradient(pycc.MPderiv(wfn))`` -- the same pattern as CCwfn/CIwfn.  (The cached
-    :attr:`deriv` accessor and the ``atomic_axial_tensors`` / ``velocity_dipole_derivatives``
-    wfn methods below remain only for the not-yet-migrated AAT / velocity-gauge-APT path.)
+    ``pycc.gradient(pycc.MPderiv(wfn))`` -- the same pattern as CCwfn/CIwfn.  ``MPwfn`` carries
+    no derivative-property methods of its own.
 
     Attributes
     ----------
@@ -155,31 +154,6 @@ class MPwfn(Wavefunction):
         norm2 = 0.25 * self.contract('ijab,ijab->', t2, t2)
         return 1.0 / np.sqrt(1.0 + norm2)
 
-    # ---- analytic derivative-property driver (see pycc.mpderiv.MPderiv) ----
-
-    @property
-    def deriv(self):
-        """The cached :class:`~pycc.mpderiv.MPderiv` derivative-property driver for this
-        wavefunction (built lazily).  ``MPderiv`` is the MP2 leaf of
-        :class:`~pycc.correlatedderivs.CorrelatedDerivs` and carries the analytic
-        derivative-property code; the thin property methods below (:meth:`gradient`,
-        :meth:`polarizability`, :meth:`hessian`, ...) delegate to it so the
-        ``mpwfn.<property>()`` call sites keep working, and the :mod:`pycc.properties` facade routes
-        through the registry (``pycc/__init__.py``) to the same driver.  A single cached instance,
-        so its ``_full_occ_cphf`` / Z-vector caches are shared across the MP2 property calls."""
-        if getattr(self, '_deriv', None) is None:
-            from .mpderiv import MPderiv
-            self._deriv = MPderiv(self)
-        return self._deriv
-
-    def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
-        """MP2 correlation velocity-gauge APT -- delegates to
-        :meth:`MPderiv.velocity_dipole_derivatives`."""
-        return self.deriv.velocity_dipole_derivatives(gauge)
-
-    def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
-        """MP2 correlation AAT -- delegates to :meth:`MPderiv.atomic_axial_tensors`."""
-        return self.deriv.atomic_axial_tensors(gauge)
 
     # ---- reference for the total (reference + correlation) properties ----
     # The property methods above are the correlation contribution only.  The full molecular
