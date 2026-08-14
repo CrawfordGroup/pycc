@@ -130,6 +130,12 @@ supports HF, MP2, and CISD sources (CCSD AATs are not yet available). Pass ``che
 to archive the computed tensors, then re-run the analysis later straight from the file with
 ``pycc.vcd("mol.npz")`` (nothing is recomputed).
 
+Pass ``velocity_gauge=True`` to also compute the velocity-gauge APT: the analysis then reports the
+length-, velocity-, and mixed-gauge IR intensities (a basis-set completeness check) and, for VCD,
+the velocity-gauge and origin-independent (length-gauge origin-invariant) rotatory strengths with a
+degree-of-symmetry diagnostic, under the ``*_velocity`` / ``*_origin_independent`` /
+``degree_of_symmetry`` result keys.
+
 Frequency-dependent response (CCSD)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The static polarizability above has dynamic (frequency-dependent) counterparts from CCSD linear
