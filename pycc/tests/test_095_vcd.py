@@ -81,6 +81,34 @@ def test_vcd_scf_h2o2(rhf_wfn):
     psi4.core.clean()
 
 
+def test_vcd_scf_h2o2_velocity_gauge(rhf_wfn):
+    """SCF/STO-3G velocity-gauge and origin-independent VCD via ``pycc.vcd(..., velocity_gauge=True)``.
+    The velocity-gauge IR intensity, velocity-gauge rotatory strength, and origin-independent (LGOI)
+    rotatory strength reproduce the independent apyib reference (its ``compute_LGOI_vcd_from_input``,
+    fed pycc's own Hessian/APTs/AAT) for the six vibrations.  The length-gauge values are checked
+    separately in :func:`test_vcd_scf_h2o2`; here the velocity-gauge / origin-independent additions."""
+    # apyib compute_LGOI reference (10^-44 cgs for rotatory strengths, km/mol for IR), highest
+    # wavenumber to lowest, six vibrations.  pycc reproduces these to ~1e-5.
+    ir_velocity_ref  = np.array([175.0022,   57.7631,  21.8054, 505.6315,   4.2627, 154.9648])
+    rot_velocity_ref = np.array([121.4069, -114.0951, -92.7869,  31.1204, -17.4754, 108.9395])
+    rot_oi_ref       = np.array([ 50.5198,  -53.5278, -28.6068,   9.3948,  -1.0985, 101.3780])
+
+    wfn = rhf_wfn(H2O2_SCF, "STO-3G", freeze_core="false")
+    hf = pycc.HFwfn(wfn, quiet=True)
+    res = pycc.vcd(hf, project_trans=True, project_rot=True, velocity_gauge=True)
+
+    ir_v = np.asarray(res['ir_intensities_velocity'])[:6]
+    r_v = np.asarray(res['rotatory_strengths_velocity'])[:6]
+    r_oi = np.asarray(res['rotatory_strengths_origin_independent'])[:6]
+    assert np.max(np.abs(ir_v - ir_velocity_ref)) < 1e-2, ir_v
+    assert np.max(np.abs(r_v - rot_velocity_ref)) < 1e-2, r_v
+    assert np.max(np.abs(r_oi - rot_oi_ref)) < 1e-2, r_oi
+    # the degree-of-symmetry diagnostic is a fraction in [0, 1] for the vibrations
+    dos = np.asarray(res['degree_of_symmetry'])[:6]
+    assert np.all(dos >= -1e-9) and np.all(dos <= 1.0 + 1e-9), dos
+    psi4.core.clean()
+
+
 def test_vcd_mp2_h2o2(rhf_wfn):
     """MP2/STO-6G VCD (all-electron): pycc's analytic MP2 APT + AAT with an external CID/6-31G*
     Hessian, versus CFOUR frequencies and magpy's finite-difference MP2 IR/VCD.  Looser tolerance

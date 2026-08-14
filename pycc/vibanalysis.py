@@ -97,6 +97,43 @@ def _print_report(frequencies: np.ndarray, ir_intensities, rotatory_strengths,
     print("=" * width)
 
 
+def _print_velocity_gauge_report(frequencies: np.ndarray, ir_length, ir_velocity, ir_mixed,
+                                 rotatory_length, rotatory_velocity,
+                                 rotatory_origin_independent, degree_of_symmetry) -> None:
+    """Print the velocity-gauge / origin-independent supplement (only when a velocity-gauge APT was
+    supplied).  Shows the length-, velocity-, and mixed-gauge IR intensities (km/mol) and, when an
+    AAT was also supplied, the length-, velocity-, and origin-independent rotatory strengths
+    (1e-44 cgs) with the degree-of-symmetry diagnostic.  The velocity and mixed intensities equal
+    the length-gauge value in the basis-set limit; the origin-independent rotatory strength removes
+    the gauge-origin dependence of the length-gauge VCD."""
+    n_mode = frequencies.shape[0]
+    has_rot = rotatory_velocity is not None
+    width = 104 if has_rot else 58
+
+    print("\n" + "=" * width)
+    print("Velocity-Gauge and Origin-Independent Analysis")
+    print("=" * width)
+    h1 = "   Mode    Frequency        IR Intensity [km/mol]  "
+    h2 = "            [cm^-1]      length  velocity     mixed "
+    if has_rot:
+        h1 += "     Rotatory Strength [1e-44 cgs]        DoS"
+        h2 += "    length  velocity  origin-indep.        "
+    print(h1)
+    print(h2)
+    print("  " + "-" * (width - 4))
+    for k in range(n_mode):
+        nu = frequencies[k]
+        freq_str = ("%9.2fi" % abs(nu)) if nu < 0.0 else ("%9.2f " % nu)
+        row = ("   %4d  %s  %9.3f %9.3f %9.3f"
+               % (k + 1, freq_str, ir_length[k], ir_velocity[k], ir_mixed[k]))
+        if has_rot:
+            row += ("   %8.3f %8.3f %11.3f    %7.3f"
+                    % (rotatory_length[k], rotatory_velocity[k],
+                       rotatory_origin_independent[k], degree_of_symmetry[k]))
+        print(row)
+    print("=" * width)
+
+
 def _translation_rotation_projector(masses: np.ndarray, geom: np.ndarray,
                                     project_trans: bool, project_rot: bool,
                                     linear_tol: float):
@@ -193,7 +230,8 @@ def _translation_rotation_projector(masses: np.ndarray, geom: np.ndarray,
 
 
 def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray = None,
-                      aat: np.ndarray = None, project_trans: bool = False,
+                      aat: np.ndarray = None, apt_velocity: np.ndarray = None,
+                      project_trans: bool = False,
                       project_rot: bool = False, linear_tol: float = 1e-8) -> dict:
     r"""Harmonic frequencies, normal modes, and (with an APT) IR intensities and (with an APT and
     AAT) VCD rotatory strengths from a Cartesian Hessian.
@@ -272,6 +310,14 @@ def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray =
         the nuclear Cartesian and ``beta`` the magnetic component, a.u., e.g. ``pycc.aat(d).total``.
         When given together with ``apt``, VCD rotatory strengths are computed; otherwise
         ``rotatory_strengths`` is ``None``.  Pulled from a checkpoint ``source`` when present.
+    apt_velocity : np.ndarray, optional
+        velocity-gauge (momentum) APT, same shape/indexing as ``apt``, e.g.
+        ``pycc.apt(d, gauge='velocity').total``.  When given with ``apt``, the velocity- and
+        mixed-gauge IR intensities are added (a basis-set completeness check); when ``aat`` is also
+        given, the velocity-gauge and origin-independent rotatory strengths and the
+        degree-of-symmetry diagnostic are added.  Fed into the same normal-coordinate contraction as
+        the length gauge, with no frequency weighting.  Pulled from a checkpoint ``source`` when
+        present (stored key ``apt_velocity``).
     project_trans, project_rot : bool
         remove translations / rotations before diagonalizing (both off by default; opt in for a
         loose geometry).
@@ -284,7 +330,11 @@ def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray =
     ``frequencies`` (cm^-1), ``ir_intensities`` (km/mol, or ``None``), ``rotatory_strengths``
     (10^-44 esu^2 cm^2, or ``None`` if no AAT), ``force_constants`` (mDyne/A), ``reduced_masses``
     (u), ``modes`` (mass-weighted, columns), ``cartesian_modes`` (normalized un-mass-weighted
-    displacements, columns), and ``n_tr`` (rigid-body modes removed).
+    displacements, columns), and ``n_tr`` (rigid-body modes removed).  With ``apt_velocity`` also
+    supplied: ``ir_intensities_velocity`` and ``ir_intensities_mixed`` (km/mol), and, when an AAT is
+    present, ``rotatory_strengths_velocity`` and ``rotatory_strengths_origin_independent``
+    (10^-44 esu^2 cm^2) plus ``degree_of_symmetry`` (dimensionless, in ``[0, 1]``); each is ``None``
+    when ``apt_velocity`` (or the AAT) is absent.
 
     Returns
     -------
@@ -304,6 +354,8 @@ def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray =
             apt = source.apt
         if aat is None:
             aat = source.aat
+        if apt_velocity is None:
+            apt_velocity = source.apt_velocity
     else:
         molecule = source
     if hessian is None:
@@ -344,14 +396,51 @@ def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray =
     # rotatory strengths when an AAT is also supplied (magnetic-dipole gradient dotted with it).
     ir_intensities = None
     rotatory_strengths = None
+    ir_intensities_velocity = None
+    ir_intensities_mixed = None
+    rotatory_strengths_velocity = None
+    rotatory_strengths_origin_independent = None
+    degree_of_symmetry = None
     if apt is not None:
         dipder = apt.transpose(2, 0, 1).reshape(3, 3 * natom)     # [dipole, 3A+nuclear]
-        dmu_dQ = dipder @ cart_modes                              # [dipole, mode] = d mu_c / d Q
+        dmu_dQ = dipder @ cart_modes                              # [dipole, mode] = d mu_c / d Q (length)
         ir_intensities = np.einsum('cm,cm->m', dmu_dQ, dmu_dQ) * IR_KM_MOL_PER_AU
+
+        if apt_velocity is not None:
+            # Velocity-gauge (momentum) dipole gradient along the normal coordinates, fed into the
+            # same contraction as the length gauge (no frequency weighting).  The velocity-gauge IR
+            # intensity and the mixed (length x velocity) intensity are the length-gauge basis-set
+            # completeness checks; the velocity gauge is the ingredient for origin-independent VCD.
+            velder = apt_velocity.transpose(2, 0, 1).reshape(3, 3 * natom)
+            dp_dQ = velder @ cart_modes                          # [dipole, mode] = d p_c / d Q (velocity)
+            ir_intensities_velocity = np.einsum('cm,cm->m', dp_dQ, dp_dQ) * IR_KM_MOL_PER_AU
+            ir_intensities_mixed = np.einsum('cm,cm->m', dmu_dQ, dp_dQ) * IR_KM_MOL_PER_AU
+
         if aat is not None:
             mdip = aat.transpose(2, 0, 1).reshape(3, 3 * natom)   # [magnetic, 3A+nuclear]
             dm_dQ = mdip @ cart_modes                             # [magnetic, mode] = d m_c / d Q
             rotatory_strengths = np.einsum('cm,cm->m', dmu_dQ, dm_dQ) * VCD_ROT_STRENGTH_CGS_PER_AU
+
+            if apt_velocity is not None:
+                # Velocity-gauge rotatory strength, and the length-gauge origin-independent value:
+                # per mode, rotate the length-gauge rotatory-strength tensor R = (d mu/d Q)(d m/d Q)
+                # into the frame set by the SVD of the mixed dipole-strength tensor
+                # D = (d mu/d Q)(d p/d Q), R_oi = Tr(U^T R V) (Nafie's origin-independent formulation).
+                rotatory_strengths_velocity = (np.einsum('cm,cm->m', dp_dQ, dm_dQ)
+                                               * VCD_ROT_STRENGTH_CGS_PER_AU)
+                n_mode = cart_modes.shape[1]
+                rotatory_strengths_origin_independent = np.empty(n_mode)
+                degree_of_symmetry = np.empty(n_mode)
+                for k in range(n_mode):
+                    D_mix = np.outer(dmu_dQ[:, k], dp_dQ[:, k])   # mixed dipole-strength tensor
+                    R_len = np.outer(dmu_dQ[:, k], dm_dQ[:, k])   # length-gauge rotatory-strength tensor
+                    U, _, Vt = np.linalg.svd(D_mix)
+                    rotatory_strengths_origin_independent[k] = (
+                        np.trace(U.T @ R_len @ Vt.T) * VCD_ROT_STRENGTH_CGS_PER_AU)
+                    antisym = 0.5 * (D_mix - D_mix.T)
+                    norm = np.linalg.norm(D_mix)
+                    degree_of_symmetry[k] = (1.0 - np.linalg.norm(antisym) / norm
+                                             if norm > 1e-30 else np.nan)
 
     # Reorder everything highest wavenumber to lowest (matches the printed mode numbering).
     order = np.argsort(frequencies)[::-1]
@@ -364,15 +453,32 @@ def harmonic_analysis(source: Any, hessian: np.ndarray = None, apt: np.ndarray =
         ir_intensities = ir_intensities[order]
     if rotatory_strengths is not None:
         rotatory_strengths = rotatory_strengths[order]
+    if ir_intensities_velocity is not None:
+        ir_intensities_velocity = ir_intensities_velocity[order]
+        ir_intensities_mixed = ir_intensities_mixed[order]
+    if rotatory_strengths_velocity is not None:
+        rotatory_strengths_velocity = rotatory_strengths_velocity[order]
+        rotatory_strengths_origin_independent = rotatory_strengths_origin_independent[order]
+        degree_of_symmetry = degree_of_symmetry[order]
 
     n_trans = 3 if project_trans else 0
     _print_report(frequencies, ir_intensities, rotatory_strengths, force_constants,
                   reduced_masses, natom, n_trans, n_tr - n_trans)
+    if ir_intensities_velocity is not None:
+        _print_velocity_gauge_report(frequencies, ir_intensities, ir_intensities_velocity,
+                                     ir_intensities_mixed, rotatory_strengths,
+                                     rotatory_strengths_velocity,
+                                     rotatory_strengths_origin_independent, degree_of_symmetry)
 
     return {
         'frequencies': frequencies,
         'ir_intensities': ir_intensities,
         'rotatory_strengths': rotatory_strengths,
+        'ir_intensities_velocity': ir_intensities_velocity,
+        'ir_intensities_mixed': ir_intensities_mixed,
+        'rotatory_strengths_velocity': rotatory_strengths_velocity,
+        'rotatory_strengths_origin_independent': rotatory_strengths_origin_independent,
+        'degree_of_symmetry': degree_of_symmetry,
         'force_constants': force_constants,
         'reduced_masses': reduced_masses,
         'modes': modes,
@@ -409,9 +515,13 @@ def _checkpoint_for_driver(source: Any, driver: str, need_apt: bool = False,
 
 
 def ir(source: Any, checkpoint: str = None, project_trans: bool = False,
-       project_rot: bool = False, linear_tol: float = 1e-8) -> dict:
+       project_rot: bool = False, linear_tol: float = 1e-8, velocity_gauge: bool = False) -> dict:
     """IR driver: the one-call path to a printed IR spectrum, from either a live driver or a
     checkpoint.
+
+    With ``velocity_gauge=True`` the velocity-gauge APT is also computed (driver source only), and
+    the analysis reports the length-, velocity-, and mixed-gauge IR intensities (a basis-set
+    completeness check; they coincide in the complete-basis limit).
 
     * ``source`` is a **derivative driver** (``CCderiv``/``MPderiv``/``CIderiv``): compute the
       molecular Hessian and the length-gauge APT (each printing its property report and recording
@@ -452,20 +562,28 @@ def ir(source: Any, checkpoint: str = None, project_trans: bool = False,
     deriv = source
     hess = np.asarray(properties.hessian(deriv).total)
     apt = np.asarray(properties.apt(deriv).total)
+    apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
+                    if velocity_gauge else None)
     molecule = properties._wfn_of(deriv).ref.molecule()
 
     if checkpoint is not None:
         from .checkpoint import save_checkpoint
         save_checkpoint(deriv, checkpoint)
 
-    return harmonic_analysis(molecule, hess, apt=apt, project_trans=project_trans,
+    return harmonic_analysis(molecule, hess, apt=apt, apt_velocity=apt_velocity,
+                             project_trans=project_trans,
                              project_rot=project_rot, linear_tol=linear_tol)
 
 
 def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
-        project_rot: bool = False, linear_tol: float = 1e-8) -> dict:
+        project_rot: bool = False, linear_tol: float = 1e-8, velocity_gauge: bool = False) -> dict:
     """VCD driver: like :func:`ir`, but also computes and archives the atomic axial tensors (AATs)
     needed for VCD rotatory strengths.
+
+    With ``velocity_gauge=True`` the velocity-gauge APT is also computed (driver source only), and
+    the analysis adds the velocity-gauge rotatory strength and the origin-independent (length-gauge
+    origin-invariant) rotatory strength, together with the length/velocity/mixed IR intensities and
+    the degree-of-symmetry diagnostic.
 
     * ``source`` is a **derivative driver**: compute the Hessian, length-gauge APT, and AAT (each
       printing its report and recording itself), optionally archive everything to the
@@ -491,11 +609,14 @@ def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
     hess = np.asarray(properties.hessian(deriv).total)
     apt = np.asarray(properties.apt(deriv).total)
     aat = np.asarray(properties.aat(deriv).total)
+    apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
+                    if velocity_gauge else None)
     molecule = properties._wfn_of(deriv).ref.molecule()
 
     if checkpoint is not None:
         from .checkpoint import save_checkpoint
         save_checkpoint(deriv, checkpoint)
 
-    return harmonic_analysis(molecule, hess, apt=apt, aat=aat, project_trans=project_trans,
+    return harmonic_analysis(molecule, hess, apt=apt, aat=aat, apt_velocity=apt_velocity,
+                             project_trans=project_trans,
                              project_rot=project_rot, linear_tol=linear_tol)

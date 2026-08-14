@@ -137,12 +137,12 @@ class Checkpoint:
     ``orbital_basis``, ``nfzc``, ``scf_energy``, ``correlation_energy``, ``total_energy``,
     ``charge``, ``multiplicity``), the geometry data (``geometry`` bohr, ``atomic_numbers``,
     ``masses`` u, ``symbols``), the full ``PropertyComponents`` per property in ``components``,
-    and convenience total-tensor accessors (``hessian``, ``apt``, ``aat``, ``gradient``,
-    ``polarizability``, ``dipole``) that return the ``.total`` array or ``None`` if absent.
+    and convenience total-tensor accessors (``hessian``, ``apt``, ``apt_velocity``, ``aat``,
+    ``gradient``, ``polarizability``, ``dipole``) that return the ``.total`` array or ``None`` if absent.
     ``molecule`` rebuilds the psi4 molecule lazily at the stored frame and masses.
     """
 
-    _TOTALS = ('gradient', 'hessian', 'apt', 'polarizability', 'dipole', 'aat')
+    _TOTALS = ('gradient', 'hessian', 'apt', 'apt_velocity', 'polarizability', 'dipole', 'aat')
 
     def __init__(self, meta: dict, geometry: np.ndarray, atomic_numbers: np.ndarray,
                  masses: np.ndarray, components: dict) -> None:
