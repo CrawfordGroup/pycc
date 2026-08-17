@@ -860,23 +860,30 @@ class CorrelatedDerivs:
 
     @contextlib.contextmanager
     def _offload_assembly_idle_tensors(self):
-        """Free the baseline MO two-electron integrals for the duration of the block, and restore
-        them on exit.  The two-pass Hessian assembly contracts only ``Gam`` (pass 1) and the per-pair
-        derivative tensors, so ``H.ERI`` and (on the spatial path) ``H.L`` sit idle -- 2 ``nmo^4``
-        arrays.  Spilling them drops the resident floor from ~4 to ~2 ``nmo^4`` (52 -> 26 GiB at
-        cc-pVTZ; peak 168 -> 142 GiB).
+        """Free the whole-run ``nmo^4`` tensors the two-pass Hessian assembly never reads, for the
+        duration of the block, and restore them on exit.  The assembly contracts only ``Gam`` (pass 1)
+        and the per-pair derivative tensors, so the baseline MO ERIs (``H.ERI`` and, on the spatial
+        path, ``H.L``) and the raw CISD unrelaxed 2-PDM (``_ci_dens[2]``, used only to build ``Gam``
+        and the perturbed-CI ``dE`` in the setup) sit idle -- 2-3 ``nmo^4`` arrays.  Spilling them
+        drops the resident floor from ~4 to ~1 ``nmo^4`` (52 -> 13 GiB at cc-pVTZ; peak 168 -> 129 GiB).
 
-        ``H.ERI`` is the ``O(N^5)`` transform, so it is written to a temp file and reloaded on exit;
-        ``H.L = 2<pq|rs> - <pq|sr>`` is a linear combination of ``H.ERI``, so it is dropped and
-        recomputed on restore.  Exception-safe: the ``finally`` always restores the attributes and
-        deletes the temp file.
-
-        (The raw CISD unrelaxed 2-PDM ``_ci_dens[2]`` is likewise idle during the assembly and would
-        take the floor to ~1 ``nmo^4``, but it survives ``gc`` after its only Python reference is
-        cleared -- a C-level pin outside the GC graph -- so it is left resident pending that fix.)"""
+        Each spilled array is written to a temp file and reloaded on exit (``H.ERI`` and the 2-PDM are
+        genuine work -- the ``O(N^5)`` transform and the density build -- worth restoring rather than
+        recomputing).  ``H.L = 2<pq|rs> - <pq|sr>`` is a linear combination of ``H.ERI``, so it is
+        dropped and recomputed on restore.  The local reference is dropped after each spill so the RAM
+        is actually reclaimed (nulling the attribute is not enough).  Exception-safe: the ``finally``
+        always restores and deletes the temp files."""
         H = self.wfn.H
         restores = []
 
+        def _spill(array, restore):
+            """Write ``array`` to a temp file; register ``restore(reloaded_array)`` for the exit."""
+            fd, path = tempfile.mkstemp(suffix='.npy')
+            os.close(fd)
+            np.save(path, np.asarray(array))
+            restores.append((restore, path))
+
+        # Baseline MO ERIs: spill H.ERI, drop H.L (recomputed from H.ERI on restore).
         eri = getattr(H, 'ERI', None)
         if eri is not None:
             has_L = getattr(H, 'L', None) is not None
@@ -884,14 +891,21 @@ class CorrelatedDerivs:
                 H.ERI = a
                 if has_L:
                     H.L = 2.0 * a - a.swapaxes(2, 3)
-            fd, path = tempfile.mkstemp(suffix='.npy')
-            os.close(fd)
-            np.save(path, np.asarray(eri))
-            restores.append((_restore_eri, path))
+            _spill(eri, _restore_eri)
             H.ERI = None
             if has_L:
                 H.L = None
-        del eri                             # drop the local ref so the RAM is actually freed
+        del eri
+
+        # CISD raw unrelaxed 2-PDM (absent for MP2/CC).  Its ONLY reference is the _ci_dens cache;
+        # keep the two nmo^2 1-PDMs resident, spill the nmo^4 2-PDM, and restore the full triple.
+        dens = getattr(self.wfn, '_ci_dens', None)
+        if dens is not None and dens[2] is not None:
+            def _restore_g(a, head=dens[:2]):     # head (D, D_corr) captured now; G is not held here
+                self.wfn._ci_dens = (head[0], head[1], a)
+            _spill(dens[2], _restore_g)
+            self.wfn._ci_dens = (dens[0], dens[1], None)
+        del dens
 
         try:
             yield
@@ -1041,8 +1055,8 @@ class CorrelatedDerivs:
 
         H = np.zeros((nc, nc))
 
-        # Spill the baseline MO ERIs (H.ERI/H.L), which the two passes never read, to disk for the
-        # duration of the assembly; only Gam (pass 1) and the derivative tensors stay resident.
+        # Spill the whole-run nmo^4 tensors the two passes never read (baseline MO ERIs H.ERI/H.L and
+        # the raw CISD 2-PDM) to disk for the assembly; only Gam (pass 1) + derivative tensors stay.
         with self._offload_assembly_idle_tensors():
             # Pass 1 -- fixed-density second skeleton  s = Drel*f^(XY) + Gam*<pq||rs>^(XY) + I*S^(XY).
             # Only the 2nd-deriv block (blk, up to 9*nmo^4) is resident, contracted against the
