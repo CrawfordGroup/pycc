@@ -13,6 +13,9 @@ section 9 for the base/leaf split and the phased plan; more machinery moves here
 
 from __future__ import annotations
 
+import contextlib
+import os
+import tempfile
 from collections import namedtuple
 
 import numpy as np
@@ -855,6 +858,48 @@ class CorrelatedDerivs:
                                           + orb)
         return P
 
+    @contextlib.contextmanager
+    def _offload_assembly_idle_tensors(self):
+        """Free the baseline MO two-electron integrals for the duration of the block, and restore
+        them on exit.  The two-pass Hessian assembly contracts only ``Gam`` (pass 1) and the per-pair
+        derivative tensors, so ``H.ERI`` and (on the spatial path) ``H.L`` sit idle -- 2 ``nmo^4``
+        arrays.  Spilling them drops the resident floor from ~4 to ~2 ``nmo^4`` (52 -> 26 GiB at
+        cc-pVTZ; peak 168 -> 142 GiB).
+
+        ``H.ERI`` is the ``O(N^5)`` transform, so it is written to a temp file and reloaded on exit;
+        ``H.L = 2<pq|rs> - <pq|sr>`` is a linear combination of ``H.ERI``, so it is dropped and
+        recomputed on restore.  Exception-safe: the ``finally`` always restores the attributes and
+        deletes the temp file.
+
+        (The raw CISD unrelaxed 2-PDM ``_ci_dens[2]`` is likewise idle during the assembly and would
+        take the floor to ~1 ``nmo^4``, but it survives ``gc`` after its only Python reference is
+        cleared -- a C-level pin outside the GC graph -- so it is left resident pending that fix.)"""
+        H = self.wfn.H
+        restores = []
+
+        eri = getattr(H, 'ERI', None)
+        if eri is not None:
+            has_L = getattr(H, 'L', None) is not None
+            def _restore_eri(a):
+                H.ERI = a
+                if has_L:
+                    H.L = 2.0 * a - a.swapaxes(2, 3)
+            fd, path = tempfile.mkstemp(suffix='.npy')
+            os.close(fd)
+            np.save(path, np.asarray(eri))
+            restores.append((_restore_eri, path))
+            H.ERI = None
+            if has_L:
+                H.L = None
+        del eri                             # drop the local ref so the RAM is actually freed
+
+        try:
+            yield
+        finally:
+            for restore, path in restores:
+                restore(np.load(path))
+                os.remove(path)
+
     def hessian(self) -> np.ndarray:
         r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
@@ -996,37 +1041,40 @@ class CorrelatedDerivs:
 
         H = np.zeros((nc, nc))
 
-        # Pass 1 -- fixed-density second skeleton  s = Drel*f^(XY) + Gam*<pq||rs>^(XY) + I*S^(XY).
-        # Only the 2nd-deriv block (blk, up to 9*nmo^4) is resident, contracted against the
-        # UNPERTURBED Drel/Gam/I; the 1st-deriv ERIs and density derivatives are not touched here.
-        for a1 in range(natom):
-            for a2 in range(a1, natom):
-                blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)   # one pair, transient nmo^4
-                for cx in range(3):
-                    for cy in range(3):
-                        s = _skel_scalar(blk, cx, cy)
-                        ix, iy = a1 * 3 + cx, a2 * 3 + cy
-                        H[ix, iy] += s
-                        if a1 != a2:
-                            H[iy, ix] += s                             # s is symmetric in the pair
-                del blk                                                # free before pass 2 loads eriX/dGam
+        # Spill the baseline MO ERIs (H.ERI/H.L), which the two passes never read, to disk for the
+        # duration of the assembly; only Gam (pass 1) and the derivative tensors stay resident.
+        with self._offload_assembly_idle_tensors():
+            # Pass 1 -- fixed-density second skeleton  s = Drel*f^(XY) + Gam*<pq||rs>^(XY) + I*S^(XY).
+            # Only the 2nd-deriv block (blk, up to 9*nmo^4) is resident, contracted against the
+            # UNPERTURBED Drel/Gam/I; the 1st-deriv ERIs and density derivatives are not touched here.
+            for a1 in range(natom):
+                for a2 in range(a1, natom):
+                    blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)   # one pair, transient nmo^4
+                    for cx in range(3):
+                        for cy in range(3):
+                            s = _skel_scalar(blk, cx, cy)
+                            ix, iy = a1 * 3 + cx, a2 * 3 + cy
+                            H[ix, iy] += s
+                            if a1 != a2:
+                                H[iy, ix] += s                         # s is symmetric in the pair
+                    del blk                                            # free before pass 2 loads eriX/dGam
 
-        # Pass 2 -- density response  dGam^(Y)*<pq||rs>^(X) + orbital response.  This term has NO
-        # 2nd-deriv integrals, hence no atom-pair structure: it is a full nc x nc coordinate
-        # contraction.  eriX^(X) is a per-atom 3-stack (read once per atom from the store); dGam^(Y)
-        # is one nmo^4 per nuclear coordinate, streamed back from the store one coordinate at a time
-        # (both were persisted by the setup loops -- neither is re-solved or recomputed here).  Peak
-        # residency is one atom's 3-stack eriX + one dGam = 4*nmo^4, so pass 1's 9*nmo^4 2nd-deriv
-        # block is the binding peak, not this pass.  Each H element gets the same response addition as
-        # the fused loop, so H is unchanged.
-        for a in range(natom):
-            erX = [np.asarray(m) for m in (d.so_eri(a) if so else d.eri(a))]   # 3*nmo^4, held over iy
-            for iy in range(nc):
-                dGam_y = _dGs(iy)                                       # 1*nmo^4, streamed from store
-                for cx in range(3):
-                    ix = a * 3 + cx
-                    H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
-            del erX
+            # Pass 2 -- density response  dGam^(Y)*<pq||rs>^(X) + orbital response.  This term has NO
+            # 2nd-deriv integrals, hence no atom-pair structure: it is a full nc x nc coordinate
+            # contraction.  eriX^(X) is a per-atom 3-stack (read once per atom from the store);
+            # dGam^(Y) is one nmo^4 per nuclear coordinate, streamed back from the store one
+            # coordinate at a time (both were persisted by the setup loops -- neither is re-solved or
+            # recomputed here).  Peak residency is one atom's 3-stack eriX + one dGam = 4*nmo^4, so
+            # pass 1's 9*nmo^4 2nd-deriv block is the binding peak, not this pass.  Each H element
+            # gets the same response addition as the fused loop, so H is unchanged.
+            for a in range(natom):
+                erX = [np.asarray(m) for m in (d.so_eri(a) if so else d.eri(a))]   # 3*nmo^4 over iy
+                for iy in range(nc):
+                    dGam_y = _dGs(iy)                                   # 1*nmo^4, streamed from store
+                    for cx in range(3):
+                        ix = a * 3 + cx
+                        H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
+                del erX
         return H
 
     @staticmethod
