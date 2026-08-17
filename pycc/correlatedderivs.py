@@ -963,13 +963,18 @@ class CorrelatedDerivs:
             else:
                 Xx.append(xov); I2x.append(i2); Pf_x.append(None)
 
-        # ---- assembly: atom-pair-outer contract-and-discard ----
-        # Loop unique atom pairs, compute each pair's 2nd-deriv skeletons ONCE (cache=False, so
-        # _d2int never accumulates -- one pair's 9*nmo^4 resident at a time), contract the fixed-
-        # density scalar, and free the pair.  The second-skeleton scalar s = Drel.f2 + Gam.e2 +
-        # I.ov2 uses only Drel/Gam/I and is symmetric in the pair (d2/dA dB = d2/dB dA), so it is
-        # shared by H[ix,iy] and its transpose H[iy,ix]; only the response half differs.  The pair's
-        # nmo^4 working set (dGam + eriX for its <= 6 perturbations) is read from the store here.
+        # ---- assembly: two atom-pair sweeps, one per nmo^4 working set ----
+        # The correlation Hessian is a sum of two contributions with DISJOINT nmo^4 inputs:
+        #   (1) the fixed-density second skeleton  Gam*<pq||rs>^(XY) (+ Drel*f2 + I*S2), which
+        #       contracts the 2nd-deriv integrals against the UNPERTURBED Drel/Gam/I; and
+        #   (2) the density response  dGam^(Y)*<pq||rs>^(X) (+ orbital response), which contracts the
+        #       1st-deriv integrals (eriX) against the density derivatives (dGam).
+        # The 2nd-deriv block never meets eriX/dGam in a contraction, so the assembly sweeps the atom
+        # pairs TWICE and holds only one nmo^4 working set at a time (peak max(9, 6+6) instead of
+        # 9+6+6).  Each pair still computes its 2nd-deriv skeletons ONCE (cache=False, so _d2int never
+        # accumulates).  The skeleton scalar s = Drel.f2 + Gam.e2 + I.ov2 is symmetric in the pair
+        # (d2/dA dB = d2/dB dA), shared by H[ix,iy] and its transpose; only the response half differs.
+        # The per-pair dGam/eriX are read from the store one pair at a time (never a 3*natom RAM list).
         def _dGs(j):        # bare cumulant response dGam[j] (the doc form needs no U^y rotation)
             return self._relaxed_response(pert[j]).dGam
 
@@ -989,29 +994,39 @@ class CorrelatedDerivs:
             f2 = core2 + c('pmqm->pq', L2[:, ofull, :, ofull])          # f^(XY)
             return c('pq,pq->', Drel, f2) + c('pqrs,pqrs->', Gam, e2) + c('pq,pq->', I, ov2)
 
-        def _erX_pair(a1, a2):             # both atoms' eriX, read once per atom (3-stack) and sliced
-            erX = {}
-            for A in {a1, a2}:
-                stk = d.so_eri(A) if so else d.eri(A)
-                for ct in range(3):
-                    erX[A * 3 + ct] = np.asarray(stk[ct])
-            return erX
-
         H = np.zeros((nc, nc))
+
+        # Pass 1 -- fixed-density second skeleton  s = Drel*f^(XY) + Gam*<pq||rs>^(XY) + I*S^(XY).
+        # Only the 2nd-deriv block (blk, up to 9*nmo^4) is resident, contracted against the
+        # UNPERTURBED Drel/Gam/I; the 1st-deriv ERIs and density derivatives are not touched here.
         for a1 in range(natom):
             for a2 in range(a1, natom):
                 blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)   # one pair, transient nmo^4
-                erX = _erX_pair(a1, a2)
-                need = sorted(set(range(a1 * 3, a1 * 3 + 3)) | set(range(a2 * 3, a2 * 3 + 3)))
-                dGs = {j: _dGs(j) for j in need}                        # per-pair working set (bounded)
                 for cx in range(3):
                     for cy in range(3):
                         s = _skel_scalar(blk, cx, cy)
                         ix, iy = a1 * 3 + cx, a2 * 3 + cy
-                        H[ix, iy] = s + _resp(ix, iy, dGs[iy], erX[ix])
+                        H[ix, iy] += s
                         if a1 != a2:
-                            H[iy, ix] = s + _resp(iy, ix, dGs[ix], erX[iy])
-                del blk, dGs, erX                                       # free the pair's nmo^4
+                            H[iy, ix] += s                             # s is symmetric in the pair
+                del blk                                                # free before pass 2 loads eriX/dGam
+
+        # Pass 2 -- density response  dGam^(Y)*<pq||rs>^(X) + orbital response.  This term has NO
+        # 2nd-deriv integrals, hence no atom-pair structure: it is a full nc x nc coordinate
+        # contraction.  eriX^(X) is a per-atom 3-stack (read once per atom from the store); dGam^(Y)
+        # is one nmo^4 per nuclear coordinate, streamed back from the store one coordinate at a time
+        # (both were persisted by the setup loops -- neither is re-solved or recomputed here).  Peak
+        # residency is one atom's 3-stack eriX + one dGam = 4*nmo^4, so pass 1's 9*nmo^4 2nd-deriv
+        # block is the binding peak, not this pass.  Each H element gets the same response addition as
+        # the fused loop, so H is unchanged.
+        for a in range(natom):
+            erX = [np.asarray(m) for m in (d.so_eri(a) if so else d.eri(a))]   # 3*nmo^4, held over iy
+            for iy in range(nc):
+                dGam_y = _dGs(iy)                                       # 1*nmo^4, streamed from store
+                for cx in range(3):
+                    ix = a * 3 + cx
+                    H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
+            del erX
         return H
 
     @staticmethod
