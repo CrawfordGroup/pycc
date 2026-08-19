@@ -1058,13 +1058,13 @@ class CorrelatedDerivs:
             # Pass 1 -- fixed-density second skeleton  s = Drel*f^(XY) + Gam*<pq||rs>^(XY) + I*S^(XY),
             # contracted against the UNPERTURBED Drel/Gam/I (the 1st-deriv ERIs and density
             # derivatives are not touched here).  Two routes for the 2nd-deriv ERI:
-            #   'mo' (spin-orbital, or opt-out): all 9 MO blocks resident per pair (up to 9*nmo^4).
-            #   'ao' (default, spatial): hold the 9 AO blocks and transform ONE Cartesian pair at a
-            #       time to the MO <pq|rs>^(XY) (Derivatives.eri2_mo_component), so only 1 MO block
-            #       is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam.  The assembled
-            #       Hessian is identical to the 'mo' route to rounding (per-block the AO transform is
-            #       a ket permutation, immaterial under the symmetric-2-PDM contraction).
-            route = 'mo' if so else getattr(self, '_skel_eri_route', 'ao')
+            #   'mo' (opt-out): all 9 MO blocks resident per pair (9*nmo^4 spatial / 9*16*nmo^4 SO).
+            #   'ao' (default): hold the 9 *spatial* AO blocks and transform ONE Cartesian pair at a
+            #       time to the MO integral (eri2_mo_component / so_eri2_mo_component), so only 1 MO
+            #       block is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam (the SO
+            #       saving is ~10x larger, its MO block being 16*nmo^4).  Same spatial AO source for
+            #       both bases; the assembled Hessian matches the 'mo' route to rounding.
+            route = getattr(self, '_skel_eri_route', 'ao')
             for a1 in range(natom):
                 for a2 in range(a1, natom):
                     if route == 'mo':
@@ -1072,17 +1072,26 @@ class CorrelatedDerivs:
                         core2s, ov2s, ao_eri = blk['core'], blk['overlap'], None
                         eri2s = blk['eri']
                     else:
-                        core2s = [np.asarray(m) for m in d.core2(a1, a2)]      # 9 MO OEI (nmo^2, cheap)
-                        ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
-                        ao_eri = d.ao_eri2(a1, a2)                              # 9 AO ERI (nao^4), held
+                        if so:
+                            core2s = [np.asarray(m) for m in d.so_core2(a1, a2)]     # 9 SO OEI (small)
+                            ov2s = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
+                        else:
+                            core2s = [np.asarray(m) for m in d.core2(a1, a2)]        # 9 MO OEI (nmo^2)
+                            ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
+                        ao_eri = d.ao_eri2(a1, a2)                                    # 9 spatial AO, held
                         eri2s = None
                     for cx in range(3):
                         for cy in range(3):
                             comp = cx * 3 + cy
-                            e2 = eri2s[comp] if route == 'mo' else d.eri2_mo_component(ao_eri[comp])
+                            if route == 'mo':
+                                e2 = eri2s[comp]
+                            elif so:
+                                e2 = d.so_eri2_mo_component(ao_eri[comp])   # 1 SO block at a time
+                            else:
+                                e2 = d.eri2_mo_component(ao_eri[comp])      # 1 MO block at a time
                             s = _skel_scalar_from(core2s[comp], ov2s[comp], e2)
                             if route != 'mo':
-                                del e2                                         # 1 MO block live at a time
+                                del e2
                             ix, iy = a1 * 3 + cx, a2 * 3 + cy
                             H[ix, iy] += s
                             if a1 != a2:

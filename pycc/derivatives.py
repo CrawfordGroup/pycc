@@ -768,6 +768,47 @@ class Derivatives(object):
             out.append(phys - phys.swapaxes(2, 3))
         return out
 
+    def so_eri2_mo_component(self, ao_chem: np.ndarray) -> np.ndarray:
+        r"""Build ONE spin-orbital block ``<pq||rs>^(XY)`` for a Cartesian pair from one raw
+        *spatial* AO chemist second-derivative block (from :meth:`ao_eri2`) -- the spin-orbital
+        analogue of :meth:`eri2_mo_component`, reproducing one component of :meth:`so_eri2`.
+
+        Memory-lean route for the spin-orbital Hessian skeleton: hold the 9 *spatial* AO blocks
+        (``nao**4``) and build one SO block (``(2 nmo)**4``) at a time, instead of the 9 SO blocks
+        :meth:`so_eri2` materializes together (``9 * 16 * nmo**4``).  Each of the four same-spin
+        combinations is the spatial transform of the AO block placed at that spin's positions; then
+        :func:`_complete_deriv2` completes the bra<->ket swap, ``swapaxes(1, 2)`` -> physicist, and
+        ``- swapaxes(2, 3)`` antisymmetrizes -- exactly the steps of :meth:`so_eri2`.
+
+        Unlike the spin-adapted :meth:`eri2_mo_component`, the AO ket pair IS swapped
+        (``transpose(0, 1, 3, 2)``) to match ``mo_tei_deriv2``'s convention, so each spin block is
+        bit-identical to :meth:`so_eri2`'s: the trailing ``- swapaxes(2, 3)`` antisymmetrization
+        makes the ket order matter here (a straight transform would flip the sign of the exchange
+        term)."""
+        c = self.wfn.contract
+        ao = np.asarray(ao_chem).transpose(0, 1, 3, 2)   # ket-pair layout -> mo_tei_deriv2 order
+        shape, sel = self._so_eri_blocks(('all', 'all', 'all', 'all'))
+        ch = np.zeros(shape)
+        for s12 in (0, 1):
+            p1, C1 = sel[0][s12]
+            p2, C2 = sel[1][s12]
+            if not (p1.size and p2.size):
+                continue
+            C1a, C2a = np.asarray(C1), np.asarray(C2)
+            for s34 in (0, 1):
+                p3, C3 = sel[2][s34]
+                p4, C4 = sel[3][s34]
+                if not (p3.size and p4.size):
+                    continue
+                C3a, C4a = np.asarray(C3), np.asarray(C4)
+                t = c('mnls,mp->pnls', ao, C1a)          # spatial transform for this spin combo
+                t = c('pnls,nq->pqls', t, C2a)
+                t = c('pqls,lr->pqrs', t, C3a)
+                t = c('pqrs,so->pqro', t, C4a)
+                ch[np.ix_(p1, p2, p3, p4)] = t           # place into the SO layout
+        phys = _complete_deriv2(ch).swapaxes(1, 2)
+        return phys - phys.swapaxes(2, 3)
+
     # ---- nuclear-nuclear skeleton second-derivative integrals (for the 2n+1 molecular Hessian) ----
 
     def nuclear_hessian_skeletons(self, a1: int, a2: int, cache: bool = True) -> dict:
