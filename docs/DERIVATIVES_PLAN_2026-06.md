@@ -644,6 +644,115 @@ dependent-pair route, §7), `'non-canonical'` otherwise (MP2, CCSD, CISD — inv
   does not exist yet); and an open-shell **UHF-CC APT/Hessian** test (the SO CC second-derivative tests
   are RHF-reference).
 
+## 10. AO-density Hessian skeleton (design, not yet implemented)
+
+### 10.1 Motivation
+
+After the AO-route work (#239) the correlated Hessian Pass-1 (the fixed-density skeleton) holds,
+per atom pair, the 9 AO second-derivative blocks (`ao_tei_deriv2`, 9·nao⁴), transforms **one**
+Cartesian component at a time to the MO `⟨pq|rs⟩^(XY)` (`eri2_mo_component`), and contracts it with
+`Γ`, `D_rel·f^(XY)`, and `I·S^(XY)`. The floor is ≈ 9 AO + 1 MO + `Γ` ≈ 12·nmo⁴ (spatial), and it
+pays natom² per-pair MO transforms (CPU).
+
+The `ao_tei_deriv2` block itself (9·nao⁴) is Psi4-forced and cannot be beaten without a Psi4
+density-contracted routine. The reducible part is the MO side: transform the *density* to AO once,
+not the *integrals* to MO per pair. Goal: floor ≈ 10·nmo⁴ (9 AO + 1 AO-basis effective density),
+with one O(N⁵) back-transform in place of the natom² per-pair MO transforms.
+
+### 10.2 The reformulation
+
+Current skeleton scalar (spatial, `_skel_scalar_from`):
+
+    s = D_rel·f^(XY) + Γ·⟨pq|rs⟩^(XY) + I·S^(XY)
+    f^(XY) = h^(XY) + Σ_m L^(XY)[p,m,q,m]   (m over full occupied; L = 2⟨⟩ − ⟨⟩_swap)
+
+Split `D_rel·f^(XY)` into one- and two-electron parts:
+
+    D_rel·f^(XY) = D_rel·h^(XY)  +  Σ_pqm D_rel_pq (2⟨pm|qm⟩ − ⟨pm|mq⟩)^(XY)
+
+The two-electron part is a contraction of the second-derivative ERI with a *separable* effective
+density built from `D_rel` and the occupied projector `P` (P_ij = δ_ij for i occupied). Fold it into
+the cumulant to define an effective 2-PDM (physicist `⟨ab|cd⟩` convention):
+
+    Γ_D[a,b,c,d] = 2·D_rel[a,c]·P[b,d] − D_rel[a,d]·P[b,c]
+    Γ_eff        = Γ + Γ_D
+
+Then the whole two-electron skeleton is a single density contraction, and `f^(XY)` is never formed:
+
+    s_2e = Γ_eff·⟨pq|rs⟩^(XY)
+
+The one-electron remainder (`D_rel·h^(XY) + I·S^(XY)`, both OEI, nao², cheap) stays as it is.
+
+### 10.3 Why the raw AO integral works here (completion + ket-swap resolved)
+
+`Γ_D` is *not* bra↔ket symmetric (Coulomb part is, exchange part is not). But the physical
+contraction uses the *complete* (fully symmetric) integral, so only the bra↔ket-symmetric part of
+`Γ_eff` contributes. Symmetrize once:
+
+    Γ_eff ← ½(Γ_eff + Γ_eff.transpose(2,3,0,1))
+
+`Γ_eff` is now a bra↔ket-symmetric two-particle density, so contracting it with Psi4's **raw**
+(bra↔ket-doubled) `ao_tei_deriv2` gives the complete result exactly (the "raw is correct under a
+symmetric-density contraction" property, `derivative_integral_permutational_symmetry.tex`). No
+`_complete_deriv2`, and no `mo_eri_helper` ket-swap, because we contract the raw AO integral
+directly rather than reproducing `mo_tei_deriv2`. This is the clean resolution of the two gotchas
+that bit the per-component MO route (§ the ket-swap fix): `_complete_deriv2` was required there only
+because `f^(XY)` is a Fock build, not a symmetric-density contraction; folding it into `Γ_eff` and
+symmetrizing makes it one.
+
+### 10.4 The assembly
+
+Once, before the atom-pair loop:
+1. build `Γ_eff = Γ + Γ_D`, symmetrize over bra↔ket;
+2. back-transform to the AO chemist convention of `ao_tei_deriv2` (`Γ_eff^AO[μ,ν,λ,σ]`): one O(N⁵)
+   four-index back-transform; the physicist↔chemist and index bookkeeping mirror `eri2`, inverted.
+
+Per atom pair (A ≤ B, unique pairs with transpose fill, as in the SCF Hessian):
+- `ao = ao_tei_deriv2(A,B)` (9 raw AO blocks);
+- per Cartesian component, `s_2e = Σ Γ_eff^AO · ao[comp]` (an nao⁴ contraction, no transform);
+- add the OEI one-electron terms.
+
+Floor = 9 AO + 1 `Γ_eff^AO` ≈ 10·nmo⁴; the per-pair MO transform is gone.
+
+### 10.5 Memory / CPU
+
+- Memory: ~12 → ~10·nmo⁴ (drop the transient MO block and its transform buffer). The 9·nao⁴
+  `ao_tei_deriv2` stays the binding floor.
+- CPU: one O(N⁵) `Γ_eff` back-transform (once) replaces natom²-worth of per-pair MO transforms. For
+  CISD `Γ` is dense (the vvvv block), so `Γ_eff^AO` is a dense nao⁴ and its back-transform is a real
+  O(N⁵) step (done once, resident 1·nao⁴).
+
+### 10.6 Subtleties to settle before/while coding
+
+- Occupied projector `P`: full occupied space (core + active), frozen-core aware, matching the
+  `ofull` slice in `f^(XY)`.
+- Canonical gauge (CCSD(T)): `D_rel` already folds `P_oo`/`P_vv`/`P_co` (it is `D̃`), so `Γ_D` uses
+  that `D_rel` directly; confirm no double-count with the Pass-2 orbital-response terms (they are
+  unaffected).
+- Spin-orbital: the SO cumulant is (2nmo)⁴ and `ao_tei_deriv2` is spatial, so the SO `Γ_eff`
+  back-transform must fold the spin structure onto the spatial AO (Coulomb from the total density,
+  exchange per spin block), analogous to the SCF SO Hessian. Do spatial first, SO as a follow-up.
+- Back-transform bookkeeping: get the physicist→chemist→AO transposes right; validate by bit-identity
+  against the current AO route.
+
+### 10.7 Subsumes HF item (1): shared `ao_tei_deriv2`
+
+Both the SCF *reference* Hessian (#240) and this correlated Pass-1 contract `ao_tei_deriv2(A,B)`
+against a density (`D⊗D` for the reference, `Γ_eff^AO` for the correlation). A follow-up can compute
+`ao_tei_deriv2` **once** per pair and contract both densities, removing the double `ao_tei_deriv2`
+compute a correlated Hessian pays today (separate reference and correlation passes). That is HF item
+(1) from the HF-Hessian discussion, folded in naturally.
+
+### 10.8 Validation plan (per the #239 lessons)
+
+- Bit-identity of the assembled Hessian vs the current AO route (`_skel_eri_route`='ao') **and** the
+  MO route ('mo'), for **every** method (MP2, CISD, CCSD, CCSD(T)); a one-method green masked the
+  CCSD ket-swap bug (CISD/MP2 symmetrize their density).
+- Both **C1 and C2v** inputs (C2v exposed the SCF density-basis bug).
+- psi4 **1.9 and 1.10** (CI uses conda-forge latest).
+- Run the CFOUR-anchored spatial cases explicitly; they run by default, and one green method is not
+  enough.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
