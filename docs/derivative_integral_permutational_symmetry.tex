@@ -168,17 +168,20 @@ difference to $\sim\!10^{-7}$). This is the symmetrization the derivative codes
 apply:
 %
 \begin{itemize}
-\item spin-orbital path: \texttt{so\_eri2} applies
+\item spatial path: \texttt{eri2} (and its per-component AO sibling
+\texttt{eri2\_mo\_component}) applies
 $\tfrac12(\texttt{ch}+\texttt{ch}^{\,\mu\nu\leftrightarrow\lambda\sigma})$ to the
-chemist array \emph{before} any conversion or spin bookkeeping, so its consumers
-(\texttt{cphf}, \texttt{CorrelatedDerivs}) receive a completed integral;
-\item spatial path: the raw chemist array is passed through unaveraged and
-\texttt{cphf} applies the same average where it assembles the nuclear--nuclear
-skeletons.
+chemist array, then \texttt{swapaxes(1,2)} to physicist order;
+\item spin-orbital path: \texttt{so\_eri2} / \texttt{so\_eri2\_mo\_component}
+applies the same average \emph{before} the spin bookkeeping and ket
+antisymmetrization.
 \end{itemize}
 %
-It is required only for the nuclear--nuclear second derivative, the only place a
-nonzero second-derivative two-electron integral is formed. First derivatives are
+Both accessors therefore return the completed symmetric integral, so every
+consumer (\texttt{cphf}, \texttt{CorrelatedDerivs}, and the SCF and correlated
+Hessian assemblies) receives it already averaged and does not repeat the step. It
+is needed only for the nuclear--nuclear second derivative, the only place a
+nonzero second-derivative two-electron integral is formed; first derivatives are
 returned complete and need no averaging.
 
 \section{Transforming \texttt{ao\_tei\_deriv2} directly}
@@ -230,8 +233,9 @@ twice the upper-triangular (canonically ordered) center-pair second derivatives,
 contraction, but leaves it bra--ket asymmetric and not equal to the integral.
 \item The complete symmetric integral is the bra--ket average
 $\tfrac12(\texttt{deriv2}+\texttt{deriv2}^{\,\mu\nu\leftrightarrow\lambda\sigma})$,
-\eqref{eq:avg}. \texttt{so\_eri2} applies it internally; \texttt{cphf} applies it
-for the spatial skeletons. First derivatives need none.
+\eqref{eq:avg}. \texttt{eri2} and \texttt{so\_eri2} apply it internally and return
+the completed integral, so their consumers do not repeat it. First derivatives
+need none.
 \item \texttt{mo\_eri\_helper} transposes the ket pair while transforming
 \eqref{eq:ketreorder}, so a direct \texttt{ao\_tei\_deriv2} consumer must
 \texttt{transpose(0,1,3,2)} the AO block to match. The raw is not ket-symmetric,
