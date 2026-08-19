@@ -1063,7 +1063,7 @@ class CorrelatedDerivs:
             #       time to the MO integral (eri2_mo_component / so_eri2_mo_component), so only 1 MO
             #       block is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam (the SO
             #       saving is ~10x larger, its MO block being 16*nmo^4).  Same spatial AO source for
-            #       both bases; the assembled Hessian matches the 'mo' route to rounding.
+            #       both bases; each per-component block is bit-identical to the 'mo' route.
             route = getattr(self, '_skel_eri_route', 'ao')
             for a1 in range(natom):
                 for a2 in range(a1, natom):

@@ -484,26 +484,24 @@ class Derivatives(object):
             (pq|rs)^(XY) = C_mu,p C_nu,q C_la,r C_si,s (mu nu|la si)^(XY)
 
         then :func:`_complete_deriv2` supplies the bra<->ket average (Psi4's raw output is
-        upper-triangular-doubled) and ``swapaxes(1, 2)`` converts chemist -> physicist.
+        upper-triangular-doubled) and ``swapaxes(1, 2)`` converts chemist -> physicist -- the two
+        steps :meth:`eri2` applies to ``mo_tei_deriv2``'s output.
 
-        This differs from one block of :meth:`eri2` by the KET permutation ``r <-> s``:
-        ``mo_tei_deriv2`` (via ``mo_eri_helper``) transposes the ket pair internally (contracting
-        ``C3`` against the AO ``si`` and ``C4`` against ``la``), whereas here the AO block is
-        transformed straight.  The complete second-derivative ERI is ket-symmetric
-        ``<pq|rs>^(XY) = <pq|sr>^(XY)`` and the Hessian contracts it with the bra<->ket-symmetric
-        2-PDM, so the ket order is immaterial to the assembled Hessian -- reproducing Psi4's ket
-        order would only add an ``nmo^4`` reorder (the one ``mo_eri_helper`` pays) for no effect.
-        The invariant to guard is therefore the assembled Hessian (``_skel_eri_route`` 'ao' vs 'mo'
-        agree to rounding), NOT block-wise equality with :meth:`eri2`.
+        The AO ket pair is swapped (``transpose(0, 1, 3, 2)``) to reproduce ``mo_tei_deriv2``
+        exactly.  This is NOT optional: ``mo_eri_helper`` transposes the ket pair internally, and
+        while :func:`_complete_deriv2` averages the *bra<->ket* swap it does NOT symmetrize the
+        *ket* pair, so ``complete()`` of the un-swapped transform is ket-asymmetric.  That cancels
+        only against a ket-symmetric 2-PDM (CISD/MP2, which symmetrize their density) -- CCSD's
+        cumulant ``Gam`` is not ket-symmetric, so the un-swapped block gives a wrong Hessian
+        (~9e-3).  With the swap, this is bit-identical to :meth:`eri2`, method-independent.
 
-        :func:`_complete_deriv2` is required, not optional: although the raw integral is correct
-        under a *symmetric-2-PDM* contraction (the ``Gam`` term), the skeleton also builds
-        ``f^(XY)`` from the occupied trace of the integral (a Fock build, not a symmetric-density
-        contraction), which the raw integral gets wrong -- verified (dropping the completion shifts
-        the Hessian by ~4e-2)."""
+        :func:`_complete_deriv2` is likewise required: although the raw integral is correct under a
+        *symmetric-2-PDM* contraction (the ``Gam`` term), the skeleton also builds ``f^(XY)`` from
+        the occupied trace (a Fock build, not a symmetric-density contraction), which the raw
+        integral gets wrong (~4e-2)."""
         C = np.asarray(self.wfn.C)                    # AO x MO (all)
         c = self.wfn.contract
-        t = np.asarray(ao_chem)                       # (mu nu|la si) chemist, contiguous
+        t = np.asarray(ao_chem).transpose(0, 1, 3, 2)  # ket-pair layout -> mo_tei_deriv2 order
         t = c('mnls,mp->pnls', t, C)                  # nao^3 * nmo
         t = c('pnls,nq->pqls', t, C)                  # nao^2 * nmo^2
         t = c('pqls,lr->pqrs', t, C)                  # nao   * nmo^3
