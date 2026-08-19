@@ -181,6 +181,44 @@ It is required only for the nuclear--nuclear second derivative, the only place a
 nonzero second-derivative two-electron integral is formed. First derivatives are
 returned complete and need no averaging.
 
+\section{Transforming \texttt{ao\_tei\_deriv2} directly}
+
+\texttt{mo\_tei\_deriv2} is \texttt{mo\_eri\_helper} applied to the
+\texttt{ao\_tei\_deriv2} blocks, and that helper does not transform the four
+indices in place. To keep its \texttt{DGEMM}s contiguous it contracts the third MO
+coefficient against the AO $\sigma$ and the fourth against the AO $\lambda$ (via
+two explicit buffer reorderings), so its output is
+%
+\begin{equation}
+\texttt{mo\_tei\_deriv2}[p,q,r,s]
+  = \sum_{\mu\nu\lambda\sigma} C_{\mu p}\,C_{\nu q}\,C_{\sigma r}\,C_{\lambda s}\,
+    (\mu\nu|\lambda\sigma)^{(XY)} ,
+\label{eq:ketreorder}
+\end{equation}
+%
+i.e.\ the two \emph{ket} MO indices $r,s$ ride on the AO indices $\sigma,\lambda$
+--- the ket pair is transposed relative to a straight index-by-index transform,
+which would put $r$ on $\lambda$ and $s$ on $\sigma$.
+
+A consumer that transforms \texttt{ao\_tei\_deriv2} \emph{directly}, bypassing
+\texttt{mo\_tei\_deriv2} --- as the memory-lean AO Hessian-skeleton route does
+(\texttt{Derivatives.eri2\_mo\_component} / \texttt{so\_eri2\_mo\_component}, which
+hold the nine AO blocks for a pair and transform one Cartesian component at a
+time) --- must therefore swap the AO ket pair (\texttt{transpose(0,1,3,2)}) before
+the transform to reproduce \eqref{eq:ketreorder}.
+
+This is not cosmetic. The bra--ket average \eqref{eq:avg} completes the raw
+\emph{in the ket order Psi4 emits}, and the raw is not ket-symmetric: the
+enumeration \eqref{eq:raw} is keyed on the global $\mu<\nu<\lambda<\sigma$
+ordering, which $\lambda\leftrightarrow\sigma$ breaks (it sends the
+upper-triangular center-pair $CD$ to the lower-triangular $DC$). Averaging a
+ket-swapped raw therefore yields a \emph{different}, ket-permuted tensor, not the
+symmetric integral. The difference cancels only once the block is contracted with
+a ket-symmetric two-particle density: CISD and MP2 symmetrize their 2-PDM and are
+unaffected, but the CCSD (and CCSD(T)) cumulant $\Gamma$ is not ket-symmetric, so
+omitting the reorder corrupts the spatial CCSD/CCSD(T) Hessian by $O(10^{-2})$
+while CISD/MP2 stay correct.
+
 \section{Summary}
 
 \begin{itemize}
@@ -194,6 +232,11 @@ contraction, but leaves it bra--ket asymmetric and not equal to the integral.
 $\tfrac12(\texttt{deriv2}+\texttt{deriv2}^{\,\mu\nu\leftrightarrow\lambda\sigma})$,
 \eqref{eq:avg}. \texttt{so\_eri2} applies it internally; \texttt{cphf} applies it
 for the spatial skeletons. First derivatives need none.
+\item \texttt{mo\_eri\_helper} transposes the ket pair while transforming
+\eqref{eq:ketreorder}, so a direct \texttt{ao\_tei\_deriv2} consumer must
+\texttt{transpose(0,1,3,2)} the AO block to match. The raw is not ket-symmetric,
+so skipping this is silent against a ket-symmetric density (CISD/MP2) but wrong
+against the CCSD/CCSD(T) $\Gamma$.
 \end{itemize}
 
 \end{document}
