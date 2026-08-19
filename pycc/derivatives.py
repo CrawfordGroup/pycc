@@ -44,12 +44,42 @@ from typing import Any, List, Iterator, Tuple
 import psi4
 import numpy as np
 
+from .exceptions import PyCCWarning
+
 
 #: Persistent derivative-tensor store defaults.  Enabled by default (opt-out); set env var
 #: ``PYCC_DERIV_STORE=0`` (or ``derivatives.DERIV_STORE_ENABLED = False``) to disable, and
-#: ``PYCC_DERIV_STORE_DIR`` for the scratch directory (default: system temp, i.e. ``/tmp``).
+#: ``PYCC_DERIV_STORE_DIR`` for the scratch directory.  The default follows ``tempfile`` (i.e.
+#: ``$TMPDIR``, else ``/tmp``); if that resolves to a RAM-backed ``tmpfs`` the store consumes memory
+#: instead of disk, so :meth:`DerivStore._ensure` warns (see :func:`_filesystem_type`).
 DERIV_STORE_ENABLED = os.environ.get('PYCC_DERIV_STORE', '1') != '0'
 DERIV_STORE_DIR = os.environ.get('PYCC_DERIV_STORE_DIR') or None
+
+#: Filesystem types that live in RAM -- a store/scratch dir on one of these consumes memory, not disk.
+_RAM_BACKED_FS = ('tmpfs', 'ramfs', 'devtmpfs')
+
+
+def _filesystem_type(path: str, _mounts: str = '/proc/mounts'):
+    """Best-effort filesystem type of the mount containing ``path``, via ``/proc/mounts`` (Linux).
+    Returns the fstype string (e.g. ``'tmpfs'``, ``'ext4'``, ``'lustre'``) for the longest mount
+    point that is a prefix of ``path``, or ``None`` when it cannot be determined (non-Linux, or any
+    error) -- callers treat ``None`` as "unknown, do not warn".  ``_mounts`` is the mount table to
+    read (overridable in tests)."""
+    try:
+        target = os.path.realpath(path)
+        best_mp, best_type = '', None
+        with open(_mounts) as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                mp = parts[1].replace('\\040', ' ')     # /proc/mounts octal-escapes spaces
+                if target == mp or target.startswith(mp.rstrip('/') + '/'):
+                    if len(mp) >= len(best_mp):
+                        best_mp, best_type = mp, parts[2]
+        return best_type
+    except Exception:
+        return None
 
 
 class DerivStore:
@@ -84,6 +114,15 @@ class DerivStore:
             import h5py
             fd, self._file = tempfile.mkstemp(suffix='.h5', prefix='pycc_deriv_', dir=self._dir)
             os.close(fd)
+            scratch = os.path.dirname(self._file)       # the directory tempfile actually used
+            fstype = _filesystem_type(scratch)
+            if fstype in _RAM_BACKED_FS:
+                warnings.warn(
+                    "PyCC's derivative-tensor cache directory %r is a RAM-backed filesystem (%s): "
+                    "the cache will consume memory instead of disk and can exhaust the machine.  Set "
+                    "PYCC_DERIV_STORE_DIR and TMPDIR to a real filesystem with free space."
+                    % (scratch, fstype),
+                    PyCCWarning, stacklevel=3)
             self._f = h5py.File(self._file, 'w')
         return self._f
 
