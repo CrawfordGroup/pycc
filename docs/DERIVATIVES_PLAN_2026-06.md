@@ -761,6 +761,69 @@ compute a correlated Hessian pays today (separate reference and correlation pass
 - Run the CFOUR-anchored spatial cases explicitly; they run by default, and one green method is not
   enough.
 
+## 11. Facade simplification + reference Hessian in the correlated pass (design, not yet implemented)
+
+Two changes, done in the order **B then A** (B is a pure structural refactor that establishes the
+method A optimizes inside).  Motivation: (i) a correlated Hessian computes `ao_tei_deriv2` (the
+single most expensive step) **twice** -- once in the reference `HFwfn`, once in the correlation pass;
+(ii) the property facade's dispatch layer is over-general for ~6 properties (a registry,
+`getattr`-by-string across two class hierarchies, four type-helpers) yet cannot express the one real
+cross-cutting concern (the shared integral), and carries stale transitional branches.
+
+### 11.1 Piece B -- facade simplification (structure; bit-identical, no numbers move)
+
+Each object returns its own `PropertyComponents`; the facade stops orchestrating by string.
+
+- `CorrelatedDerivs` (base -> CC/MP/CI): `hessian()`, `gradient()`, `dipole()`, `polarizability()`,
+  `dipole_derivatives()`/apt, `aat` become the public entry points, each returning
+  `PropertyComponents(nuclear, reference, correlation)`.  Their current bodies (which return the
+  correlation ndarray) are renamed `_correlation_hessian()` etc. -- the correlation math is untouched,
+  only relabeled and wrapped (nuclear from geometry, reference from the reference `HFwfn`).
+- `HFwfn` grows the matching methods, returning `PropertyComponents` with `correlation = zeros`.
+- `properties.py` **deletes** `_dispatch`, `_DERIV_REGISTRY`/`register_deriv`, the bare-wfn `TypeError`
+  rejection, `_wfn_of`, `_method_name`, `_correlated`, and the stale "CISD accepted directly / until
+  MPderiv is split out" branches (both drivers are registered now).  It **keeps** `PropertyComponents`,
+  the `_nuclear_*` helpers, the unit constants, `_specific_rotation`, `report()`, and `_record()` (the
+  checkpoint stash, now called by the object methods).
+- **UI (chosen: option a):** keep thin `pycc.hessian(x)` ... module-level wrappers for discoverability
+  (`return x.hessian()`) *alongside* `x.hessian()`.  The fuller wfn-first sugar (`cc.hessian()` with
+  the driver built/cached internally) is out of scope; if ever wanted it is a small per-wfn
+  `deriv_class` hook, not a revived global registry.
+
+Result: to read how a CCSD Hessian is assembled you read `CorrelatedDerivs.hessian()` top to bottom --
+no string indirection, no registry, no `_wfn_of`.
+
+### 11.2 Piece A -- reference contribution folded into the correlated Hessian (perf)
+
+The reference Hessian is AO-*direct* (no 2-PDM tensor): its 2-electron skeleton is
+`2 D D (mu nu|la si) - D D (mu nu|la si)`, einsum-to-scalar (`hfwfn.py`), so the "duplication" is
+literally those two `contract()` lines.
+
+- **`hfwfn`**: factor the ao-*independent* CPHF response out of `_hessian_electronic` into
+  `_hessian_response()` (and its SO twin).  `hfwfn.hessian()` behavior is unchanged (skeleton loop +
+  `_hessian_response()`); this only makes the response callable on its own, for the correlated pass to
+  delegate to.  The skeleton stays inline in `hfwfn` (self-contained for the SCF-only user).
+- **`correlatedderivs`**, in the existing Pass-1 pair loop: for each pair's already-computed `ao`
+  block, add the reference **skeleton** inline -- the two `D (x) D` einsum lines plus the two
+  occupied-block OEI traces (`2 tr(h2_oo) - 2 eps_o . S2_oo`), whose inputs are *slices of the
+  `core2s`/`ov2s` the loop already holds* (no new integral calls).  Accumulate a reference Hessian
+  alongside the correlation one.  After the loop, add `reference_hf._hessian_response()`
+  (ao-independent; the same CPHF work the facade already pays today, so no regression).
+
+Net: `ao_tei_deriv2` computed **once** per pair, not twice.  The only duplicated source is the
+~5-line skeleton, cross-referenced to `hfwfn` with a comment.  This is the "split" choice (duplicate
+the ao-dependent skeleton, delegate the ao-independent response) over full independence, which would
+copy ~40 lines of subtle response physics across both spin paths.
+
+### 11.3 Validation
+
+- **B:** every property bit-identical before/after (pure re-wrapping); test churn is the ~20 call
+  sites moving `pycc.hessian(deriv)` -> `deriv.hessian()`.
+- **A:** correlated Hessian bit-identical, **plus a cross-check test** asserting the reference block
+  the correlated pass now produces equals `hfwfn`'s standalone reference Hessian to ~1e-16 (the
+  anti-divergence guard for the duplicated skeleton), and the `ao_tei_deriv2` call count halved.
+- Both: spatial + spin-orbital, AE + FC, C1 + C2v, psi4 1.9 + 1.10.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
