@@ -133,3 +133,15 @@ def test_ccsd_gradient_frozen_core():
     deriv = pycc.CCderiv(cc)
     g_zvector = np.asarray(deriv.gradient())
     assert np.max(np.abs(g_zvector - GRAD_REF_FC_STO3G)) < 1e-11, g_zvector
+
+
+def test_ccsd_gradient_route_equivalence():
+    """The AO-density skeleton route ('aod', the default) and the per-atom MO route ('mo') give
+    bit-identical gradients.  Guards the shared effective-2PDM builder (a route-mismatch would have
+    caught the deriv2 ket-swap bug) and exercises the 'mo' opt-out branch."""
+    d = pycc.CCderiv(_ccwfn(REF, "cc-pVDZ"))
+    d._skel_eri_route = 'mo'
+    g_mo = np.asarray(d.gradient())
+    d._skel_eri_route = 'aod'
+    g_aod = np.asarray(d.gradient())
+    assert np.max(np.abs(g_aod - g_mo)) < 1e-12, np.max(np.abs(g_aod - g_mo))
