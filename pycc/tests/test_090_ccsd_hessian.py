@@ -296,6 +296,20 @@ def _check(r, corr_ref):
     assert np.max(np.abs(corr.reshape(3, 3, 3, 3).sum(axis=2))) < 1e-8
 
 
+def test_ccsd_hessian_reference_equals_standalone_hf():
+    """The reference (SCF) block of a correlated Hessian is assembled inside the correlated pass so it
+    shares the driver's ao_tei_deriv2 with the correlation skeleton (computed once, not twice; plan
+    s.11.2).  It must stay bit-identical to the standalone HFwfn electronic Hessian -- the guard that
+    the duplicated reference skeleton has not drifted from HFwfn's own.  Both spin paths."""
+    wfn = _cfour_wfn(WATER, 'false')
+    for ob in ('spatial', 'spinorbital'):
+        cc = pycc.ccwfn(wfn, orbital_basis=ob)
+        cc.solve_cc(1e-12, 1e-12, 100)
+        ref_shared = np.asarray(pycc.hessian(pycc.CCderiv(cc)).reference)
+        ref_standalone = np.asarray(pycc.HFwfn(wfn, orbital_basis=ob).hessian().reference)
+        assert np.max(np.abs(ref_shared - ref_standalone)) < 1e-12, (ob, np.max(np.abs(ref_shared - ref_standalone)))
+
+
 def test_ccsd_hessian_cfour_water_spatial():
     """All-electron and frozen-core spatial (closed-shell RHF) CCSD Hessian for water/6-31G vs the
     CFOUR FCMFINAL oracle -- the full correlation matrix, the facade decomposition, symmetry, and the

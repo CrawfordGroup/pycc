@@ -353,8 +353,10 @@ def hessian(wfn) -> PropertyComponents:
         reference = np.asarray(wfn._hessian_electronic())
         correlation = np.zeros_like(reference)
     else:
-        reference = np.asarray(wfn._reference_hf()._hessian_electronic())
-        correlation = np.asarray(wfn._correlation_hessian())
+        # The driver computes both blocks in one pass, sharing ao_tei_deriv2 between the reference
+        # skeleton and the correlation assembly (computed once, not twice).
+        reference, correlation = wfn._hessian_blocks()
+        reference, correlation = np.asarray(reference), np.asarray(correlation)
     nuclear = np.asarray(_wavefunction(wfn).derivatives.nuclear_repulsion2())
     pc = PropertyComponents(nuclear, reference, correlation)
     _record(wfn, 'hessian', pc)
