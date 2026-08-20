@@ -1066,9 +1066,16 @@ class CorrelatedDerivs:
                 GdAO += t
         return GdAO.transpose(0, 1, 3, 2)                   # invert mo_eri_helper's ket reorder
 
-    def _correlation_hessian(self) -> np.ndarray:
-        r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
-        ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
+    def _hessian_blocks(self):
+        r"""The ``(reference, correlation)`` electronic molecular-Hessian blocks (a.u.), each shape
+        ``(3*natom, 3*natom)``.  The correlation block is the contribution below; the reference block
+        is the SCF electronic Hessian, computed HERE (not by a separate ``HFwfn`` pass) so its
+        ao-dependent skeleton shares this assembly's ``ao_tei_deriv2`` -- the dominant cost is paid
+        once, not twice (plan doc s.11.2).  :func:`pycc.hessian` adds the nuclear-repulsion second
+        derivative and packs the :class:`PropertyComponents`.
+
+        Correlation contribution to the molecular (nuclear) Hessian, indexed
+        ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
         nuclear-nuclear analog of :meth:`polarizability` / :meth:`apt`, via the 2n+1
         route (both spin paths, frozen-core aware).  Differentiate the relaxed nuclear gradient
         ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + I S^(X)`` w.r.t. a second nucleus ``Y``::
@@ -1111,8 +1118,8 @@ class CorrelatedDerivs:
         responds to -- nuclear here (``dGamN`` = ``d_Y Gamma``), field in the ``'2n+1-field'`` APT
         (``dGamF``); both are the ``dGam`` of :class:`PerturbedResponse`.
 
-        The reference and nuclear parts are separate and summed with this correlation part by
-        :func:`pycc.hessian`."""
+        The reference block is returned alongside (computed here to share ``ao_tei_deriv2``); the
+        nuclear-repulsion second derivative is added by :func:`pycc.hessian`."""
         from .cphf import Perturbation
         wfn = self.wfn
         c = self.contract
@@ -1203,6 +1210,16 @@ class CorrelatedDerivs:
             return c('pq,pq->', Drel, f2) + c('pqrs,pqrs->', Gam, e2) + c('pq,pq->', I, ov2)
 
         H = np.zeros((nc, nc))
+        route = getattr(self, '_skel_eri_route', 'aod')   # default; 'mo'/'ao' are opt-outs
+        # Reference (SCF) electronic Hessian.  For the 'aod' route we accumulate its ao-DEPENDENT
+        # skeleton into Href here in Pass 1, contracting the SAME ao_tei_deriv2 blocks this correlation
+        # assembly already computes -- so a correlated Hessian generates the (by far most expensive)
+        # 2nd-derivative TEIs ONCE, not once here and again in the reference HFwfn.  The ao-INDEPENDENT
+        # reference CPHF response is added after the assembly by delegating to HFwfn._hessian_response
+        # (no ao_tei_deriv2).  The 'mo'/'ao' opt-out routes do not fold Href; they fall back to the
+        # reference HFwfn's own (unshared) electronic Hessian.  (Href skeleton == HFwfn._hessian_skeleton
+        # by construction: same pair loop, same shared ao, same 2 D D - D D contraction.)
+        Href = np.zeros((nc, nc))
 
         # Spill the whole-run nmo^4 tensors the two passes never read (baseline MO ERIs H.ERI/H.L and
         # the raw CISD 2-PDM) to disk for the assembly; only Gam (pass 1) + derivative tensors stay.
@@ -1216,7 +1233,6 @@ class CorrelatedDerivs:
             #       block is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam (the SO
             #       saving is ~10x larger, its MO block being 16*nmo^4).  Same spatial AO source for
             #       both bases; each per-component block is bit-identical to the 'mo' route.
-            route = getattr(self, '_skel_eri_route', 'aod')   # default; 'mo'/'ao' are opt-outs
             if route == 'aod':
                 # AO-density route (plan doc s.10): fold the 2-e part of Drel*f^(XY) into Gam_eff,
                 # back-transform it to the spatial AO basis ONCE, and contract the raw ao_tei_deriv2
@@ -1226,12 +1242,22 @@ class CorrelatedDerivs:
                 # (_effective_2pdm_ao_so), so its Gam_eff^AO is the same nao^4 spatial tensor (the SO
                 # saving over the per-component 'ao' route is ~16x, its MO block being 16*nmo^4).  The
                 # one-electron remainder (Drel*h^(XY) + I*S^(XY)) stays in the cheap MO/SO OEI blocks.
+                # The SCF reference skeleton (2 D D - D D of the same ao block) rides along here so the
+                # ao_tei_deriv2 blocks feed BOTH densities (plan doc s.11.2).
+                eps_o_ref = eps[ofull]                                   # SCF orbital energies (occ)
                 if so:
                     GeffAO = self._effective_2pdm_ao_so(Drel, Gam)        # 1*nao^4, built once
                     core2, overlap2 = d.so_core2, d.so_overlap2
+                    Ca = np.asarray(wfn.H.Ca); Cb = np.asarray(wfn.H.Cb)  # C1-flattened alpha/beta MOs
+                    na, nb = wfn.ref.nalpha(), wfn.ref.nbeta()
+                    Da_ref = Ca[:, :na] @ Ca[:, :na].T                    # alpha occupied AO density
+                    Db_ref = Cb[:, :nb] @ Cb[:, :nb].T                    # beta occupied AO density
+                    Dt_ref = Da_ref + Db_ref                              # total AO density
                 else:
                     GeffAO = self._effective_2pdm_ao(Drel, Gam)           # 1*nao^4, built once
                     core2, overlap2 = d.core2, d.overlap2
+                    Co_ref = np.asarray(wfn.C)[:, ofull]                  # occupied MO coefficients
+                    Dref = Co_ref @ Co_ref.T                              # occupied AO density
                 for a1 in range(natom):
                     for a2 in range(a1, natom):
                         core2s = [np.asarray(m) for m in core2(a1, a2)]      # 9 OEI (nmo^2 / nso^2)
@@ -1240,12 +1266,26 @@ class CorrelatedDerivs:
                         for cx in range(3):
                             for cy in range(3):
                                 comp = cx * 3 + cy
-                                s = (c('mnls,mnls->', GeffAO, ao_eri[comp])
+                                aoc = ao_eri[comp]
+                                s = (c('mnls,mnls->', GeffAO, aoc)
                                      + c('pq,pq->', Drel, core2s[comp]) + c('pq,pq->', I, ov2s[comp]))
+                                # SCF reference skeleton (shared ao): Coulomb - exchange + OEI traces
+                                h2oo = core2s[comp][ofull, ofull]; S2oo = ov2s[comp][ofull, ofull]
+                                if so:
+                                    two_e_ref = 0.5 * (c('mn,ls,mnls->', Dt_ref, Dt_ref, aoc)
+                                                       - c('ms,nl,mnls->', Da_ref, Da_ref, aoc)
+                                                       - c('ms,nl,mnls->', Db_ref, Db_ref, aoc))
+                                    s_ref = (c('ii->', h2oo) + two_e_ref
+                                             - c('i,ii->', eps_o_ref, S2oo))
+                                else:
+                                    two_e_ref = (2.0 * c('mn,ls,mnls->', Dref, Dref, aoc)
+                                                 - c('ml,ns,mnls->', Dref, Dref, aoc))
+                                    s_ref = (2.0 * np.trace(h2oo) + two_e_ref
+                                             - 2.0 * c('i,ii->', eps_o_ref, S2oo))
                                 ix, iy = a1 * 3 + cx, a2 * 3 + cy
-                                H[ix, iy] += s
-                                if a1 != a2:
-                                    H[iy, ix] += s                       # s is symmetric in the pair
+                                H[ix, iy] += s; Href[ix, iy] += s_ref
+                                if a1 != a2:                             # s, s_ref symmetric in the pair
+                                    H[iy, ix] += s; Href[iy, ix] += s_ref
                         del core2s, ov2s, ao_eri
                 del GeffAO
             else:
@@ -1298,7 +1338,14 @@ class CorrelatedDerivs:
                         ix = a * 3 + cx
                         H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
                 del erX
-        return H
+
+        # Reference (SCF) electronic block.  'aod': the ao-dependent skeleton is in Href (built above
+        # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response by delegation.
+        # 'mo'/'ao' opt-outs did not fold Href -> use the reference HFwfn's own electronic Hessian.
+        hf = self._reference_hf()
+        reference = (Href + np.asarray(hf._hessian_response())) if route == 'aod' \
+            else np.asarray(hf._hessian_electronic())
+        return reference, H
 
     @staticmethod
     def _dependent_pairs(Iblock, eps_block, thresh=1e-8):
