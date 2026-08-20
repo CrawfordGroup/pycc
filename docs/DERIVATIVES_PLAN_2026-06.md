@@ -729,9 +729,17 @@ Floor = 9 AO + 1 `Γ_eff^AO` ≈ 10·nmo⁴; the per-pair MO transform is gone.
 - Canonical gauge (CCSD(T)): `D_rel` already folds `P_oo`/`P_vv`/`P_co` (it is `D̃`), so `Γ_D` uses
   that `D_rel` directly; confirm no double-count with the Pass-2 orbital-response terms (they are
   unaffected).
-- Spin-orbital: the SO cumulant is (2nmo)⁴ and `ao_tei_deriv2` is spatial, so the SO `Γ_eff`
-  back-transform must fold the spin structure onto the spatial AO (Coulomb from the total density,
-  exchange per spin block), analogous to the SCF SO Hessian. Do spatial first, SO as a follow-up.
+- Spin-orbital **[done, spatial-then-SO shipped]**: the SO cumulant is (2nmo)⁴ and `ao_tei_deriv2` is
+  spatial, so the SO `Γ_eff` back-transform folds the spin structure onto the *one* spatial AO tensor
+  (`_effective_2pdm_ao_so`). The SO fold is simpler than the spatial one: `Γ_D[a,b,c,d] = D_rel[a,c]
+  P[b,d]` with **no** factor 2 and **no** explicit exchange, because the SO integral `⟨pq‖rs⟩` is
+  antisymmetrized — the antisymmetrization is folded into the *density* (`Γ_a = Γ_eff −
+  Γ_eff.transpose(0,1,3,2)`, so it contracts the plain `⟨pq|rs⟩`), and the four same-spin
+  combinations back-transform (adjoint of `so_eri2_mo_component`, with the spin-blocked `Ca`/`Cb`) and
+  **sum** onto the single spatial `nao⁴` tensor. That summation is the memory win: the SO per-component
+  transient falls from `(2nmo)⁴ = 16·nmo⁴` to one `nao⁴` `Γ_eff^AO` built once (measured 16→1 on
+  OH/cc-pVDZ). Validated bit-identical to the SO 'ao' route (~1e-17) for CCSD/CCSD(T)/MP2, open-shell
+  UHF and closed-shell-in-SO, AE+FC, C1+C2v, psi4 1.9+1.10.
 - Back-transform bookkeeping: get the physicist→chemist→AO transposes right; validate by bit-identity
   against the current AO route.
 

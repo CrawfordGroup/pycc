@@ -943,6 +943,61 @@ class CorrelatedDerivs:
         G = c('mnls,ks->mnlk', G, C)
         return G.transpose(0, 1, 3, 2)                       # invert mo_eri_helper's ket reorder
 
+    def _effective_2pdm_ao_so(self, Drel, Gam):
+        r"""Spin-orbital effective 2-PDM back-transformed to the *spatial* AO chemist basis, for the
+        AO-density Hessian skeleton (plan doc s.10) -- the spin-orbital analogue of
+        :meth:`_effective_2pdm_ao`.  Folds the two-electron part of ``D_rel * f^(XY)`` (``f^(XY) =
+        h^(XY) + <pm||qm>^(XY)``, ``m`` over the full occupied space) into the antisymmetrized
+        cumulant so the whole two-electron skeleton is one density contraction
+        ``Gam_eff . <pq||rs>^(XY)``::
+
+            Gam_D[a,b,c,d] = D_rel[a,c] P[b,d]     (physicist; P = occ. projector; NO factor 2 and
+            Gam_eff        = Gam + Gam_D            no explicit exchange -- <pq||rs> is antisymmetrized)
+
+        Because ``<pq||rs>`` is built per spin block from the spin-free *spatial* AO second-derivative
+        integral (:meth:`Derivatives.so_eri2_mo_component`), ``Gam_eff`` is back-transformed onto that
+        one spatial AO tensor, summing the four same-spin combinations.  Mirroring the SO forward
+        transform's steps in reverse: the ket antisymmetrization is folded into the density
+        (``Ga = Gam_eff - Gam_eff.transpose(0,1,3,2)``, so it contracts the plain ``<pq|rs>``), the
+        physicist->chemist swap becomes ``transpose(0,2,1,3)``, the bra<->ket average
+        (:func:`_complete_deriv2`) becomes the chemist symmetrization, each spin block is
+        back-transformed with the spin-blocked ``Ca``/``Cb``, and the trailing ket swap
+        (``transpose(0,1,3,2)``) inverts ``mo_eri_helper``'s reorder so the result contracts directly
+        against the raw spatial ``ao_tei_deriv2``.  (Validated per component against
+        :meth:`Derivatives.so_eri2_mo_component`.)"""
+        c = self.contract
+        d = self.wfn.derivatives
+        nso = Gam.shape[0]
+        Pocc = np.zeros((nso, nso))
+        np.fill_diagonal(Pocc, (np.arange(nso) < self.wfn.o.stop).astype(float))
+        GamD = c('ac,bd->abcd', Drel, Pocc)                 # SO fold (antisym handles exchange; no *2)
+        Ga = (Gam + GamD)
+        Ga = Ga - Ga.transpose(0, 1, 3, 2)                  # fold in the <pq||rs> ket antisymmetrization
+        Gc = Ga.transpose(0, 2, 1, 3)                       # physicist <pq|rs> -> chemist (pr|qs)
+        Gd = 0.5 * (Gc + Gc.transpose(2, 3, 0, 1))          # bra<->ket symmetrize (chemist)
+        shape, sel = d._so_eri_blocks(('all', 'all', 'all', 'all'))
+        nao = np.asarray(sel[0][0][1]).shape[0]
+        GdAO = np.zeros((nao, nao, nao, nao))
+        for s12 in (0, 1):
+            p1, C1 = sel[0][s12]
+            p2, C2 = sel[1][s12]
+            if not (p1.size and p2.size):
+                continue
+            C1a, C2a = np.asarray(C1), np.asarray(C2)
+            for s34 in (0, 1):
+                p3, C3 = sel[2][s34]
+                p4, C4 = sel[3][s34]
+                if not (p3.size and p4.size):
+                    continue
+                C3a, C4a = np.asarray(C3), np.asarray(C4)
+                blk = Gd[np.ix_(p1, p2, p3, p4)]            # this spin combo's SO density block
+                t = c('pqrs,mp->mqrs', blk, C1a)            # back-transform each index to spatial AO
+                t = c('mqrs,nq->mnrs', t, C2a)
+                t = c('mnrs,lr->mnls', t, C3a)
+                t = c('mnls,ks->mnlk', t, C4a)
+                GdAO += t
+        return GdAO.transpose(0, 1, 3, 2)                   # invert mo_eri_helper's ket reorder
+
     def hessian(self) -> np.ndarray:
         r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
@@ -1093,17 +1148,26 @@ class CorrelatedDerivs:
             #       block is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam (the SO
             #       saving is ~10x larger, its MO block being 16*nmo^4).  Same spatial AO source for
             #       both bases; each per-component block is bit-identical to the 'mo' route.
-            route = getattr(self, '_skel_eri_route', 'aod')   # spatial default; SO uses the per-comp 'ao'
-            if route == 'aod' and not so:
+            route = getattr(self, '_skel_eri_route', 'aod')   # default; 'mo'/'ao' are opt-outs
+            if route == 'aod':
                 # AO-density route (plan doc s.10): fold the 2-e part of Drel*f^(XY) into Gam_eff,
-                # back-transform it to AO ONCE, and contract the raw ao_tei_deriv2 directly -- no
-                # per-pair MO transform and no f^(XY) build.  Floor ~= 9 AO + 1 Gam_eff^AO.  The
-                # one-electron remainder (Drel*h^(XY) + I*S^(XY)) stays in the cheap MO OEI blocks.
-                GeffAO = self._effective_2pdm_ao(Drel, Gam)               # 1*nao^4, built once
+                # back-transform it to the spatial AO basis ONCE, and contract the raw ao_tei_deriv2
+                # directly -- no per-pair MO transform and no f^(XY) build.  Floor ~= 9 AO + 1
+                # Gam_eff^AO.  Both spin paths share the spin-free spatial ao_tei_deriv2: the SO
+                # builder folds the spin blocks and the ket antisymmetrization into the back-transform
+                # (_effective_2pdm_ao_so), so its Gam_eff^AO is the same nao^4 spatial tensor (the SO
+                # saving over the per-component 'ao' route is ~16x, its MO block being 16*nmo^4).  The
+                # one-electron remainder (Drel*h^(XY) + I*S^(XY)) stays in the cheap MO/SO OEI blocks.
+                if so:
+                    GeffAO = self._effective_2pdm_ao_so(Drel, Gam)        # 1*nao^4, built once
+                    core2, overlap2 = d.so_core2, d.so_overlap2
+                else:
+                    GeffAO = self._effective_2pdm_ao(Drel, Gam)           # 1*nao^4, built once
+                    core2, overlap2 = d.core2, d.overlap2
                 for a1 in range(natom):
                     for a2 in range(a1, natom):
-                        core2s = [np.asarray(m) for m in d.core2(a1, a2)]     # 9 MO OEI (nmo^2)
-                        ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
+                        core2s = [np.asarray(m) for m in core2(a1, a2)]      # 9 OEI (nmo^2 / nso^2)
+                        ov2s = [np.asarray(m) for m in overlap2(a1, a2)]
                         ao_eri = d.ao_eri2(a1, a2)                            # 9 spatial AO, held
                         for cx in range(3):
                             for cy in range(3):
