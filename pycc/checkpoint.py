@@ -65,9 +65,9 @@ def save_checkpoint(source: Any, path: str, properties: List[str] = None) -> str
     str
         the path actually written.
     """
-    from .properties import _wfn_of
+    from .properties import _wavefunction
 
-    wfn = _wfn_of(source)
+    wfn = _wavefunction(source)
     results = getattr(wfn, '_property_results', {})
     if properties is None:
         names = list(results.keys())

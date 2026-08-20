@@ -57,8 +57,8 @@ def test_so_ccsd_gradient_keystone_equals_spatial():
     _, wfn = psi4.energy('scf', return_wfn=True)
     cc_sp = pycc.ccwfn(wfn); cc_sp.solve_cc(E_CONV, R_CONV, 200)
     cc_so = pycc.ccwfn(wfn, orbital_basis='spinorbital'); cc_so.solve_cc(E_CONV, R_CONV, 200)
-    g_sp = pycc.CCderiv(cc_sp).gradient()
-    g_so = pycc.CCderiv(cc_so).gradient()
+    g_sp = pycc.CCderiv(cc_sp).gradient().correlation
+    g_so = pycc.CCderiv(cc_so).gradient().correlation
     assert np.max(np.abs(g_so - g_sp)) < 1e-10, (g_so, g_sp)
 
 
@@ -69,9 +69,9 @@ def test_so_ccsd_gradient_route_equivalence():
     cc, _ = _so_ccwfn(NH2, reference="uhf")
     d = pycc.CCderiv(cc)
     d._skel_eri_route = 'mo'
-    g_mo = np.asarray(d.gradient())
+    g_mo = np.asarray(d.gradient().correlation)
     d._skel_eri_route = 'aod'
-    g_aod = np.asarray(d.gradient())
+    g_aod = np.asarray(d.gradient().correlation)
     assert np.max(np.abs(g_aod - g_mo)) < 1e-11, np.max(np.abs(g_aod - g_mo))
 
 
@@ -122,8 +122,8 @@ def test_so_ccsd_gradient_frozen_core():
     cc_so = pycc.ccwfn(wfn, orbital_basis='spinorbital'); cc_so.solve_cc(E_CONV, R_CONV, 200)
     assert cc_so.nfzc > 0
     deriv = pycc.CCderiv(cc_so)
-    g_so = deriv.gradient()
-    assert np.max(np.abs(g_so - pycc.CCderiv(cc_sp).gradient())) < 1e-9  # SO == spatial (frozen core)
+    g_so = deriv.gradient().correlation
+    assert np.max(np.abs(g_so - pycc.CCderiv(cc_sp).gradient().correlation)) < 1e-9  # SO == spatial (frozen core)
 
 
 def test_so_ccsd_gradient_rohf_raises():
@@ -132,4 +132,4 @@ def test_so_ccsd_gradient_rohf_raises():
     import pytest
     cc, _ = _so_ccwfn(NH2, reference="rohf")
     with pytest.raises(NotImplementedError):
-        pycc.CCderiv(cc).gradient()
+        pycc.CCderiv(cc).gradient().correlation

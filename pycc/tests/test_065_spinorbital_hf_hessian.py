@@ -63,8 +63,8 @@ def _psi4_hessian(geom, basis, reference):
 def test_so_rhf_hessian_vs_spatial_631g():
     """Keystone (C1): closed-shell RHF forced to spin orbitals == spatial RHF Hessian."""
     wfn = _scf_wfn(WATER + "symmetry c1\n", '6-31G', 'rhf')
-    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian()
-    h_spatial = pycc.HFwfn(wfn).hessian()
+    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian().total
+    h_spatial = pycc.HFwfn(wfn).hessian().total
     assert np.max(np.abs(h_so - h_spatial)) < 1e-10
 
 
@@ -72,15 +72,15 @@ def test_so_rhf_hessian_vs_spatial_631g():
 def test_so_rhf_hessian_vs_spatial_ccpvdz():
     """Keystone (C2v: polarization functions + A2-irrep MOs): SO-RHF == spatial RHF."""
     wfn = _scf_wfn(WATER, 'cc-pVDZ', 'rhf')
-    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian()
-    h_spatial = pycc.HFwfn(wfn).hessian()
+    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian().total
+    h_spatial = pycc.HFwfn(wfn).hessian().total
     assert np.max(np.abs(h_so - h_spatial)) < 1e-10
 
 
 def test_uhf_hessian_vs_psi4():
     """Open-shell UHF molecular Hessian (OH doublet) vs psi4.hessian('scf')."""
     wfn = _scf_wfn(OH, '6-31G', 'uhf')
-    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian()
+    h_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian().total
     assert np.max(np.abs(h_so - h_so.T)) < 1e-10       # naturally symmetric (so_eri2 fix)
     assert np.max(np.abs(h_so - _psi4_hessian(OH, '6-31G', 'uhf'))) < 1e-8
 
@@ -89,4 +89,4 @@ def test_rohf_hessian_not_implemented():
     """ROHF Hessian goes through the (unsupported) ROHF CPHF response: NotImplementedError."""
     wfn = _scf_wfn(OH, '6-31G', 'rohf')
     with pytest.raises(NotImplementedError):
-        pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian()
+        pycc.HFwfn(wfn, orbital_basis='spinorbital').hessian().total

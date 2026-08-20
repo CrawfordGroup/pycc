@@ -991,7 +991,7 @@ class CCderiv(CorrelatedDerivs):
 
     def linear_response(self, a, b, omega=0.0):
         r"""Orbital-unrelaxed CC linear response function ``<<a; b>>_omega`` -- the
-        general engine behind :meth:`dynamic_polarizability` / :meth:`optical_rotation`.
+        general engine behind :meth:`polarizability` / :meth:`optical_rotation`.
         The 3x3 tensor is assembled by the density route::
 
             <<a; b>>_omega[i,j] = Tr(d_bj D(omega) . a_i)
@@ -1020,7 +1020,7 @@ class CCderiv(CorrelatedDerivs):
                 tensor[i, j] = self.contract('pq,qp->', dD[j], a_ints[i])
         return tensor
 
-    def dynamic_polarizability(self, omega=0.0):
+    def _correlation_dynamic_polarizability(self, omega=0.0):
         r"""Orbital-unrelaxed dynamic dipole polarizability ``alpha(omega)``, a 3x3 array::
 
             alpha_ab(omega) = -<<mu; mu>>_omega = -Tr(d_b D(omega) . mu_a)
@@ -1036,7 +1036,13 @@ class CCderiv(CorrelatedDerivs):
         ``alpha = -<<mu; mu>>`` convention of ``ccresponse.polarizability``."""
         return -self.linear_response('mu', 'mu', omega)
 
-    def optical_rotation(self, omega):
+    def optical_rotation(self, omega, units: str = 'Eh') -> "PropertyComponents":
+        """Optical-rotation tensor ``G'(omega)`` as a :class:`pycc.PropertyComponents`
+        (correlation-only; SCF and nuclear blocks zero).  See :func:`pycc.optical_rotation`."""
+        from . import properties
+        return properties.optical_rotation(self, omega, units=units)
+
+    def _correlation_optical_rotation(self, omega):
         r"""Orbital-unrelaxed optical-rotation tensor ``G'(omega) = <<mu; m>>_omega``, a 3x3 array --
         the odd-in-omega part of the density response function of the electric dipole ``mu`` to the
         magnetic dipole ``m``::

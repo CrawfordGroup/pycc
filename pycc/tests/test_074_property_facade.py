@@ -52,8 +52,8 @@ def test_aat_genuine_separation():
     real, nonzero contribution computed apart from it."""
     hf, mp = _wfns()
     r = pycc.aat(pycc.MPderiv(mp))
-    assert np.max(np.abs(r.reference - np.asarray(hf.atomic_axial_tensors()))) < 1e-12
-    assert np.max(np.abs(r.correlation - np.asarray(pycc.MPderiv(mp).atomic_axial_tensors()))) < 1e-12
+    assert np.max(np.abs(r.reference - np.asarray(hf.aat().reference))) < 1e-12
+    assert np.max(np.abs(r.correlation - np.asarray(pycc.MPderiv(mp).aat().correlation))) < 1e-12
     assert np.max(np.abs(r.correlation)) > 1e-4      # correlation really present
 
 
@@ -76,7 +76,7 @@ def test_aat_hf_wavefunction():
     r = pycc.aat(hf)
     assert r.correlation.shape == r.reference.shape
     assert np.all(r.correlation == 0.0)
-    assert np.max(np.abs(r.reference - np.asarray(hf.atomic_axial_tensors()))) < 1e-12
+    assert np.max(np.abs(r.reference - np.asarray(hf.aat().reference))) < 1e-12
     assert np.max(np.abs(r.electronic - r.reference)) < 1e-14
 
 
@@ -115,12 +115,12 @@ def _facade_and_pieces(hf, mp):
     correlation method) that reconstruct the physical total, for the composition check."""
     d = pycc.MPderiv(mp)
     return [
-        ("dipole",         pycc.dipole(d),                hf.dipole(),                     d.relaxed_dipole()),
-        ("gradient",       pycc.gradient(d),              hf.gradient(),                   d.gradient()),
-        ("polarizability", pycc.polarizability(d),        hf.polarizability(),             d.polarizability()),
-        ("hessian",        pycc.hessian(d),               hf.hessian(),                    d.hessian()),
-        ("apt-length",     pycc.apt(d, 'length'),         hf.dipole_derivatives(),         d.dipole_derivatives()),
-        ("apt-velocity",   pycc.apt(d, 'velocity'),       hf.velocity_dipole_derivatives(), d.velocity_dipole_derivatives()),
+        ("dipole",         pycc.dipole(d),          hf.dipole().total,                 d.dipole().correlation),
+        ("gradient",       pycc.gradient(d),        hf.gradient().total,               d.gradient().correlation),
+        ("polarizability", pycc.polarizability(d),  hf.polarizability().total,         d.polarizability().correlation),
+        ("hessian",        pycc.hessian(d),         hf.hessian().total,                d.hessian().correlation),
+        ("apt-length",     pycc.apt(d, 'length'),   hf.apt().total,                    d.apt().correlation),
+        ("apt-velocity",   pycc.apt(d, 'velocity'), hf.apt(gauge='velocity').total,    d.apt(gauge='velocity').correlation),
     ]
 
 
@@ -133,27 +133,24 @@ def test_facade_decomposition_and_total():
         assert np.max(np.abs(comp.total - (np.asarray(hf_pub) + np.asarray(mp_corr)))) < 1e-10, name
 
 
-def test_facade_requires_driver_object():
-    """The facade takes a derivative driver; a bare (registered) correlated wavefunction is rejected
-    with a TypeError telling the caller to construct the driver first."""
+def test_facade_takes_driver_object():
+    """The facade takes a derivative driver (the solve cost sits in its explicit constructor); each
+    property computed on the driver decomposes as total == nuclear + reference + correlation.  The
+    equivalent method call ``driver.<property>()`` returns the same PropertyComponents."""
     _, mp = _wfns()
     driver = pycc.MPderiv(mp)
     cases = [
-        ("dipole",         pycc.dipole),
-        ("gradient",       pycc.gradient),
-        ("polarizability", pycc.polarizability),
-        ("hessian",        pycc.hessian),
-        ("apt-length",     lambda x: pycc.apt(x, 'length')),
-        ("apt-velocity",   lambda x: pycc.apt(x, 'velocity')),
+        ("dipole",         pycc.dipole,                        driver.dipole),
+        ("gradient",       pycc.gradient,                      driver.gradient),
+        ("polarizability", pycc.polarizability,                driver.polarizability),
+        ("hessian",        pycc.hessian,                       driver.hessian),
+        ("apt-length",     lambda x: pycc.apt(x, 'length'),    lambda: driver.apt('length')),
+        ("apt-velocity",   lambda x: pycc.apt(x, 'velocity'),  lambda: driver.apt('velocity')),
     ]
-    for name, fn in cases:
-        r = fn(driver)                                   # driver object works
+    for name, fn, method in cases:
+        r = fn(driver)                                   # facade on the driver object
         assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12, name
-        try:
-            fn(mp)                                       # bare registered wfn is rejected
-            assert False, f"expected TypeError for a bare wavefunction: {name}"
-        except TypeError:
-            pass
+        assert np.max(np.abs(r.total - method().total)) < 1e-14, name   # pycc.X(d) == d.X()
 
 
 def test_facade_hf_wavefunction():
@@ -161,12 +158,12 @@ def test_facade_hf_wavefunction():
     public method (same shape/type as the MP2 result)."""
     hf, _ = _wfns()
     for name, fn, pub in [
-            ("dipole", pycc.dipole, hf.dipole()),
-            ("gradient", pycc.gradient, hf.gradient()),
-            ("polarizability", pycc.polarizability, hf.polarizability()),
-            ("hessian", pycc.hessian, hf.hessian()),
-            ("apt-length", lambda w: pycc.apt(w, 'length'), hf.dipole_derivatives()),
-            ("apt-velocity", lambda w: pycc.apt(w, 'velocity'), hf.velocity_dipole_derivatives())]:
+            ("dipole", pycc.dipole, hf.dipole().total),
+            ("gradient", pycc.gradient, hf.gradient().total),
+            ("polarizability", pycc.polarizability, hf.polarizability().total),
+            ("hessian", pycc.hessian, hf.hessian().total),
+            ("apt-length", lambda w: pycc.apt(w, 'length'), hf.apt().total),
+            ("apt-velocity", lambda w: pycc.apt(w, 'velocity'), hf.apt(gauge='velocity').total)]:
         r = fn(hf)
         assert np.all(r.correlation == 0.0), name
         assert np.max(np.abs(r.total - np.asarray(pub))) < 1e-12, name

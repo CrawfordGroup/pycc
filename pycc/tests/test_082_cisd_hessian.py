@@ -75,7 +75,7 @@ def _gradfd_col(atom, cart, freeze_core='false', h=0.002):
     def g(delta):
         c = BASE.copy()
         c[atom, cart] += delta
-        return np.asarray(_cideriv(c, freeze_core).gradient())
+        return np.asarray(_cideriv(c, freeze_core).gradient().correlation)
     return ((-g(-3 * h) + 9 * g(-2 * h) - 45 * g(-h)
              + 45 * g(h) - 9 * g(2 * h) + g(3 * h)) / (60 * h)).reshape(-1)
 
@@ -142,7 +142,7 @@ def test_cisd_hessian_vs_reference(cisd_h2o2):
 def test_cisd_hessian_gradfd():
     """All-electron correlation-Hessian columns vs their frozen references (validated once
     against a 7-point FD of the analytic gradient to ~2e-12)."""
-    H = np.asarray(_cideriv().hessian())
+    H = np.asarray(_cideriv().hessian().correlation)
     for (atom, cart), ref in HESS_COL['false'].items():
         j = atom * 3 + cart
         assert np.max(np.abs(H[:, j] - ref)) < 1e-9, (atom, cart, np.max(np.abs(H[:, j] - ref)))
@@ -154,7 +154,7 @@ def test_cisd_hessian_gradfd_frozen_core():
     frozen-core perturbed Z-vector for a nuclear perturbation, twice over."""
     cd = _cideriv(freeze_core='true')
     assert cd.ci.nfzc == 2, cd.ci.nfzc
-    H = np.asarray(cd.hessian())
+    H = np.asarray(cd.hessian().correlation)
     for (atom, cart), ref in HESS_COL['true'].items():
         j = atom * 3 + cart
         assert np.max(np.abs(H[:, j] - ref)) < 1e-9, (atom, cart, np.max(np.abs(H[:, j] - ref)))
@@ -185,8 +185,8 @@ def test_cisd_hessian_perturbed_mo_gauge_invariance():
     """The correlation Hessian is invariant to the perturbed-MO gauge (non-canonical default vs the
     canonical dependent-pair route), all-electron and frozen-core."""
     for fc in ('false', 'true'):
-        nc = np.asarray(_cideriv_water(fc).hessian())
+        nc = np.asarray(_cideriv_water(fc).hessian().correlation)
         cd = _cideriv_water(fc)
         cd._gauge_override = 'canonical'
-        ca = np.asarray(cd.hessian())
+        ca = np.asarray(cd.hessian().correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

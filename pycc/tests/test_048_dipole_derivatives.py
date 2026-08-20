@@ -64,5 +64,5 @@ def test_dipole_derivatives_h2o(rhf_wfn):
     """H2O STO-3G RHF APTs vs the finite-difference-validated frozen reference (frame locked)."""
     wfn = rhf_wfn("H2O", "STO-3G", geom_extra="\nsymmetry c1\nnoreorient\nnocom",
                   e_convergence=1e-11, d_convergence=1e-11)
-    analytic = np.asarray(pycc.HFwfn(wfn).dipole_derivatives()).reshape(-1, 3)
+    analytic = np.asarray(pycc.HFwfn(wfn).apt().total).reshape(-1, 3)
     assert np.max(np.abs(analytic - APT_REF)) < 1e-8

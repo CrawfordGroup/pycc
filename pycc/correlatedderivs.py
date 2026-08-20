@@ -71,6 +71,38 @@ class CorrelatedDerivs:
             self._ref_hf = HFwfn(self.wfn.ref, orbital_basis=self.wfn.orbital_basis, quiet=True)
         return self._ref_hf
 
+    # ---- public property API: each returns the PropertyComponents decomposition
+    # (nuclear + reference + correlation).  The module-level pycc.<property> facades are thin
+    # wrappers around these; the reference block comes from the SCF HFwfn (_reference_hf), the
+    # correlation block from this driver's _correlation_* method. ----
+
+    def dipole(self) -> "PropertyComponents":
+        """Electric-dipole moment as a :class:`pycc.PropertyComponents`.  See :func:`pycc.dipole`."""
+        from . import properties
+        return properties.dipole(self)
+
+    def gradient(self) -> "PropertyComponents":
+        """Analytic energy gradient as a :class:`pycc.PropertyComponents`.  See :func:`pycc.gradient`."""
+        from . import properties
+        return properties.gradient(self)
+
+    def polarizability(self, omega: float = 0.0, relaxed: bool = None,
+                       units: str = 'Eh') -> "PropertyComponents":
+        """Dipole polarizability as a :class:`pycc.PropertyComponents`.  See :func:`pycc.polarizability`."""
+        from . import properties
+        return properties.polarizability(self, omega=omega, relaxed=relaxed, units=units)
+
+    def hessian(self) -> "PropertyComponents":
+        """Molecular (nuclear) Hessian as a :class:`pycc.PropertyComponents`.  See :func:`pycc.hessian`."""
+        from . import properties
+        return properties.hessian(self)
+
+    def apt(self, gauge: str = 'length', route: str = '2n+1-field',
+            orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        """Atomic polar tensors as a :class:`pycc.PropertyComponents`.  See :func:`pycc.apt`."""
+        from . import properties
+        return properties.apt(self, gauge=gauge, route=route, orbital_gauge=orbital_gauge)
+
     @property
     def perturbed_mo_gauge(self):
         """The active occ-occ / virt-virt perturbed-orbital gauge, ``'canonical'`` or
@@ -597,7 +629,7 @@ class CorrelatedDerivs:
     # given (Drel, Gam) and the energy-weighted density I = I'(Drel).  The reference (SCF) and
     # nuclear contributions are kept separate and summed by the pycc.properties facade.
 
-    def relaxed_dipole(self) -> np.ndarray:
+    def _correlation_dipole(self) -> np.ndarray:
         r"""Correlation contribution to the electronic dipole moment (a.u.), shape ``(3,)``
         (repeated indices summed)::
 
@@ -616,7 +648,7 @@ class CorrelatedDerivs:
         c = self.contract
         return np.array([c('pq,pq->', Drel, np.asarray(self.wfn.H.mu[a])) for a in range(3)])
 
-    def gradient(self) -> np.ndarray:
+    def _correlation_gradient(self) -> np.ndarray:
         r"""Correlation contribution to the analytic nuclear energy gradient (a.u.), shape
         ``(natom, 3)`` (repeated indices summed)::
 
@@ -635,7 +667,7 @@ class CorrelatedDerivs:
         per-perturbation CPHF solve.  Spatial (closed-shell RHF) path; the spin-orbital path is
         :meth:`_so_gradient`.  The reference (SCF) gradient is kept separate."""
         if self.wfn.orbital_basis == 'spinorbital':
-            return self._so_gradient()
+            return self._so_correlation_gradient()
         ofull = slice(0, self.wfn.o.stop)                # full occupied (core + active)
         Drel, Gam = self._relaxed_density()
         I = self._lagrangian(Drel, Gam)
@@ -668,7 +700,7 @@ class CorrelatedDerivs:
                                         + c('pq,pq->', I, Sx[cart]))
         return grad
 
-    def _so_gradient(self) -> np.ndarray:
+    def _so_correlation_gradient(self) -> np.ndarray:
         r"""Spin-orbital correlation gradient -- the spin-orbital analogue of :meth:`gradient`
         with the antisymmetrized ``<pq||rs>^(X)`` from ``wfn.derivatives.so_*`` (``m`` over the
         full occupied space; repeated indices summed)::
@@ -719,7 +751,7 @@ class CorrelatedDerivs:
     # separate and are summed by the facade.  A leaf overrides one of these only to add
     # method-specific behavior (e.g. CCderiv.polarizability's model / (T)-intermediate guards).
 
-    def polarizability(self) -> np.ndarray:
+    def _correlation_polarizability(self) -> np.ndarray:
         r"""Correlation contribution to the static (omega=0) dipole polarizability (a.u.), shape
         ``(3, 3)``: ``alpha_corr_ab = -d^2 E_corr / dF_a dF_b``, via the 2n+1 route (frozen-core
         aware; spin-orbital and spin-adapted paths).  Differentiating the relaxed dipole
@@ -761,7 +793,7 @@ class CorrelatedDerivs:
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
         return alpha
 
-    def dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
+    def _correlation_dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
         r"""Correlation contribution to the atomic polar tensors (nuclear dipole derivatives, a.u.),
         shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` =
         ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed field/nuclear
@@ -1034,10 +1066,10 @@ class CorrelatedDerivs:
                 GdAO += t
         return GdAO.transpose(0, 1, 3, 2)                   # invert mo_eri_helper's ket reorder
 
-    def hessian(self) -> np.ndarray:
+    def _correlation_hessian(self) -> np.ndarray:
         r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
-        nuclear-nuclear analog of :meth:`polarizability` / :meth:`dipole_derivatives`, via the 2n+1
+        nuclear-nuclear analog of :meth:`polarizability` / :meth:`apt`, via the 2n+1
         route (both spin paths, frozen-core aware).  Differentiate the relaxed nuclear gradient
         ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + I S^(X)`` w.r.t. a second nucleus ``Y``::
 
@@ -1053,7 +1085,7 @@ class CorrelatedDerivs:
                 + W_{pq}\,\partial_Y S^{(X)}_{pq}
             \end{aligned}
 
-        the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`dipole_derivatives`).
+        the nuclear-nuclear analog of the ``'2n+1-field'`` APT (:meth:`apt`).
         Only ``3N`` first-order solves -- the perturbed relaxed density ``d_Y D_rel``, the perturbed
         energy-weighted density ``d_Y I``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
         per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
@@ -1071,7 +1103,7 @@ class CorrelatedDerivs:
         ``SX`` = ``S^(X)``, ``erix``/``erX`` = ``<pq|rs>^(X)`` spatial / ``<pq||rs>^(X)`` spin-orbital) --
         never a density derivative.  ``wx`` is the Fock-building companion of ``erix``: the
         spin-adapted ``L^(X) = 2<pq|rs>^(X) - <pq|sr>^(X)`` (closed-shell), or ``erix`` itself when
-        the integrals are already antisymmetrized (spin-orbital).  (:meth:`dipole_derivatives` builds
+        the integrals are already antisymmetrized (spin-orbital).  (:meth:`apt` builds
         the same two kernels under the names ``eriX``/``eriL``.)  ``X~``/``I~''`` (``Xx``/``I2x``) and
         ``P^(x)`` (``Pf_x``) are the dependent-pair-augmented skeleton carriers from
         :meth:`_augment_with_canonical_pair_rotations`; ``D~`` = ``Drel`` is the relaxed 1-PDM of the
@@ -1329,7 +1361,7 @@ class CorrelatedDerivs:
         return dP
 
     # ---- shared per-perturbation orbital-response builders (used by both hessian() and
-    #      dipole_derivatives() when they run in the reference-doc form) ----
+    #      apt() when they run in the reference-doc form) ----
 
     def _skeleton_lagrangian(self, fXx, SXx, wx, erix, Drel, Gam, I):
         r"""Skeleton-perturbed orbital Lagrangian ``I'^(x)`` for one perturbation ``x`` -- the

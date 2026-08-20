@@ -65,16 +65,16 @@ def _scf_wfn(geom, basis, reference):
 def test_so_rhf_apt_vs_spatial_631g():
     """Keystone (C1): closed-shell RHF forced to spin orbitals == spatial RHF APT."""
     wfn = _scf_wfn(WATER + "symmetry c1\n", '6-31G', 'rhf')
-    apt_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()
-    apt_spatial = pycc.HFwfn(wfn).dipole_derivatives()
+    apt_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').apt().total
+    apt_spatial = pycc.HFwfn(wfn).apt().total
     assert np.max(np.abs(apt_so - apt_spatial)) < 1e-10
 
 
 def test_so_rhf_apt_vs_spatial_ccpvdz():
     """Keystone (C2v: polarization functions + A2-irrep MOs): SO-RHF == spatial RHF APT."""
     wfn = _scf_wfn(WATER, 'cc-pVDZ', 'rhf')
-    apt_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()
-    apt_spatial = pycc.HFwfn(wfn).dipole_derivatives()
+    apt_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').apt().total
+    apt_spatial = pycc.HFwfn(wfn).apt().total
     assert np.max(np.abs(apt_so - apt_spatial)) < 1e-10
 
 
@@ -82,7 +82,7 @@ def test_uhf_apt():
     """Open-shell UHF APT (OH doublet / 6-31G, C2v) vs the finite-difference-validated frozen
     reference (see UHF_APT_REF above)."""
     wfn = _scf_wfn(_oh_geom(OH_COORDS), '6-31G', 'uhf')
-    apt = np.asarray(pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()).reshape(-1, 3)
+    apt = np.asarray(pycc.HFwfn(wfn, orbital_basis='spinorbital').apt().total).reshape(-1, 3)
     assert np.max(np.abs(apt - UHF_APT_REF)) < 1e-8
 
 
@@ -90,4 +90,4 @@ def test_rohf_apt_not_implemented():
     """ROHF APT goes through the (unsupported) ROHF CPHF response: NotImplementedError."""
     wfn = _scf_wfn(_oh_geom(OH_COORDS), '6-31G', 'rohf')
     with pytest.raises(NotImplementedError):
-        pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole_derivatives()
+        pycc.HFwfn(wfn, orbital_basis='spinorbital').apt().total

@@ -77,7 +77,7 @@ def _corr_dipfd(alpha, atom, cart, freeze_core='false', h=0.002):
     def mu(delta):
         c = BASE.copy()
         c[atom, cart] += delta
-        return _cideriv(c, freeze_core).relaxed_dipole()[alpha]
+        return _cideriv(c, freeze_core).dipole().correlation[alpha]
     return (-mu(-3 * h) + 9 * mu(-2 * h) - 45 * mu(-h)
             + 45 * mu(h) - 9 * mu(2 * h) + mu(3 * h)) / (60 * h)
 
@@ -135,7 +135,7 @@ def test_cisd_lg_apt_vs_reference(cisd_h2o2):
 def test_cisd_lg_apt_corr_dipfd():
     """All-electron spatial correlation LG APT vs its frozen reference (validated once against a
     7-point dipole-over-nuclear FD to ~1e-11), representative components."""
-    P = _cideriv().dipole_derivatives()
+    P = _cideriv().apt().correlation
     for (alpha, atom, cart), ref in APT_CORR['false'].items():
         assert abs(P[atom, cart, alpha] - ref) < 1e-9, (alpha, atom, cart, P[atom, cart, alpha], ref)
 
@@ -149,7 +149,7 @@ def test_cisd_lg_apt_corr_dipfd_frozen_core():
     APT-specific code - the ncore machinery carries over from the gradient and the Z-vector."""
     cd = _cideriv(freeze_core='true')
     assert cd.ci.nfzc == 2, cd.ci.nfzc
-    P = cd.dipole_derivatives()
+    P = cd.apt().correlation
     for (alpha, atom, cart), ref in APT_CORR['true'].items():
         assert abs(P[atom, cart, alpha] - ref) < 1e-9, (alpha, atom, cart, P[atom, cart, alpha], ref)
 
@@ -173,8 +173,8 @@ def test_cisd_lg_apt_2n1_routes_agree(cisd_h2o2):
     cross-check of the frozen-core perturbed Z-vector rather than a restatement."""
     for fc in (False, True):
         cd = pycc.CIderiv(cisd_h2o2(freeze_core=fc))
-        field = np.asarray(cd.dipole_derivatives(route='2n+1-field'))
-        nuc = np.asarray(cd.dipole_derivatives(route='2n+1-nuclear'))
+        field = np.asarray(cd.apt(route='2n+1-field').correlation)
+        nuc = np.asarray(cd.apt(route='2n+1-nuclear').correlation)
         assert np.max(np.abs(field - nuc)) < 1e-9, (fc, np.max(np.abs(field - nuc)))
 
 
@@ -182,8 +182,8 @@ def test_cisd_lg_apt_perturbed_mo_gauge_invariance():
     """The correlation LG APT is invariant to the perturbed-MO gauge (non-canonical vs the
     canonical dependent-pair route), all-electron and frozen-core. """
     for fc in ('false', 'true'):
-        nc = np.asarray(_cideriv_water(fc).dipole_derivatives())
+        nc = np.asarray(_cideriv_water(fc).apt().correlation)
         cd = _cideriv_water(fc)
         cd._gauge_override = 'canonical'
-        ca = np.asarray(cd.dipole_derivatives())
+        ca = np.asarray(cd.apt().correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

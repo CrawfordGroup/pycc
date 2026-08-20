@@ -90,8 +90,8 @@ def test_mp2_aat_so_equals_spatial():
     """Spin-orbital MP2 correlation AAT == spin-adapted (the keystone), all-electron and
     frozen-core; the electronic total also matches the apyib reference."""
     for fc in ('false', 'true'):
-        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)).atomic_axial_tensors()).reshape(-1, 3)
-        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)).atomic_axial_tensors()).reshape(-1, 3)
+        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)).aat().correlation).reshape(-1, 3)
+        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)).aat().correlation).reshape(-1, 3)
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
         E_so = np.asarray(pycc.aat(pycc.MPderiv(_mpwfn('spinorbital', fc))).electronic).reshape(-1, 3)
         for (row, col), ref in AAT_REF[fc].items():
@@ -116,8 +116,8 @@ def test_mp2_aat_gauge_invariance():
     for fc in ('false', 'true'):
         for ob in ('spatial', 'spinorbital'):
             d = pycc.MPderiv(_mpwfn(ob, fc))
-            nc = np.asarray(d.atomic_axial_tensors(gauge='non-canonical'))
-            ca = np.asarray(d.atomic_axial_tensors(gauge='canonical'))
+            nc = np.asarray(d.aat(orbital_gauge='non-canonical').correlation)
+            ca = np.asarray(d.aat(orbital_gauge='canonical').correlation)
             assert np.max(np.abs(nc - ca)) < 1e-9, (fc, ob, np.max(np.abs(nc - ca)))
 
 

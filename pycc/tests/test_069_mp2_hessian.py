@@ -60,7 +60,7 @@ def _gradfd_col(orbital_basis, atom, cart, freeze_core='false', h=0.002):
     coordinate (atom, cart)."""
     def g(delta):
         c = BASE.copy(); c[atom, cart] += delta
-        return np.asarray(pycc.MPderiv(_mpwfn(c, orbital_basis, freeze_core)).gradient())
+        return np.asarray(pycc.MPderiv(_mpwfn(c, orbital_basis, freeze_core)).gradient().correlation)
     return ((-g(-3*h) + 9*g(-2*h) - 45*g(-h)
              + 45*g(h) - 9*g(2*h) + g(3*h)) / (60*h)).reshape(-1)
 
@@ -80,7 +80,7 @@ HESS_COL_631G_FC = {   # frozen core
 def test_mp2_corr_hessian_symmetry_sum_rule_631g():
     """All-electron correlation Hessian: symmetric, and translationally invariant
     (sum over the second atom vanishes), H2O/6-31G -- FD-free checks."""
-    H = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian()
+    H = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian().correlation
     assert H.shape == (9, 9)
     assert np.max(np.abs(H - H.T)) < 1e-10
     assert np.max(np.abs(H.reshape(3, 3, 3, 3).sum(axis=2))) < 1e-10
@@ -89,7 +89,7 @@ def test_mp2_corr_hessian_symmetry_sum_rule_631g():
 def test_mp2_corr_hessian_gradfd_631g():
     """All-electron correlation Hessian columns vs their frozen references (validated once against
     a 7-point FD of the analytic gradient to ~1e-13), H2O/6-31G."""
-    H = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian()
+    H = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian().correlation
     for (atom, cart), ref in HESS_COL_631G.items():
         j = atom * 3 + cart
         assert np.max(np.abs(H[:, j] - ref)) < 1e-9
@@ -97,8 +97,8 @@ def test_mp2_corr_hessian_gradfd_631g():
 
 def test_so_mp2_corr_hessian_vs_spatial_631g():
     """Keystone (6-31G): closed-shell spin-orbital == spin-adapted correlation Hessian."""
-    H_so = pycc.MPderiv(_mpwfn(BASE, 'spinorbital')).hessian()
-    H_sa = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian()
+    H_so = pycc.MPderiv(_mpwfn(BASE, 'spinorbital')).hessian().correlation
+    H_sa = pycc.MPderiv(_mpwfn(BASE, 'spatial')).hessian().correlation
     assert np.max(np.abs(H_so - H_sa)) < 1e-11
 
 
@@ -107,7 +107,7 @@ def test_so_mp2_corr_hessian_vs_spatial_631g():
 def test_fc_mp2_corr_hessian_gradfd_631g():
     """Frozen-core correlation Hessian columns vs their frozen references (validated once against
     the 7-point gradient FD to ~1e-13), H2O/6-31G."""
-    H = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian()
+    H = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian().correlation
     for (atom, cart), ref in HESS_COL_631G_FC.items():
         j = atom * 3 + cart
         assert np.max(np.abs(H[:, j] - ref)) < 1e-9
@@ -115,13 +115,13 @@ def test_fc_mp2_corr_hessian_gradfd_631g():
 
 def test_fc_mp2_corr_hessian_symmetry_sum_rule_631g():
     """Frozen-core correlation Hessian: symmetric and translationally invariant."""
-    H = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian()
+    H = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian().correlation
     assert np.max(np.abs(H - H.T)) < 1e-10
     assert np.max(np.abs(H.reshape(3, 3, 3, 3).sum(axis=2))) < 1e-10
 
 
 def test_fc_so_mp2_corr_hessian_vs_spatial_631g():
     """Keystone (6-31G, frozen core): spin-orbital == spin-adapted correlation Hessian."""
-    H_so = pycc.MPderiv(_mpwfn(BASE, 'spinorbital', freeze_core='true')).hessian()
-    H_sa = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian()
+    H_so = pycc.MPderiv(_mpwfn(BASE, 'spinorbital', freeze_core='true')).hessian().correlation
+    H_sa = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian().correlation
     assert np.max(np.abs(H_so - H_sa)) < 1e-11

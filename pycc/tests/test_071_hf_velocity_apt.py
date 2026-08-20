@@ -63,7 +63,7 @@ def test_hf_vgapt_vs_amos():
     """Spatial VG APT reproduces the Amos et al. NH3 P(pi) values (Table I) to ~3 digits,
     for both 6-31G* and 6-31G**."""
     for basis, ref in AMOS_PI.items():
-        P = np.asarray(_hfwfn(basis).velocity_dipole_derivatives())
+        P = np.asarray(_hfwfn(basis).apt(gauge='velocity').total)
         for (A, nc, dp), val in ref.items():
             assert abs(P[A, nc, dp] - val) < 2e-3, (basis, A, nc, dp, P[A, nc, dp], val)
 
@@ -71,8 +71,8 @@ def test_hf_vgapt_vs_amos():
 def test_hf_vgapt_so_vs_spatial():
     """Keystone: closed-shell spin-orbital == spin-adapted VG APT (both bases)."""
     for basis in ('6-31G*', '6-31G**'):
-        Psa = np.asarray(_hfwfn(basis, 'spatial').velocity_dipole_derivatives())
-        Pso = np.asarray(_hfwfn(basis, 'spinorbital').velocity_dipole_derivatives())
+        Psa = np.asarray(_hfwfn(basis, 'spatial').apt(gauge='velocity').total)
+        Pso = np.asarray(_hfwfn(basis, 'spinorbital').apt(gauge='velocity').total)
         assert np.max(np.abs(Pso - Psa)) < 1e-11
 
 
@@ -85,8 +85,8 @@ def test_hf_vgapt_origin_invariant():
                           'H -0.8855  1.5337 -0.5920', 'H  4.1145 -1.4663  3.4080').replace(
                           'H -0.8855 -1.5337 -0.5920', 'H  4.1145 -4.5337  3.4080').replace(
                           'H  1.7710  0.0000 -0.5920', 'H  6.7710 -3.0000  3.4080')
-    P0 = np.asarray(_hfwfn('6-31G*').velocity_dipole_derivatives())
-    P1 = np.asarray(_hfwfn('6-31G*', geom=shifted).velocity_dipole_derivatives())
+    P0 = np.asarray(_hfwfn('6-31G*').apt(gauge='velocity').total)
+    P1 = np.asarray(_hfwfn('6-31G*', geom=shifted).apt(gauge='velocity').total)
     assert np.max(np.abs(P0 - P1)) < 1e-9
 
 
@@ -95,6 +95,6 @@ def test_hf_vgapt_differs_from_lg_finite_basis():
     the basis-set limit), and they share the same Z_A delta nuclear term, so their difference is
     purely electronic and nonzero here."""
     hf = _hfwfn('6-31G*')
-    Pvg = np.asarray(hf.velocity_dipole_derivatives())
-    Plg = np.asarray(hf.dipole_derivatives())
+    Pvg = np.asarray(hf.apt(gauge='velocity').total)
+    Plg = np.asarray(hf.apt().total)
     assert np.max(np.abs(Pvg - Plg)) > 1.0        # N diagonal differs by ~3 in 6-31G*

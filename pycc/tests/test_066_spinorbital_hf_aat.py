@@ -61,8 +61,8 @@ def _scf_wfn(geom, basis, reference):
 def test_so_rhf_aat_vs_spatial_631g():
     """Keystone (C1): closed-shell RHF forced to spin orbitals == spatial RHF AAT."""
     wfn = _scf_wfn(WATER, '6-31G', 'rhf')
-    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').atomic_axial_tensors()
-    a_spatial = pycc.HFwfn(wfn).atomic_axial_tensors()
+    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').aat().reference
+    a_spatial = pycc.HFwfn(wfn).aat().reference
     assert np.max(np.abs(a_so - a_spatial)) < 1e-10
 
 
@@ -70,8 +70,8 @@ def test_so_rhf_aat_vs_spatial_h2o2():
     """Keystone on the canonical VCD molecule (H2O2, C1): SO-RHF == spatial RHF AAT (the
     spatial AAT is validated against DALTON in test_050)."""
     wfn = _scf_wfn(H2O2, 'sto-3g', 'rhf')
-    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').atomic_axial_tensors()
-    a_spatial = pycc.HFwfn(wfn).atomic_axial_tensors()
+    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').aat().reference
+    a_spatial = pycc.HFwfn(wfn).aat().reference
     assert np.max(np.abs(a_so - a_spatial)) < 1e-10
 
 
@@ -79,7 +79,7 @@ def test_uhf_aat_runs():
     """Open-shell UHF AAT (OH doublet): no prior implementation to validate against, so
     only check the spin-orbital path runs and returns a finite, real, nonzero tensor."""
     wfn = _scf_wfn(OH, '6-31G', 'uhf')
-    aat = pycc.HFwfn(wfn, orbital_basis='spinorbital').atomic_axial_tensors()
+    aat = pycc.HFwfn(wfn, orbital_basis='spinorbital').aat().reference
     assert aat.shape == (2, 3, 3)
     assert np.all(np.isfinite(aat))
     assert np.isrealobj(aat)
@@ -90,4 +90,4 @@ def test_rohf_aat_not_implemented():
     """ROHF AAT goes through the (unsupported) ROHF CPHF response: NotImplementedError."""
     wfn = _scf_wfn(OH, '6-31G', 'rohf')
     with pytest.raises(NotImplementedError):
-        pycc.HFwfn(wfn, orbital_basis='spinorbital').atomic_axial_tensors()
+        pycc.HFwfn(wfn, orbital_basis='spinorbital').aat().reference

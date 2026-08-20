@@ -63,12 +63,12 @@ def test_response_polarizability_spatial_vs_ccresponse(rhf_wfn):
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).dynamic_polarizability(0.0))
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability(0.0, relaxed=False).correlation)
     ref = _ccresponse_polar(wfn, 'spatial')
     assert np.max(np.abs(alpha - ref)) < 1e-10, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-10            # naturally symmetric
 
-    relaxed = np.asarray(pycc.CCderiv(cc).polarizability())   # the derivative (orbital-relaxed) tensor
+    relaxed = np.asarray(pycc.CCderiv(cc).polarizability().correlation)   # the derivative (orbital-relaxed) tensor
     assert np.max(np.abs(alpha - relaxed)) > 1e-3             # response != derivative (distinct quantities)
     psi4.core.clean()
 
@@ -80,7 +80,7 @@ def test_response_polarizability_hof_offdiagonal(rhf_wfn):
     wfn = rhf_wfn(HOF, "cc-pVDZ", freeze_core="false")
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).dynamic_polarizability(0.0))
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability(0.0, relaxed=False).correlation)
     ref = _ccresponse_polar(wfn, 'spatial')
     assert np.max(np.abs(alpha - ref)) < 1e-10, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-10
@@ -99,12 +99,12 @@ def test_dynamic_response_polarizability_spatial_vs_ccresponse(rhf_wfn):
     cc.solve_cc(1e-12, 1e-12, 100)
     d = pycc.CCderiv(cc)
     for omega in (0.07, -0.07):
-        alpha = np.asarray(d.dynamic_polarizability(omega))
+        alpha = np.asarray(d.polarizability(omega, relaxed=False).correlation)
         ref = _ccresponse_polar(wfn, 'spatial', omega)
         assert np.max(np.abs(alpha - ref)) < 1e-10, (omega, alpha)
         assert np.max(np.abs(alpha - alpha.T)) < 1e-10
-    static = np.asarray(d.dynamic_polarizability(0.0))
-    dyn = np.asarray(d.dynamic_polarizability(0.07))
+    static = np.asarray(d.polarizability(0.0, relaxed=False).correlation)
+    dyn = np.asarray(d.polarizability(0.07, relaxed=False).correlation)
     assert np.all(np.diag(dyn) > np.diag(static))             # normal dispersion (real, sub-resonance)
     psi4.core.clean()
 
@@ -117,7 +117,7 @@ def test_fc_response_polarizability_vs_ccresponse(rhf_wfn):
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
     assert cc.nfzc > 0
-    alpha = np.asarray(pycc.CCderiv(cc).dynamic_polarizability(0.0))
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability(0.0, relaxed=False).correlation)
     ref = _ccresponse_polar(wfn, 'spatial')
     assert np.max(np.abs(alpha - ref)) < 1e-10, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-10
@@ -133,7 +133,7 @@ def test_so_response_polarizability_vs_ccresponse(rhf_wfn):
     cc.solve_cc(1e-12, 1e-12, 100)
     d = pycc.CCderiv(cc)
     for omega in (0.0, 0.07):
-        alpha = np.asarray(d.dynamic_polarizability(omega))
+        alpha = np.asarray(d.polarizability(omega, relaxed=False).correlation)
         ref = _ccresponse_polar(wfn, 'spinorbital', omega)
         assert np.max(np.abs(alpha - ref)) < 1e-10, (omega, alpha)
         assert np.max(np.abs(alpha - alpha.T)) < 1e-10

@@ -50,12 +50,12 @@ def test_optical_rotation_spatial_vs_ccresponse(rhf_wfn):
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
     d = pycc.CCderiv(cc)
-    G = np.asarray(d.optical_rotation(OMEGA))
+    G = np.asarray(d.optical_rotation(OMEGA).correlation)
     ref = _ccresponse_optrot(wfn, 'spatial')
     assert np.max(np.abs(G - ref)) < 1e-10, G
     assert abs(np.trace(G)) > 1e-4                            # physically nonzero (chiral)
     with pytest.raises(ValueError):
-        d.optical_rotation(0.0)                              # no static optical rotation
+        d.optical_rotation(0.0).correlation                 # no static optical rotation
     psi4.core.clean()
 
 
@@ -66,7 +66,7 @@ def test_so_optical_rotation_vs_ccresponse(rhf_wfn):
     wfn = rhf_wfn(H2O2, "STO-3G", freeze_core="true")
     cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
     cc.solve_cc(1e-12, 1e-12, 100)
-    G = np.asarray(pycc.CCderiv(cc).optical_rotation(OMEGA))
+    G = np.asarray(pycc.CCderiv(cc).optical_rotation(OMEGA).correlation)
     ref = _ccresponse_optrot(wfn, 'spinorbital')
     assert np.max(np.abs(G - ref)) < 1e-10, G
     psi4.core.clean()

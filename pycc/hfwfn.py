@@ -45,7 +45,7 @@ class HFwfn(Wavefunction):
         # The derivative-integral provider and the CPHF orbital-response solver now live
         # on the base, built lazily (``self.derivatives`` / ``self.cphf``).
 
-    def gradient(self) -> np.ndarray:
+    def gradient(self) -> "PropertyComponents":
         r"""RHF analytic energy gradient (a.u.), shape (natom, 3).
 
         Closed-shell, MO-basis, CPHF-free RHF gradient (i, j over occupied; the
@@ -69,14 +69,13 @@ class HFwfn(Wavefunction):
         space, so a frozen core on the reference does not affect the gradient.
 
         The spin-orbital path (open-shell UHF/ROHF, or a closed shell forced to spin
-        orbitals) is handled by :meth:`_so_gradient_electronic`.  The electronic and
-        nuclear-repulsion pieces are computed separately (:meth:`_gradient_electronic` /
-        :meth:`Derivatives.nuclear_repulsion`) and summed here; the :func:`pycc.gradient`
-        facade exposes them as :class:`pycc.PropertyComponents`.
+        orbitals) is handled by :meth:`_so_gradient_electronic`.  Returns the
+        :class:`pycc.PropertyComponents` decomposition (``nuclear + reference + correlation``, the
+        last zero for an SCF wavefunction); ``.total`` is the value above.  The electronic block is
+        :meth:`_gradient_electronic`; the nuclear block is :meth:`Derivatives.nuclear_repulsion`.
         """
-        grad = self._gradient_electronic() + self.derivatives.nuclear_repulsion()
-        self.grad = grad
-        return grad
+        from . import properties
+        return properties.gradient(self)
 
     def _gradient_electronic(self) -> np.ndarray:
         """Electronic (CPHF-free) part of the RHF gradient, shape (natom, 3) -- the public
@@ -126,7 +125,7 @@ class HFwfn(Wavefunction):
                                  - self.contract('i,ii->', eps, Sx[c]))
         return grad
 
-    def dipole(self) -> np.ndarray:
+    def dipole(self) -> "PropertyComponents":
         r"""Total SCF electric-dipole moment (a.u.), shape ``(3,)``: the nuclear term plus
         the electronic term, in the molecule's frame (gauge-independent for a neutral system)::
 
@@ -139,18 +138,14 @@ class HFwfn(Wavefunction):
             \end{aligned}
 
         The electronic part is the occupied trace of the MO dipole integrals (``H.mu`` = ``-e r``;
-        same ``Tr(D mu)`` convention as :meth:`~pycc.correlatedderivs.CorrelatedDerivs.relaxed_dipole`, with the SCF density's occupied
+        same ``Tr(D mu)`` convention as :meth:`~pycc.correlatedderivs.CorrelatedDerivs.dipole`, with the SCF density's occupied
         block). The prefactor is the orbital occupancy: ``k = 2`` on the spatial closed-shell path,
         ``k = 1`` for spin orbitals. Kept separate from the correlation dipole so the total MP2
-        dipole is ``HFwfn.dipole() + MPderiv.relaxed_dipole()`` (mirroring the gradient split).
-        Basis-aware. The :func:`pycc.dipole` facade exposes the nuclear/reference/correlation
-        pieces as :class:`pycc.PropertyComponents`."""
-        mol = self.ref.molecule()
-        geom = np.asarray(mol.geometry())                      # (natom, 3), bohr
-        Z = np.array([mol.Z(A) for A in range(mol.natom())])
-        nuc = np.einsum('a,ax->x', Z, geom)
-        self.mu_scf = nuc + self._dipole_electronic()
-        return self.mu_scf
+        dipole is ``HFwfn.dipole() + MPderiv.dipole()`` (mirroring the gradient split).
+        Basis-aware. Returns the :class:`pycc.PropertyComponents` decomposition (``.total`` is the
+        value above; the correlation block is zero for an SCF wavefunction)."""
+        from . import properties
+        return properties.dipole(self)
 
     def _dipole_electronic(self) -> np.ndarray:
         """Electronic part of the SCF dipole (a.u.), shape (3,): ``k sum_i (mu_a)_ii`` (the
@@ -160,8 +155,18 @@ class HFwfn(Wavefunction):
         k = 1.0 if self.orbital_basis == 'spinorbital' else 2.0
         return np.array([k * np.trace(np.asarray(self.H.mu[a])[o, o]) for a in range(3)])
 
-    def polarizability(self) -> np.ndarray:
-        r"""Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)``.
+    def polarizability(self, omega: float = 0.0, relaxed: bool = None,
+                       units: str = 'Eh') -> "PropertyComponents":
+        """Static electric-dipole polarizability as a :class:`pycc.PropertyComponents` (``.total``
+        is the SCF value; correlation block zero).  Delegates to the :func:`pycc.polarizability`
+        assembler; the SCF electronic tensor is :meth:`_polarizability_electronic`.  ``omega`` must
+        be ``0`` for an SCF wavefunction (there is no dynamic HF response)."""
+        from . import properties
+        return properties.polarizability(self, omega=omega, relaxed=relaxed, units=units)
+
+    def _polarizability_electronic(self) -> np.ndarray:
+        r"""Static electric-dipole polarizability tensor (a.u.), shape ``(3, 3)`` -- the SCF
+        (reference) block of :meth:`polarizability`.
 
         The field does not move the basis functions, so there is no overlap/Pulay term: solve the
         electric-field CPHF response per Cartesian axis (:class:`CPHF`) and contract with the MO
@@ -191,10 +196,14 @@ class HFwfn(Wavefunction):
         self.alpha = alpha
         return self.alpha
 
-    def dipole_derivatives(self) -> np.ndarray:
-        r"""Analytic nuclear dipole derivatives ``d(mu_alpha)/d(X_A,beta)`` (a.u.),
-        shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` -- the atomic polar
-        tensors (APTs), transposed.
+    def apt(self, gauge: str = 'length', route: str = '2n+1-field',
+            orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        r"""Atomic polar tensors ``d(mu_alpha)/d(X_A,beta)`` (a.u.), shape ``(natom, 3, 3)`` indexed
+        ``[A, beta, alpha]``, as a :class:`pycc.PropertyComponents` (``.total`` is the value below).
+        ``gauge='length'`` (default) is the length-gauge APT; ``gauge='velocity'`` the velocity
+        gauge.  The SCF electronic blocks are :meth:`_dipole_derivatives_electronic` /
+        :meth:`_velocity_dipole_derivatives_electronic`; the nuclear block is ``Z_A delta``.  The
+        length-gauge value is::
 
         Built from the nuclear CPHF response (:meth:`CPHF.solve_nuclear`), so the ov
         term probes ``U^X`` directly (unlike the energy gradient, which is variationally
@@ -216,23 +225,15 @@ class HFwfn(Wavefunction):
             &\quad + 4\sum_{ia} U^X_{ia}\,(\mu_\alpha)_{ia} && \text{(ov / CPHF response)}
             \end{aligned}
 
-        The spin-orbital path is handled by :meth:`_so_dipole_derivatives_electronic`; the
-        nuclear ``Z_A delta`` term is added here and the electronic part comes from
-        :meth:`_dipole_derivatives_electronic`.  The :func:`pycc.apt` facade exposes the pieces
-        as :class:`pycc.PropertyComponents`.
+        The spin-orbital path is handled by :meth:`_so_dipole_derivatives_electronic`.
         """
-        dmu = self._dipole_derivatives_electronic()
-        mol = self.ref.molecule()
-        for A in range(mol.natom()):
-            for a in range(3):
-                dmu[A, a, a] += mol.Z(A)             # nuclear Z_A delta_{alpha,beta}
-        self.dipder = dmu
-        return self.dipder
+        from . import properties
+        return properties.apt(self, gauge=gauge, route=route, orbital_gauge=orbital_gauge)
 
     def _dipole_derivatives_electronic(self) -> np.ndarray:
         """Electronic part of the APT (a.u.), shape ``(natom, 3, 3)`` -- the explicit + Pulay +
         CPHF-response terms without the nuclear ``Z_A delta`` (added by
-        :meth:`dipole_derivatives`).  Dispatches to :meth:`_so_dipole_derivatives_electronic`."""
+        :meth:`apt`).  Dispatches to :meth:`_so_dipole_derivatives_electronic`."""
         if self.orbital_basis == 'spinorbital':
             return self._so_dipole_derivatives_electronic()
         o, v = self.o, self.v
@@ -255,7 +256,7 @@ class HFwfn(Wavefunction):
     def _so_dipole_derivatives_electronic(self) -> np.ndarray:
         r"""Electronic part of the spin-orbital APT (spin orbitals: one-electron traces carry
         factor 1 and the ov response factor 2, vs 2 and 4 closed-shell), with the spin-orbital
-        nuclear CPHF response and dipole derivatives.  :meth:`dipole_derivatives` adds the nuclear
+        nuclear CPHF response and dipole derivatives.  :meth:`apt` adds the nuclear
         ``Z_A delta_ab``::
 
             (d mu_a / d X_Ab)_elec = sum_i (mu_a)^X_ii - sum_ik S^X_ki (mu_a)_ik + 2 sum_ia U^X_ia (mu_a)_ia
@@ -285,14 +286,14 @@ class HFwfn(Wavefunction):
                     dmu[A, beta, alpha] = val
         return dmu
 
-    def hessian(self) -> np.ndarray:
+    def hessian(self) -> "PropertyComponents":
         r"""RHF nuclear (molecular) Hessian ``d^2 E / dX_Aa dX_Bb`` (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3 + a, B*3 + b)`` -- the force-constant
         matrix, matching ``psi4.hessian('scf')`` layout.
 
         Built from the second-derivative ("skeleton") integrals and the first-order nuclear CPHF
         response (:meth:`CPHF.solve_nuclear`, taken from the shared cache so the ``3*natom`` solves
-        are reused for free by :meth:`dipole_derivatives` in an IR workflow).  With x = (A,a),
+        are reused for free by :meth:`apt` in an IR workflow).  With x = (A,a),
         y = (B,b); i,j,n,m occupied; spin-adapted ``L`` = H.L::
 
             d^2E/dx dy = 2 sum_i h^{xy}_ii + 2 sum_ij (ii|jj)^{xy} - sum_ij (ij|ij)^{xy}
@@ -310,14 +311,13 @@ class HFwfn(Wavefunction):
         where ``U^x``/``B^x`` are the cached nuclear response/RHS and ``F^x_ij``/``S^x_ij`` the
         skeleton derivative Fock/overlap oo blocks (cached by :meth:`CPHF.solve_nuclear`).
 
-        The spin-orbital path is handled by :meth:`_so_hessian_electronic`; the electronic terms
-        (:meth:`_hessian_electronic`) and the nuclear-repulsion second derivative are computed
-        separately and summed.  The :func:`pycc.hessian` facade exposes the pieces as
-        :class:`pycc.PropertyComponents`.
+        The spin-orbital path is handled by :meth:`_so_hessian_electronic`.  Returns the
+        :class:`pycc.PropertyComponents` decomposition (``.total`` is the value above; correlation
+        block zero); the electronic block is :meth:`_hessian_electronic`, the nuclear block the
+        nuclear-repulsion second derivative.
         """
-        H = self._hessian_electronic() + self.derivatives.nuclear_repulsion2()
-        self.hess = H
-        return self.hess
+        from . import properties
+        return properties.hessian(self)
 
     def _hessian_electronic(self) -> np.ndarray:
         """Electronic part of the RHF molecular Hessian, shape ``(3*natom, 3*natom)`` -- the
@@ -453,10 +453,18 @@ class HFwfn(Wavefunction):
                 del ao
         return H
 
-    def atomic_axial_tensors(self) -> np.ndarray:
+    def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`
+        (``nuclear + reference + correlation``; correlation zero for an SCF wavefunction).  Delegates
+        to the :func:`pycc.aat` assembler; the SCF electronic block is :meth:`_aat_electronic`.
+        ``origin`` sets the nuclear-term gauge origin (see :func:`pycc.aat`)."""
+        from . import properties
+        return properties.aat(self, origin=origin, orbital_gauge=orbital_gauge)
+
+    def _aat_electronic(self) -> np.ndarray:
         r"""RHF atomic axial tensors (AATs) ``I^lambda_{alpha,beta}`` (a.u.), shape
-        ``(natom, 3, 3)`` indexed ``[lambda, alpha, beta]`` -- the electronic part of
-        the magnetic-dipole vibrational transition moment (common gauge origin), for VCD.
+        ``(natom, 3, 3)`` indexed ``[lambda, alpha, beta]`` -- the electronic (reference) block of
+        :meth:`aat`: the magnetic-dipole vibrational transition moment (common gauge origin), for VCD.
 
         Eq. (16) of the AAT note (CPHF coefficients over dependent pairs already
         cancelled analytically)::
@@ -493,12 +501,11 @@ class HFwfn(Wavefunction):
                     aat[lam, alpha, beta] = 2.0 * (
                         self.contract('ia,ia->', Ur[alpha], Ub[beta])
                         + self.contract('ia,ia->', Ub[beta], Shalf[alpha]))
-        self.aat = aat
-        return self.aat
+        return aat
 
     def _so_atomic_axial_tensors(self) -> np.ndarray:
         r"""Spin-orbital RHF/UHF atomic axial tensors (AATs), shape ``(natom, 3, 3)``. The
-        spin-orbital form of :meth:`atomic_axial_tensors`: spin orbitals
+        spin-orbital form of :meth:`aat`: spin orbitals
         (the closed-shell prefactor 2 -> 1), with the spin-orbital nuclear response
         (:meth:`CPHF.solve_nuclear`), magnetic response (:meth:`CPHF.solve_magnetic`), and
         nuclear half-derivative overlaps (:meth:`Derivatives.so_overlap_half`)::
@@ -529,55 +536,34 @@ class HFwfn(Wavefunction):
                     aat[lam, alpha, beta] = (
                         self.contract('ia,ia->', Ur[alpha], Ub[beta])
                         + self.contract('ia,ia->', Ub[beta], Shalf[alpha]))
-        self.aat = aat
-        return self.aat
+        return aat
 
-    def velocity_dipole_derivatives(self) -> np.ndarray:
-        r"""Velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
-        ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
-        momentum-form APT, an alternative to the length-gauge :meth:`dipole_derivatives`.
+    def _velocity_dipole_derivatives_electronic(self) -> np.ndarray:
+        r"""Velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` electronic block
+        (a.u.), shape ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` -- the momentum-form APT
+        (reference block of :meth:`apt` with ``gauge='velocity'``), the wave-function-overlap term
+        without the nuclear ``Z_A delta`` (added by the :func:`pycc.apt` assembler).
 
         Formulated (Amos, Jalkanen & Stephens, JPC 92, 5571 (1988), Eq. 14; Shumberger et al.,
         LG(OI) VCD, Eq. 15) as an overlap of wave-function derivatives -- the nuclear derivative
         of the bra with the magnetic-vector-potential derivative of the ket::
 
             [P^A_{beta,alpha}]^VG = -4 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}
-                                    + Z_A delta_{alpha,beta}
 
         .. math::
 
             \begin{aligned}
             [P^A_{\beta\alpha}]^{\mathrm{VG}} = -4 \sum_{ia}
-            \big( U^R_{ia,\beta} + \langle \phi^R_i | \phi_a \rangle \big) U^A_{ia,\alpha} +
-            Z_A\,\delta_{\alpha\beta}
+            \big( U^R_{ia,\beta} + \langle \phi^R_i | \phi_a \rangle \big) U^A_{ia,\alpha}
             \end{aligned}
 
-        the same overlap structure as the AAT (:meth:`atomic_axial_tensors`) with the linear-
+        the same overlap structure as the AAT (:meth:`_aat_electronic`) with the linear-
         momentum response ``U^A`` (:meth:`CPHF.solve_momentum`, ``dPsi/dA``) in place of the
-        magnetic response ``U^B``, and the length-gauge ``Z_A delta`` nuclear term in place of
-        the AAT's Levi-Civita term. ``U^R`` is the nuclear CPHF response; ``<phi^R_i|phi_a>`` the
+        magnetic response ``U^B``. ``U^R`` is the nuclear CPHF response; ``<phi^R_i|phi_a>`` the
         nuclear half-derivative overlap (the vector potential does not move the basis, so this
         rides on the R side only). The ``-4`` prefactor is the closed-shell value (real-wf
         doubling x double occupancy; the two imaginary units of ``-2i`` x ``H.p`` fix the sign)
-        -- pinned to the Amos et al. NH3 ``P(pi)`` values.
-
-        Unlike the length-gauge APT, the VG APT differs from it in a finite basis and converges
-        to it only toward the basis-set limit; both are origin-independent. The spin-orbital path
-        is handled by :meth:`_so_velocity_dipole_derivatives_electronic`; the nuclear ``Z_A delta``
-        term is added here.  The :func:`pycc.apt` (``gauge='velocity'``) facade exposes the pieces
-        as :class:`pycc.PropertyComponents`."""
-        P = self._velocity_dipole_derivatives_electronic()
-        mol = self.ref.molecule()
-        for A in range(mol.natom()):
-            for a in range(3):
-                P[A, a, a] += mol.Z(A)              # nuclear Z_A delta_{alpha,beta}
-        self.vgapt = P
-        return self.vgapt
-
-    def _velocity_dipole_derivatives_electronic(self) -> np.ndarray:
-        """Electronic part of the VG APT (a.u.), shape ``(natom, 3, 3)`` -- the wave-function-
-        overlap term ``-4 sum_ia (U^R + <phi^R|phi>) U^A`` without the nuclear ``Z_A delta``
-        (added by :meth:`velocity_dipole_derivatives`).  Dispatches to
+        -- pinned to the Amos et al. NH3 ``P(pi)`` values.  The spin-orbital path is handled by
         :meth:`_so_velocity_dipole_derivatives_electronic`."""
         if self.orbital_basis == 'spinorbital':
             return self._so_velocity_dipole_derivatives_electronic()
@@ -597,7 +583,7 @@ class HFwfn(Wavefunction):
         r"""Electronic part of the spin-orbital VG APT: spin orbitals halve the closed-shell
         prefactor (``-4 -> -2``), with the spin-orbital nuclear/momentum responses
         (:meth:`CPHF.solve_nuclear`/:meth:`CPHF.solve_momentum`) and half-derivative overlaps
-        (:meth:`Derivatives.so_overlap_half`); :meth:`velocity_dipole_derivatives` adds the nuclear
+        (:meth:`Derivatives.so_overlap_half`); :meth:`apt` adds the nuclear
         ``Z_A delta_{alpha,beta}``.  With x = (A,beta)::
 
             [P^A_{beta,alpha}]^VG_elec = -2 sum_ia (U^R_{ia,beta} + <phi^R_i|phi_a>) U^A_{ia,alpha}

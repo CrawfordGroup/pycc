@@ -564,7 +564,7 @@ def ir(source: Any, checkpoint: str = None, project_trans: bool = False,
     apt = np.asarray(properties.apt(deriv).total)
     apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
                     if velocity_gauge else None)
-    molecule = properties._wfn_of(deriv).ref.molecule()
+    molecule = properties._wavefunction(deriv).ref.molecule()
 
     if checkpoint is not None:
         from .checkpoint import save_checkpoint
@@ -611,7 +611,7 @@ def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
     aat = np.asarray(properties.aat(deriv).total)
     apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
                     if velocity_gauge else None)
-    molecule = properties._wfn_of(deriv).ref.molecule()
+    molecule = properties._wavefunction(deriv).ref.molecule()
 
     if checkpoint is not None:
         from .checkpoint import save_checkpoint

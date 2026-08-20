@@ -4,10 +4,10 @@ cideriv.py: CISD analytic-derivative property driver.
 `CIderiv` is the CISD leaf of the :class:`~pycc.correlatedderivs.CorrelatedDerivs` hierarchy,
 matching the `MPwfn`/`MPderiv` and `CCwfn`/`CCderiv` split: `CIwfn` holds only wavefunction
 quantities (amplitude solve, energy, raw densities); this class supplies the two density hooks
-(`_unrelaxed_densities`, `_perturbed_unrelaxed_densities`) and inherits `relaxed_dipole`,
-`gradient`, `polarizability`, `dipole_derivatives`, and `hessian` from the base unchanged. Only
-the genuinely CISD-specific wave-function-overlap properties - `atomic_axial_tensors` and
-`velocity_dipole_derivatives` - are custom code, together with the coupled-perturbed-CI (CPCI)
+(`_unrelaxed_densities`, `_perturbed_unrelaxed_densities`) and inherits `dipole`,
+`gradient`, `polarizability`, `apt`, and `hessian` from the base unchanged. Only
+the genuinely CISD-specific wave-function-overlap properties - `aat` and
+`apt` - are custom code, together with the coupled-perturbed-CI (CPCI)
 response machinery they (and the two density hooks) are built from.
 
 CPCI/MAGNETIC/VECPOT MACHINERY
@@ -33,9 +33,9 @@ from .utils import title, iteration, converged
 
 class CIderiv(CorrelatedDerivs):
     """CISD correlation derivative-property driver. Constructed from a converged CIwfn (aliased
-    `self.ci`). `relaxed_dipole`/`gradient`/`polarizability`/`dipole_derivatives`/
+    `self.ci`). `dipole`/`gradient`/`polarizability`/`apt`/
     `hessian` are inherited from `CorrelatedDerivs`, driven by the two density hooks below.
-    `atomic_axial_tensors`/`velocity_dipole_derivatives` are custom wave-function-overlap
+    `aat`/`apt` are custom wave-function-overlap
     constructions. Spatial (closed-shell RHF); frozen-core aware throughout (the correlation
     amplitudes/densities stay in the active space while every orbital response spans the full
     occupied space - see `_cpci_ints`), matching MPderiv."""
@@ -434,10 +434,16 @@ class CIderiv(CorrelatedDerivs):
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
         return AAT_cphi.real
 
-    def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
+    def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
+        See :func:`pycc.aat`."""
+        from . import properties
+        return properties.aat(self, origin=origin, orbital_gauge=orbital_gauge)
+
+    def _correlation_aat(self, gauge: str = 'non-canonical') -> np.ndarray:
         """CISD correlation AAT, shape (natom, 3, 3): the four electronic overlap blocks with the
         correlation 1-PDM in Iphiphi. The SCF reference and the nuclear term (Z_A/4) eps_abc R_c
-        are supplied by the pycc.aat facade (HFwfn.atomic_axial_tensors + _nuclear_aat), matching
+        are supplied by the pycc.aat facade (HFwfn.aat + _nuclear_aat), matching
         MPderiv.
 
         `gauge` selects the redundant magnetic oo/vv orbital response (see
@@ -515,7 +521,7 @@ class CIderiv(CorrelatedDerivs):
                 I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
         return I_pp
 
-    def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
+    def _correlation_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         """CISD correlation velocity-gauge APT, shape (natom, 3, 3): -2 times the four overlap
         blocks with the correlation 1-PDM in Iphiphi. The SCF reference and the Z_A delta nuclear
         term are supplied by the pycc.apt(gauge='velocity') facade, matching MPderiv.

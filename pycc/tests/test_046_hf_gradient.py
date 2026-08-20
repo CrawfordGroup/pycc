@@ -13,7 +13,7 @@ def test_hf_gradient_h2o(rhf_wfn):
     """H2O cc-pVDZ RHF gradient vs Psi4 (molecular symmetry left on)."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-11, d_convergence=1e-11)
-    grad = pycc.HFwfn(wfn).gradient()
+    grad = pycc.HFwfn(wfn).gradient().total
 
     # Independent reference: Psi4's own analytic SCF gradient on the same system.
     ref = np.asarray(psi4.gradient('scf'))
@@ -26,7 +26,7 @@ def test_hf_gradient_frozen_core_ref(rhf_wfn):
     HFwfn uses the full MO space regardless of the reference's freeze_core."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="true",
                   e_convergence=1e-11, d_convergence=1e-11)
-    grad = pycc.HFwfn(wfn).gradient()
+    grad = pycc.HFwfn(wfn).gradient().total
 
     ref = np.asarray(psi4.gradient('scf'))
 

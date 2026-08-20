@@ -13,7 +13,7 @@ def test_cphf_polarizability_h2o(rhf_wfn):
     """H2O cc-pVDZ static dipole polarizability vs Psi4 CPHF (symmetry left on)."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", freeze_core="false",
                   e_convergence=1e-11, d_convergence=1e-11)
-    alpha = pycc.HFwfn(wfn).polarizability()
+    alpha = pycc.HFwfn(wfn).polarizability().total
 
     # Independent reference: Psi4's own analytic CPHF dipole polarizability on the
     # same system (properties() populates the DIPOLE POLARIZABILITY ** variables).

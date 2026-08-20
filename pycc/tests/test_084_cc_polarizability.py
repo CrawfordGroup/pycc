@@ -115,7 +115,7 @@ def test_ccsd_polarizability_water_631g(rhf_wfn):
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(alpha - WATER_ALPHA_REF)) < 1e-9, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9              # symmetric
 
@@ -135,7 +135,7 @@ def test_fc_ccsd_polarizability_water_631g(rhf_wfn):
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="true")
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(alpha - WATER_ALPHA_REF_FC)) < 1e-9, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9
     psi4.core.clean()
@@ -150,7 +150,7 @@ def test_ccsd_polarizability_hof_offdiagonal(rhf_wfn):
     wfn = rhf_wfn(HOF, "cc-pVDZ", freeze_core="false")
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(alpha - HOF_ALPHA_REF)) < 1e-9, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9              # symmetric (asymmetric route does not enforce it)
     assert abs(alpha[0, 1]) > 0.5                              # genuine in-plane off-diagonal
@@ -171,7 +171,7 @@ def test_so_ccsd_polarizability_keystone(rhf_wfn):
         wfn = rhf_wfn(WATER, "6-31G", freeze_core=fc)
         cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
         cc.solve_cc(1e-12, 1e-12, 100)
-        alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+        alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
         assert np.max(np.abs(alpha - ref)) < 1e-9, (fc, alpha)
         psi4.core.clean()
 
@@ -184,7 +184,7 @@ def test_uhf_ccsd_polarizability_nh2(rhf_wfn):
     wfn = rhf_wfn(NH2, "6-31G", reference='uhf', freeze_core='false', **NH2_OCC)
     cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
     cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).polarizability())
+    alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(alpha - NH2_ALPHA_REF)) < 1e-9, alpha
     assert np.max(np.abs(alpha - alpha.T)) < 1e-9
     assert np.all(np.diag(alpha) > 0.0)
@@ -233,7 +233,7 @@ def test_so_ccsdt_polarizability_water_631g(rhf_wfn):
     wfn = rhf_wfn(WATER, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
     cc.solve_cc(1e-13, 1e-13, 100)
-    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(np.diag(a) - WATER_ALPHA_T_DIAG)) < 1e-9, np.diag(a)
     assert np.max(np.abs(a - np.diag(np.diag(a)))) < 1e-10, a          # diagonal by symmetry
     assert np.max(np.abs(np.diag(a) - ALPHA_T_ENERGY_FD)) < 1e-7, np.diag(a)
@@ -248,7 +248,7 @@ def test_fc_so_ccsdt_polarizability_water_631g(rhf_wfn):
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
     cc.solve_cc(1e-13, 1e-13, 100)
     assert cc.nfzc > 0
-    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(np.diag(a) - WATER_ALPHA_T_DIAG_FC)) < 1e-9, np.diag(a)
     assert np.max(np.abs(np.diag(a) - ALPHA_T_ENERGY_FD_FC)) < 1e-7, np.diag(a)
     psi4.core.clean()
@@ -358,7 +358,7 @@ def test_ccsdt_polarizability_cfour(route, mol, fc):
     wfn = _cfour_wfn(_CFOUR_GEOM[mol], fc)
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=route, make_t3_density=True)
     cc.solve_cc(1e-13, 1e-13, 100)
-    a = np.asarray(pycc.CCderiv(cc).polarizability())
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
     assert np.max(np.abs(a - CFOUR_ALPHA_T[(mol, fc)])) < 1e-9, (mol, fc, route, a)
     assert np.max(np.abs(a - a.T)) < 1e-9                      # symmetric
     psi4.core.clean()
@@ -373,8 +373,8 @@ def test_ccsd_polarizability_guards(rhf_wfn):
     cc.solve_cc(1e-12, 1e-12, 100)
     d = pycc.CCderiv(cc)                                              # sets make_t3_density, builds the (T) density
     assert cc.make_t3_density is True
-    d.polarizability()                                               # works without the user setting the flag
+    d.polarizability().correlation                                   # works without the user setting the flag
     cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
     cc_so.solve_cc(1e-12, 1e-12, 100)
-    pycc.CCderiv(cc_so).polarizability()                             # SO path likewise works without the flag
+    pycc.CCderiv(cc_so).polarizability().correlation                 # SO path likewise works without the flag
     psi4.core.clean()

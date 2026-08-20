@@ -92,7 +92,7 @@ def _pycc_corr_dipole(geom, basis, orbital_basis='spinorbital', freeze_core='fal
     _, wfn = psi4.energy('scf', return_wfn=True)
     mp = pycc.MPwfn(wfn, orbital_basis=orbital_basis)
     mp.compute_energy()
-    return pycc.MPderiv(mp).relaxed_dipole()[2]
+    return pycc.MPderiv(mp).dipole().correlation[2]
 
 
 def test_mp2_relaxed_dipole_631g():
@@ -276,8 +276,8 @@ def _scf_dipole(geom, basis):
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     _, wfn = psi4.energy('scf', return_wfn=True)
     ref = np.asarray(psi4.variable('SCF DIPOLE'))
-    return (pycc.HFwfn(wfn).dipole(),
-            pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole(), ref)
+    return (pycc.HFwfn(wfn).dipole().total,
+            pycc.HFwfn(wfn, orbital_basis='spinorbital').dipole().total, ref)
 
 
 def test_hf_dipole_631g():
