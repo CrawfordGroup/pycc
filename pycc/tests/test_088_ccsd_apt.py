@@ -293,8 +293,8 @@ def test_ccsd_apt_routes_agree_water():
     wfn = _cfour_wfn(WATER, 'false')
     cc = pycc.ccwfn(wfn, orbital_basis='spatial')
     cc.solve_cc(1e-12, 1e-12, 100)
-    Pf = np.asarray(pycc.CCderiv(cc).dipole_derivatives(route='2n+1-field'))
-    Pn = np.asarray(pycc.CCderiv(cc).dipole_derivatives(route='2n+1-nuclear'))
+    Pf = np.asarray(pycc.CCderiv(cc).apt(route='2n+1-field').correlation)
+    Pn = np.asarray(pycc.CCderiv(cc).apt(route='2n+1-nuclear').correlation)
     assert np.max(np.abs(Pf - Pn)) < 1e-10
     psi4.core.clean()
 
@@ -305,5 +305,5 @@ def test_ccsd_apt_route_guard():
     cc = pycc.ccwfn(wfn)
     cc.solve_cc(1e-12, 1e-12, 100)
     with pytest.raises(ValueError):
-        pycc.CCderiv(cc).dipole_derivatives(route='bogus')
+        pycc.CCderiv(cc).apt(route='bogus').correlation
     psi4.core.clean()

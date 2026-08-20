@@ -63,8 +63,8 @@ def test_so_rhf_polarizability_vs_spatial():
     """Keystone (cc-pVDZ, C2v): closed-shell RHF forced to spin orbitals == spatial
     RHF polarizability (== Psi4 CPHF)."""
     wfn = _scf_wfn(WATER, 'cc-pVDZ', 'rhf')
-    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability()
-    a_spatial = pycc.HFwfn(wfn).polarizability()
+    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability().total
+    a_spatial = pycc.HFwfn(wfn).polarizability().total
     assert np.max(np.abs(a_so - a_spatial)) < 1e-11
     assert np.max(np.abs(a_so - _psi4_polarizability(WATER, 'cc-pVDZ', 'rhf'))) < 1e-9
 
@@ -73,7 +73,7 @@ def test_uhf_polarizability_vs_psi4():
     """Open-shell UHF polarizability (OH doublet) vs Psi4 CPHF (Psi4's iterative
     UHF-CPHF convergence sets the agreement; the direct SO solve is exact)."""
     wfn = _scf_wfn(OH, '6-31G', 'uhf')
-    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability()
+    a_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability().total
     assert np.max(np.abs(a_so - _psi4_polarizability(OH, '6-31G', 'uhf'))) < 1e-6
 
 
@@ -82,4 +82,4 @@ def test_rohf_polarizability_not_implemented():
     non-unique Brillouin conventions): the response solve raises NotImplementedError."""
     wfn = _scf_wfn(OH, '6-31G', 'rohf')
     with pytest.raises(NotImplementedError):
-        pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability()
+        pycc.HFwfn(wfn, orbital_basis='spinorbital').polarizability().total

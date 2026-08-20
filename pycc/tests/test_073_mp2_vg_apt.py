@@ -78,7 +78,7 @@ def test_mp2_vg_apt_reduces_to_hf():
     vanishes: the difference is the small MP2 correlation contribution."""
     mp, wfn = _mpwfn()
     VG = np.asarray(pycc.apt(pycc.MPderiv(mp), gauge='velocity').total)
-    HF = np.asarray(pycc.HFwfn(wfn).velocity_dipole_derivatives())
+    HF = np.asarray(pycc.HFwfn(wfn).apt(gauge='velocity').total)
     diff = np.max(np.abs(VG - HF))
     assert diff < 0.05, diff            # small correlation contribution
     assert diff > 1e-4                  # ... but nonzero (correlation is really present)
@@ -88,8 +88,8 @@ def test_mp2_vg_apt_so_equals_spatial():
     """Spin-orbital MP2 VG APT correlation == spin-adapted (the keystone), all-electron and
     frozen-core."""
     for fc in ('false', 'true'):
-        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)[0]).velocity_dipole_derivatives())
-        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)[0]).velocity_dipole_derivatives())
+        P = np.asarray(pycc.MPderiv(_mpwfn(freeze_core=fc)[0]).apt(gauge='velocity').correlation)
+        P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', fc)[0]).apt(gauge='velocity').correlation)
         assert np.max(np.abs(P_so - P)) < 1e-9, (fc, np.max(np.abs(P_so - P)))
 
 
@@ -97,8 +97,8 @@ def test_mp2_vg_apt_so_equals_spatial_ccpvdz():
     """Larger basis (cc-pVDZ): the spin-orbital MP2 VG APT equals the spin-adapted, for a real
     virtual space (polarization functions, several virtuals per irrep) that STO-3G lacks.  Analytic
     keystone (H2O; molecule-agnostic) -- apyib provides no MP2 VG APT oracle at this basis."""
-    P = np.asarray(pycc.MPderiv(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')[0]).velocity_dipole_derivatives())
-    P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')[0]).velocity_dipole_derivatives())
+    P = np.asarray(pycc.MPderiv(_mpwfn('spatial', 'false', WATER, 'cc-pVDZ')[0]).apt(gauge='velocity').correlation)
+    P_so = np.asarray(pycc.MPderiv(_mpwfn('spinorbital', 'false', WATER, 'cc-pVDZ')[0]).apt(gauge='velocity').correlation)
     assert np.max(np.abs(P_so - P)) < 1e-9, np.max(np.abs(P_so - P))
 
 
@@ -108,6 +108,6 @@ def test_mp2_vg_apt_gauge_invariance():
     for fc in ('false', 'true'):
         for ob in ('spatial', 'spinorbital'):
             d = pycc.MPderiv(_mpwfn(ob, fc)[0])
-            nc = np.asarray(d.velocity_dipole_derivatives(gauge='non-canonical'))
-            ca = np.asarray(d.velocity_dipole_derivatives(gauge='canonical'))
+            nc = np.asarray(d.apt(gauge='velocity', orbital_gauge='non-canonical').correlation)
+            ca = np.asarray(d.apt(gauge='velocity', orbital_gauge='canonical').correlation)
             assert np.max(np.abs(nc - ca)) < 1e-9, (fc, ob, np.max(np.abs(nc - ca)))

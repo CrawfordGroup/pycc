@@ -165,7 +165,7 @@ def test_cisd_aat_gauge_invariance():
     canonical fills every oo/vv block."""
     for fc in ('false', 'true'):
         ci = _ciwfn(fc)
-        nc = np.asarray(pycc.CIderiv(ci).atomic_axial_tensors(gauge='non-canonical'))
-        ca = np.asarray(pycc.CIderiv(ci).atomic_axial_tensors(gauge='canonical'))
+        nc = np.asarray(pycc.CIderiv(ci).aat(orbital_gauge='non-canonical').correlation)
+        ca = np.asarray(pycc.CIderiv(ci).aat(orbital_gauge='canonical').correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))
 

@@ -93,7 +93,7 @@ def test_ccsd_gradient_vs_findiff():
     """STO-3G CCSD correlation gradient reproduces the FD-validated frozen reference, and the
     pycc.gradient facade decomposes exactly (total = nuclear + reference + correlation)."""
     cc = _ccwfn(REF, "STO-3G")
-    g = np.asarray(pycc.CCderiv(cc).gradient())
+    g = np.asarray(pycc.CCderiv(cc).gradient().correlation)
     assert np.max(np.abs(g - GRAD_REF_STO3G)) < 1e-11, g
     r = pycc.gradient(pycc.CCderiv(cc))
     assert np.max(np.abs(r.total - (r.nuclear + r.reference + r.correlation))) < 1e-12
@@ -116,7 +116,7 @@ def test_ccsd_gradient_ccpvdz():
     (polarization functions, several virtuals per irrep, A2-symmetry MOs) that STO-3G lacks -- and
     the gradient-convention densities reconstruct E_corr."""
     cc = _ccwfn(REF, "cc-pVDZ")
-    g = np.asarray(pycc.CCderiv(cc).gradient())
+    g = np.asarray(pycc.CCderiv(cc).gradient().correlation)
     assert np.max(np.abs(g - GRAD_REF_PVDZ)) < 1e-11, g
     dens = pycc.CCderiv(cc).ccdensity
     D, G = dens.gradient_densities()
@@ -131,7 +131,7 @@ def test_ccsd_gradient_frozen_core():
     cc = _ccwfn(REF, "STO-3G", frozen_core=True)
     assert cc.nfzc > 0
     deriv = pycc.CCderiv(cc)
-    g_zvector = np.asarray(deriv.gradient())
+    g_zvector = np.asarray(deriv.gradient().correlation)
     assert np.max(np.abs(g_zvector - GRAD_REF_FC_STO3G)) < 1e-11, g_zvector
 
 
@@ -141,7 +141,7 @@ def test_ccsd_gradient_route_equivalence():
     caught the deriv2 ket-swap bug) and exercises the 'mo' opt-out branch."""
     d = pycc.CCderiv(_ccwfn(REF, "cc-pVDZ"))
     d._skel_eri_route = 'mo'
-    g_mo = np.asarray(d.gradient())
+    g_mo = np.asarray(d.gradient().correlation)
     d._skel_eri_route = 'aod'
-    g_aod = np.asarray(d.gradient())
+    g_aod = np.asarray(d.gradient().correlation)
     assert np.max(np.abs(g_aod - g_mo)) < 1e-12, np.max(np.abs(g_aod - g_mo))

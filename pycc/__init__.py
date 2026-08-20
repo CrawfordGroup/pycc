@@ -20,15 +20,9 @@ from .cceom import cceom
 from .ccderiv import CCderiv
 from .mpderiv import MPderiv
 from .cideriv import CIderiv
-from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian, polarizability, optical_rotation, register_deriv
+from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian, polarizability, optical_rotation
 from .vibanalysis import harmonic_analysis, ir, vcd
 from .checkpoint import Checkpoint, save_checkpoint, load_checkpoint
-
-# Route the property facade's correlation-derivative calls for each wavefunction to its downstream
-# driver (the CorrelatedDerivs leaf carrying the correlation-property methods).
-register_deriv(CCwfn, CCderiv)
-register_deriv(MPwfn, MPderiv)
-register_deriv(CIwfn, CIderiv)
 
 __all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'CCderiv', 'MPderiv', 'CIderiv', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability', 'optical_rotation', 'harmonic_analysis', 'ir', 'vcd', 'Checkpoint', 'save_checkpoint', 'load_checkpoint']
 

@@ -161,7 +161,7 @@ def test_ccsdt_relaxed_dipole(rhf_wfn):
     wfn = rhf_wfn(_T_DIPOLE_GEOM, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
     cc.solve_cc(1e-12, 1e-12, 100)
-    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    mu = np.asarray(pycc.CCderiv(cc).dipole().correlation)
     assert abs(mu[2] - RELAXED_DIPOLE_Z_REF) < 1e-10, mu[2]
     # facade: total = nuclear + reference + correlation, and correlation == relaxed_dipole
     r = pycc.dipole(pycc.CCderiv(cc))
@@ -177,7 +177,7 @@ def test_ccsdt_relaxed_dipole_spinorbital(rhf_wfn):
     wfn = rhf_wfn(_T_DIPOLE_GEOM, "6-31G", freeze_core="false")
     cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis='spinorbital')
     cc.solve_cc(1e-12, 1e-12, 100)
-    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    mu = np.asarray(pycc.CCderiv(cc).dipole().correlation)
     assert abs(mu[2] - RELAXED_DIPOLE_Z_REF) < 1e-9, mu[2]
     psi4.core.clean()
 
@@ -189,7 +189,7 @@ def test_ccsdt_relaxed_dipole_frozen_core(rhf_wfn):
     cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True)
     cc.solve_cc(1e-12, 1e-12, 100)
     assert cc.nfzc > 0
-    mu = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+    mu = np.asarray(pycc.CCderiv(cc).dipole().correlation)
     assert abs(mu[2] - RELAXED_DIPOLE_Z_REF_FC) < 1e-10, mu[2]
     psi4.core.clean()
 
@@ -224,7 +224,7 @@ def test_ccsdt_relaxed_dipole_offaxis(rhf_wfn):
     for basis in ('spinorbital', 'spatial'):
         cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis=basis)
         cc.solve_cc(1e-12, 1e-12, 100)
-        mu[basis] = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+        mu[basis] = np.asarray(pycc.CCderiv(cc).dipole().correlation)
     assert np.max(np.abs(mu['spatial'] - RELAXED_DIPOLE_OFFAXIS_REF)) < 1e-8, mu['spatial']
     assert np.max(np.abs(mu['spinorbital'] - RELAXED_DIPOLE_OFFAXIS_REF)) < 1e-8, mu['spinorbital']
     assert np.max(np.abs(mu['spinorbital'] - mu['spatial'])) < 1e-9, (mu['spinorbital'], mu['spatial'])
@@ -241,7 +241,7 @@ def test_ccsdt_relaxed_dipole_offaxis_frozen_core(rhf_wfn):
         cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis=basis)
         cc.solve_cc(1e-12, 1e-12, 100)
         assert cc.nfzc > 0
-        mu[basis] = np.asarray(pycc.CCderiv(cc).relaxed_dipole())
+        mu[basis] = np.asarray(pycc.CCderiv(cc).dipole().correlation)
     assert np.max(np.abs(mu['spatial'] - RELAXED_DIPOLE_OFFAXIS_REF_FC)) < 1e-8, mu['spatial']
     assert np.max(np.abs(mu['spinorbital'] - RELAXED_DIPOLE_OFFAXIS_REF_FC)) < 1e-8, mu['spinorbital']
     assert np.max(np.abs(mu['spinorbital'] - mu['spatial'])) < 1e-9, (mu['spinorbital'], mu['spatial'])

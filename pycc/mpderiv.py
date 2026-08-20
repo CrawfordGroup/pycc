@@ -29,8 +29,8 @@ class MPderiv(CorrelatedDerivs):
 
     Constructed from a converged :class:`~pycc.mpwfn.MPwfn`.  Supplies the MP2 density hooks
     (:meth:`_unrelaxed_densities`, :meth:`_perturbed_unrelaxed_densities`) and the MP2-specific atomic
-    axial tensors (:meth:`atomic_axial_tensors`) and velocity-gauge APT
-    (:meth:`velocity_dipole_derivatives`); the orbital-response (Z-vector) solve and the 2n+1 assembly
+    axial tensors (:meth:`aat`) and velocity-gauge APT
+    (:meth:`apt`); the orbital-response (Z-vector) solve and the 2n+1 assembly
     of the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian are inherited from
     :class:`~pycc.correlatedderivs.CorrelatedDerivs`.  Both the spin-adapted (closed-shell RHF) and
     spin-orbital (``_so_``) paths are frozen-core aware.
@@ -270,17 +270,23 @@ class MPderiv(CorrelatedDerivs):
     # DERIVATIVES_PLAN.
 
     # ---- second derivatives: polarizability, APT (dipole derivatives), Hessian ----
-    # Inherited unchanged from CorrelatedDerivs (polarizability / dipole_derivatives / hessian);
+    # Inherited unchanged from CorrelatedDerivs (polarizability / apt / hessian);
     # MP2 adds no method-specific handling, so there is no override here.
 
     # ---- atomic axial tensors (VCD, magnetic/nuclear mixed derivative) ----
 
-    def atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
+    def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
+        See :func:`pycc.aat`."""
+        from . import properties
+        return properties.aat(self, origin=origin, orbital_gauge=orbital_gauge)
+
+    def _correlation_aat(self, gauge: str = 'non-canonical') -> np.ndarray:
         r"""MP2 **correlation** atomic axial tensors ``I^A_{alpha,beta}`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, alpha, beta]`` -- the nuclear(``alpha``)/magnetic-field
         (``beta``) mixed derivative of the wave function, as an overlap of its perturbed
         derivatives.  This is the **correlation** contribution only; the SCF reference AAT
-        (:meth:`HFwfn.atomic_axial_tensors`) and the nuclear (charge x position) term are kept
+        (:meth:`HFwfn.aat`) and the nuclear (charge x position) term are kept
         separate and summed by the :func:`pycc.aat` facade.  The correlation is computed directly
         from the correlation 1-PDM/amplitude derivatives (the reference ``2 delta_ij`` density
         block never enters), so the pieces are separated in fact, not by subtraction.  Dropping
@@ -395,12 +401,11 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ji->', RH[o, o], UReff[o, o]) + c('ab,ab->', RH[v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
                     P[A, cart, b] = Icc + Icphi + Iphic + Ipp
-        self.aat = P
         return P
 
     def _so_atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
         r"""Spin-orbital MP2 electronic AATs (``(natom, 3, 3)``) -- the spin-orbital form of
-        :meth:`atomic_axial_tensors` (see there for the theory), in the bare (already-
+        :meth:`aat` (see there for the theory), in the bare (already-
         antisymmetrized) spin-orbital amplitudes.  Same four-term overlap (R = nuclear, H =
         magnetic; repeated indices summed)::
 
@@ -481,16 +486,15 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ij->', gH[b][o, o], UReff[o, o]) + c('ab,ab->', gH[b][v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
                     P[A, cart, b] = Icc + Icphi + Iphic + Ipp
-        self.aat = P
         return P
 
-    def velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
+    def _correlation_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         r"""MP2 velocity-gauge (VG) atomic polar tensors ``[P^A_{beta,alpha}]^VG`` (a.u.), shape
         ``(natom, 3, 3)`` indexed ``[A, beta, alpha]`` = ``d(mu_alpha)/d(X_A,beta)`` -- the
         momentum-form APT.  This is the **correlation** contribution only; the SCF reference VG
-        APT (:meth:`HFwfn.velocity_dipole_derivatives`) and the nuclear ``Z_A delta_{alpha,beta}``
+        APT (:meth:`HFwfn.apt`) and the nuclear ``Z_A delta_{alpha,beta}``
         term are kept separate and summed by the :func:`pycc.apt` (``gauge='velocity'``) facade.
-        Built on the atomic-axial-tensor machinery (:meth:`atomic_axial_tensors`) with the
+        Built on the atomic-axial-tensor machinery (:meth:`aat`) with the
         magnetic-dipole operator replaced by the linear momentum ``p = -i nabla``
         (:meth:`CPHF.momentum_ints`)::
 
@@ -506,7 +510,7 @@ class MPderiv(CorrelatedDerivs):
         (spin-orbital: :meth:`_so_velocity_dipole_derivatives`).  The ``+2`` prefactor is the
         closed-shell value.
 
-        Unlike the length-gauge APT (:meth:`dipole_derivatives`) the VG APT differs from it in a
+        Unlike the length-gauge APT (:meth:`apt`) the VG APT differs from it in a
         finite basis, converging to it toward the basis-set limit; both are origin-independent."""
         if self.mp.orbital_basis == 'spinorbital':
             return self._so_velocity_dipole_derivatives(gauge)
@@ -570,7 +574,7 @@ class MPderiv(CorrelatedDerivs):
 
     def _so_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
         r"""Spin-orbital MP2 velocity-gauge APTs (``(natom, 3, 3)``) -- the correlation-only
-        spin-orbital form of :meth:`velocity_dipole_derivatives` (see there for the theory),
+        spin-orbital form of :meth:`apt` (see there for the theory),
         sharing the spin-orbital AAT densities (:meth:`_so_atomic_axial_tensors`) with the
         linear-momentum response (:meth:`CPHF.momentum_ints`)::
 

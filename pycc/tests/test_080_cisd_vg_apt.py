@@ -117,8 +117,8 @@ def test_cisd_vg_apt_gauge_invariance():
     oo/vv response (non-canonical vs canonical), all-electron and frozen-core."""
     for fc in ('false', 'true'):
         ci = _ciwfn(fc)[0]
-        nc = np.asarray(pycc.CIderiv(ci).velocity_dipole_derivatives(gauge='non-canonical'))
-        ca = np.asarray(pycc.CIderiv(ci).velocity_dipole_derivatives(gauge='canonical'))
+        nc = np.asarray(pycc.CIderiv(ci).apt(gauge='velocity', orbital_gauge='non-canonical').correlation)
+        ca = np.asarray(pycc.CIderiv(ci).apt(gauge='velocity', orbital_gauge='canonical').correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))
 
 

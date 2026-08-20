@@ -78,7 +78,7 @@ def test_aat_h2o2_vs_dalton():
     natom = mol.natom()
 
     # Electronic AAT (Eq. 16), reshaped [lambda, alpha, beta] -> [3*natom, 3].
-    aat_elec = pycc.HFwfn(wfn).atomic_axial_tensors().reshape(3 * natom, 3)
+    aat_elec = pycc.HFwfn(wfn).aat().reference.reshape(3 * natom, 3)
 
     # Nuclear contribution: (Z_lambda / 4) eps_{alpha,beta,gamma} R_{lambda,gamma}.
     geom = np.asarray(mol.geometry())

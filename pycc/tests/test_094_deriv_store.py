@@ -103,10 +103,10 @@ def test_disk_matches_ram_hessian(rhf_wfn, orbital_basis):
     store = pycc.CCderiv(cc).wfn.derivatives.store                          # shared per-wfn store
 
     store.enabled = False
-    H_ram = np.asarray(pycc.CCderiv(cc).hessian())
+    H_ram = np.asarray(pycc.CCderiv(cc).hessian().correlation)
 
     store.enabled = True
-    H_disk = np.asarray(pycc.CCderiv(cc).hessian())
+    H_disk = np.asarray(pycc.CCderiv(cc).hessian().correlation)
     assert store._file and os.path.exists(store._file)                      # disk path exercised
     assert np.max(np.abs(H_ram - H_disk)) < 1e-12
     store.close()

@@ -3,15 +3,17 @@ as its additive physical decomposition
 
     total = nuclear + reference + correlation
 
-Each property takes a **derivative driver** (``CCderiv``/``MPderiv`` -- the object that owns the
-solve and the correlation-derivative methods) or, for a reference-only value, a bare ``HFwfn`` (its
-correlation block is zero).  A bare *registered* correlated wavefunction (``CCwfn``/``MPwfn``) is
-rejected: construct the driver yourself, e.g. ``pycc.gradient(pycc.CCderiv(cc))`` -- so the solve
-cost sits in an explicit constructor.  CISD is the one exception (transitional): its ``CIwfn`` is
-still accepted directly, because ``CIderiv`` is not yet a working driver; that path goes away when
-it is.  ``aat`` keeps its own wavefunction-based interface for now (pending the AAT/VG-APT hoist).
-The pieces are genuinely computed apart -- the correlation contribution is built from correlation
-quantities only, never as (total - reference).
+Every property is a method on the object that owns it -- a **derivative driver**
+(``CCderiv``/``MPderiv``/``CIderiv``, which owns the solve and the correlation-derivative methods) or,
+for a reference-only value, a bare ``HFwfn`` (its correlation block is zero).  ``pycc.hessian(x)`` and
+the other module-level names are thin wrappers around ``x.hessian()`` etc., kept for discoverability.
+Each returns a :class:`PropertyComponents`; the pieces are genuinely computed apart (the correlation
+contribution is built from correlation quantities only, never as ``total - reference``).
+
+Dispatch is explicit: each assembler below reads the reference block from the SCF ``HFwfn`` (its own
+if the caller *is* an ``HFwfn``, else the driver's cached ``_reference_hf()``) and the correlation
+block from the driver's ``_correlation_*`` method (zero for an ``HFwfn``).  No registry, no
+name-keyed lookup.
 """
 
 from dataclasses import dataclass
@@ -147,56 +149,44 @@ def _nuclear_aat(mol, origin) -> np.ndarray:
 
 
 # ------------------------------------------------------------------------------------------------
-# Property facade: dispatch on wavefunction type, assemble the PropertyComponents decomposition.
+# Property facade: each assembler reads the reference and correlation blocks by explicit method
+# call (no registry, no name-keyed dispatch) and packs the PropertyComponents decomposition.  The
+# public ``x.hessian()`` etc. methods on HFwfn / the drivers are thin delegators to these.
 # ------------------------------------------------------------------------------------------------
 
-# Registry mapping a wavefunction class to its downstream derivative-driver class (the strategy
-# that carries the correlation-property methods, e.g. CCwfn -> CCderiv).  Populated at import
-# (pycc/__init__.py).  A wfn class absent from the registry is treated as carrying its correlation
-# methods itself (the current MPwfn, until an MPderiv is split out) -- see _correlated.
-_DERIV_REGISTRY: dict = {}
 
-
-def register_deriv(wfn_cls, deriv_cls) -> None:
-    """Register ``deriv_cls`` as the derivative driver for wavefunctions of type ``wfn_cls``."""
-    _DERIV_REGISTRY[wfn_cls] = deriv_cls
-
-
-def _correlated(obj):
-    """Resolve ``obj`` to ``(reference_hf, target)``: the SCF-reference ``HFwfn`` carrying the
-    reference derivative, and the driver carrying the correlation-derivative methods.
-
-    ``obj`` must be a derivative driver (``CCderiv``/``MPderiv``/``CIderiv``): the property is computed
-    on it and the solve cost lives in its explicit constructor.  A bare **registered** correlated
-    wavefunction (``CCwfn``/``MPwfn``/``CIwfn``) is rejected -- construct the driver yourself.  Any
-    other object is used as its own target."""
-    from .correlatedderivs import CorrelatedDerivs
-    if isinstance(obj, CorrelatedDerivs):
-        return obj._reference_hf(), obj
-    deriv_cls = _DERIV_REGISTRY.get(type(obj))
-    if deriv_cls is not None:
-        raise TypeError(
-            f"pycc property facade: pass a {deriv_cls.__name__}, not a bare "
-            f"{type(obj).__name__} -- e.g. pycc.gradient(pycc.{deriv_cls.__name__}(wfn)).  "
-            f"The driver's constructor owns the solve; see pycc.{deriv_cls.__name__}.")
-    return obj._reference_hf(), obj
-
-
-def _wfn_of(obj):
+def _wavefunction(obj):
     """The underlying wavefunction of ``obj``: ``obj.wfn`` if ``obj`` is a derivative driver, else
-    ``obj`` itself (a wavefunction).  Used for the nuclear terms (molecule / nuclear-repulsion
-    derivatives), which live on the wavefunction regardless of what the facade was handed."""
+    ``obj`` itself (an ``HFwfn``).  The nuclear terms (molecule / nuclear-repulsion derivatives)
+    live on the wavefunction regardless of what was handed in."""
     from .correlatedderivs import CorrelatedDerivs
     return obj.wfn if isinstance(obj, CorrelatedDerivs) else obj
 
 
+def _is_hf(obj) -> bool:
+    """True if ``obj`` is a bare ``HFwfn`` (reference-only: its correlation block is zero)."""
+    from .hfwfn import HFwfn
+    return isinstance(obj, HFwfn)
+
+
+def _method_label(obj) -> str:
+    """The label for a property report -- ``'SCF'``, ``'MP2'``, or the model of the underlying
+    wavefunction (``'CCSD'`` / ``'CCSD(T)'`` / ``'CISD'`` / ...)."""
+    from .mpwfn import MPwfn
+    if _is_hf(obj):
+        return "SCF"
+    w = _wavefunction(obj)
+    if isinstance(w, MPwfn):
+        return "MP2"
+    return getattr(w, 'model', type(w).__name__)
+
+
 def _record(obj, key: str, pc: "PropertyComponents") -> "PropertyComponents":
     """Stash a computed property on the underlying wavefunction so a checkpoint can harvest it
-    later (see :func:`~pycc.checkpoint.save_checkpoint`).  Recording via :func:`_wfn_of` puts the
-    deriv-based facades and the wavefunction-based ``aat`` in one place, so everything computed on
-    a single point accumulates together in ``wfn._property_results`` (a name -> PropertyComponents
-    dict).  Returns ``pc`` so a facade can chain ``return _record(...).report(...)``."""
-    w = _wfn_of(obj)
+    later (see :func:`~pycc.checkpoint.save_checkpoint`): everything computed on a single point
+    accumulates together in ``wfn._property_results`` (a name -> PropertyComponents dict).  Returns
+    ``pc`` so an assembler can chain ``return _record(...).report(...)``."""
+    w = _wavefunction(obj)
     cache = getattr(w, '_property_results', None)
     if cache is None:
         cache = w._property_results = {}
@@ -204,47 +194,23 @@ def _record(obj, key: str, pc: "PropertyComponents") -> "PropertyComponents":
     return pc
 
 
-def _method_name(obj) -> str:
-    """The method label for a property report -- ``'SCF'``, ``'MP2'``, or the model of the
-    underlying wavefunction (``'CCSD'`` / ``'CCSD(T)'`` / ``'CISD'`` / ...)."""
-    from .hfwfn import HFwfn
-    from .mpwfn import MPwfn
-    if isinstance(obj, HFwfn):
-        return "SCF"
-    w = _wfn_of(obj)
-    if isinstance(w, MPwfn):
-        return "MP2"
-    return getattr(w, 'model', type(w).__name__)
-
-
-def _dispatch(obj, hf_method, corr_method, corr_kwargs=None):
-    """Reference (SCF electronic) and correlation blocks of a property, computed apart.  ``obj`` is
-    a derivative driver or (transitionally) a correlated wavefunction: the reference is the
-    all-electron SCF value and the correlation comes from the driver (:func:`_correlated`), called
-    with ``corr_kwargs`` (``route`` / ``gauge`` knobs the SCF reference does not take).  For an
-    ``HFwfn`` the reference is the SCF value and the correlation is an all-zeros array."""
-    from .hfwfn import HFwfn
-    if isinstance(obj, HFwfn):
-        reference = np.asarray(getattr(obj, hf_method)())
-        return reference, np.zeros_like(reference)
-    reference_hf, target = _correlated(obj)
-    reference = np.asarray(getattr(reference_hf, hf_method)())
-    correlation = np.asarray(getattr(target, corr_method)(**(corr_kwargs or {})))
-    return reference, correlation
-
-
 def dipole(wfn) -> PropertyComponents:
     """Electric-dipole moment as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3,)`` each) for any supported wavefunction type.  The report gives the
     SCF/correlation/total vectors in a.u. and, for the total, the vector and magnitude in Debye."""
-    reference, correlation = _dispatch(wfn, '_dipole_electronic', 'relaxed_dipole')
-    pc = PropertyComponents(_nuclear_dipole(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    if _is_hf(wfn):
+        reference = np.asarray(wfn._dipole_electronic())
+        correlation = np.zeros_like(reference)
+    else:
+        reference = np.asarray(wfn._reference_hf()._dipole_electronic())
+        correlation = np.asarray(wfn._correlation_dipole())
+    pc = PropertyComponents(_nuclear_dipole(_wavefunction(wfn).ref.molecule()), reference, correlation)
     total = np.asarray(pc.total)
     mag = float(np.linalg.norm(total))
     debye = np.array2string(total * DEBYE_PER_AU, precision=8, suppress_small=True, separator=", ")
     _record(wfn, 'dipole', pc)
     return pc.report(
-        "%s dipole moment" % _method_name(wfn),
+        "%s dipole moment" % _method_label(wfn),
         summary=[("total (Debye)", debye),
                  ("|mu|", "%.6f a.u.   %.6f Debye" % (mag, mag * DEBYE_PER_AU))])
 
@@ -253,11 +219,16 @@ def gradient(wfn) -> PropertyComponents:
     """Analytic energy gradient as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(natom, 3)`` each).  The nuclear block is the nuclear-repulsion
     derivative ``dV_NN/dX``."""
-    reference, correlation = _dispatch(wfn, '_gradient_electronic', 'gradient')
-    nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion())
+    if _is_hf(wfn):
+        reference = np.asarray(wfn._gradient_electronic())
+        correlation = np.zeros_like(reference)
+    else:
+        reference = np.asarray(wfn._reference_hf()._gradient_electronic())
+        correlation = np.asarray(wfn._correlation_gradient())
+    nuclear = np.asarray(_wavefunction(wfn).derivatives.nuclear_repulsion())
     pc = PropertyComponents(nuclear, reference, correlation)
     _record(wfn, 'gradient', pc)
-    return pc.report("%s gradient" % _method_name(wfn))
+    return pc.report("%s gradient" % _method_label(wfn))
 
 
 def _omega_to_hartree(omega, units):
@@ -289,7 +260,7 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
     * **relaxed** -- the orbital-relaxed analytic second derivative (2n+1 route), the default at
       ``omega = 0``.  Available for MP2 / CISD / CCSD.  Static only: a relaxed value at ``omega != 0``
       is undefined and raises.
-    * **unrelaxed** -- the CC linear-response value (:meth:`CCderiv.dynamic_polarizability`), which
+    * **unrelaxed** -- the CC linear-response value (:meth:`CCderiv.polarizability`), which
       omits the orbital (MO) response.  This is the convention for *dynamic* response properties --
       including the orbital relaxation introduces spurious poles -- so it is the default at
       ``omega != 0``.  **CCSD only** (needs a :class:`~pycc.ccderiv.CCderiv`).  Because there is no
@@ -314,23 +285,28 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
            "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)
 
     if relaxed:
-        reference, correlation = _dispatch(wfn, 'polarizability', 'polarizability')
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._polarizability_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            reference = np.asarray(wfn._reference_hf()._polarizability_electronic())
+            correlation = np.asarray(wfn._correlation_polarizability())
         pc = PropertyComponents(np.zeros((3, 3)), reference, correlation)
         route = "relaxed (orbital-relaxed derivative)"
     else:
-        if not hasattr(wfn, 'dynamic_polarizability'):
+        if not hasattr(wfn, '_correlation_dynamic_polarizability'):
             raise NotImplementedError(
                 "the dynamic (unrelaxed) polarizability is implemented for CCSD only; pass a "
                 "pycc.CCderiv for a CCSD wavefunction (got %s)." % type(wfn).__name__)
         # Correlation-only: no MO response, hence no HF/SCF contribution (see the docstring).
-        correlation = np.asarray(wfn.dynamic_polarizability(omega))
+        correlation = np.asarray(wfn._correlation_dynamic_polarizability(omega))
         pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), correlation)
         route = "unrelaxed (no orbital relaxation; correlation only)"
 
     iso_au = float(np.trace(np.asarray(pc.total)).real) / 3.0
     _record(wfn, 'polarizability' if omega == 0.0 else 'polarizability(omega=%g)' % omega, pc)
     return pc.report(
-        "%s polarizability" % _method_name(wfn),
+        "%s polarizability" % _method_label(wfn),
         params=[("frequency (omega)", freq), ("response", route)],
         summary=[("isotropic (1/3 Tr)", "%.6f a.u.   %.6f Angstrom^3" % (iso_au, iso_au * ANG3_PER_AU))])
 
@@ -352,17 +328,17 @@ def optical_rotation(wfn, omega, units: str = 'Eh') -> PropertyComponents:
     if omega == 0.0:
         raise ValueError("optical rotation requires a nonzero field frequency; there is no static "
                          "optical rotation.")
-    if not hasattr(wfn, 'optical_rotation'):
+    if not hasattr(wfn, '_correlation_optical_rotation'):
         raise NotImplementedError(
             "optical rotation is implemented for CCSD only; pass a pycc.CCderiv for a CCSD "
             "wavefunction (got %s)." % type(wfn).__name__)
-    g = np.asarray(wfn.optical_rotation(omega))
+    g = np.asarray(wfn._correlation_optical_rotation(omega))
     pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), g)
     trace = float(np.trace(g).real)
-    alpha = _specific_rotation(trace, omega, _wfn_of(wfn).ref.molecule())
+    alpha = _specific_rotation(trace, omega, _wavefunction(wfn).ref.molecule())
     _record(wfn, "optical_rotation(omega=%g)" % omega, pc)
     return pc.report(
-        "%s optical rotation, G'" % _method_name(wfn),
+        "%s optical rotation, G'" % _method_label(wfn),
         params=[("frequency (omega)", "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)),
                 ("response", "unrelaxed (no orbital relaxation; correlation only)")],
         summary=[("Tr(G')", "%.6f a.u." % trace),
@@ -373,11 +349,16 @@ def hessian(wfn) -> PropertyComponents:
     """Molecular (nuclear) Hessian as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
     repulsion second derivative ``d^2 V_NN/dX dY``."""
-    reference, correlation = _dispatch(wfn, '_hessian_electronic', 'hessian')
-    nuclear = np.asarray(_wfn_of(wfn).derivatives.nuclear_repulsion2())
+    if _is_hf(wfn):
+        reference = np.asarray(wfn._hessian_electronic())
+        correlation = np.zeros_like(reference)
+    else:
+        reference = np.asarray(wfn._reference_hf()._hessian_electronic())
+        correlation = np.asarray(wfn._correlation_hessian())
+    nuclear = np.asarray(_wavefunction(wfn).derivatives.nuclear_repulsion2())
     pc = PropertyComponents(nuclear, reference, correlation)
     _record(wfn, 'hessian', pc)
-    return pc.report("%s Hessian" % _method_name(wfn))
+    return pc.report("%s Hessian" % _method_label(wfn))
 
 
 def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') -> PropertyComponents:
@@ -385,8 +366,8 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     (``nuclear + reference + correlation``, shape ``(natom, 3, 3)`` each), indexed
     ``[A, beta, alpha]``.  The nuclear block is ``Z_A delta_{alpha,beta}``.
 
-    ``gauge='length'`` (default) is the length-gauge APT (:meth:`dipole_derivatives`);
-    ``gauge='velocity'`` is the velocity-gauge APT (:meth:`velocity_dipole_derivatives`).
+    ``gauge='length'`` (default) is the length-gauge APT (:meth:`apt`);
+    ``gauge='velocity'`` is the velocity-gauge APT (:meth:`apt`).
 
     ``route`` (length gauge only) selects the algorithm -- ``'2n+1-field'`` (default -- the
     O(N)-cheaper route, 3 field solves) or ``'2n+1-nuclear'``; both give the same tensor.
@@ -397,16 +378,24 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     exists only for verification/debugging.
     Both extra knobs are ignored for an ``HFwfn`` (no correlation)."""
     if gauge == 'length':
-        reference, correlation = _dispatch(wfn, '_dipole_derivatives_electronic',
-                                           'dipole_derivatives', {'route': route})
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._dipole_derivatives_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            reference = np.asarray(wfn._reference_hf()._dipole_derivatives_electronic())
+            correlation = np.asarray(wfn._correlation_dipole_derivatives(route=route))
     elif gauge == 'velocity':
-        reference, correlation = _dispatch(wfn, '_velocity_dipole_derivatives_electronic',
-                                           'velocity_dipole_derivatives', {'gauge': orbital_gauge})
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._velocity_dipole_derivatives_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            reference = np.asarray(wfn._reference_hf()._velocity_dipole_derivatives_electronic())
+            correlation = np.asarray(wfn._correlation_velocity_dipole_derivatives(gauge=orbital_gauge))
     else:
         raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
-    pc = PropertyComponents(_nuclear_apt(_wfn_of(wfn).ref.molecule()), reference, correlation)
+    pc = PropertyComponents(_nuclear_apt(_wavefunction(wfn).ref.molecule()), reference, correlation)
     _record(wfn, 'apt' if gauge == 'length' else 'apt_velocity', pc)
-    return pc.report("%s APT (%s gauge)" % (_method_name(wfn), gauge))
+    return pc.report("%s APT (%s gauge)" % (_method_label(wfn), gauge))
 
 
 def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
@@ -417,8 +406,8 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     SCF reference; a bare correlated wavefunction is rejected.
 
     The correlation block is the genuine correlation contribution (the driver's
-    ``atomic_axial_tensors``, which excludes the reference density), the reference block is the
-    independent SCF AAT (:meth:`HFwfn.atomic_axial_tensors`), and the nuclear block is
+    ``aat``, which excludes the reference density), the reference block is the
+    independent SCF AAT (:meth:`HFwfn.aat`), and the nuclear block is
     ``(Z_A/4) eps R``.  Each block is orbital-gauge invariant, so the decomposition is well defined
     independent of the magnetic oo/vv gauge.
 
@@ -432,14 +421,18 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     the correlation AAT (MP2 or CISD), ``'non-canonical'`` (default, numerically stable) or
     ``'canonical'``.  The AAT is invariant to this choice, so it exists only for
     verification/debugging; it is ignored for an ``HFwfn`` (no correlation)."""
-    mol = _wfn_of(wfn).ref.molecule()
+    mol = _wavefunction(wfn).ref.molecule()
     nuclear = _nuclear_aat(mol, origin)
-    reference, correlation = _dispatch(wfn, 'atomic_axial_tensors', 'atomic_axial_tensors',
-                                       {'gauge': orbital_gauge})
+    if _is_hf(wfn):
+        reference = np.asarray(wfn._aat_electronic())
+        correlation = np.zeros_like(reference)
+    else:
+        reference = np.asarray(wfn._reference_hf()._aat_electronic())
+        correlation = np.asarray(wfn._correlation_aat(gauge=orbital_gauge))
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)
     pc = PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
     _record(wfn, 'aat', pc)
-    return pc.report("%s AAT" % _method_name(wfn))
+    return pc.report("%s AAT" % _method_label(wfn))
 
 
 def _specific_rotation(trace_G, omega, mol):

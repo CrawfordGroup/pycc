@@ -52,8 +52,8 @@ def test_so_rhf_gradient_vs_spatial_631g():
     """Keystone (C1): closed-shell RHF forced to spin orbitals == spatial RHF gradient."""
     geom = WATER + "symmetry c1\n"
     wfn = _scf_wfn(geom, '6-31G', 'rhf')
-    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient()
-    g_spatial = pycc.HFwfn(wfn).gradient()
+    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient().total
+    g_spatial = pycc.HFwfn(wfn).gradient().total
     assert np.max(np.abs(g_so - g_spatial)) < 1e-11
     assert np.max(np.abs(g_so - _psi4_scf_gradient(geom, '6-31G', 'rhf'))) < 1e-10
 
@@ -61,8 +61,8 @@ def test_so_rhf_gradient_vs_spatial_631g():
 def test_so_rhf_gradient_vs_spatial_ccpvdz():
     """Keystone (C2v: polarization functions + A2-irrep MOs): SO-RHF == spatial RHF."""
     wfn = _scf_wfn(WATER, 'cc-pVDZ', 'rhf')
-    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient()
-    g_spatial = pycc.HFwfn(wfn).gradient()
+    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient().total
+    g_spatial = pycc.HFwfn(wfn).gradient().total
     assert np.max(np.abs(g_so - g_spatial)) < 1e-11
     assert np.max(np.abs(g_so - _psi4_scf_gradient(WATER, 'cc-pVDZ', 'rhf'))) < 1e-10
 
@@ -70,12 +70,12 @@ def test_so_rhf_gradient_vs_spatial_ccpvdz():
 def test_uhf_gradient_vs_psi4():
     """Open-shell UHF gradient (OH doublet) vs Psi4."""
     wfn = _scf_wfn(OH, '6-31G', 'uhf')
-    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient()
+    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient().total
     assert np.max(np.abs(g_so - _psi4_scf_gradient(OH, '6-31G', 'uhf'))) < 1e-10
 
 
 def test_rohf_gradient_vs_psi4():
     """Open-shell ROHF gradient (OH doublet, semicanonical orbitals) vs Psi4."""
     wfn = _scf_wfn(OH, '6-31G', 'rohf')
-    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient()
+    g_so = pycc.HFwfn(wfn, orbital_basis='spinorbital').gradient().total
     assert np.max(np.abs(g_so - _psi4_scf_gradient(OH, '6-31G', 'rohf'))) < 1e-10

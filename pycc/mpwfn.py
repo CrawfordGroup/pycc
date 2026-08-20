@@ -122,7 +122,7 @@ class MPwfn(Wavefunction):
 
     def _mp2_normalization(self) -> float:
         r"""MP2 intermediate normalization (spin-adapted), for the wave-function-overlap AAT
-        (:meth:`MPderiv.atomic_axial_tensors`). The normalized doubles are ``c2 = N t2`` and the
+        (:meth:`MPderiv.aat`). The normalized doubles are ``c2 = N t2`` and the
         reference coefficient is ``c0 = N``::
 
             N = 1 / sqrt(1 + sum_ijab t2_ijab (2 t2_ijab - t2_ijba))

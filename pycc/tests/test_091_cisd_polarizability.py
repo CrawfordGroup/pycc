@@ -63,7 +63,7 @@ def _dipfd_alpha_full(freeze_core='false'):
     def mu(axis, Fval):
         field = [0.0, 0.0, 0.0]
         field[axis] = Fval
-        return np.asarray(pycc.CIderiv(_solve(tuple(field), freeze_core)).relaxed_dipole())
+        return np.asarray(pycc.CIderiv(_solve(tuple(field), freeze_core)).dipole().correlation)
     alpha = np.zeros((3, 3))
     for b in range(3):
         alpha[:, b] = -(-mu(b, -3 * H) + 9 * mu(b, -2 * H) - 45 * mu(b, -H)
@@ -133,6 +133,6 @@ def test_cisd_polarizability_perturbed_mo_gauge_invariance_631g():
     default vs the canonical dependent-pair route), all-electron and frozen-core."""
     for fc in ('false', 'true'):
         ci = _solve(freeze_core=fc)
-        nc = np.asarray(pycc.CIderiv(ci).polarizability())
-        ca = np.asarray(_CIderivCanonicalMO(ci).polarizability())
+        nc = np.asarray(pycc.CIderiv(ci).polarizability().correlation)
+        ca = np.asarray(_CIderivCanonicalMO(ci).polarizability().correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

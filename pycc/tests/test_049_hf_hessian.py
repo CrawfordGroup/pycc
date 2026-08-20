@@ -18,7 +18,7 @@ def test_hf_hessian_h2o(rhf_wfn):
     """H2O STO-3G molecular Hessian vs psi4.hessian('scf') (frame locked)."""
     wfn = rhf_wfn("H2O", "STO-3G", geom_extra="\nsymmetry c1\nnoreorient\nnocom",
                   e_convergence=1e-11, d_convergence=1e-11)
-    analytic = pycc.HFwfn(wfn).hessian()        # (3*natom, 3*natom)
+    analytic = pycc.HFwfn(wfn).hessian().total        # (3*natom, 3*natom)
 
     ref = np.asarray(psi4.hessian('scf'))       # same molecule/options still set
     assert analytic.shape == ref.shape
@@ -32,7 +32,7 @@ def test_hf_hessian_h2o_ccpvdz(rhf_wfn):
     STO-3G/H2O lacks (frame locked)."""
     wfn = rhf_wfn("H2O", "cc-pVDZ", geom_extra="\nsymmetry c1\nnoreorient\nnocom",
                   e_convergence=1e-11, d_convergence=1e-11)
-    analytic = pycc.HFwfn(wfn).hessian()
+    analytic = pycc.HFwfn(wfn).hessian().total
     ref = np.asarray(psi4.hessian('scf'))       # cheap SCF oracle, same molecule/options still set
     assert analytic.shape == ref.shape
     assert np.allclose(analytic, analytic.T, atol=1e-10)
@@ -55,9 +55,9 @@ def test_hf_hessian_shares_nuclear_cache(rhf_wfn):
         return original(atom)
 
     cphf._build_rhs_nuclear = counted
-    hf.hessian()
+    hf.hessian().total
     after_hessian = builds["n"]
-    hf.dipole_derivatives()
+    hf.apt().total
     after_apt = builds["n"]
 
     assert after_hessian == wfn.molecule().natom()   # one heavy build per atom

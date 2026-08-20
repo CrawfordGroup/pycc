@@ -106,7 +106,7 @@ def test_ccsdt_gradient_vs_findiff():
     5-point FD to 1.8e-12), so the deterministic closed-shell recomputation reproduces them to ~4e-15;
     1e-11 is a tight guard with ample margin for cross-platform floating-point variation."""
     cc = _ccwfn_grad(REF, "6-31G")
-    g_an = np.asarray(pycc.CCderiv(cc).gradient())
+    g_an = np.asarray(pycc.CCderiv(cc).gradient().correlation)
     assert np.max(np.abs(g_an - GRAD_REF)) < 1e-11, g_an
 
 
@@ -133,7 +133,7 @@ def test_ccsdt_gradient_frozen_core():
     energy.  psi4 has no frozen-core CC(T) gradient, so the FD of the FC CCSD(T) energy is the oracle."""
     cc = _ccwfn_grad(REF, "6-31G", frozen_core=True)
     assert cc.nfzc > 0
-    g_an = np.asarray(pycc.CCderiv(cc).gradient())
+    g_an = np.asarray(pycc.CCderiv(cc).gradient().correlation)
     assert np.max(np.abs(g_an - GRAD_REF_FC)) < 1e-11, g_an
     # the (T) 1-/2-PDM (active space) reconstructs the frozen-core CCSD(T) correlation energy
     lam = pycc.cclambda(cc, pycc.cchbar(cc))
@@ -186,8 +186,8 @@ def test_so_ccsdt_gradient_keystone_equals_spatial():
     CCSD(T) correlation gradient (H2O/6-31G).  6-31G, not STO-3G, so the oo/vv dependent-pair is
     actually exercised.  The strongest structural check -- and it validates Dov (the ov 1-PDM), which
     the (T)-density energy reconstruction is blind to."""
-    g_sp = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G")).gradient())
-    g_so = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G", orbital_basis='spinorbital')).gradient())
+    g_sp = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G")).gradient().correlation)
+    g_so = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G", orbital_basis='spinorbital')).gradient().correlation)
     assert np.max(np.abs(g_so - g_sp)) < 1e-10, (g_so, g_sp)
 
 
@@ -197,8 +197,8 @@ def test_so_ccsdt_gradient_keystone_frozen_core():
     pair, in both bases."""
     cc_so = _ccwfn_grad(REF, "6-31G", frozen_core=True, orbital_basis='spinorbital')
     assert cc_so.nfzc > 0
-    g_so = np.asarray(pycc.CCderiv(cc_so).gradient())
-    g_sp = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G", frozen_core=True)).gradient())
+    g_so = np.asarray(pycc.CCderiv(cc_so).gradient().correlation)
+    g_sp = np.asarray(pycc.CCderiv(_ccwfn_grad(REF, "6-31G", frozen_core=True)).gradient().correlation)
     assert np.max(np.abs(g_so - g_sp)) < 1e-10, (g_so, g_sp)
 
 
@@ -208,5 +208,5 @@ def test_so_ccsdt_gradient_openshell_nh2():
     than the closed-shell keystones) reflects the near-singular open-shell spin-orbital orbital Hessian
     -- the Z-vector solve carries a redundant near-zero mode whose cross-platform BLAS noise leaks into
     the gradient at that level (cf. test_078); the FD oracle itself is tight to 3.7e-12."""
-    g = np.asarray(pycc.CCderiv(_nh2_so_ccsdt()).gradient())
+    g = np.asarray(pycc.CCderiv(_nh2_so_ccsdt()).gradient().correlation)
     assert np.max(np.abs(g - GRAD_REF_SO_NH2)) < 1e-8, g
