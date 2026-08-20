@@ -642,15 +642,30 @@ class CorrelatedDerivs:
         c = self.contract
         d = self.wfn.derivatives
         grad = np.zeros((d.natom, 3))
-        for atom in range(d.natom):
-            hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)   # physicist <pq|rs>^(X)
-            for cart in range(3):
-                phys = ERIx[cart]
-                Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
-                fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])     # skeleton Fock deriv (full occ)
-                grad[atom, cart] = (c('pq,pq->', Drel, fx)
-                                    + c('pqrs,pqrs->', Gam, phys)
-                                    + c('pq,pq->', I, Sx[cart]))
+        route = getattr(self, '_skel_eri_route', 'aod')  # default; 'mo' is the per-atom-MO opt-out
+        if route == 'aod':
+            # AO-density route (plan doc s.10): fold the 2-e part of Drel*f^(X) into Gam_eff, back-
+            # transform it to AO ONCE, and contract the raw ao_tei_deriv1 directly -- no per-atom MO
+            # transform and no f^(X) build (the 1-e remainder Drel*h^(X) + I*S^(X) stays in the cheap
+            # MO OEI blocks).  Reuses the Hessian's _effective_2pdm_ao: ao_tei_deriv1 is fully
+            # permutationally symmetric, so that builder's completion + ket-swap are exact no-ops.
+            GeffAO = self._effective_2pdm_ao(Drel, Gam)               # 1*nao^4, built once
+            for atom in range(d.natom):
+                hx = d.core(atom); Sx = d.overlap(atom); ao1 = d.ao_eri1(atom)   # 3 spatial AO, held
+                for cart in range(3):
+                    grad[atom, cart] = (c('pq,pq->', Drel, hx[cart])
+                                        + c('mnls,mnls->', GeffAO, ao1[cart])
+                                        + c('pq,pq->', I, Sx[cart]))
+        else:
+            for atom in range(d.natom):
+                hx = d.core(atom); Sx = d.overlap(atom); ERIx = d.eri(atom)   # physicist <pq|rs>^(X)
+                for cart in range(3):
+                    phys = ERIx[cart]
+                    Lx = 2.0 * phys - phys.transpose(0, 1, 3, 2)
+                    fx = hx[cart] + c('pmqm->pq', Lx[:, ofull, :, ofull])  # skeleton Fock deriv (full occ)
+                    grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                        + c('pqrs,pqrs->', Gam, phys)
+                                        + c('pq,pq->', I, Sx[cart]))
         return grad
 
     def _so_gradient(self) -> np.ndarray:
@@ -673,13 +688,26 @@ class CorrelatedDerivs:
         c = self.contract
         d = self.wfn.derivatives
         grad = np.zeros((d.natom, 3))
-        for atom in range(d.natom):
-            hx = d.so_core(atom); Sx = d.so_overlap(atom); ERIx = d.so_eri(atom)
-            for cart in range(3):
-                fx = hx[cart] + c('pmqm->pq', ERIx[cart][:, ofull, :, ofull])   # skeleton Fock deriv
-                grad[atom, cart] = (c('pq,pq->', Drel, fx)
-                                    + c('pqrs,pqrs->', Gam, ERIx[cart])
-                                    + c('pq,pq->', I, Sx[cart]))
+        route = getattr(self, '_skel_eri_route', 'aod')  # default; 'mo' is the per-atom-MO opt-out
+        if route == 'aod':
+            # AO-density route (plan doc s.10): the spin-orbital analogue, reusing
+            # _effective_2pdm_ao_so (which folds the spin blocks + <pq||rs> antisymmetrization onto
+            # the one spatial ao_tei_deriv1).  No per-atom SO transform and no f^(X) build.
+            GeffAO = self._effective_2pdm_ao_so(Drel, Gam)           # 1*nao^4, built once
+            for atom in range(d.natom):
+                hx = d.so_core(atom); Sx = d.so_overlap(atom); ao1 = d.ao_eri1(atom)
+                for cart in range(3):
+                    grad[atom, cart] = (c('pq,pq->', Drel, hx[cart])
+                                        + c('mnls,mnls->', GeffAO, ao1[cart])
+                                        + c('pq,pq->', I, Sx[cart]))
+        else:
+            for atom in range(d.natom):
+                hx = d.so_core(atom); Sx = d.so_overlap(atom); ERIx = d.so_eri(atom)
+                for cart in range(3):
+                    fx = hx[cart] + c('pmqm->pq', ERIx[cart][:, ofull, :, ofull])  # skeleton Fock deriv
+                    grad[atom, cart] = (c('pq,pq->', Drel, fx)
+                                        + c('pqrs,pqrs->', Gam, ERIx[cart])
+                                        + c('pq,pq->', I, Sx[cart]))
         return grad
 
     # ---- second-derivative properties: polarizability, APT (dipole derivatives), Hessian ----
@@ -927,7 +955,11 @@ class CorrelatedDerivs:
         exact without ``_complete_deriv2``), back-transformed to AO, then ket-swapped
         (``transpose(0,1,3,2)``) to invert ``mo_eri_helper``'s internal reorder so it contracts
         directly against the raw AO integral.  (Validated against the CC correlation energy for the
-        fold and the MO route for the transform.)"""
+        fold and the MO route for the transform.)
+
+        The same ``Gam_eff^AO`` also serves the AO-density *gradient* (:meth:`gradient`) contracted
+        against the first-derivative ``ao_tei_deriv1``: that integral is fully permutationally
+        symmetric, so the bra<->ket symmetrization and ket-swap here are exact no-ops on it."""
         wfn = self.wfn
         c = self.contract
         C = np.asarray(wfn.C)
@@ -964,7 +996,11 @@ class CorrelatedDerivs:
         back-transformed with the spin-blocked ``Ca``/``Cb``, and the trailing ket swap
         (``transpose(0,1,3,2)``) inverts ``mo_eri_helper``'s reorder so the result contracts directly
         against the raw spatial ``ao_tei_deriv2``.  (Validated per component against
-        :meth:`Derivatives.so_eri2_mo_component`.)"""
+        :meth:`Derivatives.so_eri2_mo_component`.)
+
+        The same ``Gam_eff^AO`` also serves the AO-density spin-orbital *gradient*
+        (:meth:`_so_gradient`) contracted against the first-derivative ``ao_tei_deriv1`` (fully
+        permutationally symmetric, so the symmetrization and ket-swap here are exact no-ops on it)."""
         c = self.contract
         d = self.wfn.derivatives
         nso = Gam.shape[0]
