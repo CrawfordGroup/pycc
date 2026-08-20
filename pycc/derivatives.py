@@ -396,6 +396,27 @@ class Derivatives(object):
         for atom in range(self.natom):
             yield atom, self.eri(atom, b1, b2, b3, b4)
 
+    def ao_eri1(self, atom: int) -> List[np.ndarray]:
+        r"""Raw **AO-basis** two-electron *first* derivative integrals for ``atom``: 3 arrays
+        ``(mu nu|la si)^(X)`` (chemist order, un-transformed, indexed by Cartesian).  The
+        first-derivative analogue of :meth:`ao_eri2`, and the AO source that :meth:`eri` transforms
+        to MO.
+
+        The memory-lean route for the gradient skeleton: hold these 3 ``nao**4`` AO blocks and
+        contract them against a back-transformed effective 2-PDM (``Gamma_eff^AO``), instead of
+        transforming the integrals to MO per atom (the ``mo_tei_deriv1`` transform of :meth:`eri`).
+        Unlike ``ao_tei_deriv2``, ``ao_tei_deriv1`` is returned complete and fully permutationally
+        symmetric (8-fold, including the bra<->ket and ket-pair swaps), so no completion
+        (:func:`_complete_deriv2`) or ket reorder is needed before contraction."""
+        out = []
+        for m in self.mints.ao_tei_deriv1(atom):
+            a = np.asarray(m)
+            if a.ndim == 2:                          # (nbf*nbf) x (nbf*nbf) -> (nbf,nbf,nbf,nbf)
+                n = int(round(a.shape[0] ** 0.5))
+                a = a.reshape(n, n, n, n)
+            out.append(a)
+        return out
+
     # ---- spatial second derivatives (Hessian skeleton) ----
 
     def overlap2(self, atom1: int, atom2: int, b1: str = 'all',

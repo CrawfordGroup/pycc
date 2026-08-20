@@ -62,6 +62,19 @@ def test_so_ccsd_gradient_keystone_equals_spatial():
     assert np.max(np.abs(g_so - g_sp)) < 1e-10, (g_so, g_sp)
 
 
+def test_so_ccsd_gradient_route_equivalence():
+    """The AO-density skeleton route ('aod', the default) and the per-atom MO route ('mo') give
+    bit-identical spin-orbital gradients.  Guards the spin-blocked back-transform in
+    _effective_2pdm_ao_so and exercises the 'mo' opt-out branch of _so_gradient (open-shell UHF)."""
+    cc, _ = _so_ccwfn(NH2, reference="uhf")
+    d = pycc.CCderiv(cc)
+    d._skel_eri_route = 'mo'
+    g_mo = np.asarray(d.gradient())
+    d._skel_eri_route = 'aod'
+    g_aod = np.asarray(d.gradient())
+    assert np.max(np.abs(g_aod - g_mo)) < 1e-11, np.max(np.abs(g_aod - g_mo))
+
+
 def test_so_ccsd_gradient_vs_psi4_uhf():
     """The total spin-orbital (UHF) CCSD gradient reproduces psi4's analytic UHF-CCSD gradient.
     This is the open-shell validation: an external check against a converged, non-degenerate UHF
