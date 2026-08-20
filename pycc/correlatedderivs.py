@@ -914,6 +914,35 @@ class CorrelatedDerivs:
                 restore(np.load(path))
                 os.remove(path)
 
+    def _effective_2pdm_ao(self, Drel, Gam):
+        r"""Effective 2-PDM back-transformed to the AO chemist basis, for the AO-density Hessian
+        skeleton (plan doc s.10).  Folds the two-electron part of ``D_rel * f^(XY)`` into the
+        cumulant so the whole two-electron skeleton is a single density contraction
+        ``Gam_eff^AO . (mu nu|la si)^(XY)``, and ``f^(XY)`` is never built::
+
+            Gam_D[a,b,c,d] = 2 D_rel[a,c] P[b,d] - D_rel[a,d] P[b,c]   (physicist; P = occ. projector)
+            Gam_eff        = Gam + Gam_D
+
+        ``Gam_eff`` is bra<->ket symmetrized (so Psi4's raw, bra<->ket-doubled ``ao_tei_deriv2`` is
+        exact without ``_complete_deriv2``), back-transformed to AO, then ket-swapped
+        (``transpose(0,1,3,2)``) to invert ``mo_eri_helper``'s internal reorder so it contracts
+        directly against the raw AO integral.  (Validated against the CC correlation energy for the
+        fold and the MO route for the transform.)"""
+        wfn = self.wfn
+        c = self.contract
+        C = np.asarray(wfn.C)
+        nmo = Gam.shape[0]
+        Pocc = np.zeros((nmo, nmo))
+        np.fill_diagonal(Pocc, (np.arange(nmo) < wfn.o.stop).astype(float))
+        GamD = 2.0 * c('ac,bd->abcd', Drel, Pocc) - c('ad,bc->abcd', Drel, Pocc)
+        G = (Gam + GamD).swapaxes(1, 2)                      # physicist <ab|cd> -> chemist (ab|cd)
+        G = 0.5 * (G + G.transpose(2, 3, 0, 1))              # bra<->ket symmetrize (chemist)
+        G = c('pqrs,mp->mqrs', G, C)                         # back-transform each index to the AO basis
+        G = c('mqrs,nq->mnrs', G, C)
+        G = c('mnrs,lr->mnls', G, C)
+        G = c('mnls,ks->mnlk', G, C)
+        return G.transpose(0, 1, 3, 2)                       # invert mo_eri_helper's ket reorder
+
     def hessian(self) -> np.ndarray:
         r"""Correlation contribution to the molecular (nuclear) Hessian (a.u.), shape
         ``(3*natom, 3*natom)`` indexed ``(A*3+a, B*3+b)`` = ``d^2 E_corr / dX_{Aa} dX_{Bb}`` -- the
@@ -1064,39 +1093,62 @@ class CorrelatedDerivs:
             #       block is live -- floor ~= 9 AO + 1 MO + Gam instead of 9 AO + 9 MO + Gam (the SO
             #       saving is ~10x larger, its MO block being 16*nmo^4).  Same spatial AO source for
             #       both bases; each per-component block is bit-identical to the 'mo' route.
-            route = getattr(self, '_skel_eri_route', 'ao')
-            for a1 in range(natom):
-                for a2 in range(a1, natom):
-                    if route == 'mo':
-                        blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)
-                        core2s, ov2s, ao_eri = blk['core'], blk['overlap'], None
-                        eri2s = blk['eri']
-                    else:
-                        if so:
-                            core2s = [np.asarray(m) for m in d.so_core2(a1, a2)]     # 9 SO OEI (small)
-                            ov2s = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
+            route = getattr(self, '_skel_eri_route', 'aod')   # spatial default; SO uses the per-comp 'ao'
+            if route == 'aod' and not so:
+                # AO-density route (plan doc s.10): fold the 2-e part of Drel*f^(XY) into Gam_eff,
+                # back-transform it to AO ONCE, and contract the raw ao_tei_deriv2 directly -- no
+                # per-pair MO transform and no f^(XY) build.  Floor ~= 9 AO + 1 Gam_eff^AO.  The
+                # one-electron remainder (Drel*h^(XY) + I*S^(XY)) stays in the cheap MO OEI blocks.
+                GeffAO = self._effective_2pdm_ao(Drel, Gam)               # 1*nao^4, built once
+                for a1 in range(natom):
+                    for a2 in range(a1, natom):
+                        core2s = [np.asarray(m) for m in d.core2(a1, a2)]     # 9 MO OEI (nmo^2)
+                        ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
+                        ao_eri = d.ao_eri2(a1, a2)                            # 9 spatial AO, held
+                        for cx in range(3):
+                            for cy in range(3):
+                                comp = cx * 3 + cy
+                                s = (c('mnls,mnls->', GeffAO, ao_eri[comp])
+                                     + c('pq,pq->', Drel, core2s[comp]) + c('pq,pq->', I, ov2s[comp]))
+                                ix, iy = a1 * 3 + cx, a2 * 3 + cy
+                                H[ix, iy] += s
+                                if a1 != a2:
+                                    H[iy, ix] += s                       # s is symmetric in the pair
+                        del core2s, ov2s, ao_eri
+                del GeffAO
+            else:
+                for a1 in range(natom):
+                    for a2 in range(a1, natom):
+                        if route == 'mo':
+                            blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)
+                            core2s, ov2s, ao_eri = blk['core'], blk['overlap'], None
+                            eri2s = blk['eri']
                         else:
-                            core2s = [np.asarray(m) for m in d.core2(a1, a2)]        # 9 MO OEI (nmo^2)
-                            ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
-                        ao_eri = d.ao_eri2(a1, a2)                                    # 9 spatial AO, held
-                        eri2s = None
-                    for cx in range(3):
-                        for cy in range(3):
-                            comp = cx * 3 + cy
-                            if route == 'mo':
-                                e2 = eri2s[comp]
-                            elif so:
-                                e2 = d.so_eri2_mo_component(ao_eri[comp])   # 1 SO block at a time
+                            if so:
+                                core2s = [np.asarray(m) for m in d.so_core2(a1, a2)]     # 9 SO OEI (small)
+                                ov2s = [np.asarray(m) for m in d.so_overlap2(a1, a2)]
                             else:
-                                e2 = d.eri2_mo_component(ao_eri[comp])      # 1 MO block at a time
-                            s = _skel_scalar_from(core2s[comp], ov2s[comp], e2)
-                            if route != 'mo':
-                                del e2
-                            ix, iy = a1 * 3 + cx, a2 * 3 + cy
-                            H[ix, iy] += s
-                            if a1 != a2:
-                                H[iy, ix] += s                         # s is symmetric in the pair
-                    del core2s, ov2s, ao_eri, eri2s                    # free before pass 2 loads eriX/dGam
+                                core2s = [np.asarray(m) for m in d.core2(a1, a2)]        # 9 MO OEI (nmo^2)
+                                ov2s = [np.asarray(m) for m in d.overlap2(a1, a2)]
+                            ao_eri = d.ao_eri2(a1, a2)                                    # 9 spatial AO, held
+                            eri2s = None
+                        for cx in range(3):
+                            for cy in range(3):
+                                comp = cx * 3 + cy
+                                if route == 'mo':
+                                    e2 = eri2s[comp]
+                                elif so:
+                                    e2 = d.so_eri2_mo_component(ao_eri[comp])   # 1 SO block at a time
+                                else:
+                                    e2 = d.eri2_mo_component(ao_eri[comp])      # 1 MO block at a time
+                                s = _skel_scalar_from(core2s[comp], ov2s[comp], e2)
+                                if route != 'mo':
+                                    del e2
+                                ix, iy = a1 * 3 + cx, a2 * 3 + cy
+                                H[ix, iy] += s
+                                if a1 != a2:
+                                    H[iy, ix] += s                         # s is symmetric in the pair
+                        del core2s, ov2s, ao_eri, eri2s                    # free before pass 2 loads eriX/dGam
 
             # Pass 2 -- density response  dGam^(Y)*<pq||rs>^(X) + orbital response.  This term has NO
             # 2nd-deriv integrals, hence no atom-pair structure: it is a full nc x nc coordinate
