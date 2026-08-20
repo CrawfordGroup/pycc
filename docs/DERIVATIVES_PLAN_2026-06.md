@@ -644,7 +644,13 @@ dependent-pair route, §7), `'non-canonical'` otherwise (MP2, CCSD, CISD — inv
   does not exist yet); and an open-shell **UHF-CC APT/Hessian** test (the SO CC second-derivative tests
   are RHF-reference).
 
-## 10. AO-density Hessian skeleton (design, not yet implemented)
+## 10. AO-density skeleton (gradient + Hessian) — IMPLEMENTED
+
+**Status: DONE.** Spatial Hessian (#241), spin-orbital Hessian (#242), and the gradient, both spin
+paths (#243). The design below is as-built; the SO fold (s.10.6) and the gradient reuse turned out
+simpler than first sketched (the gradient's `ao_tei_deriv1` is fully permutationally symmetric, so
+the deriv2 completion + ket-swap are exact no-ops and the same `Gam_eff^AO` builder serves both).
+The follow-on that shares `ao_tei_deriv2` between the reference and correlated Hessian is s.11.2 (#245).
 
 ### 10.1 Motivation
 
@@ -761,7 +767,16 @@ compute a correlated Hessian pays today (separate reference and correlation pass
 - Run the CFOUR-anchored spatial cases explicitly; they run by default, and one green method is not
   enough.
 
-## 11. Facade simplification + reference Hessian in the correlated pass (design, not yet implemented)
+## 11. Facade simplification + reference Hessian in the correlated pass — IMPLEMENTED
+
+**Status: DONE.** Piece B (facade simplification, #244) then Piece A (reference-Hessian sharing,
+#245).  As-built notes vs the design below: Piece B went **driver-first** (every property is a public
+method on `HFwfn` and the drivers returning `PropertyComponents`; `pycc.X(x)` is a thin wrapper ==
+`x.X()`), and the registry/`_dispatch`/`_wfn_of`/`_method_name`/bare-wfn-rejection were deleted (a
+bare wfn to the facade now raises `AttributeError`, not the old `TypeError`).  Piece A's reference
+skeleton is duplicated inline in the correlated Pass-1 loop and the CPHF response is delegated to
+`HFwfn._hessian_response` (the split below); reference block verified bit-identical to the standalone
+`HFwfn` electronic Hessian (`test_090` cross-check).
 
 Two changes, done in the order **B then A** (B is a pure structural refactor that establishes the
 method A optimizes inside).  Motivation: (i) a correlated Hessian computes `ao_tei_deriv2` (the
@@ -874,6 +889,10 @@ Reference layer, then the MP2 derivative effort:
 | #216 | **CISD `CIderiv` implemented + registered** (`register_deriv(CIwfn, CIderiv)`); CISD Hessian/APT run through the shared base, transitional `CIwfn` derivative code retired |
 | #219 | **DerivStore** — persistent per-wavefunction HDF5 store memoizing the large `nmo⁴` derivative tensors (`deri`/`eri1`/`resp`), so the Hessian/APT assembly streams one atom pair at a time |
 | #220 | **reference-doc orbital response** — `hessian()`/`dipole_derivatives()` recast onto eq:d2E-canon-final (`2 U^Y X̃^(X) + S^(Y) Ĩ''^(X) + P^(X) f^(Y)`), shared per-perturbation builders `_skeleton_lagrangian`/`_augment_with_canonical_pair_rotations`; the `rot4`/`Gamrot` path removed; frozen-core independent core↔active `P_ci` in the doc form; `.tex` notation tightened (`\alloc`, `c→d`) |
+| #239 | **AO route** — per-component AO→MO transform of the 2nd-deriv ERI (`ao_eri2` + `eri2_mo_component`/`so_eri2_mo_component`), holding 1 MO block instead of 9; the `mo_eri_helper` ket-swap (`transpose(0,1,3,2)`) is mandatory on any raw `ao_tei_deriv2` consumer |
+| #241/#242/#243 | **AO-density skeleton** (§10) — fold `D_rel·f` into an effective 2-PDM `Γ_eff`, back-transform to AO once, contract the raw `ao_tei_deriv{1,2}`; Hessian spatial (#241) + spin-orbital (#242, spin blocks folded onto the one spatial tensor), gradient both spin paths (#243, reuses the Hessian builders since `ao_tei_deriv1` is fully symmetric). No `f^(XY)` build; bit-identical to the MO route |
+| #244 | **facade simplification** (§11.1) — every property a public method returning `PropertyComponents` (`pycc.X(x) == x.X()`); registry/`_dispatch`/`_wfn_of`/`_method_name`/bare-wfn rejection deleted |
+| #245 | **reference Hessian shared** (§11.2) — SCF reference Hessian folded into the correlated Pass-1 loop so `ao_tei_deriv2` is generated once, not twice; `_correlation_hessian`→`_hessian_blocks` returns `(reference, correlation)`; `HFwfn._hessian_electronic` split into `_hessian_skeleton`+`_hessian_response`; cross-check test guards the duplicated skeleton |
 
 Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
 gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),

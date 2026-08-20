@@ -1778,7 +1778,132 @@ Nothing in \S\ref{sec:canon-mo}--\S\ref{sec:cphf-z-canon} is specific to a parti
 case.  The occupied dependent pair is defined over the entire occupied space and
 the virtual dependent pair over the entire virtual space, and each block is
 populated only where the energy fails to be invariant, its antisymmetric
-numerator $X_{pq}=I'_{pq}-I'_{qp}$ vanishing elsewhere.  
+numerator $X_{pq}=I'_{pq}-I'_{qp}$ vanishing elsewhere.
+
+\section{AO-Density Evaluation of the Skeleton Contractions}
+\label{sec:ao-density}
+
+The gradient \eqref{eq:grad-final} and the Hessian both contract the relaxed and
+cumulant densities against {\em skeleton} derivative integrals: the one-electron
+skeleton Fock derivative $f^{(x)}$, the two-electron $\adb{pq}{rs}^{(x)}$, and (for
+the Hessian) their doubly-skeleton counterparts $f^{(xy)}$ and
+$\adb{pq}{rs}^{(xy)}$.  Formed directly, the two-electron skeleton derivatives are
+the bottleneck: they are generated in the atomic-orbital (AO) basis and transformed
+to the MO basis once per perturbation (gradient) or once per pair of perturbations
+(Hessian), an $O(N^5)$ transform repeated $3N$ or $\tfrac12(3N)(3N{+}1)$ times whose
+MO intermediate $\adb{pq}{rs}^{(x)}$ must also be held.  This section records the
+reformulation used in the implementation, in which the {\em density} is transformed
+to the AO basis once and contracted against the raw AO derivative integrals directly.
+
+\subsection{Folding the Skeleton Fock Derivative into an Effective Cumulant}
+
+The skeleton Fock derivative carries a two-electron piece,
+\begin{equation}
+f^{(x)}_{pq} = h^{(x)}_{pq} + \sum_{m}^{\alloc}\adb{pm}{qm}^{(x)},
+\label{eq:fx-twoelec}
+\end{equation}
+so the one-particle contraction $\sum_{pq}\tilde D_{pq}f^{(x)}_{pq}$ contributes to
+the two-electron work.  That part can be absorbed into the cumulant.  Writing
+$\Pi_{qs}$ for the projector onto the occupied space ($\Pi_{qs}=\delta_{qs}$ for
+$q\in\alloc$, zero otherwise), define the effective two-particle density
+\begin{equation}
+\Gamma^{\rm eff}_{pqrs} = \Gamma_{pqrs} + (\Gamma_D)_{pqrs},
+\qquad
+(\Gamma_D)_{pqrs} = \tilde D_{pr}\,\Pi_{qs}.
+\label{eq:gam-eff}
+\end{equation}
+Contracting $\Gamma_D$ against the antisymmetrized skeleton integral reproduces the
+two-electron part of the Fock term,
+\begin{equation}
+\sum_{pqrs}(\Gamma_D)_{pqrs}\,\adb{pq}{rs}^{(x)}
+= \sum_{pr}\tilde D_{pr}\sum_{m}^{\alloc}\adb{pm}{rm}^{(x)},
+\end{equation}
+so the entire two-electron skeleton collapses to one density contraction and
+$f^{(x)}$ is never built:
+\begin{equation}
+\frac{\partial E}{\partial x}
+= \sum_{pq}\tilde D_{pq}h^{(x)}_{pq}
++ \sum_{pqrs}\Gamma^{\rm eff}_{pqrs}\adb{pq}{rs}^{(x)}
++ \sum_{pq} I_{pq}S^{(x)}_{pq}.
+\label{eq:grad-gameff}
+\end{equation}
+The Hessian's fixed-density skeleton group is identical with $x\to(xy)$: the
+one-electron remainder $\tilde D\,h^{(xy)}+I\,S^{(xy)}$ stays in the (inexpensive) MO
+one-electron blocks, and the two-electron work is
+$\sum\Gamma^{\rm eff}_{pqrs}\adb{pq}{rs}^{(xy)}$.
+
+\subsection{Back-Transformation to the AO Basis}
+\label{sec:ao-backtransform}
+
+The antisymmetrized skeleton integral is a combination of the raw AO derivative
+integrals $(\mu\nu|\lambda\sigma)^{(x)}$ transformed by the MO coefficients $C$,
+\begin{equation}
+\adb{pq}{rs}^{(x)} = (pr|qs)^{(x)} - (ps|qr)^{(x)},
+\qquad
+(pr|qs)^{(x)} = C_{\mu p} C_{\nu r} C_{\lambda q} C_{\sigma s}\,
+(\mu\nu|\lambda\sigma)^{(x)}.
+\label{eq:ao-to-mo}
+\end{equation}
+Rather than transform the integrals for every perturbation, we transform the density
+once.  Folding the ket antisymmetrization into the effective cumulant,
+$\Gamma^{\rm A}_{pqrs}=\Gamma^{\rm eff}_{pqrs}-\Gamma^{\rm eff}_{pqsr}$, lets the
+two-electron skeleton be written against the non-antisymmetrized integral, and the
+four MO indices of $\Gamma^{\rm A}$ (reordered to the chemists' convention of the AO
+integral, $\Gamma^{\rm A,c}$) are back-transformed onto AO indices,
+\begin{equation}
+\sum_{pqrs}\Gamma^{\rm eff}_{pqrs}\adb{pq}{rs}^{(x)}
+= \sum_{\mu\nu\lambda\sigma}\Gamma^{\rm eff,AO}_{\mu\nu\lambda\sigma}\,
+(\mu\nu|\lambda\sigma)^{(x)},
+\qquad
+\Gamma^{\rm eff,AO}_{\mu\nu\lambda\sigma}
+= C_{\mu p} C_{\nu q} C_{\lambda r} C_{\sigma s}\,\Gamma^{\rm A,c}_{pqrs}.
+\label{eq:gam-ao}
+\end{equation}
+The back-transform \eqref{eq:gam-ao} is a single $O(N^5)$ step, independent of the
+number of perturbations, and its result $\Gamma^{\rm eff,AO}$ is one AO-sized tensor.
+The contraction then loops over perturbations (gradient) or perturbation pairs
+(Hessian) touching only the raw AO derivative integrals, which the integral program
+supplies and which alone bound the memory.
+
+Two conventions of the AO derivative integrals enter.  First derivatives
+$(\mu\nu|\lambda\sigma)^{(x)}$ are returned complete and carry the full eight-fold
+permutational symmetry, so the back-transform \eqref{eq:gam-ao} needs no further
+symmetrization.  Second derivatives $(\mu\nu|\lambda\sigma)^{(xy)}$ are returned as
+twice the canonically-ordered (upper-triangular) shell-center pairs, exact only when
+contracted with a bra$\leftrightarrow$ket-symmetric density; symmetrizing
+$\Gamma^{\rm eff,AO}$ over that swap restores the identity (no such completion is
+needed for the gradient).
+
+\subsection{Spin Adaptation}
+
+For a closed-shell reference in the spin-adapted (spatial-orbital) basis the fold
+\eqref{eq:gam-eff} carries the closed-shell factors,
+\begin{equation}
+(\Gamma_D)_{pqrs} = 2\,\tilde D_{pr}\Pi_{qs} - \tilde D_{ps}\Pi_{qr},
+\end{equation}
+the Coulomb term doubled for the two spins and the exchange term single, matching
+$L^{(x)}=2(pq|rs)^{(x)}-(pq|sr)^{(x)}$.  In the spin-orbital basis the antisymmetrized
+integral already carries the exchange, so the fold is the single term of
+\eqref{eq:gam-eff}.  Either way the four same-spin combinations of the spin-orbital
+back-transform reduce onto the {\em one} spin-free AO tensor $\Gamma^{\rm eff,AO}$, so
+the spatial AO derivative integrals serve both spin paths.
+
+\subsection{Sharing the Second-Derivative Integrals with the Reference}
+
+The Hartree-Fock reference contribution to the molecular Hessian is itself an
+AO-density contraction.  Its two-electron skeleton is
+\begin{equation}
+2\,D_{\mu\nu}D_{\lambda\sigma}(\mu\nu|\lambda\sigma)^{(xy)}
+- D_{\mu\lambda}D_{\nu\sigma}(\mu\nu|\lambda\sigma)^{(xy)},
+\end{equation}
+with the occupied SCF AO density $D=C_{\occ}C_{\occ}^{T}$ (in the spin-orbital case,
+the Coulomb of the total density minus same-spin exchange).  Because it contracts the
+{\em same} second-derivative AO integrals $(\mu\nu|\lambda\sigma)^{(xy)}$ as the
+correlated effective cumulant \eqref{eq:gam-ao}, a correlated Hessian evaluates the
+reference skeleton alongside the correlation skeleton in a single pass over the
+integrals, generating the (dominant) second-derivative AO integrals once rather than
+once for the reference and again for the correlation.  The reference orbital-response
+terms carry no second-derivative integrals and are added separately.
 
 \begin{thebibliography}{1}
 

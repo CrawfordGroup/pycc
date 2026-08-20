@@ -647,7 +647,8 @@ class CPHF(object):
     def momentum_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
         """Linear-momentum-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
         ``(U^A, dF^A, dERI^A)`` used by the MP2 velocity-gauge atomic polar tensors
-        (:meth:`~pycc.mpderiv.MPderiv.apt`). Cached per ``(axis, ncore, gauge)``.
+        (:meth:`~pycc.mpderiv.MPderiv._correlation_velocity_dipole_derivatives`). Cached per
+        ``(axis, ncore, gauge)``.
 
         This is the magnetic engine (:meth:`magnetic_ints`) with the magnetic-dipole operator
         replaced by the linear-momentum operator ``p = -i nabla`` (stripped of the ``i`` carried

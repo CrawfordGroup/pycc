@@ -504,6 +504,11 @@ class Derivatives(object):
 
             (pq|rs)^(XY) = C_mu,p C_nu,q C_la,r C_si,s (mu nu|la si)^(XY)
 
+        .. math::
+
+            (pq|rs)^{(XY)} = C^{\mu}_{p} C^{\nu}_{q} C^{\lambda}_{r} C^{\sigma}_{s}\,
+                (\mu\nu|\lambda\sigma)^{(XY)}
+
         then :func:`_complete_deriv2` supplies the bra<->ket average (Psi4's raw output is
         upper-triangular-doubled) and ``swapaxes(1, 2)`` converts chemist -> physicist -- the two
         steps :meth:`eri2` applies to ``mo_tei_deriv2``'s output.

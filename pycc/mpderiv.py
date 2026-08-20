@@ -29,11 +29,13 @@ class MPderiv(CorrelatedDerivs):
 
     Constructed from a converged :class:`~pycc.mpwfn.MPwfn`.  Supplies the MP2 density hooks
     (:meth:`_unrelaxed_densities`, :meth:`_perturbed_unrelaxed_densities`) and the MP2-specific atomic
-    axial tensors (:meth:`aat`) and velocity-gauge APT
-    (:meth:`apt`); the orbital-response (Z-vector) solve and the 2n+1 assembly
-    of the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian are inherited from
-    :class:`~pycc.correlatedderivs.CorrelatedDerivs`.  Both the spin-adapted (closed-shell RHF) and
-    spin-orbital (``_so_``) paths are frozen-core aware.
+    axial tensors (:meth:`_correlation_aat`) and velocity-gauge APT
+    (:meth:`_correlation_velocity_dipole_derivatives`); the orbital-response (Z-vector) solve and the
+    2n+1 assembly of the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian are
+    inherited from :class:`~pycc.correlatedderivs.CorrelatedDerivs` (reached through the public
+    ``aat``/``apt``/``hessian``/... methods, which return the :class:`~pycc.properties.PropertyComponents`
+    decomposition).  Both the spin-adapted (closed-shell RHF) and spin-orbital (``_so_``) paths are
+    frozen-core aware.
     """
 
     def __init__(self, wfn, e_conv=None, r_conv=None, maxiter=None,

@@ -102,6 +102,14 @@ once and reuse it across properties::
 The reference-only (SCF) property takes the :class:`~pycc.hfwfn.HFwfn` directly --
 ``pycc.hessian(hf)`` -- with a zero ``correlation`` block.
 
+Each ``pycc.<property>`` function is a thin wrapper around the matching method on the object, so
+``d.hessian()`` is the same call as ``pycc.hessian(d)`` (and ``hf.gradient()`` the same as
+``pycc.gradient(hf)``); both return the :class:`~pycc.properties.PropertyComponents` decomposition.
+Use whichever reads better::
+
+    d.hessian()                        # == pycc.hessian(d)
+    d.apt(gauge='velocity')            # == pycc.apt(d, gauge='velocity')
+
 Every property is available for both spin paths (spin-adapted closed-shell RHF and
 spin-orbital, selected by ``orbital_basis`` on the wavefunction), all-electron and frozen
 core. The length-gauge APT has two equivalent algorithms, ``route='2n+1-field'`` (default,

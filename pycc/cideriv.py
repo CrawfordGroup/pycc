@@ -4,11 +4,11 @@ cideriv.py: CISD analytic-derivative property driver.
 `CIderiv` is the CISD leaf of the :class:`~pycc.correlatedderivs.CorrelatedDerivs` hierarchy,
 matching the `MPwfn`/`MPderiv` and `CCwfn`/`CCderiv` split: `CIwfn` holds only wavefunction
 quantities (amplitude solve, energy, raw densities); this class supplies the two density hooks
-(`_unrelaxed_densities`, `_perturbed_unrelaxed_densities`) and inherits `dipole`,
-`gradient`, `polarizability`, `apt`, and `hessian` from the base unchanged. Only
-the genuinely CISD-specific wave-function-overlap properties - `aat` and
-`apt` - are custom code, together with the coupled-perturbed-CI (CPCI)
-response machinery they (and the two density hooks) are built from.
+(`_unrelaxed_densities`, `_perturbed_unrelaxed_densities`), from which the base's `dipole`,
+`gradient`, `polarizability`, length-gauge `apt`, and `hessian` follow unchanged. Only the
+genuinely CISD-specific wave-function-overlap properties - the AAT (`_correlation_aat`) and the
+velocity-gauge APT (`_correlation_velocity_dipole_derivatives`) - are custom code, together with the
+coupled-perturbed-CI (CPCI) response machinery they (and the two density hooks) are built from.
 
 CPCI/MAGNETIC/VECPOT MACHINERY
 -------------------------------
@@ -33,10 +33,10 @@ from .utils import title, iteration, converged
 
 class CIderiv(CorrelatedDerivs):
     """CISD correlation derivative-property driver. Constructed from a converged CIwfn (aliased
-    `self.ci`). `dipole`/`gradient`/`polarizability`/`apt`/
+    `self.ci`). `dipole`/`gradient`/`polarizability`/ length-gauge `apt`/
     `hessian` are inherited from `CorrelatedDerivs`, driven by the two density hooks below.
-    `aat`/`apt` are custom wave-function-overlap
-    constructions. Spatial (closed-shell RHF); frozen-core aware throughout (the correlation
+    The AAT (`_correlation_aat`) and velocity-gauge APT (`_correlation_velocity_dipole_derivatives`)
+    are custom wave-function-overlap constructions. Spatial (closed-shell RHF); frozen-core aware throughout (the correlation
     amplitudes/densities stay in the active space while every orbital response spans the full
     occupied space - see `_cpci_ints`), matching MPderiv."""
 

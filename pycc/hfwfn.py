@@ -202,8 +202,7 @@ class HFwfn(Wavefunction):
         ``[A, beta, alpha]``, as a :class:`pycc.PropertyComponents` (``.total`` is the value below).
         ``gauge='length'`` (default) is the length-gauge APT; ``gauge='velocity'`` the velocity
         gauge.  The SCF electronic blocks are :meth:`_dipole_derivatives_electronic` /
-        :meth:`_velocity_dipole_derivatives_electronic`; the nuclear block is ``Z_A delta``.  The
-        length-gauge value is::
+        :meth:`_velocity_dipole_derivatives_electronic`; the nuclear block is ``Z_A delta``.
 
         Built from the nuclear CPHF response (:meth:`CPHF.solve_nuclear`), so the ov
         term probes ``U^X`` directly (unlike the energy gradient, which is variationally
@@ -378,6 +377,11 @@ class HFwfn(Wavefunction):
             -4 sum_ia U^x_ai B^y_ai - 2 sum_ij S^x_ij F^y_ij - 2 sum_ij S^y_ij F^x_ij
             + 4 sum_ij eps_i S^x_ij S^y_ij + 2 sum_ijnm S^x_ij S^y_nm L_imjn
 
+        .. math::
+
+            -4\sum_{ia} U^x_{ai} B^y_{ai} - 2\sum_{ij} S^x_{ij} F^y_{ij} - 2\sum_{ij} S^y_{ij} F^x_{ij}
+            + 4\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + 2\sum_{ijnm} S^x_{ij} S^y_{nm} L_{imjn}
+
         Built from the pre-solved nuclear response (:meth:`CPHF.solve_nuclear`, shared with the
         APTs) and the skeleton derivative Fock/overlap oo blocks.  It carries no second-derivative
         TEIs, so the correlated Hessian delegates its reference response here (one call, no
@@ -475,10 +479,20 @@ class HFwfn(Wavefunction):
         return H
 
     def _so_hessian_response(self) -> np.ndarray:
-        """Ao-INDEPENDENT CPHF-response part of the spin-orbital electronic Hessian (spin-orbital
-        form of :meth:`_hessian_response`): the ``-2 U.B``/``-S.F``/``+eps S S``/``+S S <im||jn>``
-        terms, with the spin-orbital (halved) closed-shell prefactors.  Carries no second-derivative
-        TEIs, so the correlated Hessian delegates its reference response here."""
+        r"""Ao-INDEPENDENT CPHF-response part of the spin-orbital electronic Hessian (spin-orbital
+        form of :meth:`_hessian_response`, with the spin-orbital -- halved closed-shell -- prefactors;
+        i,j occupied)::
+
+            -2 sum_ia U^x_ai B^y_ai - sum_ij S^x_ij F^y_ij - sum_ij S^y_ij F^x_ij
+            + 2 sum_ij eps_i S^x_ij S^y_ij + sum_ijnm S^x_ij S^y_nm <im||jn>
+
+        .. math::
+
+            -2\sum_{ia} U^x_{ai} B^y_{ai} - \sum_{ij} S^x_{ij} F^y_{ij} - \sum_{ij} S^y_{ij} F^x_{ij}
+            + 2\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + \sum_{ijnm} S^x_{ij} S^y_{nm} \langle im\|jn\rangle
+
+        Carries no second-derivative TEIs, so the correlated Hessian delegates its reference response
+        here."""
         o = self.o
         eps_o = np.asarray(diag(self.H.F))[o]
         ERIoooo = np.asarray(self.H.ERI)[o, o, o, o]   # i,m,j,n (antisymmetrized)

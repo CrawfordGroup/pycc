@@ -260,7 +260,8 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
     * **relaxed** -- the orbital-relaxed analytic second derivative (2n+1 route), the default at
       ``omega = 0``.  Available for MP2 / CISD / CCSD.  Static only: a relaxed value at ``omega != 0``
       is undefined and raises.
-    * **unrelaxed** -- the CC linear-response value (:meth:`CCderiv.polarizability`), which
+    * **unrelaxed** -- the CC linear-response value
+      (:meth:`~pycc.ccderiv.CCderiv._correlation_dynamic_polarizability`), which
       omits the orbital (MO) response.  This is the convention for *dynamic* response properties --
       including the orbital relaxation introduces spurious poles -- so it is the default at
       ``omega != 0``.  **CCSD only** (needs a :class:`~pycc.ccderiv.CCderiv`).  Because there is no
@@ -368,8 +369,10 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     (``nuclear + reference + correlation``, shape ``(natom, 3, 3)`` each), indexed
     ``[A, beta, alpha]``.  The nuclear block is ``Z_A delta_{alpha,beta}``.
 
-    ``gauge='length'`` (default) is the length-gauge APT (:meth:`apt`);
-    ``gauge='velocity'`` is the velocity-gauge APT (:meth:`apt`).
+    ``gauge='length'`` (default) is the length-gauge APT (correlation block from the driver's
+    :meth:`~pycc.correlatedderivs.CorrelatedDerivs._correlation_dipole_derivatives`);
+    ``gauge='velocity'`` is the velocity-gauge APT (correlation block from the driver's
+    ``_correlation_velocity_dipole_derivatives``).
 
     ``route`` (length gauge only) selects the algorithm -- ``'2n+1-field'`` (default -- the
     O(N)-cheaper route, 3 field solves) or ``'2n+1-nuclear'``; both give the same tensor.
@@ -405,11 +408,11 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     (``nuclear + reference + correlation``), shape ``(natom, 3, 3)`` each.  Like the other property
     facades, ``wfn`` is a derivative driver (:class:`~pycc.mpderiv.MPderiv` /
     :class:`~pycc.cideriv.CIderiv`) for a correlated method, or an :class:`~pycc.hfwfn.HFwfn` for the
-    SCF reference; a bare correlated wavefunction is rejected.
+    SCF reference.
 
     The correlation block is the genuine correlation contribution (the driver's
-    ``aat``, which excludes the reference density), the reference block is the
-    independent SCF AAT (:meth:`HFwfn.aat`), and the nuclear block is
+    ``_correlation_aat``, which excludes the reference density), the reference block is the
+    independent SCF AAT (:meth:`~pycc.hfwfn.HFwfn._aat_electronic`), and the nuclear block is
     ``(Z_A/4) eps R``.  Each block is orbital-gauge invariant, so the decomposition is well defined
     independent of the magnetic oo/vv gauge.
 

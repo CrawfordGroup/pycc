@@ -2,10 +2,13 @@
 
 `CCderiv` is the downstream derivative driver for a converged :class:`~pycc.ccwfn.CCwfn`, sitting
 at the end of the chain ``ccwfn -> cchbar -> cclambda -> ccdensity``: it lazily builds the Lambda
-amplitudes and reduced densities it needs and assembles the analytic gradient (Hessian, APTs, etc.
-to follow).  Keeping this out of `CCwfn` respects the layering -- `cclambda`/`ccdensity` are
-downstream of `ccwfn`, so the wavefunction never reaches forward to build them.  The
-:mod:`pycc.properties` facade routes ``pycc.gradient(ccwfn)`` here (see its registry).
+amplitudes and reduced densities it needs and assembles the analytic gradient, Hessian, atomic polar
+tensors, and (via its CC linear-response leaf) the dynamic polarizability and optical rotation.
+Keeping this out of `CCwfn` respects the layering -- `cclambda`/`ccdensity` are downstream of
+`ccwfn`, so the wavefunction never reaches forward to build them.  Each property is a method on this
+driver (``CCderiv(ccwfn).gradient()`` etc.), and the :mod:`pycc.properties` facade functions
+(``pycc.gradient(driver)``) are thin wrappers around those methods -- called directly, with no
+registry.
 """
 
 from __future__ import annotations
@@ -34,15 +37,19 @@ class CCderiv(CorrelatedDerivs):
 
     Notes
     -----
-    The correlation properties -- relaxed dipole, analytic gradient, static polarizability,
+    The 2n+1 correlation properties -- relaxed dipole, analytic gradient, static polarizability,
     length-gauge atomic polar tensors, and molecular Hessian -- are inherited from
     :class:`~pycc.correlatedderivs.CorrelatedDerivs` and computed via its asymmetric (2n+1) route (a
-    single (T)-capable formulation; see DERIVATIVES_PLAN_2026-06.md sec 8).  ``CCderiv`` supplies
-    only the CC-specific density hooks: there is no property-specific (T) code -- the (T)
+    single (T)-capable formulation; see DERIVATIVES_PLAN_2026-06.md sec 8).  For those, ``CCderiv``
+    supplies only the CC-specific density hooks: there is no property-specific (T) code -- the (T)
     contribution enters entirely through the (T)-aware relaxed and perturbed densities the base
-    builds.  Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are supported, all-
-    electron and frozen core; ROHF is not (the semicanonical response does not reproduce the
-    restricted ROHF response).
+    builds.  On top of the base, ``CCderiv`` adds the unrelaxed CC linear-response properties that
+    have no 2n+1 analog -- the dynamic (frequency-dependent) polarizability
+    (:meth:`_correlation_dynamic_polarizability`) and optical rotation
+    (:meth:`_correlation_optical_rotation`), built from the perturbed-amplitude machinery
+    (:meth:`linear_response`).  Both the spatial (closed-shell RHF) and spin-orbital (UHF) paths are
+    supported, all-electron and frozen core; ROHF is not (the semicanonical response does not
+    reproduce the restricted ROHF response).
 
     Validation: CCSD against tight finite fields of the relaxed dipole and SO == spatial keystones;
     CCSD(T) against energy finite differences and CFOUR oracles (``POLAR`` / ``DIPDER`` /
