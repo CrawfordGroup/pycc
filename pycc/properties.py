@@ -169,6 +169,17 @@ def _is_hf(obj) -> bool:
     return isinstance(obj, HFwfn)
 
 
+def _require_driver(obj) -> None:
+    """Reject a bare wavefunction: the facades take a derivative driver (or an HFwfn), never an
+    xxwfn -- the driver owns the solve/response cache, so pinning the routes to it keeps results from
+    silently going stale under a re-solve."""
+    from .hfwfn import HFwfn
+    from .correlatedderivs import CorrelatedDerivs
+    if not isinstance(obj, (HFwfn, CorrelatedDerivs)):
+        raise TypeError("pass a derivative driver (pycc.CCderiv/MPderiv/CIderiv) or an HFwfn, not a "
+                        "bare %s -- e.g. pycc.hessian(pycc.CCderiv(wfn))." % type(obj).__name__)
+
+
 def _method_label(obj) -> str:
     """The label for a property report -- ``'SCF'``, ``'MP2'``, or the model of the underlying
     wavefunction (``'CCSD'`` / ``'CCSD(T)'`` / ``'CISD'`` / ...)."""
@@ -198,6 +209,7 @@ def dipole(wfn) -> PropertyComponents:
     """Electric-dipole moment as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3,)`` each) for any supported wavefunction type.  The report gives the
     SCF/correlation/total vectors in a.u. and, for the total, the vector and magnitude in Debye."""
+    _require_driver(wfn)
     if _is_hf(wfn):
         reference = np.asarray(wfn._dipole_electronic())
         correlation = np.zeros_like(reference)
@@ -219,6 +231,7 @@ def gradient(wfn) -> PropertyComponents:
     """Analytic energy gradient as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(natom, 3)`` each).  The nuclear block is the nuclear-repulsion
     derivative ``dV_NN/dX``."""
+    _require_driver(wfn)
     if _is_hf(wfn):
         reference = np.asarray(wfn._gradient_electronic())
         correlation = np.zeros_like(reference)
@@ -273,6 +286,7 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
     wavelength only, since the static value has no wavelength).  ``relaxed`` overrides the route:
     the default (``None``) picks relaxed at ``omega = 0`` and unrelaxed otherwise; ``relaxed=False``
     takes the unrelaxed route at ``omega = 0`` too."""
+    _require_driver(wfn)
     omega = _omega_to_hartree(omega, units)
     if relaxed is None:
         relaxed = (omega == 0.0)
@@ -325,6 +339,7 @@ def optical_rotation(wfn, omega, units: str = 'Eh') -> PropertyComponents:
 
     ``omega`` is in hartree by default; set ``units='nm'`` to give it as a wavelength in nm instead
     (converted internally)."""
+    _require_driver(wfn)
     omega = _omega_to_hartree(omega, units)
     if omega == 0.0:
         raise ValueError("optical rotation requires a nonzero field frequency; there is no static "
@@ -350,6 +365,7 @@ def hessian(wfn) -> PropertyComponents:
     """Molecular (nuclear) Hessian as a :class:`PropertyComponents` (``nuclear + reference +
     correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
     repulsion second derivative ``d^2 V_NN/dX dY``."""
+    _require_driver(wfn)
     if _is_hf(wfn):
         reference = np.asarray(wfn._hessian_electronic())
         correlation = np.zeros_like(reference)
@@ -382,6 +398,7 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     numerically stable) or ``'canonical'``.  The velocity APT is invariant to this choice, so it
     exists only for verification/debugging.
     Both extra knobs are ignored for an ``HFwfn`` (no correlation)."""
+    _require_driver(wfn)
     if gauge == 'length':
         if _is_hf(wfn):
             reference = np.asarray(wfn._dipole_derivatives_electronic())
@@ -426,6 +443,7 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     the correlation AAT (MP2 or CISD), ``'non-canonical'`` (default, numerically stable) or
     ``'canonical'``.  The AAT is invariant to this choice, so it exists only for
     verification/debugging; it is ignored for an ``HFwfn`` (no correlation)."""
+    _require_driver(wfn)
     mol = _wavefunction(wfn).ref.molecule()
     nuclear = _nuclear_aat(mol, origin)
     if _is_hf(wfn):
