@@ -153,6 +153,19 @@ def test_facade_takes_driver_object():
         assert np.max(np.abs(r.total - method().total)) < 1e-14, name   # pycc.X(d) == d.X()
 
 
+def test_facade_rejects_bare_wavefunction():
+    """A bare correlated wavefunction (not a driver) is rejected with a clear TypeError naming the
+    driver, rather than failing with an opaque AttributeError deep inside the assembly."""
+    _, mp = _wfns()                                      # mp is a bare MPwfn, not an MPderiv
+    for fn in (pycc.dipole, pycc.gradient, pycc.polarizability, pycc.hessian,
+               lambda x: pycc.apt(x), lambda x: pycc.aat(x)):
+        try:
+            fn(mp)
+            assert False, "expected TypeError for a bare MPwfn"
+        except TypeError as e:
+            assert 'driver' in str(e) and 'CCderiv' in str(e), str(e)
+
+
 def test_facade_hf_wavefunction():
     """pycc.<property>(HFwfn): correlation is an all-zeros block and the total equals the SCF
     public method (same shape/type as the MP2 result)."""
@@ -176,10 +189,11 @@ def test_facade_polarizability_no_nuclear():
 
 
 def test_apt_bad_gauge():
-    """pycc.apt rejects an unknown gauge."""
+    """pycc.apt rejects an unknown gauge (on a valid driver, so the gauge check -- not the
+    bare-wavefunction guard -- is what fires)."""
     _, mp = _wfns()
     try:
-        pycc.apt(mp, gauge='nonsense')
+        pycc.apt(pycc.MPderiv(mp), gauge='nonsense')
         assert False, "expected ValueError"
     except ValueError:
         pass
