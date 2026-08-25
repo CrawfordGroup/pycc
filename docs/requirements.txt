@@ -1,5 +1,11 @@
 # Documentation build requirements (Sphinx + theme). The package itself and its
 # runtime dependencies (numpy, scipy, opt_einsum, h5py) are installed separately via
 # `pip install .`; psi4 is conda-only and is mocked in conf.py.
-sphinx
-sphinx_rtd_theme
+#
+# PINNED: unpinned, these let ReadTheDocs resolve a drifting Sphinx at build time, which
+# silently dropped the whole pycc.correlatedderivs automodule from the rendered API (green
+# build, but the CorrelatedDerivs section and its _correlation_* method docstrings never
+# appeared). This exact pair builds the full API cleanly (0 warnings) locally, so pinning
+# makes the RTD build reproduce it. Bump deliberately, re-verifying a full local build.
+sphinx==9.0.4
+sphinx_rtd_theme==3.1.0
