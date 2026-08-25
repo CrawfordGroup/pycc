@@ -1072,7 +1072,7 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
     Built per-(i,j,k) from the connected T3 ``M3`` (:func:`t3c_ijk`) and disconnected T3 ``N3``
     (:func:`t3d_ijk`), with the spin-adapted symmetrizers below (a,b,c the three virtual axes;
     repeated indices summed over the i,j,k loop).  Full derivation in
-    ``docs/ccsdt_t_density.tex`` and the appendix Table:ccsdt_1pdm/2pdm of
+    ``docs/ccsdt_t_density.tex`` and the CCSD(T) 1-/2-PDM appendix tables of
     ``docs/cc_gradients_orbital_response.tex``::
 
         sym(A)_abc = 8 A_abc - 4 A_bac - 4 A_acb - 4 A_cba + 2 A_bca + 2 A_cab
@@ -1254,8 +1254,8 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
     Built per-(i,j,k) from the connected T3 ``t3c`` (:func:`t3c_ijk_so`) and disconnected T3
     ``t3d`` (:func:`t3d_ijk_so`); a,b,c/d,e are virtual, repeated indices summed over the
     i,j,k loop.  The doubles intermediates ``x2``/``S2`` are antisymmetrized P(ij)P(ab) after
-    the loop.  Full derivation in ``docs/ccsdt_t_density.tex`` and the appendix
-    Table:ccsdt_1pdm/2pdm of ``docs/cc_gradients_orbital_response.tex``::
+    the loop.  Full derivation in ``docs/ccsdt_t_density.tex`` and the CCSD(T)
+    1-/2-PDM appendix tables of ``docs/cc_gradients_orbital_response.tex``::
 
         # one-particle (T) increments (Doo/Dvv diagonal in the canonical basis)
         Dvv_aa =  1/12 (t3c + t3d)_abc t3c_abc

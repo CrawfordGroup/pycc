@@ -799,9 +799,16 @@ class CorrelatedDerivs:
         ``d(mu_alpha)/d(X_{A,beta}) = -d^2 E_corr / dF_alpha dX_{A,beta}`` -- the mixed field/nuclear
         analog of :meth:`polarizability`, via the 2n+1 route (both spin paths, frozen-core aware).
 
-        ``route='2n+1-field'`` (default) or ``'2n+1-nuclear'``; both give the same tensor, and
-        ``'2n+1-field'`` is cheaper (3 field solves vs ``3N`` nuclear).  The nuclear ``Z_A`` and SCF
-        reference terms are kept separate and summed with this correlation part by :func:`pycc.apt`.
+        ``route='2n+1-field'`` (default) or ``'2n+1-nuclear'``; both give the same tensor, but which
+        is cheaper depends on context.  **Standalone**, ``'2n+1-field'`` wins: it solves the perturbed
+        response along only the 3 field components, versus ``3N`` for the nuclear route.  **In an
+        IR/VCD spectrum**, though, the Hessian is computed first and has already solved and cached the
+        ``3N`` nuclear perturbed responses on this same driver (the DerivStore / CPHF nuclear-response
+        caches); there ``'2n+1-nuclear'`` reuses them for free -- no new perturbed solves -- while
+        ``'2n+1-field'`` still pays 3 fresh field solves, so ``'2n+1-nuclear'`` is the cheaper choice.
+        The default suits the standalone case; a spectrum workflow may prefer ``'2n+1-nuclear'``.  The
+        nuclear ``Z_A`` and SCF reference terms are kept separate and summed with this correlation
+        part by :func:`pycc.apt`.
 
         Nuclear side -- differentiate the relaxed dipole ``Tr(D_rel mu_a)`` w.r.t. the nucleus (the
         field gradient has no ``S^(X)``/2e-skeleton term, so no energy-weighted density appears)::
@@ -814,7 +821,7 @@ class CorrelatedDerivs:
                 + \mathrm{Tr}(D^\mathrm{rel}\,[\mu_a^{(X)} + \mathrm{rotate}(U^X, \mu_a)])
 
         Field side -- differentiate the relaxed nuclear gradient
-        ``dE/dX = D_rel f^(X) + Gamma <pq||rs>^(X) + I S^(X)`` w.r.t. the field::
+        ``dE/dX = D_rel f^(X) + Gamma <pq|rs>^(X) + I S^(X)`` w.r.t. the field::
 
             P[X,a] = -[ d_a D_rel f^(X) + D_rel d_a f^(X) + d_a Gamma <pq|rs>^(X)
                         + Gamma d_a <pq|rs>^(X) + d_a I S^(X) + I d_a S^(X) ]
@@ -824,19 +831,21 @@ class CorrelatedDerivs:
             \begin{aligned}
             P[X,a] = -\big[ &\partial_a D^\mathrm{rel}_{pq} f^{(X)}_{pq} + D^\mathrm{rel}_{pq}\,\partial_a f^{(X)}_{pq}
                 + \partial_a \Gamma_{pqrs}\,\langle pq|rs\rangle^{(X)} \\
-            &+ \Gamma_{pqrs}\,\partial_a \langle pq|rs\rangle^{(X)} + \partial_a W_{pq}\,S^{(X)}_{pq}
-                + W_{pq}\,\partial_a S^{(X)}_{pq} \big]
+            &+ \Gamma_{pqrs}\,\partial_a \langle pq|rs\rangle^{(X)} + \partial_a I_{pq}\,S^{(X)}_{pq}
+                + I_{pq}\,\partial_a S^{(X)}_{pq} \big]
             \end{aligned}
 
         with the 3 field responses ``d_a D_rel``, ``d_a Gamma``, and the perturbed energy-weighted
         density ``d_a I`` all from one :class:`PerturbedResponse` per field
-        (:meth:`_perturbed_relaxed_density`).  The orbital-response term ``D_rel d_a f^(X)`` is
-        assembled in the reference-doc form (eq:d2E-canon-final line 2): with the field skeleton
+        (:meth:`_perturbed_relaxed_density`).  The orbital-response terms are assembled in the
+        canonical orbital-response form (the ``2 U^Y X~^(X) + S^(Y) I~''^(X) + P^(X) f^(Y)`` line
+        shared with :meth:`_correlation_hessian`): with the field skeleton
         ``f^(a) = -mu``, ``S^(a) = 0``, ``<>^(a) = 0``, the only surviving pieces are ``2 U^a_bi
         X~^(X)_bi`` and ``P^(X)_pq f^(a)_pq`` (from :meth:`_skeleton_lagrangian` and
         :meth:`_augment_with_canonical_pair_rotations`), plus the fixed-density mixed skeleton
         ``D_rel f^(Xa)`` with ``f^(Xa) = -mu^(X)`` (the field enters ``h``).  Both routes give the same
-        tensor; ``'2n+1-field'`` is cheaper (3 field responses vs ``3N`` nuclear)."""
+        tensor; see the route note above for the cost trade-off (``'2n+1-field'`` cheaper standalone,
+        ``'2n+1-nuclear'`` cheaper when a Hessian has already cached the nuclear responses)."""
         if route not in ('2n+1-nuclear', '2n+1-field'):
             raise ValueError(f"unknown dipole-derivative route {route!r} "
                              "(use '2n+1-nuclear' or '2n+1-field')")
@@ -1097,12 +1106,11 @@ class CorrelatedDerivs:
         energy-weighted density ``d_Y I``, and ``d_Y Gamma`` all from one :class:`PerturbedResponse`
         per nucleus (:meth:`_perturbed_relaxed_density`), plus ``U^Y`` (:meth:`CPHF.full_U`).
 
-        The mixed second derivative assembles three groups (reference-doc eq:d2E-noncanon /
-        eq:d2E-canon-final): (i) the fixed-density second integral skeletons contracted with the
-        unperturbed relaxed densities, ``D~ f^(XY) + Gamma <>^(XY) + I S^(XY)``
-        (:meth:`Derivatives.nuclear_hessian_skeletons`, cached per atom pair -- all nonzero here,
-        unlike the field case where only ``-mu^(X)`` survives); (ii) the orbital response in the doc
-        form ``2 U^Y_ai X~^(X)_ai + S^(Y)_pq I~''^(X)_pq + P^(X)_pq f^(Y)_pq``, built per ``X`` from the
+        The mixed second derivative assembles three groups: (i) the fixed-density second integral
+        skeletons contracted with the unperturbed relaxed densities, ``D~ f^(XY) + Gamma <>^(XY) +
+        I S^(XY)`` (:meth:`Derivatives.nuclear_hessian_skeletons`, cached per atom pair -- all nonzero
+        here, unlike the field case where only ``-mu^(X)`` survives); (ii) the orbital response
+        ``2 U^Y_ai X~^(X)_ai + S^(Y)_pq I~''^(X)_pq + P^(X)_pq f^(Y)_pq``, built per ``X`` from the
         skeleton Lagrangian (:meth:`_skeleton_lagrangian`, :meth:`_augment_with_canonical_pair_rotations`);
         and (iii) the 2n+1 density response ``d_Y D~ f^(X) + d_Y Gamma <>^(X) + d_Y I S^(X)``.
 
@@ -1113,8 +1121,8 @@ class CorrelatedDerivs:
         the integrals are already antisymmetrized (spin-orbital).  (:meth:`apt` builds
         the same two kernels under the names ``eriX``/``eriL``.)  ``X~``/``I~''`` (``Xx``/``I2x``) and
         ``P^(x)`` (``Pf_x``) are the dependent-pair-augmented skeleton carriers from
-        :meth:`_augment_with_canonical_pair_rotations`; ``D~`` = ``Drel`` is the relaxed 1-PDM of the
-        theory notes.  A trailing ``N``/``F`` on a perturbed-response array names the *perturbation* it
+        :meth:`_augment_with_canonical_pair_rotations`; ``D~`` = ``Drel`` is the relaxed 1-PDM.
+        A trailing ``N``/``F`` on a perturbed-response array names the *perturbation* it
         responds to -- nuclear here (``dGamN`` = ``d_Y Gamma``), field in the ``'2n+1-field'`` APT
         (``dGamF``); both are the ``dGam`` of :class:`PerturbedResponse`.
 
@@ -1443,15 +1451,15 @@ class CorrelatedDerivs:
     def _augment_with_canonical_pair_rotations(self, Ip, Xov, I2):
         r"""Add the closed-form (canonical Brillouin) orbital-rotation contributions to the skeleton
         ``X^(x)``/``I''^(x)`` of :meth:`_skeleton_lagrangian`, for the rotations the CPHF
-        occupied-virtual solve does *not* provide (reference-doc eq:d2E-canon-final line 2, doc lines
-        862-882; the frozen-core (c,i) extension per the Frozen Core section, doc lines 1745-1776).
+        occupied-virtual solve does *not* provide (the redundant active occ-occ/virt-virt rotations of
+        the canonical gauge, and the independent frozen-core core<->active-occupied rotation).
 
         Two kinds of rotation enter, both fixed by the canonical condition ``d_x f_pq = 0`` and sharing
         the divide ``P^(x)_pq = (I'^(x)_pq - I'^(x)_qp)/(eps_p - eps_q)``:
 
         * the INDEPENDENT (non-redundant) core<->active-occupied rotation ``P^(x)_ci`` -- the energy is
-          not invariant to core<->active mixing, so it is ALWAYS present when there is a frozen core
-          (doc lines 1739-1743); built here as an ungated *direct* divide (its gap is always large, so
+          not invariant to core<->active mixing, so it is ALWAYS present when there is a frozen
+          core; built here as an ungated *direct* divide (its gap is always large, so
           the degeneracy skip is unnecessary), matching the density's ``Pco``;
         * the REDUNDANT (dependent) active occ-occ / virt-virt rotations ``P^(x)_ij``/``P^(x)_ab`` --
           present only in the canonical gauge (CCSD(T)); for CCSD they vanish by invariance and the
@@ -1462,19 +1470,19 @@ class CorrelatedDerivs:
           *perturbed* numerator, inconsistent with both ``P`` and the ``dP`` of
           :meth:`_perturbed_dependent_pairs`).
 
-        ``P^(x)`` is folded into the three carriers of the doc's line 2 (occupied pair-sums ``k,l`` run
+        ``P^(x)`` is folded into the three orbital-response carriers (occupied pair-sums ``k,l`` run
         over the full occupied space; ``A_pqrs = w_pqrs + w_psrq`` with ``w`` the unperturbed
         orbital-Hessian weight, matching :meth:`cphf.CPHF.full_U`)::
 
-            X~^(x)_ai = X^(x)_ai + 1/2 [ Sum_kl P^(x)_kl A_kali + Sum_de P^(x)_de A_daei ]  (eq:Xtilde)
+            X~^(x)_ai = X^(x)_ai + 1/2 [ Sum_kl P^(x)_kl A_kali + Sum_de P^(x)_de A_daei ]
             I~''^(x)_ij = I''^(x)_ij - P^(x)_ij eps_j
-                          - 1/2 [ Sum_kl P^(x)_kl A_kilj + Sum_de P^(x)_de A_diej ]         (eq:Idouble-tilde)
+                          - 1/2 [ Sum_kl P^(x)_kl A_kilj + Sum_de P^(x)_de A_diej ]
             I~''^(x)_ab = I''^(x)_ab - P^(x)_ab eps_b
 
         Returns ``(X~^(x), I~''^(x), P^(x))`` -- the augmented occupied-virtual Z-vector driver, the
         augmented energy-weighted skeleton density, and the full-MO ``P^(x)`` (the latter for the
-        leading ``Sum P^(x)_pq f^(y)_pq`` term of eq:d2E-canon-final, which has no first-derivative
-        counterpart)."""
+        leading ``Sum P^(x)_pq f^(y)_pq`` term -- the dependent-pair rotation contracted with the
+        *second*-perturbation skeleton Fock, which has no first-derivative counterpart)."""
         c = self.contract
         wfn = self.wfn
         so = wfn.orbital_basis == 'spinorbital'
