@@ -29,6 +29,8 @@ dependencies = [
     "numpy",
     "opt_einsum",
     "scipy",
+    "qcelemental",    # physical constants / unit conversions used by pycc.properties; imported by
+                      # pycc/__init__, so this is a HARD requirement (import pycc fails without it)
     "h5py",           # on-disk persistent store for derivative tensors (DerivStore); degrades to
                       # in-memory memoization if absent, so this is a soft requirement
     # example: "numpy >=2.3.3; python_version >='3.14'",
