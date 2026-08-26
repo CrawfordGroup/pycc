@@ -561,7 +561,10 @@ def ir(source: Any, checkpoint: str = None, project_trans: bool = False,
     from . import properties
     deriv = source
     hess = np.asarray(properties.hessian(deriv).total)
-    apt = np.asarray(properties.apt(deriv).total)
+    # The Hessian above just solved and cached the 3N nuclear perturbed responses on this driver, so
+    # the length-gauge APT's '2n+1-nuclear' route reuses them for free -- much cheaper here than the
+    # standalone '2n+1-field' default, which would re-solve 3 field responses (identical tensor).
+    apt = np.asarray(properties.apt(deriv, route='2n+1-nuclear').total)
     apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
                     if velocity_gauge else None)
     molecule = properties._wavefunction(deriv).ref.molecule()
@@ -607,7 +610,8 @@ def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
     from . import properties
     deriv = source
     hess = np.asarray(properties.hessian(deriv).total)
-    apt = np.asarray(properties.apt(deriv).total)
+    # '2n+1-nuclear' reuses the Hessian's just-cached 3N nuclear responses (see :func:`ir`).
+    apt = np.asarray(properties.apt(deriv, route='2n+1-nuclear').total)
     aat = np.asarray(properties.aat(deriv).total)
     apt_velocity = (np.asarray(properties.apt(deriv, gauge='velocity').total)
                     if velocity_gauge else None)
