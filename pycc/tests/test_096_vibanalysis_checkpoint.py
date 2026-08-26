@@ -64,6 +64,36 @@ def test_checkpoint_roundtrip(rhf_wfn, tmp_path):
     psi4.core.clean()
 
 
+def test_vibanalysis_apt_route_invariant(rhf_wfn):
+    """The ir/vcd drivers build the length-gauge APT via the '2n+1-nuclear' route (reusing the
+    Hessian's just-cached 3N nuclear responses, cheaper in this workflow); the resulting spectrum
+    must be identical to the standalone-default '2n+1-field' route.  Guards the vibanalysis route
+    switch: (i) the two routes give the same APT, and (ii) ir()/vcd() IR intensities and VCD
+    rotatory strengths are unchanged by it."""
+    d = _mp2_deriv(rhf_wfn)
+    spec = _quiet(lambda: pycc.ir(d))                      # ir() uses '2n+1-nuclear' internally
+    mol = d.wfn.ref.molecule()
+    H = np.asarray(_quiet(lambda: pycc.hessian(d)).total)  # cached from ir()
+    apt_field = np.asarray(_quiet(lambda: pycc.apt(d, route='2n+1-field')).total)
+    apt_nuclear = np.asarray(_quiet(lambda: pycc.apt(d, route='2n+1-nuclear')).total)
+
+    # (i) the two routes give the same APT tensor
+    assert np.allclose(apt_nuclear, apt_field, atol=1e-12), np.max(np.abs(apt_nuclear - apt_field))
+
+    # (ii) ir() spectrum (nuclear route) == the explicit field-route spectrum
+    spec_field = _quiet(lambda: pycc.harmonic_analysis(mol, H, apt=apt_field))
+    assert np.allclose(spec['frequencies'], spec_field['frequencies'], atol=1e-8)
+    assert np.allclose(spec['ir_intensities'], spec_field['ir_intensities'], rtol=1e-8, atol=1e-10)
+
+    # (ii, VCD) vcd() rotatory strengths (nuclear-route APT) == the field-route ones (AAT unchanged)
+    vcd_spec = _quiet(lambda: pycc.vcd(d))
+    aat = np.asarray(_quiet(lambda: pycc.aat(d)).total)
+    vcd_field = _quiet(lambda: pycc.harmonic_analysis(mol, H, apt=apt_field, aat=aat))
+    assert np.allclose(vcd_spec['rotatory_strengths'], vcd_field['rotatory_strengths'],
+                       rtol=1e-8, atol=1e-10)
+    psi4.core.clean()
+
+
 def test_ir_driver_live_vs_checkpoint(rhf_wfn, tmp_path):
     """``pycc.ir`` from a live driver and from the checkpoint it wrote give identical frequencies
     and IR intensities."""
