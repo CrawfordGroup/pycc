@@ -800,12 +800,16 @@ class CorrelatedDerivs:
         analog of :meth:`polarizability`, via the 2n+1 route (both spin paths, frozen-core aware).
 
         ``route='2n+1-field'`` (default) or ``'2n+1-nuclear'``; both give the same tensor, but which
-        is cheaper depends on context.  **Standalone**, ``'2n+1-field'`` wins: it solves the perturbed
-        response along only the 3 field components, versus ``3N`` for the nuclear route.  **In an
-        IR/VCD spectrum**, though, the Hessian is computed first and has already solved and cached the
+        is cheaper depends on context.  **Standalone**, ``'2n+1-field'`` is usually cheaper (it solves
+        the perturbed response along only the 3 field components, versus ``3N`` nuclear), though the
+        margin is method-dependent: clear for CCSD, whose perturbed responses are iterative (measured
+        ~1.5-2x on H2O/H2O2/CH4 in cc-pVDZ), but a near-wash for MP2, whose closed-form responses are
+        offset by the field route's own ``3N`` nuclear skeleton-ERI builds.  **In an IR/VCD
+        spectrum**, though, the Hessian is computed first and has already solved and cached the
         ``3N`` nuclear perturbed responses on this same driver (the DerivStore / CPHF nuclear-response
         caches); there ``'2n+1-nuclear'`` reuses them for free -- no new perturbed solves -- while
-        ``'2n+1-field'`` still pays 3 fresh field solves, so ``'2n+1-nuclear'`` is the cheaper choice.
+        ``'2n+1-field'`` still pays 3 fresh field solves, so ``'2n+1-nuclear'`` is the cheaper choice
+        (measured ~8-16x for MP2 and ~22-47x for CCSD in cc-pVDZ, the margin growing with basis).
         The default suits the standalone case; a spectrum workflow may prefer ``'2n+1-nuclear'``.  The
         nuclear ``Z_A`` and SCF reference terms are kept separate and summed with this correlation
         part by :func:`pycc.apt`.
