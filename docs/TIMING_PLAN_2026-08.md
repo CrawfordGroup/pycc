@@ -1,8 +1,9 @@
 # PyCC timing instrumentation (design plan)
 
-**Status:** Implemented and instrumented through the Hessian path; verified on MP2/STO-3G
-(phase 3, STO-3G half). cc-pVDZ verification still to run. Not committed. Started 2026-08-27,
-this revision 2026-08-28.
+**Status:** Phases 1-3 DONE, merged in PR #248 (2026-08-28). Instrumentation covers the property
+facades and the Hessian path; verified on MP2/STO-3G and MP2/cc-pVDZ VCD of 3-chloro-1-butyne with
+the spectra unchanged. Phase 4 (triples, CC response, the reference path) not started. Started
+2026-08-27, this revision 2026-08-28.
 
 _Two separate facilities (an accumulating profile registry for identifying optimization targets,
 and progress output for following a long calculation), plus the call sites to instrument first.
@@ -214,11 +215,20 @@ the interior rows. Line numbers current as of 2026-08-27.
    | APT / AAT / VG-APT | 0.2 / 0.2 / 0.2 s | 19.8 / 23.5 / 20.7 s |
    | total | 60.9 s | 4616.4 s |
 
-   Three things must hold: the spectra are unchanged, the report's top-level rows reproduce the
-   timings above, and self-times sum to the wall time. Beyond verification this gives the first
-   real answer on `ao_tei_deriv2`'s share, and, with per-stage numbers at two basis sizes, the
-   first test of the O(N^6) setup / O(N^4) integral-build scaling model, which has so far been
-   fitted to a single measurement.
+   **Outcome.** Spectra unchanged at both bases. The Hessian split (cc-pVDZ, 5912 s): perturbed
+   wave functions 1207 s, second-derivative integrals 2421 s, density response 1401 s, remainder
+   883 s. Three findings:
+
+   * `ao_tei_deriv2` is **already OpenMP-threaded** (cpu/wall 6.87 on 8 threads, 10.59 on 12) and
+     is only 13% of the cc-pVDZ Hessian, so it is not the parallelization target it appeared to be.
+   * Everything else is serial (cpu/wall 0.6 to 1.4), and the `mo_tei_deriv1` transform is
+     **computed twice** (569 s and 599 s self), from the duplicate `DerivStore`.
+   * The **O(N^6) setup / O(N^4) integral-build model was wrong.** Both stages scaled by ~78 from
+     STO-3G to cc-pVDZ, and pass1/setup is 2.02 against 2.01, i.e. basis-independent. Those
+     exponents describe growing the *molecule* (perturbation count ~N, pair count ~N^2), not
+     extending the basis at fixed geometry, where every count is fixed. Density response is the
+     exception at 180x, and that is a regime change rather than an exponent: `dGam` crosses from
+     page-cache-resident (10.7 MB) to real disk (768 MB, so 300 reads = 230 GB).
 
 4. **Extend to APT, AAT, triples, response.** Same pattern outward. Finer granularity wherever
    step 3 shows a row that is large and undifferentiated.
