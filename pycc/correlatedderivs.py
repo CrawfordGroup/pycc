@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 import tempfile
 from collections import namedtuple
 
 import numpy as np
+
+from .derivatives import atom_label
+from .timing import timer, timed, progress
 
 
 #: Result of the unperturbed orbital-response (Z-vector) solve.  ``Drel``/``Gam`` are the relaxed
@@ -317,6 +321,7 @@ class CorrelatedDerivs:
         by the method (MP2 amplitude seeds / CC :meth:`ccdensity.gradient_densities`)."""
         raise NotImplementedError
 
+    @timed("relaxed density (Z-vector)")
     def _orbital_response(self):
         r"""Spatial (closed-shell) unperturbed orbital-response (Z-vector) solve (cached, frozen-core
         aware), returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM::
@@ -377,6 +382,7 @@ class CorrelatedDerivs:
             self._orbresp = OrbitalResponse(Drel, Gam, D, zia, hf, Pco, Poo, Pvv)
         return self._orbresp
 
+    @timed("relaxed density (Z-vector)")
     def _so_orbital_response(self):
         r"""Spin-orbital unperturbed orbital-response (Z-vector) solve (cached, frozen-core aware),
         returning an :class:`OrbitalResponse` record.  The relaxed 1-PDM::
@@ -607,6 +613,7 @@ class CorrelatedDerivs:
         dI = self._so_perturbed_lagrangian(df, deri, Drel0, dDrel, Gam0, dGam)
         return PerturbedResponse(dDrel, dGam, dI)
 
+    @timed("perturbed density")
     def _relaxed_response(self, pert):
         """Per-perturbation :class:`PerturbedResponse` ``(dDrel, dGam, dI)`` for ``pert``,
         dispatched to the spatial or spin-orbital solve and memoized in the persistent store
@@ -987,6 +994,7 @@ class CorrelatedDerivs:
                 restore(np.load(path))
                 os.remove(path)
 
+    @timed("two-particle density (AO)")
     def _effective_2pdm_ao(self, Drel, Gam):
         r"""Effective 2-PDM back-transformed to the AO chemist basis, for the AO-density Hessian
         skeleton (plan doc s.10).  Folds the two-electron part of ``D_rel * f^(XY)`` into the
@@ -1163,36 +1171,40 @@ class CorrelatedDerivs:
         # holding 3*natom-long in-RAM lists.  Only the small quantities (dDrel/dI/U and the nmo^2
         # fX/SX/Xx/I2x/Pf_x) stay resident.
         dDrel, dI, U = [], [], []
-        for i, p in enumerate(pert):
-            r = self._relaxed_response(p)                            # one perturbed solve; persists dGam
-            dDrel.append(r.dDrel)
-            dI.append(r.dI)
-            U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
+        t_stage = time.time()
+        with timer("perturbed wave functions"):
+            for i, p in enumerate(pert):
+                r = self._relaxed_response(p)                        # one perturbed solve; persists dGam
+                dDrel.append(r.dDrel)
+                dI.append(r.dI)
+                U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
+                progress("Hessian perturbed wave functions", i + 1, len(pert), t_stage,
+                         "%s %s" % (atom_label(d.mol, p.comp[0]), "xyz"[p.comp[1]]))
 
         # per-X first skeletons.  wx = the 1-PDM two-electron kernel (L^(x) closed-shell /
         # <pq||rs>^(x) spin-orbital); erix = the 2-PDM ERI skeleton (<pq|rs>^(x) closed-shell /
         # <pq||rs>^(x) SO -- in SO the single antisymmetrized <pq||rs>^(x) serves both).  The per-X
         # skeleton Lagrangian I'^(x) gives X^(x)/I''^(x) (X~^(x)/I~''^(x)/P^(x) when canonical or
         # frozen-core).  Reading d.eri/d.so_eri here also warms the store.
-        fX, SX, Xx, I2x, Pf_x = [], [], [], [], []
-        for i, p in enumerate(pert):
-            A, ct = p.comp
-            hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
-            Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
-            if so:
-                erix = np.asarray(d.so_eri(A)[ct]); wx = erix          # <pq||rs>^(X): both kernels
-            else:
-                erix = np.asarray(d.eri(A)[ct])                        # <pq|rs>^(X) (2-PDM / Gamma)
-                wx = 2.0 * erix - erix.transpose(0, 1, 3, 2)           # L^X (1-PDM / Fock)
-            fX.append(hx + c('pmqm->pq', wx[:, ofull, :, ofull]))
-            SX.append(Sx)
-            Ip, xov, i2 = self._skeleton_lagrangian(fX[i], Sx, wx, erix, Drel, Gam, I)
-            if canonical or ncore:        # independent core<->active (FC) and/or redundant oo/vv (canon.)
-                xt, it, pf = self._augment_with_canonical_pair_rotations(Ip, xov, i2)
-                Xx.append(xt); I2x.append(it); Pf_x.append(pf)
-            else:
-                Xx.append(xov); I2x.append(i2); Pf_x.append(None)
-
+        with timer("first-derivative integrals"):
+            fX, SX, Xx, I2x, Pf_x = [], [], [], [], []
+            for i, p in enumerate(pert):
+                A, ct = p.comp
+                hx = np.asarray((d.so_core(A) if so else d.core(A))[ct])
+                Sx = np.asarray((d.so_overlap(A) if so else d.overlap(A))[ct])
+                if so:
+                    erix = np.asarray(d.so_eri(A)[ct]); wx = erix          # <pq||rs>^(X): both kernels
+                else:
+                    erix = np.asarray(d.eri(A)[ct])                        # <pq|rs>^(X) (2-PDM / Gamma)
+                    wx = 2.0 * erix - erix.transpose(0, 1, 3, 2)           # L^X (1-PDM / Fock)
+                fX.append(hx + c('pmqm->pq', wx[:, ofull, :, ofull]))
+                SX.append(Sx)
+                Ip, xov, i2 = self._skeleton_lagrangian(fX[i], Sx, wx, erix, Drel, Gam, I)
+                if canonical or ncore:        # independent core<->active (FC) and/or redundant oo/vv (canon.)
+                    xt, it, pf = self._augment_with_canonical_pair_rotations(Ip, xov, i2)
+                    Xx.append(xt); I2x.append(it); Pf_x.append(pf)
+                else:
+                    Xx.append(xov); I2x.append(i2); Pf_x.append(None)
         # ---- assembly: two atom-pair sweeps, one per nmo^4 working set ----
         # The correlation Hessian is a sum of two contributions with DISJOINT nmo^4 inputs:
         #   (1) the fixed-density second skeleton  Gam*<pq||rs>^(XY) (+ Drel*f2 + I*S2), which
@@ -1270,35 +1282,44 @@ class CorrelatedDerivs:
                     core2, overlap2 = d.core2, d.overlap2
                     Co_ref = np.asarray(wfn.C)[:, ofull]                  # occupied MO coefficients
                     Dref = Co_ref @ Co_ref.T                              # occupied AO density
-                for a1 in range(natom):
-                    for a2 in range(a1, natom):
-                        core2s = [np.asarray(m) for m in core2(a1, a2)]      # 9 OEI (nmo^2 / nso^2)
-                        ov2s = [np.asarray(m) for m in overlap2(a1, a2)]
-                        ao_eri = d.ao_eri2(a1, a2)                            # 9 spatial AO, held
-                        for cx in range(3):
-                            for cy in range(3):
-                                comp = cx * 3 + cy
-                                aoc = ao_eri[comp]
-                                s = (c('mnls,mnls->', GeffAO, aoc)
-                                     + c('pq,pq->', Drel, core2s[comp]) + c('pq,pq->', I, ov2s[comp]))
-                                # SCF reference skeleton (shared ao): Coulomb - exchange + OEI traces
-                                h2oo = core2s[comp][ofull, ofull]; S2oo = ov2s[comp][ofull, ofull]
-                                if so:
-                                    two_e_ref = 0.5 * (c('mn,ls,mnls->', Dt_ref, Dt_ref, aoc)
-                                                       - c('ms,nl,mnls->', Da_ref, Da_ref, aoc)
-                                                       - c('ms,nl,mnls->', Db_ref, Db_ref, aoc))
-                                    s_ref = (c('ii->', h2oo) + two_e_ref
-                                             - c('i,ii->', eps_o_ref, S2oo))
-                                else:
-                                    two_e_ref = (2.0 * c('mn,ls,mnls->', Dref, Dref, aoc)
-                                                 - c('ml,ns,mnls->', Dref, Dref, aoc))
-                                    s_ref = (2.0 * np.trace(h2oo) + two_e_ref
-                                             - 2.0 * c('i,ii->', eps_o_ref, S2oo))
-                                ix, iy = a1 * 3 + cx, a2 * 3 + cy
-                                H[ix, iy] += s; Href[ix, iy] += s_ref
-                                if a1 != a2:                             # s, s_ref symmetric in the pair
-                                    H[iy, ix] += s; Href[iy, ix] += s_ref
-                        del core2s, ov2s, ao_eri
+                with timer("second-derivative integral terms"):
+                    t_stage = time.time()
+                    n_pair = natom * (natom + 1) // 2
+                    for a1 in range(natom):
+                        for a2 in range(a1, natom):
+                            core2s = [np.asarray(m) for m in core2(a1, a2)]      # 9 OEI (nmo^2 / nso^2)
+                            ov2s = [np.asarray(m) for m in overlap2(a1, a2)]
+                            ao_eri = d.ao_eri2(a1, a2)                            # 9 spatial AO, held
+                            with timer("skeleton contractions"):
+                                for cx in range(3):
+                                    for cy in range(3):
+                                        comp = cx * 3 + cy
+                                        aoc = ao_eri[comp]
+                                        s = (c('mnls,mnls->', GeffAO, aoc)
+                                             + c('pq,pq->', Drel, core2s[comp]) + c('pq,pq->', I, ov2s[comp]))
+                                        # SCF reference skeleton (shared ao): Coulomb - exchange + OEI traces
+                                        h2oo = core2s[comp][ofull, ofull]; S2oo = ov2s[comp][ofull, ofull]
+                                        if so:
+                                            two_e_ref = 0.5 * (c('mn,ls,mnls->', Dt_ref, Dt_ref, aoc)
+                                                               - c('ms,nl,mnls->', Da_ref, Da_ref, aoc)
+                                                               - c('ms,nl,mnls->', Db_ref, Db_ref, aoc))
+                                            s_ref = (c('ii->', h2oo) + two_e_ref
+                                                     - c('i,ii->', eps_o_ref, S2oo))
+                                        else:
+                                            two_e_ref = (2.0 * c('mn,ls,mnls->', Dref, Dref, aoc)
+                                                         - c('ml,ns,mnls->', Dref, Dref, aoc))
+                                            s_ref = (2.0 * np.trace(h2oo) + two_e_ref
+                                                     - 2.0 * c('i,ii->', eps_o_ref, S2oo))
+                                        ix, iy = a1 * 3 + cx, a2 * 3 + cy
+                                        H[ix, iy] += s; Href[ix, iy] += s_ref
+                                        if a1 != a2:                         # s, s_ref symmetric in the pair
+                                            H[iy, ix] += s; Href[iy, ix] += s_ref
+                            with timer("release second-derivative block"):
+                                del core2s, ov2s, ao_eri
+                            progress("Hessian second-derivative integrals",
+                                     a1 * natom - a1 * (a1 - 1) // 2 + (a2 - a1) + 1, n_pair,
+                                     t_stage, "%s-%s" % (atom_label(d.mol, a1),
+                                                         atom_label(d.mol, a2)))
                 del GeffAO
             else:
                 for a1 in range(natom):
@@ -1342,14 +1363,19 @@ class CorrelatedDerivs:
             # recomputed here).  Peak residency is one atom's 3-stack eriX + one dGam = 4*nmo^4, so
             # pass 1's 9*nmo^4 2nd-deriv block is the binding peak, not this pass.  Each H element
             # gets the same response addition as the fused loop, so H is unchanged.
-            for a in range(natom):
-                erX = [np.asarray(m) for m in (d.so_eri(a) if so else d.eri(a))]   # 3*nmo^4 over iy
-                for iy in range(nc):
-                    dGam_y = _dGs(iy)                                   # 1*nmo^4, streamed from store
-                    for cx in range(3):
-                        ix = a * 3 + cx
-                        H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
-                del erX
+            t_stage = time.time()
+            with timer("density-response terms"):
+                for a in range(natom):
+                    erX = [np.asarray(m) for m in (d.so_eri(a) if so else d.eri(a))]  # 3*nmo^4 over iy
+                    for iy in range(nc):
+                        dGam_y = _dGs(iy)                               # 1*nmo^4, streamed from store
+                        for cx in range(3):
+                            ix = a * 3 + cx
+                            with timer("response contractions"):
+                                H[ix, iy] += _resp(ix, iy, dGam_y, erX[cx])
+                    del erX
+                    progress("Hessian density response", a + 1, natom, t_stage,
+                             atom_label(d.mol, a))
 
         # Reference (SCF) electronic block.  'aod': the ao-dependent skeleton is in Href (built above
         # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response by delegation.
@@ -1422,6 +1448,7 @@ class CorrelatedDerivs:
     # ---- shared per-perturbation orbital-response builders (used by both hessian() and
     #      apt() when they run in the reference-doc form) ----
 
+    @timed("orbital Lagrangian")
     def _skeleton_lagrangian(self, fXx, SXx, wx, erix, Drel, Gam, I):
         r"""Skeleton-perturbed orbital Lagrangian ``I'^(x)`` for one perturbation ``x`` -- the
         integral-derivative half of :meth:`_perturbed_lagrangian`, evaluated at *fixed* (unperturbed)

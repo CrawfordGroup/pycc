@@ -23,8 +23,10 @@ from .cideriv import CIderiv
 from .properties import PropertyComponents, aat, apt, dipole, gradient, hessian, polarizability, optical_rotation
 from .vibanalysis import harmonic_analysis, ir, vcd
 from .checkpoint import Checkpoint, save_checkpoint, load_checkpoint
+from .timing import timer, timed, progress, report as timing_report, reset as timing_reset
 
-__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'CCderiv', 'MPderiv', 'CIderiv', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability', 'optical_rotation', 'harmonic_analysis', 'ir', 'vcd', 'Checkpoint', 'save_checkpoint', 'load_checkpoint']
+__all__ = ['CCwfn', 'ccwfn', 'MPwfn', 'HFwfn', 'CIwfn', 'cchbar', 'cclambda', 'ccdensity', 'ccresponse', 'pertbar', 'rtcc', 'cceom', 'CCderiv', 'MPderiv', 'CIderiv', 'PropertyComponents', 'aat', 'apt', 'dipole', 'gradient', 'hessian', 'polarizability', 'optical_rotation', 'harmonic_analysis', 'ir', 'vcd', 'Checkpoint', 'save_checkpoint', 'load_checkpoint',
+           'timer', 'timed', 'progress', 'timing_report', 'timing_reset']
 
 # Handle versioneer
 from ._version import get_versions
