@@ -63,6 +63,7 @@ from typing import Any, List
 import numpy as np
 
 from .utils import diag
+from .timing import timed
 
 
 # A perturbation descriptor used to key the response and full-derivative caches.
@@ -351,6 +352,7 @@ class CPHF(object):
             return self.solve_nuclear(atom)[cart]
         raise NotImplementedError("ov response wired for 'field'/'nuclear' only.")
 
+    @timed("orbital response (CPHF)")
     def full_U(self, pert: "Perturbation", ncore: int = 0, canonical: bool = False) -> np.ndarray:
         r"""The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 

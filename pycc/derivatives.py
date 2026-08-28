@@ -45,6 +45,7 @@ import psi4
 import numpy as np
 
 from .exceptions import PyCCWarning
+from .timing import timer, timed
 
 
 #: Persistent derivative-tensor store defaults.  Enabled by default (opt-out); set env var
@@ -57,6 +58,13 @@ DERIV_STORE_DIR = os.environ.get('PYCC_DERIV_STORE_DIR') or None
 
 #: Filesystem types that live in RAM -- a store/scratch dir on one of these consumes memory, not disk.
 _RAM_BACKED_FS = ('tmpfs', 'ramfs', 'devtmpfs')
+
+
+def atom_label(mol, atom: int) -> str:
+    """``'C1'``, ``'Cl3'``: element symbol with its 1-based index in the input geometry order
+    (psi4's ``symbol()`` returns all caps, so the tail is lowered)."""
+    sym = mol.symbol(atom)
+    return "%s%s%d" % (sym[0].upper(), sym[1:].lower(), atom + 1)
 
 
 def _filesystem_type(path: str, _mounts: str = '/proc/mounts'):
@@ -144,9 +152,11 @@ class DerivStore:
         f = self._ensure()
         dset = f.get(name)
         if dset is not None:
-            return dset[()]
+            with timer("derivative cache read"):
+                return dset[()]
         arr = np.asarray(builder())
-        f.create_dataset(name, data=arr)
+        with timer("derivative cache write"):
+            f.create_dataset(name, data=arr)
         return arr
 
     def get_or_compute_group(self, quantity, pert, builder, names, ctx=()):
@@ -166,12 +176,14 @@ class DerivStore:
             return vals
         f = self._ensure()
         if all(n in f for n in full):
-            return tuple(f[n][()] for n in full)
+            with timer("derivative cache read"):
+                return tuple(f[n][()] for n in full)
         vals = tuple(np.asarray(v) for v in builder())
-        for n, v in zip(full, vals):
-            if n in f:
-                del f[n]
-            f.create_dataset(n, data=v)
+        with timer("derivative cache write"):
+            for n, v in zip(full, vals):
+                if n in f:
+                    del f[n]
+                f.create_dataset(n, data=v)
         return vals
 
     def has(self, quantity, pert, ctx=()) -> bool:
@@ -363,6 +375,7 @@ class Derivatives(object):
 
     # ---- spatial two-electron ----
 
+    @timed("two-electron first derivatives (MO)")
     def eri(self, atom: int, b1: str = 'all', b2: str = 'all',
             b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         r"""Two-electron (ERI) skeleton derivatives for ``atom``: 3 (x, y, z) arrays, in
@@ -419,6 +432,7 @@ class Derivatives(object):
 
     # ---- spatial second derivatives (Hessian skeleton) ----
 
+    @timed("one-electron second derivatives")
     def overlap2(self, atom1: int, atom2: int, b1: str = 'all',
                  b2: str = 'all') -> List[np.ndarray]:
         r"""Second overlap skeleton derivatives ``S^{(XY)}`` for the ``(atom1, atom2)`` pair:
@@ -433,6 +447,7 @@ class Derivatives(object):
         return [np.asarray(m) for m in
                 self.mints.mo_oei_deriv2("OVERLAP", atom1, atom2, self._mo(b1), self._mo(b2))]
 
+    @timed("one-electron second derivatives")
     def core2(self, atom1: int, atom2: int, b1: str = 'all',
               b2: str = 'all') -> List[np.ndarray]:
         r"""Second core one-electron (kinetic + potential) derivatives ``h^{(XY)}`` for the
@@ -475,6 +490,7 @@ class Derivatives(object):
         return [_complete_deriv2(np.asarray(m)).swapaxes(1, 2) for m in self.mints.mo_tei_deriv2(
             atom1, atom2, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))]
 
+    @timed("two-electron second derivatives (AO)")
     def ao_eri2(self, atom1: int, atom2: int) -> List[np.ndarray]:
         r"""Raw **AO-basis** two-electron second-derivative integrals for the ``(atom1, atom2)``
         pair: 9 arrays ``(mu nu|la si)^(XY)`` (chemist order, un-transformed, indexed
@@ -496,6 +512,7 @@ class Derivatives(object):
             out.append(a)
         return out
 
+    @timed("two-electron second derivatives (MO transform)")
     def eri2_mo_component(self, ao_chem: np.ndarray) -> np.ndarray:
         r"""Transform ONE raw AO chemist second-derivative block ``(mu nu|la si)^(XY)`` (from
         :meth:`ao_eri2`) into the physicist MO integral ``<pq|rs>^(XY)`` for that Cartesian pair.
@@ -656,6 +673,7 @@ class Derivatives(object):
         sel = [[(x[1], x[3]), (x[2], x[4])] for x in info]   # [alpha:(pos,C), beta:(pos,C)]
         return shape, sel
 
+    @timed("two-electron first derivatives (MO)")
     def so_eri(self, atom: int, b1: str = 'all', b2: str = 'all',
                b3: str = 'all', b4: str = 'all') -> List[np.ndarray]:
         r"""Spin-orbital antisymmetrized two-electron derivatives ``<pq||rs>^(X)`` for
@@ -792,6 +810,7 @@ class Derivatives(object):
             out.append(phys - phys.swapaxes(2, 3))
         return out
 
+    @timed("two-electron second derivatives (MO transform)")
     def so_eri2_mo_component(self, ao_chem: np.ndarray) -> np.ndarray:
         r"""Build ONE spin-orbital block ``<pq||rs>^(XY)`` for a Cartesian pair from one raw
         *spatial* AO chemist second-derivative block (from :meth:`ao_eri2`) -- the spin-orbital
@@ -835,6 +854,7 @@ class Derivatives(object):
 
     # ---- nuclear-nuclear skeleton second-derivative integrals (for the 2n+1 molecular Hessian) ----
 
+    @timed("second-derivative skeletons")
     def nuclear_hessian_skeletons(self, a1: int, a2: int, cache: bool = True) -> dict:
         r"""Cached nuclear-nuclear skeleton second-derivative integrals for the atom pair
         ``(a1, a2)``: the 9 ``(cart1, cart2)`` blocks of the core Hamiltonian ``h^{XY}``, the

@@ -23,6 +23,7 @@ import numpy as np
 import qcelemental as qcel
 
 from .utils import field
+from .timing import timer
 
 #: Dipole polarizability atomic units (Bohr^3) to Angstrom^3 (= (a0 in Angstrom)^3), and the photon
 #: wavelength (nm) per field frequency omega (Eh): ``lambda = NM_PER_EH / omega`` (= 1e7 nm/cm over
@@ -232,12 +233,13 @@ def gradient(wfn) -> PropertyComponents:
     correlation``, shape ``(natom, 3)`` each).  The nuclear block is the nuclear-repulsion
     derivative ``dV_NN/dX``."""
     _require_driver(wfn)
-    if _is_hf(wfn):
-        reference = np.asarray(wfn._gradient_electronic())
-        correlation = np.zeros_like(reference)
-    else:
-        reference = np.asarray(wfn._reference_hf()._gradient_electronic())
-        correlation = np.asarray(wfn._correlation_gradient())
+    with timer("%s gradient" % _method_label(wfn)):
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._gradient_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            reference = np.asarray(wfn._reference_hf()._gradient_electronic())
+            correlation = np.asarray(wfn._correlation_gradient())
     nuclear = np.asarray(_wavefunction(wfn).derivatives.nuclear_repulsion())
     pc = PropertyComponents(nuclear, reference, correlation)
     _record(wfn, 'gradient', pc)
@@ -299,25 +301,25 @@ def polarizability(wfn, omega: float = 0.0, relaxed: bool = None,
     freq = "%.6f Eh   (static)" % omega if omega == 0.0 else \
            "%.6f Eh   (%.2f nm)" % (omega, NM_PER_EH / omega)
 
-    if relaxed:
-        if _is_hf(wfn):
-            reference = np.asarray(wfn._polarizability_electronic())
-            correlation = np.zeros_like(reference)
+    with timer("%s polarizability" % _method_label(wfn)):
+        if relaxed:
+            if _is_hf(wfn):
+                reference = np.asarray(wfn._polarizability_electronic())
+                correlation = np.zeros_like(reference)
+            else:
+                reference = np.asarray(wfn._reference_hf()._polarizability_electronic())
+                correlation = np.asarray(wfn._correlation_polarizability())
+            pc = PropertyComponents(np.zeros((3, 3)), reference, correlation)
+            route = "relaxed (orbital-relaxed derivative)"
         else:
-            reference = np.asarray(wfn._reference_hf()._polarizability_electronic())
-            correlation = np.asarray(wfn._correlation_polarizability())
-        pc = PropertyComponents(np.zeros((3, 3)), reference, correlation)
-        route = "relaxed (orbital-relaxed derivative)"
-    else:
-        if not hasattr(wfn, '_correlation_dynamic_polarizability'):
-            raise NotImplementedError(
-                "the dynamic (unrelaxed) polarizability is implemented for CCSD only; pass a "
-                "pycc.CCderiv for a CCSD wavefunction (got %s)." % type(wfn).__name__)
-        # Correlation-only: no MO response, hence no HF/SCF contribution (see the docstring).
-        correlation = np.asarray(wfn._correlation_dynamic_polarizability(omega))
-        pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), correlation)
-        route = "unrelaxed (no orbital relaxation; correlation only)"
-
+            if not hasattr(wfn, '_correlation_dynamic_polarizability'):
+                raise NotImplementedError(
+                    "the dynamic (unrelaxed) polarizability is implemented for CCSD only; pass a "
+                    "pycc.CCderiv for a CCSD wavefunction (got %s)." % type(wfn).__name__)
+            # Correlation-only: no MO response, hence no HF/SCF contribution (see the docstring).
+            correlation = np.asarray(wfn._correlation_dynamic_polarizability(omega))
+            pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), correlation)
+            route = "unrelaxed (no orbital relaxation; correlation only)"
     iso_au = float(np.trace(np.asarray(pc.total)).real) / 3.0
     _record(wfn, 'polarizability' if omega == 0.0 else 'polarizability(omega=%g)' % omega, pc)
     return pc.report(
@@ -348,7 +350,8 @@ def optical_rotation(wfn, omega, units: str = 'Eh') -> PropertyComponents:
         raise NotImplementedError(
             "optical rotation is implemented for CCSD only; pass a pycc.CCderiv for a CCSD "
             "wavefunction (got %s)." % type(wfn).__name__)
-    g = np.asarray(wfn._correlation_optical_rotation(omega))
+    with timer("%s optical rotation" % _method_label(wfn)):
+        g = np.asarray(wfn._correlation_optical_rotation(omega))
     pc = PropertyComponents(np.zeros((3, 3)), np.zeros((3, 3)), g)
     trace = float(np.trace(g).real)
     alpha = _specific_rotation(trace, omega, _wavefunction(wfn).ref.molecule())
@@ -366,14 +369,15 @@ def hessian(wfn) -> PropertyComponents:
     correlation``, shape ``(3*natom, 3*natom)`` each).  The nuclear block is the nuclear-
     repulsion second derivative ``d^2 V_NN/dX dY``."""
     _require_driver(wfn)
-    if _is_hf(wfn):
-        reference = np.asarray(wfn._hessian_electronic())
-        correlation = np.zeros_like(reference)
-    else:
-        # The driver computes both blocks in one pass, sharing ao_tei_deriv2 between the reference
-        # skeleton and the correlation assembly (computed once, not twice).
-        reference, correlation = wfn._hessian_blocks()
-        reference, correlation = np.asarray(reference), np.asarray(correlation)
+    with timer("%s Hessian" % _method_label(wfn)):
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._hessian_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            # The driver computes both blocks in one pass, sharing ao_tei_deriv2 between the reference
+            # skeleton and the correlation assembly (computed once, not twice).
+            reference, correlation = wfn._hessian_blocks()
+            reference, correlation = np.asarray(reference), np.asarray(correlation)
     nuclear = np.asarray(_wavefunction(wfn).derivatives.nuclear_repulsion2())
     pc = PropertyComponents(nuclear, reference, correlation)
     _record(wfn, 'hessian', pc)
@@ -399,22 +403,23 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     exists only for verification/debugging.
     Both extra knobs are ignored for an ``HFwfn`` (no correlation)."""
     _require_driver(wfn)
-    if gauge == 'length':
-        if _is_hf(wfn):
-            reference = np.asarray(wfn._dipole_derivatives_electronic())
-            correlation = np.zeros_like(reference)
+    with timer("%s atomic polar tensors (%s gauge)" % (_method_label(wfn), gauge)):
+        if gauge == 'length':
+            if _is_hf(wfn):
+                reference = np.asarray(wfn._dipole_derivatives_electronic())
+                correlation = np.zeros_like(reference)
+            else:
+                reference = np.asarray(wfn._reference_hf()._dipole_derivatives_electronic())
+                correlation = np.asarray(wfn._correlation_dipole_derivatives(route=route))
+        elif gauge == 'velocity':
+            if _is_hf(wfn):
+                reference = np.asarray(wfn._velocity_dipole_derivatives_electronic())
+                correlation = np.zeros_like(reference)
+            else:
+                reference = np.asarray(wfn._reference_hf()._velocity_dipole_derivatives_electronic())
+                correlation = np.asarray(wfn._correlation_velocity_dipole_derivatives(gauge=orbital_gauge))
         else:
-            reference = np.asarray(wfn._reference_hf()._dipole_derivatives_electronic())
-            correlation = np.asarray(wfn._correlation_dipole_derivatives(route=route))
-    elif gauge == 'velocity':
-        if _is_hf(wfn):
-            reference = np.asarray(wfn._velocity_dipole_derivatives_electronic())
-            correlation = np.zeros_like(reference)
-        else:
-            reference = np.asarray(wfn._reference_hf()._velocity_dipole_derivatives_electronic())
-            correlation = np.asarray(wfn._correlation_velocity_dipole_derivatives(gauge=orbital_gauge))
-    else:
-        raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
+            raise ValueError(f"apt: gauge must be 'length' or 'velocity', got {gauge!r}")
     pc = PropertyComponents(_nuclear_apt(_wavefunction(wfn).ref.molecule()), reference, correlation)
     _record(wfn, 'apt' if gauge == 'length' else 'apt_velocity', pc)
     return pc.report("%s APT (%s gauge)" % (_method_label(wfn), gauge))
@@ -446,12 +451,13 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     _require_driver(wfn)
     mol = _wavefunction(wfn).ref.molecule()
     nuclear = _nuclear_aat(mol, origin)
-    if _is_hf(wfn):
-        reference = np.asarray(wfn._aat_electronic())
-        correlation = np.zeros_like(reference)
-    else:
-        reference = np.asarray(wfn._reference_hf()._aat_electronic())
-        correlation = np.asarray(wfn._correlation_aat(gauge=orbital_gauge))
+    with timer("%s atomic axial tensors" % _method_label(wfn)):
+        if _is_hf(wfn):
+            reference = np.asarray(wfn._aat_electronic())
+            correlation = np.zeros_like(reference)
+        else:
+            reference = np.asarray(wfn._reference_hf()._aat_electronic())
+            correlation = np.asarray(wfn._correlation_aat(gauge=orbital_gauge))
     o = (0.0, 0.0, 0.0) if origin is None else tuple(float(x) for x in origin)
     pc = PropertyComponents(nuclear=nuclear, reference=reference, correlation=correlation, origin=o)
     _record(wfn, 'aat', pc)
