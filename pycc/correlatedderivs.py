@@ -1378,11 +1378,16 @@ class CorrelatedDerivs:
                              atom_label(d.mol, a))
 
         # Reference (SCF) electronic block.  'aod': the ao-dependent skeleton is in Href (built above
-        # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response by delegation.
+        # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response from THIS
+        # driver's full-occupied CPHF.  That object is the all-electron SCF CPHF (full_occ spans
+        # frozen core + active, eps from the SCF Fock diagonal, orbital Hessian from the
+        # undifferentiated integrals), and the assembly above has already filled its per-atom nuclear
+        # caches (U^X/B^X/F^(X)_ij/S^(X)_ij) -- the only inputs the response needs.  Going through the
+        # reference HFwfn instead would rebuild the per-atom nmo^4 first-derivative MO integrals on a
+        # second DerivStore and re-solve CPHF, for the same numbers (plan doc s.12).
         # 'mo'/'ao' opt-outs did not fold Href -> use the reference HFwfn's own electronic Hessian.
-        hf = self._reference_hf()
-        reference = (Href + np.asarray(hf._hessian_response())) if route == 'aod' \
-            else np.asarray(hf._hessian_electronic())
+        reference = (Href + np.asarray(self._full_occ_cphf().nuclear_response_hessian())) \
+            if route == 'aod' else np.asarray(self._reference_hf()._hessian_electronic())
         return reference, H
 
     @staticmethod

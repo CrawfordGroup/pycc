@@ -871,3 +871,61 @@ class CPHF(object):
         if atom not in self._S_nuc:
             self.solve_nuclear(atom)
         return self._S_nuc[atom]
+
+    def nuclear_response_hessian(self) -> np.ndarray:
+        r"""Ao-INDEPENDENT first-order CPHF-response part of the SCF electronic Hessian,
+        shape ``(3*natom, 3*natom)``, built entirely from this object's cached nuclear
+        response (``solve_nuclear`` and its by-products) and its wavefunction's Fock
+        diagonal and ``oooo`` integral block.  With ``x = (A,a)``, ``y = (B,b)``;
+        ``i,j,n,m`` occupied, ``a`` virtual; ``k = 2``, ``W = L`` (spatial closed shell)
+        or ``k = 1``, ``W = <pq||rs>`` (spin-orbital)::
+
+            H^resp_xy = -k [ 2 U^x_ia B^y_ia + S^x_ij F^y_ij + S^y_ij F^x_ij
+                             - 2 eps_i S^x_ij S^y_ij - S^x_ij S^y_nm W_imjn ]
+
+        .. math::
+
+            H^{\mathrm{resp}}_{xy} = -k\Big[\,2\sum_{ia} U^x_{ia} B^y_{ia}
+                + \sum_{ij} S^{x}_{ij} F^{y}_{ij} + \sum_{ij} S^{y}_{ij} F^{x}_{ij}
+                - 2\sum_{ij} \epsilon_i S^{x}_{ij} S^{y}_{ij}
+                - \sum_{ijnm} S^{x}_{ij} S^{y}_{nm} W_{imjn} \,\Big]
+
+        Carries no second-derivative TEIs.  Every quantity is taken in **this** CPHF
+        object's occupied/virtual space, so the expression is valid for any CPHF whose
+        ``o``/``v`` span the all-electron SCF space: :attr:`HFwfn.cphf` (all-electron by
+        construction) and :meth:`~pycc.correlatedderivs.CorrelatedDerivs._full_occ_cphf`
+        (``full_occ=True``, so ``o`` covers frozen core + active).  The two differ in the
+        *ordering* of the occupied spin orbitals under frozen core, which the expression is
+        invariant to because every occupied index is summed.  Owning the expression here --
+        rather than on ``HFwfn``, which would read ``eps``/``W`` in its own ordering -- is what
+        makes it safe to evaluate on the correlated driver's CPHF, whose nuclear caches the
+        correlated Hessian has already filled (plan doc s.12).
+        """
+        o = self.o
+        so = self.wfn.orbital_basis == 'spinorbital'
+        k = 1.0 if so else 2.0                                   # closed-shell spin factor
+        eps_o = self.eps[o]
+        W = np.asarray(self.wfn.H.ERI if so else self.wfn.H.L)[o, o, o, o]   # i,m,j,n
+        natom = self.wfn.ref.molecule().natom()
+        U = [self.solve_nuclear(A) for A in range(natom)]             # U[A][a] -> (no,nv)
+        B = [self.rhs_nuclear(A) for A in range(natom)]               # B[A][a] -> (no,nv)
+        Foo = [self.nuclear_skeleton_fock(A) for A in range(natom)]   # F^X_ij -> (no,no)
+        Soo = [self.nuclear_skeleton_overlap(A) for A in range(natom)]  # S^X_ij -> (no,no)
+        c = self.contract
+        H = np.zeros((3 * natom, 3 * natom))
+        for A in range(natom):
+            for Bat in range(A, natom):
+                for a in range(3):
+                    for b in range(3):
+                        Ux, By = U[A][a], B[Bat][b]
+                        Sx, Sy = Soo[A][a], Soo[Bat][b]
+                        Fx, Fy = Foo[A][a], Foo[Bat][b]
+                        resp = k * (-2.0 * c('ia,ia->', Ux, By)
+                                    - c('ij,ij->', Sx, Fy)
+                                    - c('ij,ij->', Sy, Fx)
+                                    + 2.0 * c('i,ij,ij->', eps_o, Sx, Sy)
+                                    + c('ij,nm,imjn->', Sx, Sy, W))
+                        H[A * 3 + a, Bat * 3 + b] = resp
+                        if A != Bat:
+                            H[Bat * 3 + b, A * 3 + a] = resp
+        return H

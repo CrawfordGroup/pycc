@@ -125,3 +125,53 @@ def test_fc_so_mp2_corr_hessian_vs_spatial_631g():
     H_so = pycc.MPderiv(_mpwfn(BASE, 'spinorbital', freeze_core='true')).hessian().correlation
     H_sa = pycc.MPderiv(_mpwfn(BASE, 'spatial', freeze_core='true')).hessian().correlation
     assert np.max(np.abs(H_so - H_sa)) < 1e-11
+
+
+# ---- reference (SCF) block: sourced from the correlated driver's own full-occupied CPHF ----
+# The correlated Hessian evaluates the ao-independent reference CPHF response on
+# CorrelatedDerivs._full_occ_cphf() -- whose per-atom nuclear caches the assembly has already
+# filled -- rather than on the reference HFwfn, which would rebuild the per-atom nmo^4
+# first-derivative MO integrals on a second DerivStore and re-solve CPHF (plan doc s.12).
+# The two CPHF objects span the same all-electron space; under frozen core they differ in the
+# ORDERING of the occupied spin orbitals, which the response is invariant to because every
+# occupied index is summed.  The spin-orbital frozen-core case is therefore the keystone here.
+
+def _reference_response_pair(orbital_basis, freeze_core):
+    """(driver's full-occ response, standalone reference-HFwfn response) for one setting."""
+    drv = pycc.MPderiv(_mpwfn(BASE, orbital_basis, freeze_core))
+    drv.hessian()                                   # fills the full-occ CPHF nuclear caches
+    ours = np.asarray(drv._full_occ_cphf().nuclear_response_hessian())
+    theirs = np.asarray(drv._reference_hf()._hessian_response())
+    return ours, theirs
+
+
+def test_mp2_reference_response_matches_hfwfn_631g():
+    """Reference CPHF response from the correlated full-occupied CPHF == the standalone
+    reference HFwfn's, for both orbital bases and both core treatments.  The frozen-core
+    spin-orbital case is the one whose occupied ordering actually differs."""
+    for orbital_basis in ('spatial', 'spinorbital'):
+        for freeze_core in ('false', 'true'):
+            ours, theirs = _reference_response_pair(orbital_basis, freeze_core)
+            assert np.max(np.abs(ours - theirs)) < 1e-13, (orbital_basis, freeze_core)
+
+
+def test_mp2_hessian_transforms_once_per_atom_631g():
+    """The correlated Hessian runs mo_tei_deriv1 once per atom (spatial) / once per atom and
+    spin block (spin-orbital).  Guards against the reference path regrowing its own per-atom
+    first-derivative MO transforms on a second DerivStore."""
+    natom = len(SYM)
+    for orbital_basis, per_atom in (('spatial', 1), ('spinorbital', 4)):
+        mp = _mpwfn(BASE, orbital_basis, freeze_core='true')
+        calls = []
+        original = psi4.core.MintsHelper.mo_tei_deriv1
+
+        def counted(self, *args, **kwargs):
+            calls.append(1)
+            return original(self, *args, **kwargs)
+
+        psi4.core.MintsHelper.mo_tei_deriv1 = counted
+        try:
+            pycc.MPderiv(mp).hessian()
+        finally:
+            psi4.core.MintsHelper.mo_tei_deriv1 = original
+        assert len(calls) == per_atom * natom, (orbital_basis, len(calls))
