@@ -911,7 +911,7 @@ response expression consumes.
 
 So the reference response is evaluated on the object the correlated driver already built and filled:
 
-- **`cphf`**: add `nuclear_response_hessian()`, holding the single implementation of
+- **`cphf`**: add `nuclear_hessian_response()`, holding the single implementation of
 
       -k [ 2 U^x_ia B^y_ia + S^x_ij F^y_ij + S^y_ij F^x_ij
            - 2 eps_i S^x_ij S^y_ij - S^x_ij S^y_nm W_imjn ]
@@ -922,7 +922,7 @@ So the reference response is evaluated on the object the correlated driver alrea
 - **`hfwfn`**: `_hessian_response()` and `_so_hessian_response()` collapse to a call on `self.cphf`.
   SCF-only behaviour is unchanged.
 - **`correlatedderivs`**: on the `'aod'` route, replace `hf._hessian_response()` (`:1384`) with
-  `self._full_occ_cphf().nuclear_response_hessian()`.  The `'mo'` / `'ao'` opt-out routes keep
+  `self._full_occ_cphf().nuclear_hessian_response()`.  The `'mo'` / `'ao'` opt-out routes keep
   calling `hf._hessian_electronic()` and are unaffected.
 
 Do **not** pass a CPHF object into an `HFwfn` method.  That method reads `eps_o` and the `oooo` block
@@ -930,24 +930,53 @@ from `self.H.F` / `self.H.L`, in the HFwfn's ordering, which differs from the co
 the spin-orbital frozen-core case.  Owning the expression on `CPHF` is what removes the hazard.
 
 Removed per correlated Hessian: one `mo_tei_deriv1` per atom (AO generation *and* transform), `3N`
-reference CPHF solves, and the reference `_skel`'s `3N * nmo^4`.  Nothing is shared between stores,
+reference CPHF solves, and the reference `CPHF._skel` retention entirely.  Nothing is shared between stores,
 so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the residual guard).
 
 ### 12.4 Adjacent items found, deliberately out of scope
 
-- **`CPHF._skel` has no eviction -- likely a hard blocker for cc-pVTZ, needs its own fix.**
-  `_skeleton_derivatives` caches `(fx, Sx, gx)` per perturbation (`cphf.py:341`) and nothing ever
-  clears it.  **Measured, water/cc-pVTZ MP2 Hessian (nmo = 58, 3N = 9):** 9 entries on *both*
-  `_full_occ_cphf` and `hf.cphf`, 0.7588 GiB each, total **1.5177 GiB = exactly the predicted
-  `2 * 3N * nmo^4`**, against a peak RSS of 6.70 GiB (23% of peak).  Final RSS 6.73 GiB equals peak,
-  i.e. nothing is released at the end.  This is not accounted for in the `~10 * nmo^4` peak model of
-  s.10 / the d2int-memory notes.  Scaling to a 10-atom molecule (3N = 30): about **43 GiB at nbf = 99**
-  (cc-pVDZ; fits in 128 GiB, which is consistent with no spike having been observed) and about
-  **1.1 TiB at nbf = 224** (cc-pVTZ; does not fit).  The fix in s.12.3 removes the reference half only,
-  leaving about 560 GiB at cc-pVTZ, so `_skel` needs a separate fix (evict once `fx`/`Sx` are taken,
-  or keep `gx` in the `DerivStore` rather than in RAM) before a cc-pVTZ correlated Hessian on a
-  10-atom molecule is feasible here.  (The existing methyloxirane cc-pVTZ IR/VCD data was run
-  on a different machine, so it is not evidence against this model.)
+- **`CPHF._skel` retention -- FIXED in this work, after two measurement corrections.**
+  `_skeleton_derivatives` cached `(fx, Sx, gx)` per perturbation and nothing ever cleared it.  Two
+  numbers I first reported were wrong, both because they were modelled rather than instrumented:
+
+  1. *The retention was 3x larger than a `.nbytes` sum suggests.*  `Derivatives.eri(atom)` returns
+     three **views** into one 3-Cartesian buffer, and `np.asarray` does not copy, so each retained
+     `gx` pins a whole `3 * nmo^4` buffer -- and each of an atom's three coordinates calls `d.eri`
+     separately, getting its own buffer.  Summing `gx.nbytes` counts the view.  **Measured**
+     (water/6-31G, 3 atoms): views 9.00 x `nmo^4`, distinct base buffers 9, live **27.00 x `nmo^4`**.
+     So the true cost was `3N * 3 * nmo^4 = 9N * nmo^4` per CPHF object.
+  2. *The retention bought no reads.*  **Measured** on the same run: the store did 1 compute+write
+     and **6 reads per atom** regardless.  The block is generated once per atom by the store; caching
+     `gx` in RAM only pinned it.
+
+  **Fix:** `_skel` caches only `(fx, Sx)` (`nmo^2` each); the `nmo^4` two-electron derivative moves to
+  a new, deliberately uncached `_skeleton_eri(pert)` that reads the store on every call, and
+  `perturbed_eri` calls it directly.  **Measured after:** `_skel` live drops from 27.00 to
+  **0.11 x `nmo^4`** (`6N * nmo^2`), reads rise from 6 to 9 per atom (+50%, one extra per coordinate
+  because `perturbed_eri` no longer gets a cache hit).  Peak `gx` residency is now one atom's
+  3-Cartesian stack, `3 * nmo^4`.  Getting to `1 * nmo^4` needs the store to return a single
+  Cartesian rather than the stack (h5py reads only the slab indexed); **deferred, PI wants it
+  discussed separately.**
+
+- **Remaining four-index tensors held in RAM (audit, PI request).**  The rule: four-index derivative
+  quantities belong in the `DerivStore`, not in memory, because there are far too many for a RAM
+  cache to pay.  What is left:
+
+  | where | what | status |
+  |---|---|---|
+  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | live, up to `3 * nmo^4` each |
+  | `Derivatives._d2int` | 9 second-derivative `nmo^4` blocks per atom pair, accumulating | unused but ARMED: `cache=True` default, sole caller passes `cache=False` |
+  | `Derivatives._d1_atom` / `_d1_cache` | one atom's first-derivative blocks | reachable only when the store is disabled |
+  | `DerivStore._ram` | every tensor the store would have written, unbounded | same no-h5py fallback |
+
+  Note on naming: `_mag_int` / `_mom_int` do **not** hold derivative two-electron integrals.  The
+  magnetic-dipole and linear-momentum operators are one-electron and do not move the basis functions,
+  so the skeleton 2e derivative is zero.  `dERI` is the orbital-response *dressing* of the
+  undifferentiated ERI, `U_tr <pq|ts> + U_ts <pq|rt> - U_tp <tq|rs> - U_tq <pt|rs>`
+  (`_antisym_field_ints`).  Its nuclear/field analogue, `perturbed_eri`, already lives in the
+  `DerivStore` under `'deri'`; the magnetic and momentum versions were never moved.  Consumers are
+  `mpderiv.py:376` and `cideriv.py:99,102`, i.e. the MP2/CISD AAT and VG-APT paths.
+
 - **Block-label keying.**  Even with nothing shared, `ctx=('eri', b1..b4)` describes the request
   rather than the result.  A cheap fingerprint of the coefficient blocks handed to `mo_tei_deriv1`
   (plus the spin-orbital scatter positions) would make the key describe the tensor.  Worth doing as a

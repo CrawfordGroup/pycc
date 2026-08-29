@@ -161,7 +161,8 @@ class CPHF(object):
         # derivatives d_x f and d_x <pq||rs>, persisting for the life of this CPHF object so
         # that multiple property calculations on one wavefunction share them.
         self._U_field: dict = {}  # axis -> (no, nv) electric-field response U^a
-        self._skel: dict = {}     # Perturbation -> (fx, Sx, gx) skeleton derivatives
+        self._skel: dict = {}     # Perturbation -> (fx, Sx) skeleton derivatives (nmo^2 each;
+                                  # the nmo^4 gx is NOT cached -- see _skeleton_eri)
         self._dfock: dict = {}    # (pert, ncore, canonical) -> (nmo, nmo) full perturbed Fock deriv
         # the (nmo^4) full perturbed <pq||rs> deriv now lives in wfn.derivatives.store (persistent,
         # keyed on (pert, ncore, canonical)) rather than a per-CPHF RAM dict; see ``eri`` below.
@@ -293,13 +294,38 @@ class CPHF(object):
     # assembly below is shared, and basis-aware (spatial closed-shell default, spin-orbital via
     # the same ``orbital_basis`` switch as the rest of the code).
 
+    def _skeleton_eri(self, pert: "Perturbation"):
+        r"""Skeleton two-electron derivative for ``pert`` -- ``<pq|rs>^(x)`` (spatial) or
+        ``<pq||rs>^(x)`` (spin-orbital), ``nmo^4`` -- fetched from the persistent
+        :class:`~pycc.derivatives.DerivStore` on every call and **not** cached in RAM.
+        ``0.0`` for an electric field, whose basis functions do not move.
+
+        Deliberately uncached.  The store computes and writes the atom's 3-Cartesian block once
+        and reads it back thereafter, so caching here would save no transform and no integral
+        generation -- it would only pin the block.  A retained ``gx`` is a *view* into that
+        3-Cartesian buffer, so one retained coordinate holds ``3*nmo^4`` and all ``3N`` of them
+        held ``9N*nmo^4`` (measured 27x nmo^4 for water/6-31G, 3 atoms).  Four-index derivative
+        tensors belong in the store, not in memory.
+        """
+        if pert.kind == 'field':
+            return 0.0                                       # basis functions do not move
+        if pert.kind != 'nuclear':
+            raise NotImplementedError(
+                "skeleton two-electron derivatives are wired for 'field' and 'nuclear' only.")
+        atom, cart = pert.comp
+        d = self.wfn.derivatives
+        if self.wfn.orbital_basis == 'spinorbital':
+            return np.asarray(d.so_eri(atom)[cart])          # <pq||rs>^(x)
+        return np.asarray(d.eri(atom)[cart])                 # physicist <pq|rs>^(x)
+
     def _skeleton_derivatives(self, pert: "Perturbation"):
-        r"""Skeleton (fixed-MO-coefficient) derivatives for ``pert``: a triple
-        ``(fx, Sx, gx)`` of the skeleton Fock derivative ``f^(x)_pq`` (``nmo x nmo``), the
-        overlap derivative ``S^(x)_pq`` (``nmo x nmo``), and the two-electron derivative
-        ``gx`` (``nmo^4``, in the basis's integral convention -- spin-adapted ``<pq|rs>^(x)``
-        on the spatial path, antisymmetrized ``<pq||rs>^(x)`` on the spin-orbital path),
-        cached per ``pert``.
+        r"""Skeleton (fixed-MO-coefficient) derivatives for ``pert``: the pair
+        ``(fx, Sx)`` of the skeleton Fock derivative ``f^(x)_pq`` (``nmo x nmo``) and the
+        overlap derivative ``S^(x)_pq`` (``nmo x nmo``), cached per ``pert``.
+
+        Only these two ``nmo x nmo`` matrices are cached.  The ``nmo^4`` two-electron
+        derivative that ``fx`` is built from is obtained from :meth:`_skeleton_eri` and
+        released; consumers that need it (:meth:`perturbed_eri`) call that method themselves.
 
         - **field**: the basis functions do not move, so ``S^(x) = 0`` and ``gx = 0``; the
           skeleton Fock derivative is ``f^(a) = -mu`` (``H' = -mu.E``).
@@ -319,26 +345,26 @@ class CPHF(object):
         if pert.kind == 'field':
             fx = -np.asarray(self.wfn.H.mu[pert.comp])       # f^(a) = -mu  (H' = -mu.E)
             Sx = np.zeros((nmo, nmo))
-            gx = 0.0                                         # no skeleton 2e deriv (field)
         elif pert.kind == 'nuclear':
             atom, cart = pert.comp
             d = self.wfn.derivatives
             if so:
                 hx = np.asarray(d.so_core(atom)[cart])
                 Sx = np.asarray(d.so_overlap(atom)[cart])
-                gx = np.asarray(d.so_eri(atom)[cart])        # <pq||rs>^(x)
+                gx = self._skeleton_eri(pert)                # <pq||rs>^(x)
                 w = gx                                        # Fock 2e weight = <pq||rs>^(x)
             else:
                 hx = np.asarray(d.core(atom)[cart])
                 Sx = np.asarray(d.overlap(atom)[cart])
-                gx = np.asarray(d.eri(atom)[cart])                 # physicist <pq|rs>^(x)
+                gx = self._skeleton_eri(pert)                      # physicist <pq|rs>^(x)
                 w = 2.0 * gx - gx.swapaxes(2, 3)              # spin-adapted L^(x)
             fx = hx + self.contract('pmqm->pq', w[:, o, :, o])   # skeleton Fock derivative
+            del gx, w                                     # release the nmo^4 before caching
         else:
             raise NotImplementedError(
                 "explicit perturbed derivatives are wired for 'field' and 'nuclear' only; "
                 "'magnetic' uses the same machinery but is not yet built.")
-        self._skel[pert] = (fx, Sx, gx)
+        self._skel[pert] = (fx, Sx)
         return self._skel[pert]
 
     def _ov_response(self, pert: "Perturbation") -> np.ndarray:
@@ -390,7 +416,7 @@ class CPHF(object):
         (near-)degenerate pairs keep the orthonormality value ``-1/2 S^(x)`` (the divide is
         ill-conditioned there -- the standard degeneracy caveat)."""
         o, v, nmo = self.o, self.v, self.wfn.nmo
-        fx, Sx, _ = self._skeleton_derivatives(pert)
+        fx, Sx = self._skeleton_derivatives(pert)
         Uia = self._ov_response(pert)                       # (no, nv): U_ai = <phi_a|d phi_i>
         U = np.zeros((nmo, nmo))
         U[o, o] = -0.5 * Sx[o, o]
@@ -468,7 +494,7 @@ class CPHF(object):
         # Orbital-Hessian two-electron weight: spin-adapted L (spatial) / <pq||rs> (SO).
         W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
              else np.asarray(self.wfn.H.L))
-        fx, Sx, _ = self._skeleton_derivatives(pert)
+        fx, Sx = self._skeleton_derivatives(pert)
         U = self.full_U(pert, ncore, canonical)
         df = fx + U * eps[:, None] + U.T * eps[None, :]     # f^(x) + U_pq f_pp + U_qp f_qq
         # - 1/2 sum_nm(occ) S^(x)_nm ( w[p,n,q,m] + w[p,m,q,n] )
@@ -508,7 +534,7 @@ class CPHF(object):
         perturbed orbitals (CCSD(T))."""
         def _build():
             ERI = np.asarray(self.wfn.H.ERI)
-            _, _, gx = self._skeleton_derivatives(pert)
+            gx = self._skeleton_eri(pert)
             U = self.full_U(pert, ncore, canonical)
             return gx + self._rotate_eri(U, ERI)
         # persistent, perturbation-keyed store (disk when enabled, RAM when not) -- shared across
@@ -772,7 +798,7 @@ class CPHF(object):
         Lvooo = np.asarray(self.wfn.H.L)[v, o, o, o]   # spin-adapted, unperturbed
         B, Foo, Soo = [], [], []
         for c in range(3):
-            Fx, Sx, _ = self._skeleton_derivatives(Perturbation('nuclear', (atom, c)))
+            Fx, Sx = self._skeleton_derivatives(Perturbation('nuclear', (atom, c)))
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^(X)_kl into the
             # ov block:  -1/2 S^(X)_kl ( L[a,k,i,l] + L[a,l,i,k] ).
             coupling = (self.contract('akil,kl->ia', Lvooo, Sx[o, o])
@@ -818,7 +844,7 @@ class CPHF(object):
         Evooo = ERI[v, o, o, o]
         B, Foo, Soo = [], [], []
         for c in range(3):
-            Fx, Sx, _ = self._skeleton_derivatives(Perturbation('nuclear', (atom, c)))
+            Fx, Sx = self._skeleton_derivatives(Perturbation('nuclear', (atom, c)))
             # Pulay coupling of the overlap-determined U^X_kl = -1/2 S^(X)_kl into the ov
             # block: -1/2 sum_kl S^(X)_kl ( <ak||il> + <al||ik> ).
             coupling = (self.contract('akil,kl->ia', Evooo, Sx[o, o])
@@ -872,7 +898,7 @@ class CPHF(object):
             self.solve_nuclear(atom)
         return self._S_nuc[atom]
 
-    def nuclear_response_hessian(self) -> np.ndarray:
+    def nuclear_hessian_response(self) -> np.ndarray:
         r"""Ao-INDEPENDENT first-order CPHF-response part of the SCF electronic Hessian,
         shape ``(3*natom, 3*natom)``, built entirely from this object's cached nuclear
         response (``solve_nuclear`` and its by-products) and its wavefunction's Fock

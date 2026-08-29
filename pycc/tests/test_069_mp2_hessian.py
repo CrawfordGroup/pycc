@@ -140,7 +140,7 @@ def _reference_response_pair(orbital_basis, freeze_core):
     """(driver's full-occ response, standalone reference-HFwfn response) for one setting."""
     drv = pycc.MPderiv(_mpwfn(BASE, orbital_basis, freeze_core))
     drv.hessian()                                   # fills the full-occ CPHF nuclear caches
-    ours = np.asarray(drv._full_occ_cphf().nuclear_response_hessian())
+    ours = np.asarray(drv._full_occ_cphf().nuclear_hessian_response())
     theirs = np.asarray(drv._reference_hf()._hessian_response())
     return ours, theirs
 

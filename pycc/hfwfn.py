@@ -385,13 +385,13 @@ class HFwfn(Wavefunction):
         Built from the pre-solved nuclear response (:meth:`CPHF.solve_nuclear`, shared with the
         APTs) and the skeleton derivative Fock/overlap oo blocks.  Carries no second-derivative TEIs.
 
-        The expression lives on :meth:`CPHF.nuclear_response_hessian` (which selects the spatial or
+        The expression lives on :meth:`CPHF.nuclear_hessian_response` (which selects the spatial or
         spin-orbital prefactors from ``orbital_basis``, so this and :meth:`_so_hessian_response` are
         the same call).  A correlated Hessian does **not** route here: it evaluates the same method on
         its own full-occupied CPHF, whose nuclear caches it has already filled, rather than making
         this all-electron :class:`HFwfn` recompute the per-atom first-derivative MO integrals and
         re-solve CPHF (plan doc s.12)."""
-        return self.cphf.nuclear_response_hessian()
+        return self.cphf.nuclear_hessian_response()
 
     def _so_hessian_electronic(self) -> np.ndarray:
         r"""Electronic part of the spin-orbital molecular Hessian, shape ``(3*natom, 3*natom)``.
@@ -470,9 +470,9 @@ class HFwfn(Wavefunction):
             + 2\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + \sum_{ijnm} S^x_{ij} S^y_{nm} \langle im\|jn\rangle
 
         Carries no second-derivative TEIs.  Shares its implementation with the spatial path: both call
-        :meth:`CPHF.nuclear_response_hessian`, which picks the prefactor and integral kernel from
+        :meth:`CPHF.nuclear_hessian_response`, which picks the prefactor and integral kernel from
         ``orbital_basis`` (plan doc s.12)."""
-        return self.cphf.nuclear_response_hessian()
+        return self.cphf.nuclear_hessian_response()
 
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
         """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`

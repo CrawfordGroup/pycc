@@ -1386,7 +1386,7 @@ class CorrelatedDerivs:
         # reference HFwfn instead would rebuild the per-atom nmo^4 first-derivative MO integrals on a
         # second DerivStore and re-solve CPHF, for the same numbers (plan doc s.12).
         # 'mo'/'ao' opt-outs did not fold Href -> use the reference HFwfn's own electronic Hessian.
-        reference = (Href + np.asarray(self._full_occ_cphf().nuclear_response_hessian())) \
+        reference = (Href + np.asarray(self._full_occ_cphf().nuclear_hessian_response())) \
             if route == 'aod' else np.asarray(self._reference_hf()._hessian_electronic())
         return reference, H
 
