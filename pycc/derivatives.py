@@ -44,16 +44,15 @@ from typing import Any, List, Iterator, Tuple
 import psi4
 import numpy as np
 
-from .exceptions import PyCCWarning
+from .exceptions import PyCCError, PyCCWarning
 from .timing import timer, timed
 
 
-#: Persistent derivative-tensor store defaults.  Enabled by default (opt-out); set env var
-#: ``PYCC_DERIV_STORE=0`` (or ``derivatives.DERIV_STORE_ENABLED = False``) to disable, and
-#: ``PYCC_DERIV_STORE_DIR`` for the scratch directory.  The default follows ``tempfile`` (i.e.
-#: ``$TMPDIR``, else ``/tmp``); if that resolves to a RAM-backed ``tmpfs`` the store consumes memory
-#: instead of disk, so :meth:`DerivStore._ensure` warns (see :func:`_filesystem_type`).
-DERIV_STORE_ENABLED = os.environ.get('PYCC_DERIV_STORE', '1') != '0'
+#: Persistent derivative-tensor store scratch directory: set env var ``PYCC_DERIV_STORE_DIR``.
+#: The default follows ``tempfile`` (i.e. ``$TMPDIR``, else ``/tmp``); if that resolves to a
+#: RAM-backed ``tmpfs`` the store consumes memory instead of disk, so :meth:`DerivStore._ensure`
+#: warns (see :func:`_filesystem_type`).  The store is mandatory and always disk-backed: there is
+#: no in-memory mode, because a four-index derivative tensor has no business living in RAM.
 DERIV_STORE_DIR = os.environ.get('PYCC_DERIV_STORE_DIR') or None
 
 #: Filesystem types that live in RAM -- a store/scratch dir on one of these consumes memory, not disk.
@@ -100,22 +99,27 @@ class DerivStore:
     the tensors off RAM.  The HDF5 file is created lazily on first write and removed on
     :meth:`close` / deletion.  ``ctx`` is a hashable capturing everything the tensor depends on
     beyond the perturbation (e.g. ``(ncore, canonical)`` for the perturbed ERI derivative, the
-    perturbed-MO gauge for amplitudes/densities)."""
+    perturbed-MO gauge for amplitudes/densities).
 
-    def __init__(self, enabled: bool = True, path: str = None) -> None:
-        if enabled and importlib.util.find_spec('h5py') is None:
-            # No h5py: degrade to the in-memory memo path rather than fail.  Correctness is
-            # unchanged (RAM memo is bit-identical to the disk store); only the off-RAM /
-            # cross-property-persistence benefit is lost until h5py is installed.
-            warnings.warn("h5py not available; DerivStore is using in-memory memoization instead of "
-                          "the on-disk store (install h5py for the off-RAM / cross-property benefit).",
-                          RuntimeWarning, stacklevel=2)
-            enabled = False
-        self.enabled = enabled
+    **Always disk-backed.**  There is no in-memory mode and no fallback: a run needs somewhere on
+    disk to put these tensors, and silently memoizing them in RAM instead would turn a bounded disk
+    cache into an unbounded memory one, which for a Hessian means an out-of-memory kill rather than
+    a readable error.  ``h5py`` is a declared runtime dependency; if it is missing this raises."""
+
+    #: Class-level defaults so :meth:`__del__` is safe on a half-constructed instance -- the
+    #: h5py check below raises before any attribute is assigned.
+    _f = None
+    _file = None
+
+    def __init__(self, path: str = None) -> None:
+        if importlib.util.find_spec('h5py') is None:
+            raise PyCCError(
+                "h5py is required: PyCC's derivative-tensor store (DerivStore) is disk-backed and "
+                "has no in-memory fallback.  Install h5py (a declared runtime dependency), and set "
+                "PYCC_DERIV_STORE_DIR if the default scratch directory is unsuitable.")
         self._dir = path
         self._f = None                                  # lazy h5py.File
         self._file = None                               # temp-file path
-        self._ram: dict = {}                            # in-memory memo when disabled
 
     def _ensure(self):
         if self._f is None:
@@ -141,14 +145,9 @@ class DerivStore:
 
     def get_or_compute(self, quantity, pert, builder, ctx=()):
         """Return the tensor for ``(quantity, pert, ctx)``: on a hit read it back, else call
-        ``builder()`` and persist the result.  The store always memoizes -- to disk when enabled
-        (off RAM, persistent across property calls), to an in-memory dict when disabled (matching
-        the pre-store RAM caches).  Bit-identical either way."""
+        ``builder()`` and persist the result (to disk -- off RAM, persistent across property
+        calls)."""
         name = self._name(quantity, pert, ctx)
-        if not self.enabled:
-            if name not in self._ram:
-                self._ram[name] = np.asarray(builder())
-            return self._ram[name]
         f = self._ensure()
         dset = f.get(name)
         if dset is not None:
@@ -167,13 +166,6 @@ class DerivStore:
         persisted.  Returns the tuple.  All-or-nothing on the group, so a partial write never yields
         a stale mix."""
         full = [self._name(quantity, pert, tuple(ctx) + (n,)) for n in names]
-        if not self.enabled:
-            if all(n in self._ram for n in full):
-                return tuple(self._ram[n] for n in full)
-            vals = tuple(np.asarray(v) for v in builder())
-            for n, v in zip(full, vals):
-                self._ram[n] = v
-            return vals
         f = self._ensure()
         if all(n in f for n in full):
             with timer("derivative cache read"):
@@ -188,10 +180,9 @@ class DerivStore:
 
     def has(self, quantity, pert, ctx=()) -> bool:
         name = self._name(quantity, pert, ctx)
-        return name in self._ram if not self.enabled else (self._f is not None and name in self._f)
+        return self._f is not None and name in self._f
 
     def close(self) -> None:
-        self._ram.clear()
         if self._f is not None:
             self._f.close()
             self._f = None
@@ -258,24 +249,15 @@ class Derivatives(object):
 
     def __init__(self, wfn: Any) -> None:
         """Bind the wavefunction, build the MintsHelper on its basis set, cache the
-        molecule/atom count, and initialize the one-atom LRU for the heavy first-derivative
-        two-electron MO transforms (see :meth:`_eri_cached`)."""
+        molecule/atom count, and open the persistent derivative-tensor store."""
         self.wfn = wfn
         self.mints = psi4.core.MintsHelper(wfn.H.basisset)
         self.mol = wfn.ref.molecule()
         self.natom = self.mol.natom()
-        # 1-atom LRU for the heavy first-derivative MO two-electron transforms (eri/so_eri):
-        # hold only the most recent atom's blocks so an atom-outer sweep reuses a block across its
-        # Cartesians and its several callers, without growing the deliberate one-atom footprint.
-        self._d1_atom: Any = None
-        self._d1_cache: dict = {}
-        # Accumulating cache of nuclear-nuclear second-derivative skeletons, keyed by the canonical
-        # atom pair (see :meth:`nuclear_hessian_skeletons`); persists for the whole molecular Hessian.
-        self._d2int: dict = {}
         # Persistent, perturbation-keyed disk store for the large first-derivative four-index tensors
         # (skeleton ERI^(X), perturbed 2-PDM, perturbed amplitudes/Lambda, perturbed ERI deriv),
         # shared across property calls on this wavefunction (see :class:`DerivStore`).
-        self.store = DerivStore(enabled=DERIV_STORE_ENABLED, path=DERIV_STORE_DIR)
+        self.store = DerivStore(path=DERIV_STORE_DIR)
 
     # ---- nuclear repulsion ----
 
@@ -855,7 +837,7 @@ class Derivatives(object):
     # ---- nuclear-nuclear skeleton second-derivative integrals (for the 2n+1 molecular Hessian) ----
 
     @timed("second-derivative skeletons")
-    def nuclear_hessian_skeletons(self, a1: int, a2: int, cache: bool = True) -> dict:
+    def nuclear_hessian_skeletons(self, a1: int, a2: int) -> dict:
         r"""Cached nuclear-nuclear skeleton second-derivative integrals for the atom pair
         ``(a1, a2)``: the 9 ``(cart1, cart2)`` blocks of the core Hamiltonian ``h^{XY}``, the
         overlap ``S^{XY}``, and the two-electron ``<pq||rs>^{XY}`` (in the basis's ERI
@@ -877,31 +859,25 @@ class Derivatives(object):
         (``a1 == a2``) the two derivatives are on one atom, so only the 6 ``c1 <= c2`` Cartesian
         components are unique and the 3 lower-triangle components alias their partners.
 
-        ``cache=False`` computes the block and returns it WITHOUT storing it in ``_d2int`` -- for the
-        atom-pair-outer Hessian assembly, which visits each unique pair once and discards it, so the
-        (natom^2-scale) accumulating cache would only waste memory.
+        Nothing is cached.  The caller (the atom-pair-outer Hessian assembly) visits each unique
+        pair once and discards the block, and these are ``nmo^4``-scale tensors: an accumulating
+        (natom^2-scale) cache would only waste memory.
         """
         lo, hi = (a1, a2) if a1 <= a2 else (a2, a1)
-        key = (lo, hi)
-        blk = self._d2int.get(key) if cache else None
-        if blk is None:
-            so = self.wfn.orbital_basis == 'spinorbital'
-            if so:
-                core = [np.asarray(m) for m in self.so_core2(lo, hi)]
-                overlap = [np.asarray(m) for m in self.so_overlap2(lo, hi)]
-                eri = [np.asarray(m) for m in self.so_eri2(lo, hi)]     # <pq||rs>^{XY} (antisym)
-            else:
-                core = [np.asarray(m) for m in self.core2(lo, hi)]
-                overlap = [np.asarray(m) for m in self.overlap2(lo, hi)]
-                eri = [np.asarray(m) for m in self.eri2(lo, hi)]        # physicist <pq|rs>^{XY}
-            blk = {'core': core, 'overlap': overlap, 'eri': eri}
-            if lo == hi:                        # same atom: comp (c1,c2) == (c2,c1), alias the dupes
-                for arrs in blk.values():
-                    for c1 in range(3):
-                        for c2 in range(c1):
-                            arrs[c1 * 3 + c2] = arrs[c2 * 3 + c1]
-            if cache:
-                self._d2int[key] = blk
+        if self.wfn.orbital_basis == 'spinorbital':
+            core = [np.asarray(m) for m in self.so_core2(lo, hi)]
+            overlap = [np.asarray(m) for m in self.so_overlap2(lo, hi)]
+            eri = [np.asarray(m) for m in self.so_eri2(lo, hi)]         # <pq||rs>^{XY} (antisym)
+        else:
+            core = [np.asarray(m) for m in self.core2(lo, hi)]
+            overlap = [np.asarray(m) for m in self.overlap2(lo, hi)]
+            eri = [np.asarray(m) for m in self.eri2(lo, hi)]            # physicist <pq|rs>^{XY}
+        blk = {'core': core, 'overlap': overlap, 'eri': eri}
+        if lo == hi:                            # same atom: comp (c1,c2) == (c2,c1), alias the dupes
+            for arrs in blk.values():
+                for c1 in range(3):
+                    for c2 in range(c1):
+                        arrs[c1 * 3 + c2] = arrs[c2 * 3 + c1]
         if a1 <= a2:
             return blk
         # reversed request: d^2/d(a1,c1)d(a2,c2) is the stored d^2/d(lo,c2)d(hi,c1) -- transpose comps
@@ -948,15 +924,8 @@ class Derivatives(object):
         across the atom's three Cartesians and callers. The cached arrays are treated
         read-only (callers already build new arrays via swapaxes/arithmetic).
 
-        When the persistent :class:`DerivStore` is enabled the 3-Cartesian result is memoized
-        there instead (per atom + transform/blocks) -- off RAM and reused across property calls;
-        otherwise the 1-atom LRU (evict-on-atom-change) is used."""
-        if self.store.enabled:
-            stack = self.store.get_or_compute('eri1', atom, lambda: np.asarray(compute()), ctx=key)
-            return list(stack)
-        if atom != self._d1_atom:
-            self._d1_atom = atom
-            self._d1_cache = {}
-        if key not in self._d1_cache:
-            self._d1_cache[key] = compute()
-        return self._d1_cache[key]
+        The 3-Cartesian result is memoized in the persistent :class:`DerivStore` (per atom +
+        transform/blocks), off RAM and reused across property calls.  There is no in-memory
+        variant: the transform runs once per atom and every later request is a disk read."""
+        stack = self.store.get_or_compute('eri1', atom, lambda: np.asarray(compute()), ctx=key)
+        return list(stack)

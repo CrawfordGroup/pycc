@@ -958,24 +958,37 @@ so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the r
   Cartesian rather than the stack (h5py reads only the slab indexed); **deferred, PI wants it
   discussed separately.**
 
-- **Remaining four-index tensors held in RAM (audit, PI request).**  The rule: four-index derivative
-  quantities belong in the `DerivStore`, not in memory, because there are far too many for a RAM
-  cache to pay.  What is left:
+- **Four-index tensors held in RAM (audit, PI request) -- three of four REMOVED here.**  PI's rule
+  (2026-08-28): four-index derivative quantities belong in the `DerivStore`, not in memory, because
+  a run generates far too many of them for a RAM cache to pay, so any code relying on a memory-cache
+  hit is suspect.
 
-  | where | what | status |
+  | where | what | disposition |
   |---|---|---|
-  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | live, up to `3 * nmo^4` each |
-  | `Derivatives._d2int` | 9 second-derivative `nmo^4` blocks per atom pair, accumulating | unused but ARMED: `cache=True` default, sole caller passes `cache=False` |
-  | `Derivatives._d1_atom` / `_d1_cache` | one atom's first-derivative blocks | reachable only when the store is disabled |
-  | `DerivStore._ram` | every tensor the store would have written, unbounded | same no-h5py fallback |
+  | `CPHF._skel` | pinned `9N * nmo^4` (see above) | **removed**: caches `(fx, Sx)` only |
+  | `Derivatives._d2int` | 9 second-derivative `nmo^4` blocks per atom pair, accumulating | **removed**: the dict *and* the `cache` parameter are gone, so it cannot be selected at all |
+  | `DerivStore._ram` | every tensor the store would have written, unbounded | **removed**: the store is mandatory and disk-only; missing h5py raises `PyCCError` |
+  | `Derivatives._d1_atom` / `_d1_cache` | one atom's first-derivative blocks | **removed**: it was the store-disabled branch of `_eri_cached`, unreachable once the store is mandatory |
+  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | **still open**, up to `3 * nmo^4` each |
+  | `CIderiv._cpci_ints_cache` | `(dF, dERI, U)` per perturbation; for `'nuclear'` the `dERI` is already store-backed | **still open**: a RAM copy of a tensor that is on disk |
 
-  Note on naming: `_mag_int` / `_mom_int` do **not** hold derivative two-electron integrals.  The
-  magnetic-dipole and linear-momentum operators are one-electron and do not move the basis functions,
-  so the skeleton 2e derivative is zero.  `dERI` is the orbital-response *dressing* of the
-  undifferentiated ERI, `U_tr <pq|ts> + U_ts <pq|rt> - U_tp <tq|rs> - U_tq <pt|rs>`
-  (`_antisym_field_ints`).  Its nuclear/field analogue, `perturbed_eri`, already lives in the
-  `DerivStore` under `'deri'`; the magnetic and momentum versions were never moved.  Consumers are
-  `mpderiv.py:376` and `cideriv.py:99,102`, i.e. the MP2/CISD AAT and VG-APT paths.
+  What `dERI` is, since the naming misleads: it is the derivative of the **two-electron integrals**
+  with respect to a magnetic field or vector potential, arising entirely through the orbital
+  relaxation.  The perturbing operator is one-electron and does not move the basis functions, so the
+  *skeleton* 2e derivative is exactly zero and only the `U`-dressing survives
+  (`_antisym_field_ints`).  It is therefore `perturbed_eri` with its skeleton term zero -- same
+  shape, same role.  Its nuclear/field analogue already lives in the store under `'deri'`; the
+  magnetic and momentum members of the family were never moved.  Consumers: `mpderiv.py:376`,
+  `cideriv.py:99,102`, i.e. the MP2/CISD AAT and VG-APT paths.
+
+  Removing the store's in-memory mode also removed `DERIV_STORE_ENABLED` and the `PYCC_DERIV_STORE`
+  env var (`PYCC_DERIV_STORE_DIR` remains).  Rationale: silently memoizing in RAM turns a bounded
+  disk cache into an unbounded memory one, i.e. an OOM kill instead of a readable error, and h5py is
+  a declared runtime dependency.  Test fallout: `test_097` dropped two now-impossible `skipif`
+  guards, and `test_094` was rewritten -- two of its tests existed only to cover the RAM path and a
+  third compared a disk Hessian against a RAM one, which no longer has an oracle; it now asserts the
+  h5py requirement and that a correlated Hessian drives its tensors through the store with
+  basis-distinct `eri1` keys.  That last check is weaker than the bit-identity it replaces.
 
 - **Block-label keying.**  Even with nothing shared, `ctx=('eri', b1..b4)` describes the request
   rather than the result.  A cheap fingerprint of the coefficient blocks handed to `mo_tei_deriv1`
