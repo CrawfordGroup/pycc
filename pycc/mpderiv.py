@@ -373,7 +373,8 @@ class MPderiv(CorrelatedDerivs):
         # mirroring gamma^R; this is what makes the folded form orbital-gauge invariant.
         UH, gH = [], []
         for b in range(3):
-            U, dF, dERI = cphf.magnetic_ints(b, ncore, gauge)
+            U, dF = cphf.magnetic_ints(b, ncore, gauge)
+            dERI = cphf.magnetic_eri(b, ncore, gauge)   # nmo^4, from the store
             dc2H = c0 * dt2_from(dF, dERI)
             tauH = 2.0 * dc2H - dc2H.swapaxes(2, 3)
             UH.append(U)
@@ -466,7 +467,8 @@ class MPderiv(CorrelatedDerivs):
 
         UH, gH, dc2Hs = [], [], []
         for b in range(3):
-            U, dF, dERI = cphf.magnetic_ints(b, ncore, gauge)
+            U, dF = cphf.magnetic_ints(b, ncore, gauge)
+            dERI = cphf.magnetic_eri(b, ncore, gauge)   # nmo^4, from the store
             dc2H = c0 * dt2_from(dF, dERI)
             UH.append(U)
             dc2Hs.append(dc2H)
@@ -541,7 +543,8 @@ class MPderiv(CorrelatedDerivs):
 
         UA, gA = [], []
         for a in range(3):
-            U, dF, dERI = cphf.momentum_ints(a, ncore, gauge)
+            U, dF = cphf.momentum_ints(a, ncore, gauge)
+            dERI = cphf.momentum_eri(a, ncore, gauge)   # nmo^4, from the store
             dc2A = c0 * dt2_from(dF, dERI)
             tauA = 2.0 * dc2A - dc2A.swapaxes(2, 3)
             UA.append(U)
@@ -625,7 +628,8 @@ class MPderiv(CorrelatedDerivs):
 
         UA, gA, dc2As = [], [], []
         for a in range(3):
-            U, dF, dERI = cphf.momentum_ints(a, ncore, gauge)
+            U, dF = cphf.momentum_ints(a, ncore, gauge)
+            dERI = cphf.momentum_eri(a, ncore, gauge)   # nmo^4, from the store
             dc2A = c0 * dt2_from(dF, dERI)
             UA.append(U)
             dc2As.append(dc2A)
