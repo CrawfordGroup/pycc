@@ -178,6 +178,27 @@ class DerivStore:
                 f.create_dataset(n, data=v)
         return vals
 
+    def get_or_compute_component(self, quantity, pert, builder, comp, ctx=()):
+        """Return component ``comp`` of a stored leading-axis stack, reading **only that slab**.
+
+        The store's first-derivative entries are 3-Cartesian stacks (``mo_tei_deriv1`` returns x, y
+        and z together), but most consumers want one Cartesian.  h5py transfers only the indexed
+        hyperslab, so this moves ``nmo^4`` instead of ``3 * nmo^4`` and the caller holds a standalone
+        array rather than a view that pins the whole stack.  On a miss the builder still produces the
+        full stack, which is persisted; the returned component is copied out so the stack is released
+        when this returns."""
+        name = self._name(quantity, pert, ctx)
+        f = self._ensure()
+        dset = f.get(name)
+        if dset is not None:
+            with timer("derivative cache read"):
+                return dset[comp]
+        arr = np.asarray(builder())
+        if name not in f:                           # a builder may have persisted it itself
+            with timer("derivative cache write"):
+                f.create_dataset(name, data=arr)
+        return np.array(arr[comp])                  # copy: do not pin the full stack
+
     def has(self, quantity, pert, ctx=()) -> bool:
         name = self._name(quantity, pert, ctx)
         return self._f is not None and name in self._f
@@ -380,9 +401,28 @@ class Derivatives(object):
         Cached one atom at a time (:meth:`_eri_cached`) so an atom-outer sweep never holds
         more than one atom's block yet reuses the dominant ``nmo^4`` transform across the
         atom's Cartesians and its several callers."""
-        return self._eri_cached(atom, ('eri', b1, b2, b3, b4), lambda: [
+        return self._eri_cached(atom, ('eri', b1, b2, b3, b4),
+                                self._eri_builder(atom, b1, b2, b3, b4))
+
+    def _eri_builder(self, atom: int, b1: str, b2: str, b3: str, b4: str):
+        """The 3-Cartesian ``<pq|rs>^(X)`` transform for ``atom``, as a nullary callable -- shared
+        by :meth:`eri` (whole stack) and :meth:`eri_component` (one Cartesian)."""
+        return lambda: [
             np.asarray(m).swapaxes(1, 2) for m in self.mints.mo_tei_deriv1(
-                atom, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))])
+                atom, self._mo(b1), self._mo(b2), self._mo(b3), self._mo(b4))]
+
+    @timed("two-electron first derivatives (MO)")
+    def eri_component(self, atom: int, cart: int, b1: str = 'all', b2: str = 'all',
+                      b3: str = 'all', b4: str = 'all') -> np.ndarray:
+        """One Cartesian (``cart`` = 0/1/2) of :meth:`eri`, as a standalone ``nmo^4`` array.
+
+        Same tensor as ``eri(atom, ...)[cart]``, but that expression returns a **view** into the
+        3-Cartesian stack and so keeps ``3 * nmo^4`` alive for as long as the caller holds it.  This
+        reads only the requested slab from the store, so a consumer that wants a single Cartesian --
+        which is most of them -- holds ``nmo^4``."""
+        return self.store.get_or_compute_component(
+            'eri1', atom, lambda: np.asarray(self._eri_builder(atom, b1, b2, b3, b4)()),
+            cart, ctx=('eri', b1, b2, b3, b4))
 
     def iter_eri(self, b1: str = 'all', b2: str = 'all', b3: str = 'all',
                  b4: str = 'all') -> Iterator[Tuple[int, List[np.ndarray]]]:
@@ -674,6 +714,14 @@ class Derivatives(object):
         Cached one atom at a time (:meth:`_eri_cached`): the four spin-block
         ``mo_tei_deriv1`` transforms are the dominant cost and are otherwise re-run by every
         caller for the atom."""
+        return self._eri_cached(atom, ('so_eri', b1, b2, b3, b4),
+                                self._so_eri_builder(atom, b1, b2, b3, b4))
+
+    def _so_eri_builder(self, atom: int, b1: str, b2: str, b3: str, b4: str):
+        """The 3-Cartesian ``<pq||rs>^(X)`` spin-block build for ``atom``, as a nullary callable --
+        shared by :meth:`so_eri` (whole stack) and :meth:`so_eri_component` (one Cartesian).  Must
+        not route through :meth:`so_eri`, which would persist the stack itself and leave the
+        component reader trying to create an existing dataset."""
         def compute():
             shape, sel = self._so_eri_blocks((b1, b2, b3, b4))
             chem = [np.zeros(shape) for _ in range(3)]
@@ -695,7 +743,17 @@ class Derivatives(object):
                 phys = ch.swapaxes(1, 2)
                 out.append(phys - phys.swapaxes(2, 3))
             return out
-        return self._eri_cached(atom, ('so_eri', b1, b2, b3, b4), compute)
+        return compute
+
+    @timed("two-electron first derivatives (MO)")
+    def so_eri_component(self, atom: int, cart: int, b1: str = 'all', b2: str = 'all',
+                         b3: str = 'all', b4: str = 'all') -> np.ndarray:
+        """One Cartesian (``cart`` = 0/1/2) of :meth:`so_eri`, as a standalone ``nmo^4`` array --
+        the spin-orbital twin of :meth:`eri_component`, and the same rationale: ``so_eri(atom)[cart]``
+        is a view that pins the whole 3-Cartesian stack, this reads only the requested slab."""
+        return self.store.get_or_compute_component(
+            'eri1', atom, lambda: np.asarray(self._so_eri_builder(atom, b1, b2, b3, b4)()),
+            cart, ctx=('so_eri', b1, b2, b3, b4))
 
     # ---- spin-orbital second derivatives ----
 

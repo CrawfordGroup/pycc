@@ -949,14 +949,34 @@ so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the r
      and **6 reads per atom** regardless.  The block is generated once per atom by the store; caching
      `gx` in RAM only pinned it.
 
-  **Fix:** `_skel` caches only `(fx, Sx)` (`nmo^2` each); the `nmo^4` two-electron derivative moves to
-  a new, deliberately uncached `_skeleton_eri(pert)` that reads the store on every call, and
-  `perturbed_eri` calls it directly.  **Measured after:** `_skel` live drops from 27.00 to
-  **0.11 x `nmo^4`** (`6N * nmo^2`), reads rise from 6 to 9 per atom (+50%, one extra per coordinate
-  because `perturbed_eri` no longer gets a cache hit).  Peak `gx` residency is now one atom's
-  3-Cartesian stack, `3 * nmo^4`.  Getting to `1 * nmo^4` needs the store to return a single
-  Cartesian rather than the stack (h5py reads only the slab indexed); **deferred, PI wants it
-  discussed separately.**
+  **Fix (two parts).**  (a) `_skel` caches only `(fx, Sx)` (`nmo^2` each); the `nmo^4` two-electron
+  derivative moves to a new, deliberately uncached `_skeleton_eri(pert)` that reads the store on
+  every call, and `perturbed_eri` calls it directly.  (b) `_skeleton_eri` reads a **single
+  Cartesian**: `DerivStore.get_or_compute_component` indexes one h5py slab, and
+  `Derivatives.eri_component` / `so_eri_component` expose it.  `eri(atom)[cart]` is a *view* into
+  the 3-Cartesian stack and pins all of it; the component read returns a standalone `nmo^4`.
+
+  **Measured.**  `_skel` live 27.00 -> **0.11 x `nmo^4`** (`6N * nmo^2`).  Store traffic for the
+  first-derivative ERIs, water/6-31G, per atom: **21 x `nmo^4`** originally (with the retention),
+  **30** after (a) alone, **18** after (b).  So the pair ends up *below* the original I/O as well as
+  removing the retention.  Residency at that call site is `nmo^4`, not `3 * nmo^4`.
+
+  **What it does NOT do: move the peak.**  Phase-resolved peak RSS (sampling RSS against
+  `pycc.timing._stack`), water/cc-pVTZ MP2 Hessian: `second-derivative integral terms / skeleton
+  contractions` 2.361 GiB (the peak), `density-response terms / response contractions` 2.295 GiB,
+  `first-derivative integrals` 1.657 GiB, `perturbed wave functions / perturbed density` 1.570 GiB.
+  Pass 1 sets the peak and Pass 2 sits less than one `nmo^4` below it, so nothing on the
+  first-derivative side moves the ceiling -- and the Pass 2 loop inversion (3 Cartesians -> 1, at the
+  cost of 3x the `dGam` reads) was rejected for the same reason.
+
+  **The real floor: `ao_tei_deriv2`.**  Psi4's `ao_tei_deriv2(atom1, atom2)` returns all nine
+  Cartesian-pair components in one call, with no per-component entry point, so `9 * nao^4` is forced
+  from outside.  On the spatial route `nao ~ nmo`, so for closed-shell RHF (the manuscript case) that
+  is `9 * nmo^4` and a `1 * nmo^4` ceiling is not reachable for the nuclear Hessian.  Two
+  qualifications: it is `nao^4`, so on the spin-orbital route (`nmo = 2 nao`) the block is only
+  ~0.56 of one `nmo^4` and the correlated tensors are the pole instead; and it is Hessian-specific,
+  so gradients, polarizabilities, APTs and AATs are unaffected.  Lowering it needs an upstream
+  per-component Psi4 API or an assembly that never forms the pair block; **PI has set that aside.**
 
 - **Four-index tensors held in RAM (audit, PI request) -- three of four REMOVED here.**  PI's rule
   (2026-08-28): four-index derivative quantities belong in the `DerivStore`, not in memory, because

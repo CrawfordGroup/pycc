@@ -314,9 +314,12 @@ class CPHF(object):
                 "skeleton two-electron derivatives are wired for 'field' and 'nuclear' only.")
         atom, cart = pert.comp
         d = self.wfn.derivatives
+        # Single-Cartesian read: ``eri(atom)[cart]`` would be a VIEW into the 3-Cartesian stack and
+        # would keep 3*nmo^4 alive for as long as the caller holds it; the component accessors read
+        # only the requested slab, so this holds nmo^4.
         if self.wfn.orbital_basis == 'spinorbital':
-            return np.asarray(d.so_eri(atom)[cart])          # <pq||rs>^(x)
-        return np.asarray(d.eri(atom)[cart])                 # physicist <pq|rs>^(x)
+            return np.asarray(d.so_eri_component(atom, cart))    # <pq||rs>^(x)
+        return np.asarray(d.eri_component(atom, cart))           # physicist <pq|rs>^(x)
 
     def _skeleton_derivatives(self, pert: "Perturbation"):
         r"""Skeleton (fixed-MO-coefficient) derivatives for ``pert``: the pair
@@ -327,8 +330,8 @@ class CPHF(object):
         derivative that ``fx`` is built from is obtained from :meth:`_skeleton_eri` and
         released; consumers that need it (:meth:`perturbed_eri`) call that method themselves.
 
-        - **field**: the basis functions do not move, so ``S^(x) = 0`` and ``gx = 0``; the
-          skeleton Fock derivative is ``f^(a) = -mu`` (``H' = -mu.E``).
+        - **field**: the basis functions do not move, so ``S^(x) = 0``; the skeleton Fock
+          derivative is ``f^(a) = -mu`` (``H' = -mu.E``).
         - **nuclear** (``comp = (atom, cart)``): the skeleton derivative integrals come from
           the ``Derivatives`` provider; the skeleton Fock derivative is ``f^(x)_pq = h^(x)_pq
           + w[p,m,q,m]^(x)`` (``m`` over occupied) with ``w`` the spin-adapted ``L`` (spatial)
@@ -359,7 +362,10 @@ class CPHF(object):
                 gx = self._skeleton_eri(pert)                      # physicist <pq|rs>^(x)
                 w = 2.0 * gx - gx.swapaxes(2, 3)              # spin-adapted L^(x)
             fx = hx + self.contract('pmqm->pq', w[:, o, :, o])   # skeleton Fock derivative
-            del gx, w                                     # release the nmo^4 before caching
+            # Deliberate, not tidying: gx (and w, a fresh nmo^4 on the spatial path) would
+            # otherwise stay alive past the _skel assignment below.  Keeping the cache to nmo^2
+            # is the whole point of splitting _skeleton_eri out -- see its docstring.
+            del gx, w
         else:
             raise NotImplementedError(
                 "explicit perturbed derivatives are wired for 'field' and 'nuclear' only; "
