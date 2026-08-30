@@ -839,6 +839,199 @@ copy ~40 lines of subtle response physics across both spin paths.
   anti-divergence guard for the duplicated skeleton), and the `ao_tei_deriv2` call count halved.
 - Both: spatial + spin-orbital, AE + FC, C1 + C2v, psi4 1.9 + 1.10.
 
+## 12. Reference CPHF response from the correlated full-occupied CPHF -- DESIGN
+
+**Status: DESIGNED, not yet implemented.**  Corrects an assumption in s.11.2.  That section
+delegated the ao-independent reference response to `HFwfn._hessian_response()` on the grounds that it
+is "the same CPHF work the facade already pays today, so no regression".  True against the pre-#245
+baseline, but it classified `_hessian_response` only by what it does *not* need (no `ao_tei_deriv2`)
+and never asked what it *does* need: the **first**-derivative MO two-electron integrals, per atom, on
+a second wavefunction with a second `DerivStore`.
+
+### 12.1 What is duplicated
+
+`CorrelatedDerivs._reference_hf()` (`correlatedderivs.py:68`) builds `HFwfn(self.wfn.ref, ...)`, a
+second `Wavefunction`.  `Wavefunction.derivatives` (`wavefunction.py:404`) is a lazy per-instance
+property and `Derivatives.__init__` unconditionally constructs its own `DerivStore`
+(`derivatives.py:290`), so nothing links the two.  On the `'aod'` route `correlatedderivs.py:1384`
+calls `hf._hessian_response()`, which reaches `CPHF.solve_nuclear` -> `_build_rhs_nuclear` ->
+`_skeleton_derivatives` (`cphf.py:329`/`:334`) -> `d.eri(atom)` / `d.so_eri(atom)`, the full `nmo^4`.
+The correlated side asks for the same tensors (`correlatedderivs.py:700`, `:911`, `:1369`).
+
+Everything the reference side needs from those integrals funnels through one line
+(`cphf.py:339`), the skeleton Fock derivative
+
+    fx = hx + contract('pmqm->pq', w[:, o, :, o])
+
+with `w = 2 gx - gx.swapaxes(2,3)` (spatial) or `w = gx` (spin-orbital).  The full `gx` is then
+**discarded** by `_build_rhs_nuclear` (`Fx, Sx, _ = ...`).  Its only consumers, `perturbed_fock` and
+`perturbed_eri`, are called exclusively from correlated code (`mpderiv.py:190-191`,
+`cideriv.py:94-95`, `correlatedderivs.py:525-526`, `:581-582`); `HFwfn` never calls either.
+
+Note there are **three** CPHF objects, not two: `wfn.cphf` (lazy per-wfn, untouched by the Hessian),
+`CorrelatedDerivs._full_occ_cphf()` (`correlatedderivs.py:140`, `CPHF(wfn, full_occ=True)`, the one
+the correlated perturbed-integral path actually uses), and `hf.cphf`.
+
+### 12.2 Measurements (2026-08-28)
+
+Cost, from the #248 timing instrumentation: two "two-electron first derivatives (MO)" rows at
+**568.6 s** and **599.3 s** self out of a 5912 s cc-pVDZ Hessian (about 10%), the largest serial
+block after the two assembly passes.  At STO-3G, 11.4 and 11.6 s of 66.7 s.
+
+Two rejected fixes and the measurements that rejected them:
+
+- **Share the `DerivStore`.**  Unsafe as written: the `'eri1'` key records block *labels*, not the MO
+  columns they resolve to (`ctx=('eri'|'so_eri', b1..b4)`, `derivatives.py:955`).  Under frozen core
+  the correlated wfn orders spin orbitals `[a-core, b-core, a-occ, b-occ, a-vir, b-vir]`
+  (`wavefunction.py:365`) while the all-electron reference HFwfn (`_all_electron`, `hfwfn.py:40`)
+  orders `[a-occ, b-occ, a-vir, b-vir]`.  Measured, water/6-31G: the spatial `'all'` tensors are
+  bit-identical (maxdiff 0.0) but the spin-orbital ones differ (**maxdiff 0.304**, same shape).  So
+  store-sharing would fix only the spatial route and would silently alias the spin-orbital one.
+- **Build the reference `fx` through the AO route** (contract `ao_eri1` against the occupied AO
+  density, as `_hessian_skeleton` already does for the second derivatives).  This still regenerates
+  the AO integrals and recovers only the transform.  Measured, water, atom 0:
+
+  | basis | nao | `ao_tei_deriv1` | `mo_tei_deriv1` | transform share |
+  |---|---|---|---|---|
+  | cc-pVDZ | 24 | 0.17 s | 0.19 s | 9.1% |
+  | cc-pVTZ | 58 | 2.90 s | 3.69 s | 21.4% |
+  | cc-pVQZ | 115 | 49.35 s | 77.20 s | 36.1% |
+
+  The share grows roughly linearly in `nao` (about 50% extrapolated at nao = 204), so the AO
+  generation, not the transform, is the majority of the duplicated cost.
+
+### 12.3 The fix
+
+`CPHF(wfn, full_occ=True)` sets `o = slice(0, wfn.o.stop)` (full occupied, frozen core included) and
+`v = wfn.v`, takes `eps` from the SCF Fock diagonal, and builds its orbital Hessian from the
+undifferentiated integrals.  It **is** the all-electron SCF CPHF, not an approximation to it.  The
+correlated Hessian already populates its `_U_nuc` / `_B_nuc` / `_F_nuc` / `_S_nuc` for every atom (via
+`full_U` -> `_ov_response` -> `solve_nuclear`), and those four caches are exactly and only what the
+response expression consumes.
+
+So the reference response is evaluated on the object the correlated driver already built and filled:
+
+- **`cphf`**: add `nuclear_hessian_response()`, holding the single implementation of
+
+      -k [ 2 U^x_ia B^y_ia + S^x_ij F^y_ij + S^y_ij F^x_ij
+           - 2 eps_i S^x_ij S^y_ij - S^x_ij S^y_nm W_imjn ]
+
+  with `k = 2`, `W = H.L` (spatial) or `k = 1`, `W = H.ERI` (spin-orbital).  Everything comes from
+  this object's own caches plus its wavefunction's Fock diagonal and `oooo` block, so bra and ket are
+  guaranteed to be in one consistent orbital ordering.
+- **`hfwfn`**: `_hessian_response()` and `_so_hessian_response()` collapse to a call on `self.cphf`.
+  SCF-only behaviour is unchanged.
+- **`correlatedderivs`**: on the `'aod'` route, replace `hf._hessian_response()` (`:1384`) with
+  `self._full_occ_cphf().nuclear_hessian_response()`.  The `'mo'` / `'ao'` opt-out routes keep
+  calling `hf._hessian_electronic()` and are unaffected.
+
+Do **not** pass a CPHF object into an `HFwfn` method.  That method reads `eps_o` and the `oooo` block
+from `self.H.F` / `self.H.L`, in the HFwfn's ordering, which differs from the correlated ordering in
+the spin-orbital frozen-core case.  Owning the expression on `CPHF` is what removes the hazard.
+
+Removed per correlated Hessian: one `mo_tei_deriv1` per atom (AO generation *and* transform), `3N`
+reference CPHF solves, and the reference `CPHF._skel` retention entirely.  Nothing is shared between stores,
+so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the residual guard).
+
+### 12.4 Adjacent items found, deliberately out of scope
+
+- **`CPHF._skel` retention -- FIXED in this work, after two measurement corrections.**
+  `_skeleton_derivatives` cached `(fx, Sx, gx)` per perturbation and nothing ever cleared it.  Two
+  numbers I first reported were wrong, both because they were modelled rather than instrumented:
+
+  1. *The retention was 3x larger than a `.nbytes` sum suggests.*  `Derivatives.eri(atom)` returns
+     three **views** into one 3-Cartesian buffer, and `np.asarray` does not copy, so each retained
+     `gx` pins a whole `3 * nmo^4` buffer -- and each of an atom's three coordinates calls `d.eri`
+     separately, getting its own buffer.  Summing `gx.nbytes` counts the view.  **Measured**
+     (water/6-31G, 3 atoms): views 9.00 x `nmo^4`, distinct base buffers 9, live **27.00 x `nmo^4`**.
+     So the true cost was `3N * 3 * nmo^4 = 9N * nmo^4` per CPHF object.
+  2. *The retention bought no reads.*  **Measured** on the same run: the store did 1 compute+write
+     and **6 reads per atom** regardless.  The block is generated once per atom by the store; caching
+     `gx` in RAM only pinned it.
+
+  **Fix (two parts).**  (a) `_skel` caches only `(fx, Sx)` (`nmo^2` each); the `nmo^4` two-electron
+  derivative moves to a new, deliberately uncached `_skeleton_eri(pert)` that reads the store on
+  every call, and `perturbed_eri` calls it directly.  (b) `_skeleton_eri` reads a **single
+  Cartesian**: `DerivStore.get_or_compute_component` indexes one h5py slab, and
+  `Derivatives.eri_component` / `so_eri_component` expose it.  `eri(atom)[cart]` is a *view* into
+  the 3-Cartesian stack and pins all of it; the component read returns a standalone `nmo^4`.
+
+  **Measured.**  `_skel` live 27.00 -> **0.11 x `nmo^4`** (`6N * nmo^2`).  Store traffic for the
+  first-derivative ERIs, water/6-31G, per atom: **21 x `nmo^4`** originally (with the retention),
+  **30** after (a) alone, **18** after (b).  So the pair ends up *below* the original I/O as well as
+  removing the retention.  Residency at that call site is `nmo^4`, not `3 * nmo^4`.
+
+  **What it does NOT do: move the peak.**  Phase-resolved peak RSS (sampling RSS against
+  `pycc.timing._stack`), water/cc-pVTZ MP2 Hessian: `second-derivative integral terms / skeleton
+  contractions` 2.361 GiB (the peak), `density-response terms / response contractions` 2.295 GiB,
+  `first-derivative integrals` 1.657 GiB, `perturbed wave functions / perturbed density` 1.570 GiB.
+  Pass 1 sets the peak and Pass 2 sits less than one `nmo^4` below it, so nothing on the
+  first-derivative side moves the ceiling -- and the Pass 2 loop inversion (3 Cartesians -> 1, at the
+  cost of 3x the `dGam` reads) was rejected for the same reason.
+
+  **The real floor: `ao_tei_deriv2`.**  Psi4's `ao_tei_deriv2(atom1, atom2)` returns all nine
+  Cartesian-pair components in one call, with no per-component entry point, so `9 * nao^4` is forced
+  from outside.  On the spatial route `nao ~ nmo`, so for closed-shell RHF (the manuscript case) that
+  is `9 * nmo^4` and a `1 * nmo^4` ceiling is not reachable for the nuclear Hessian.  Two
+  qualifications: it is `nao^4`, so on the spin-orbital route (`nmo = 2 nao`) the block is only
+  ~0.56 of one `nmo^4` and the correlated tensors are the pole instead; and it is Hessian-specific,
+  so gradients, polarizabilities, APTs and AATs are unaffected.  Lowering it needs an upstream
+  per-component Psi4 API or an assembly that never forms the pair block; **PI has set that aside.**
+
+- **Four-index tensors held in RAM (audit, PI request) -- three of four REMOVED here.**  PI's rule
+  (2026-08-28): four-index derivative quantities belong in the `DerivStore`, not in memory, because
+  a run generates far too many of them for a RAM cache to pay, so any code relying on a memory-cache
+  hit is suspect.
+
+  | where | what | disposition |
+  |---|---|---|
+  | `CPHF._skel` | pinned `9N * nmo^4` (see above) | **removed**: caches `(fx, Sx)` only |
+  | `Derivatives._d2int` | 9 second-derivative `nmo^4` blocks per atom pair, accumulating | **removed**: the dict *and* the `cache` parameter are gone, so it cannot be selected at all |
+  | `DerivStore._ram` | every tensor the store would have written, unbounded | **removed**: the store is mandatory and disk-only; missing h5py raises `PyCCError` |
+  | `Derivatives._d1_atom` / `_d1_cache` | one atom's first-derivative blocks | **removed**: it was the store-disabled branch of `_eri_cached`, unreachable once the store is mandatory |
+  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | **still open**, up to `3 * nmo^4` each |
+  | `CIderiv._cpci_ints_cache` | `(dF, dERI, U)` per perturbation; for `'nuclear'` the `dERI` is already store-backed | **still open**: a RAM copy of a tensor that is on disk |
+
+  What `dERI` is, since the naming misleads: it is the derivative of the **two-electron integrals**
+  with respect to a magnetic field or vector potential, arising entirely through the orbital
+  relaxation.  The perturbing operator is one-electron and does not move the basis functions, so the
+  *skeleton* 2e derivative is exactly zero and only the `U`-dressing survives
+  (`_antisym_field_ints`).  It is therefore `perturbed_eri` with its skeleton term zero -- same
+  shape, same role.  Its nuclear/field analogue already lives in the store under `'deri'`; the
+  magnetic and momentum members of the family were never moved.  Consumers: `mpderiv.py:376`,
+  `cideriv.py:99,102`, i.e. the MP2/CISD AAT and VG-APT paths.
+
+  Removing the store's in-memory mode also removed `DERIV_STORE_ENABLED` and the `PYCC_DERIV_STORE`
+  env var (`PYCC_DERIV_STORE_DIR` remains).  Rationale: silently memoizing in RAM turns a bounded
+  disk cache into an unbounded memory one, i.e. an OOM kill instead of a readable error, and h5py is
+  a declared runtime dependency.  Test fallout: `test_097` dropped two now-impossible `skipif`
+  guards, and `test_094` was rewritten -- two of its tests existed only to cover the RAM path and a
+  third compared a disk Hessian against a RAM one, which no longer has an oracle; it now asserts the
+  h5py requirement and that a correlated Hessian drives its tensors through the store with
+  basis-distinct `eri1` keys.  That last check is weaker than the bit-identity it replaces.
+
+- **Block-label keying.**  Even with nothing shared, `ctx=('eri', b1..b4)` describes the request
+  rather than the result.  A cheap fingerprint of the coefficient blocks handed to `mo_tei_deriv1`
+  (plus the spin-orbital scatter positions) would make the key describe the tensor.  Worth doing as a
+  guard, not as a performance change.
+- **`Derivatives._mo` resolves `'o'` as `C[:, :wfn.no]`, not `C[:, wfn.o]`** (`derivatives.py:913`),
+  so it includes the frozen core and drops the top active occupied for a frozen-core wavefunction.
+  Harmless today because every spatial block-label caller is in `hfwfn.py` (all-electron), and the
+  spin-orbital sibling (`derivatives.py:934`) correctly uses `wfn.o`.  Fix or assert before any
+  correlated code asks for a block-label spatial derivative.
+
+### 12.5 Validation
+
+- Correlated Hessian **bit-identical** before and after, spatial + spin-orbital, AE + FC.  The
+  reference block is the quantity that moves route, so assert it against `HFwfn._hessian_response()`
+  directly.  Already verified out of tree on water/6-31G: max abs difference **0.0** (spatial FC,
+  spatial AE, SO AE) and **2.5e-16** (SO frozen core).
+- The SO frozen-core case is the one that matters: the `o` / `v` slices coincide but the occupied
+  ordering differs, and the response term is a full trace over the occupied space, hence invariant.
+  That case is the regression test for the whole design.
+- Keep the existing `test_090` reference cross-check (s.11.3) green, and add a call-count assertion
+  that `mo_tei_deriv1` runs once per atom, not twice.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:

@@ -383,37 +383,15 @@ class HFwfn(Wavefunction):
             + 4\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + 2\sum_{ijnm} S^x_{ij} S^y_{nm} L_{imjn}
 
         Built from the pre-solved nuclear response (:meth:`CPHF.solve_nuclear`, shared with the
-        APTs) and the skeleton derivative Fock/overlap oo blocks.  It carries no second-derivative
-        TEIs, so the correlated Hessian delegates its reference response here (one call, no
-        ao_tei_deriv2 recompute).  Dispatches to :meth:`_so_hessian_response`."""
-        if self.orbital_basis == 'spinorbital':
-            return self._so_hessian_response()
-        o = self.o
-        eps_o = np.asarray(diag(self.H.F))[o]
-        Loooo = np.asarray(self.H.L)[o, o, o, o]       # i,m,j,n (spin-adapted)
-        natom = self.ref.molecule().natom()
-        U = [self.cphf.solve_nuclear(A) for A in range(natom)]            # U[A][a]->(no,nv)
-        B = [self.cphf.rhs_nuclear(A) for A in range(natom)]             # B[A][a]->(no,nv)
-        Foo = [self.cphf.nuclear_skeleton_fock(A) for A in range(natom)]  # F^X_ij->(no,no)
-        Soo = [self.cphf.nuclear_skeleton_overlap(A) for A in range(natom)]  # S^X_ij->(no,no)
-        c = self.contract
-        H = np.zeros((3 * natom, 3 * natom))
-        for A in range(natom):
-            for Bat in range(A, natom):
-                for a in range(3):
-                    for b in range(3):
-                        Ux, By = U[A][a], B[Bat][b]
-                        Sx, Sy = Soo[A][a], Soo[Bat][b]
-                        Fx, Fy = Foo[A][a], Foo[Bat][b]
-                        resp = (-4.0 * c('ia,ia->', Ux, By)
-                                - 2.0 * c('ij,ij->', Sx, Fy)
-                                - 2.0 * c('ij,ij->', Sy, Fx)
-                                + 4.0 * c('i,ij,ij->', eps_o, Sx, Sy)
-                                + 2.0 * c('ij,nm,imjn->', Sx, Sy, Loooo))
-                        H[A * 3 + a, Bat * 3 + b] = resp
-                        if A != Bat:
-                            H[Bat * 3 + b, A * 3 + a] = resp
-        return H
+        APTs) and the skeleton derivative Fock/overlap oo blocks.  Carries no second-derivative TEIs.
+
+        The expression lives on :meth:`CPHF.nuclear_hessian_response` (which selects the spatial or
+        spin-orbital prefactors from ``orbital_basis``, so this and :meth:`_so_hessian_response` are
+        the same call).  A correlated Hessian does **not** route here: it evaluates the same method on
+        its own full-occupied CPHF, whose nuclear caches it has already filled, rather than making
+        this all-electron :class:`HFwfn` recompute the per-atom first-derivative MO integrals and
+        re-solve CPHF (plan doc s.12)."""
+        return self.cphf.nuclear_hessian_response()
 
     def _so_hessian_electronic(self) -> np.ndarray:
         r"""Electronic part of the spin-orbital molecular Hessian, shape ``(3*natom, 3*natom)``.
@@ -491,34 +469,10 @@ class HFwfn(Wavefunction):
             -2\sum_{ia} U^x_{ai} B^y_{ai} - \sum_{ij} S^x_{ij} F^y_{ij} - \sum_{ij} S^y_{ij} F^x_{ij}
             + 2\sum_{ij} \varepsilon_i S^x_{ij} S^y_{ij} + \sum_{ijnm} S^x_{ij} S^y_{nm} \langle im\|jn\rangle
 
-        Carries no second-derivative TEIs, so the correlated Hessian delegates its reference response
-        here."""
-        o = self.o
-        eps_o = np.asarray(diag(self.H.F))[o]
-        ERIoooo = np.asarray(self.H.ERI)[o, o, o, o]   # i,m,j,n (antisymmetrized)
-        natom = self.ref.molecule().natom()
-        U = [self.cphf.solve_nuclear(A) for A in range(natom)]            # U[A][a]->(no,nv)
-        B = [self.cphf.rhs_nuclear(A) for A in range(natom)]             # B[A][a]->(no,nv)
-        Foo = [self.cphf.nuclear_skeleton_fock(A) for A in range(natom)]  # F^X_ij->(no,no)
-        Soo = [self.cphf.nuclear_skeleton_overlap(A) for A in range(natom)]  # S^X_ij->(no,no)
-        c = self.contract
-        H = np.zeros((3 * natom, 3 * natom))
-        for A in range(natom):
-            for Bat in range(A, natom):
-                for a in range(3):
-                    for b in range(3):
-                        Ux, By = U[A][a], B[Bat][b]
-                        Sx, Sy = Soo[A][a], Soo[Bat][b]
-                        Fx, Fy = Foo[A][a], Foo[Bat][b]
-                        resp = (-2.0 * c('ia,ia->', Ux, By)
-                                - c('ij,ij->', Sx, Fy)
-                                - c('ij,ij->', Sy, Fx)
-                                + 2.0 * c('i,ij,ij->', eps_o, Sx, Sy)
-                                + c('ij,nm,imjn->', Sx, Sy, ERIoooo))
-                        H[A * 3 + a, Bat * 3 + b] = resp
-                        if A != Bat:
-                            H[Bat * 3 + b, A * 3 + a] = resp
-        return H
+        Carries no second-derivative TEIs.  Shares its implementation with the spatial path: both call
+        :meth:`CPHF.nuclear_hessian_response`, which picks the prefactor and integral kernel from
+        ``orbital_basis`` (plan doc s.12)."""
+        return self.cphf.nuclear_hessian_response()
 
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
         """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`

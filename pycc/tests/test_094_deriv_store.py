@@ -1,9 +1,13 @@
 """DerivStore: the persistent HDF5-backed store for four-index derivative tensors.
 
-The derivative suite runs with the store ON by default (disk), so the on-disk path is exercised
-end-to-end throughout.  These tests add focused coverage for the store itself: the on-disk
-round-trip (single and grouped), the disabled/RAM-memo path, the graceful fallback when h5py is
-absent, and an explicit check that the on-disk Hessian is bit-identical to the in-memory one.
+The store is **mandatory and always disk-backed**: four-index derivative quantities belong on
+disk, not in memory, because a run generates far too many of them for a RAM cache to pay.  There
+is no in-memory mode and no fallback, so a missing h5py is an error rather than a silent switch
+to unbounded memoization.
+
+The derivative suite exercises the on-disk path end-to-end throughout.  These tests add focused
+coverage for the store itself: the round-trip (single and grouped), the h5py requirement, and that
+a correlated Hessian really does drive tensors through the store on both orbital-basis routes.
 """
 import os
 
@@ -11,12 +15,12 @@ import numpy as np
 import pytest
 
 from pycc.derivatives import DerivStore
+from pycc.exceptions import PyCCError
 
 
 def test_roundtrip_disk():
-    """Enabled store: first call builds + persists, second reads back exactly, close removes file."""
-    pytest.importorskip("h5py")
-    store = DerivStore(enabled=True)
+    """First call builds and persists, second reads back exactly, close removes the file."""
+    store = DerivStore()
     try:
         calls = {"n": 0}
 
@@ -40,8 +44,7 @@ def test_roundtrip_disk():
 
 def test_group_roundtrip_disk():
     """Grouped store: differing-shape components built once, read back exactly, all-or-nothing."""
-    pytest.importorskip("h5py")
-    store = DerivStore(enabled=True)
+    store = DerivStore()
     try:
         calls = {"n": 0}
 
@@ -60,53 +63,41 @@ def test_group_roundtrip_disk():
         store.close()
 
 
-def test_ram_path_no_file():
-    """Disabled store memoizes in RAM and never touches disk."""
-    store = DerivStore(enabled=False)
-    calls = {"n": 0}
-
-    def build():
-        calls["n"] += 1
-        return np.zeros((4, 4))
-
-    store.get_or_compute("q", ("f", 0), build)
-    store.get_or_compute("q", ("f", 0), build)
-    assert calls["n"] == 1                                                  # memoized in RAM
-    assert store._file is None and store._f is None
-
-
-def test_graceful_fallback_without_h5py(monkeypatch):
-    """When h5py is unavailable, an enabled store degrades to the RAM path with a warning."""
+def test_requires_h5py(monkeypatch):
+    """No h5py -> a readable error, NOT a silent in-memory store.  The store holds nmo^4 tensors;
+    memoizing them in RAM instead would trade a bounded disk cache for an unbounded memory one,
+    i.e. an out-of-memory kill in place of an error the user can act on."""
     import importlib.util as iu
     import pycc.derivatives as D
 
     real = iu.find_spec
     monkeypatch.setattr(iu, "find_spec",
                         lambda name, *a, **k: None if name == "h5py" else real(name, *a, **k))
-    with pytest.warns(RuntimeWarning):
-        store = D.DerivStore(enabled=True)
-    assert store.enabled is False                                           # degraded to RAM memo
+    with pytest.raises(PyCCError, match="h5py is required"):
+        D.DerivStore()
 
 
 @pytest.mark.parametrize("orbital_basis", ["spatial", "spinorbital"])
-def test_disk_matches_ram_hessian(rhf_wfn, orbital_basis):
-    """The on-disk Hessian is bit-identical to the in-memory-memo Hessian (same driver machinery,
-    just disk vs RAM backing), and the disk path really is used (temp file created) -- checked on
-    both the spatial and spin-orbital routes, which the store keys distinctly (eri vs so_eri, and
-    the 'sp'/'so' response-context tag)."""
-    pytest.importorskip("h5py")
+def test_hessian_drives_tensors_through_the_store(rhf_wfn, orbital_basis):
+    """A correlated Hessian routes its four-index derivative tensors through the on-disk store on
+    both orbital-basis routes, which the store keys distinctly (``eri`` vs ``so_eri`` in the eri1
+    context, and the ``'sp'``/``'so'`` tag on the perturbed-response records)."""
     import pycc
 
     wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false")
     cc = pycc.ccwfn(wfn, orbital_basis=orbital_basis)
     cc.solve_cc(1e-10, 1e-10, 100)
-    store = pycc.CCderiv(cc).wfn.derivatives.store                          # shared per-wfn store
+    deriv = pycc.CCderiv(cc)
+    store = deriv.wfn.derivatives.store                                     # shared per-wfn store
 
-    store.enabled = False
-    H_ram = np.asarray(pycc.CCderiv(cc).hessian().correlation)
+    H = np.asarray(deriv.hessian().correlation)
+    assert H.shape[0] == H.shape[1]
+    assert np.max(np.abs(H - H.T)) < 1e-10                                  # symmetric
 
-    store.enabled = True
-    H_disk = np.asarray(pycc.CCderiv(cc).hessian().correlation)
     assert store._file and os.path.exists(store._file)                      # disk path exercised
-    assert np.max(np.abs(H_ram - H_disk)) < 1e-12
+    keys = sorted(store._f.keys())
+    tag = "so_eri" if orbital_basis == "spinorbital" else "eri"
+    eri1 = [k for k in keys if k.startswith("eri1")]
+    assert eri1, keys
+    assert all(f"__{tag}__" in k for k in eri1), eri1                       # basis-distinct keying
     store.close()

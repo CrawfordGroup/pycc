@@ -50,7 +50,7 @@ def _store_warnings(monkeypatch, fake_fstype):
     """Create a DerivStore whose scratch resolves to ``fake_fstype`` and return its RAM-backed
     warnings (the temp .h5 is cleaned up)."""
     monkeypatch.setattr(D, "_filesystem_type", lambda *a, **k: fake_fstype)
-    store = D.DerivStore(enabled=True)
+    store = D.DerivStore()
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -65,17 +65,14 @@ def _store_warnings(monkeypatch, fake_fstype):
             os.remove(store._file)
 
 
-@pytest.mark.skipif(D.DerivStore(enabled=True).enabled is False,
-                    reason="h5py unavailable; DerivStore uses the in-memory path (no scratch file)")
 def test_store_warns_on_ram_backed_scratch(monkeypatch):
     """The store warns (once) when its scratch directory is a RAM-backed filesystem."""
     assert len(_store_warnings(monkeypatch, "tmpfs")) == 1
 
 
-@pytest.mark.skipif(D.DerivStore(enabled=True).enabled is False,
-                    reason="h5py unavailable; DerivStore uses the in-memory path (no scratch file)")
 def test_store_silent_on_real_or_unknown_scratch(monkeypatch):
     """No warning when the scratch is a real filesystem, or when the type is unknown (non-Linux)."""
     assert _store_warnings(monkeypatch, "lustre") == []
     assert _store_warnings(monkeypatch, "ext4") == []
     assert _store_warnings(monkeypatch, None) == []
+

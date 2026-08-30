@@ -1213,8 +1213,8 @@ class CorrelatedDerivs:
         #       1st-deriv integrals (eriX) against the density derivatives (dGam).
         # The 2nd-deriv block never meets eriX/dGam in a contraction, so the assembly sweeps the atom
         # pairs TWICE and holds only one nmo^4 working set at a time (peak max(9, 6+6) instead of
-        # 9+6+6).  Each pair still computes its 2nd-deriv skeletons ONCE (cache=False, so _d2int never
-        # accumulates).  The skeleton scalar s = Drel.f2 + Gam.e2 + I.ov2 is symmetric in the pair
+        # 9+6+6).  Each pair computes its 2nd-deriv skeletons once and discards them
+        # (nuclear_hessian_skeletons caches nothing).  The skeleton scalar s = Drel.f2 + Gam.e2 + I.ov2 is symmetric in the pair
         # (d2/dA dB = d2/dB dA), shared by H[ix,iy] and its transpose; only the response half differs.
         # The per-pair dGam/eriX are read from the store one pair at a time (never a 3*natom RAM list).
         def _dGs(j):        # bare cumulant response dGam[j] (the doc form needs no U^y rotation)
@@ -1325,7 +1325,7 @@ class CorrelatedDerivs:
                 for a1 in range(natom):
                     for a2 in range(a1, natom):
                         if route == 'mo':
-                            blk = d.nuclear_hessian_skeletons(a1, a2, cache=False)
+                            blk = d.nuclear_hessian_skeletons(a1, a2)
                             core2s, ov2s, ao_eri = blk['core'], blk['overlap'], None
                             eri2s = blk['eri']
                         else:
@@ -1378,11 +1378,16 @@ class CorrelatedDerivs:
                              atom_label(d.mol, a))
 
         # Reference (SCF) electronic block.  'aod': the ao-dependent skeleton is in Href (built above
-        # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response by delegation.
+        # from this driver's shared ao_tei_deriv2); add the ao-independent CPHF response from THIS
+        # driver's full-occupied CPHF.  That object is the all-electron SCF CPHF (full_occ spans
+        # frozen core + active, eps from the SCF Fock diagonal, orbital Hessian from the
+        # undifferentiated integrals), and the assembly above has already filled its per-atom nuclear
+        # caches (U^X/B^X/F^(X)_ij/S^(X)_ij) -- the only inputs the response needs.  Going through the
+        # reference HFwfn instead would rebuild the per-atom nmo^4 first-derivative MO integrals on a
+        # second DerivStore and re-solve CPHF, for the same numbers (plan doc s.12).
         # 'mo'/'ao' opt-outs did not fold Href -> use the reference HFwfn's own electronic Hessian.
-        hf = self._reference_hf()
-        reference = (Href + np.asarray(hf._hessian_response())) if route == 'aod' \
-            else np.asarray(hf._hessian_electronic())
+        reference = (Href + np.asarray(self._full_occ_cphf().nuclear_hessian_response())) \
+            if route == 'aod' else np.asarray(self._reference_hf()._hessian_electronic())
         return reference, H
 
     @staticmethod
