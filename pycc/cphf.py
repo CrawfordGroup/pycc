@@ -672,11 +672,7 @@ class CPHF(object):
         ``dF^H``/``dERI^H`` are the perturbed Fock / two-electron integrals with the antisymmetric
         (ket ``+``, bra ``-``) rotation.  ``W`` is the antisymmetrized ``<pq||rs>`` (spin-orbital)
         or the spin-adapted ``L`` (spatial), matching the rest of the CPHF engine."""
-        key = (axis, ncore, gauge)
-        if key not in self._mag_int:
-            hmag = np.asarray(-1.0j * self.wfn.H.m[axis]).real
-            self._mag_int[key] = self._antisym_field_ints(hmag, ncore, gauge)
-        return self._mag_int[key]
+        return self._field_ints('magnetic', axis, ncore, gauge)
 
     def momentum_ints(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical'):
         """Linear-momentum-perturbed MO integrals for ``axis`` (0/1/2): returns the tuple
@@ -689,11 +685,46 @@ class CPHF(object):
         in ``H.p``).  Momentum is imaginary/anti-Hermitian just like the magnetic dipole, so the
         orbital response is antisymmetric and shares the ``kind='magnetic'`` orbital Hessian and
         the identical gauge handling of the redundant oo/vv blocks."""
+        return self._field_ints('momentum', axis, ncore, gauge)
+
+    def magnetic_eri(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical') -> np.ndarray:
+        """``dERI^H`` for ``axis`` -- the ``nmo^4`` derivative of the two-electron integrals with
+        respect to the magnetic field, read from the :class:`~pycc.derivatives.DerivStore`.  Split
+        out of :meth:`magnetic_ints` so that the ``nmo x nmo`` ``(U, dF)`` can stay in RAM (a repeat
+        property call still skips the CPHF solve) while the ``nmo^4`` lives on disk."""
+        return self._field_eri('magnetic', axis, ncore, gauge)
+
+    def momentum_eri(self, axis: int, ncore: int = 0, gauge: str = 'non-canonical') -> np.ndarray:
+        """``dERI^A`` for ``axis`` -- the momentum twin of :meth:`magnetic_eri`."""
+        return self._field_eri('momentum', axis, ncore, gauge)
+
+    def _field_ints(self, kind: str, axis: int, ncore: int, gauge: str):
+        """``(U, dF)`` for an imaginary one-electron perturbation (``kind`` 'magnetic' or
+        'momentum'), cached in RAM at ``nmo^2``; the engine's ``nmo^4`` ``dERI`` is persisted to the
+        store on the way past and released, and is read back by :meth:`_field_eri`.
+
+        The two halves have different costs and different sizes, which is why they are cached
+        differently.  ``U``/``dF`` cost the CPHF solve and are ``nmo^2``; ``dERI`` costs four
+        ``nmo^5`` contractions and is ``nmo^4``.  Keeping both in RAM held ``3 * nmo^4`` per kind for
+        the life of the driver."""
+        cache = self._mag_int if kind == 'magnetic' else self._mom_int
         key = (axis, ncore, gauge)
-        if key not in self._mom_int:
-            hmom = np.asarray(-1.0j * self.wfn.H.p[axis]).real
-            self._mom_int[key] = self._antisym_field_ints(hmom, ncore, gauge)
-        return self._mom_int[key]
+        if key not in cache:
+            op = self.wfn.H.m if kind == 'magnetic' else self.wfn.H.p
+            hop = np.asarray(-1.0j * op[axis]).real
+            U, dF, dERI = self._antisym_field_ints(hop, ncore, gauge)
+            self.wfn.derivatives.store.get_or_compute(
+                'deri_field', (kind, axis), lambda: dERI, ctx=(ncore, gauge))
+            cache[key] = (U, dF)
+            del dERI                          # persisted above; do not hold the nmo^4
+        return cache[key]
+
+    def _field_eri(self, kind: str, axis: int, ncore: int, gauge: str) -> np.ndarray:
+        """The stored ``nmo^4`` ``dERI`` for an imaginary one-electron perturbation.  Goes through
+        :meth:`_field_ints` first, which guarantees the entry exists (running the engine once if
+        needed), then reads it back."""
+        self._field_ints(kind, axis, ncore, gauge)
+        return self.wfn.derivatives.store.read('deri_field', (kind, axis), ctx=(ncore, gauge))
 
     def _antisym_field_ints(self, hmag, ncore: int, gauge: str):
         r"""Shared engine for the imaginary (anti-Hermitian) one-electron perturbations -- the

@@ -68,8 +68,31 @@ class CIderiv(CorrelatedDerivs):
 
     # coupled-perturbed-CI response 
 
+    def _cpci_eri(self, pert, gauge='non-canonical'):
+        """The ``nmo^4`` perturbed two-electron integrals ``dERI`` for a cphf.Perturbation --
+        fetched on demand and **not** cached here.
+
+        Deliberately uncached.  Only one of this class's nine ``_cpci_ints`` call sites wants
+        ``dERI`` (the CPCI solve); the other eight want ``U`` alone.  Caching it alongside would
+        hold one ``nmo^4`` per perturbation, i.e. ``(3N + 3) * nmo^4`` for one AAT or VG-APT --
+        33 tensors for a ten-atom molecule, against the three that ``_mag_int`` / ``_mom_int``
+        hold.  Nothing is recomputed by fetching instead: the ``'nuclear'`` branch reads
+        :meth:`~pycc.cphf.CPHF.perturbed_eri`, which is backed by the on-disk ``DerivStore``, and
+        the field branches read the (still RAM-cached) magnetic / momentum engines.
+        """
+        ncore = self.ci.o.stop - self.ci.no
+        cphf = self._full_occ_cphf()
+        if pert.kind == 'nuclear':
+            return np.asarray(cphf.perturbed_eri(pert, ncore))          # DerivStore-backed
+        if pert.kind == 'magnetic':
+            return np.asarray(cphf.magnetic_eri(pert.comp, ncore, gauge))
+        if pert.kind == 'vecpot':
+            return -np.asarray(cphf.momentum_eri(pert.comp, ncore, gauge))       # +Del -> -Del
+        raise ValueError(f"unknown perturbation kind {pert.kind!r}")
+
     def _cpci_ints(self, pert, gauge='non-canonical'):
-        """(dF, dERI, U) for a cphf.Perturbation. Used for magnetic/vecpot (AAT/VG-APT) and for
+        """(dF, U) for a cphf.Perturbation -- both ``nmo x nmo``.  The ``nmo^4`` ``dERI`` that used
+        to ride along in this tuple is now :meth:`_cpci_eri`, fetched on demand.  Used for
         CIwfn's own nuclear response - NOT for the field/nuclear perturbations that feed the
         base's second-derivative machinery, which instead thread the base's own
         full-occupied-space (df, deri) directly into _solve_cpci_ints.
@@ -92,15 +115,14 @@ class CIderiv(CorrelatedDerivs):
         if pert.kind == 'nuclear':
             cphf = self._full_occ_cphf()
             dF = np.asarray(cphf.perturbed_fock(pert, ncore))
-            dERI = np.asarray(cphf.perturbed_eri(pert, ncore))
             U = np.asarray(cphf.full_U(pert, ncore))
-            result = (dF, dERI, U)
+            result = (dF, U)
         elif pert.kind == 'magnetic':
-            U, dF, dERI = self._full_occ_cphf().magnetic_ints(pert.comp, ncore, gauge)
-            result = (dF, dERI, U)
+            U, dF = self._full_occ_cphf().magnetic_ints(pert.comp, ncore, gauge)
+            result = (dF, U)
         elif pert.kind == 'vecpot':
-            U, dF, dERI = self._full_occ_cphf().momentum_ints(pert.comp, ncore, gauge)
-            result = (-dF, -dERI, -U)          # +Del -> -Del (see docstring)
+            U, dF = self._full_occ_cphf().momentum_ints(pert.comp, ncore, gauge)
+            result = (-dF, -U)                 # +Del -> -Del (see docstring)
         else:
             raise ValueError(f"unknown perturbation kind {pert.kind!r}")
         self._cpci_ints_cache[key] = result
@@ -280,7 +302,8 @@ class CIderiv(CorrelatedDerivs):
         key = (pert, gauge)
         if key in self._cpci_cache:
             return self._cpci_cache[key]
-        dF, dERI, U = self._cpci_ints(pert, gauge)
+        dF, U = self._cpci_ints(pert, gauge)
+        dERI = self._cpci_eri(pert, gauge)              # nmo^4, fetched here and released below
         imaginary = pert.kind in ('magnetic', 'vecpot')
         dc1, dc2, dc0v, dt1, dt2 = self._solve_cpci_ints(
             dF, dERI, imaginary=imaginary, maxiter=maxiter, diis_start=diis_start,
@@ -393,7 +416,7 @@ class CIderiv(CorrelatedDerivs):
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR, gauge)
+            _, U_R = self._cpci_ints(pR, gauge)
             half_S = np.asarray(self.ci.derivatives.overlap_half(A)[beta_])
             Ur_eff = U_R + half_S.T
             for beta in range(3):
@@ -411,11 +434,11 @@ class CIderiv(CorrelatedDerivs):
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR, gauge)
+            _, U_R = self._cpci_ints(pR, gauge)
             half_S = np.asarray(self.ci.derivatives.overlap_half(A)[beta_])
             Ur_eff = U_R + half_S.T
             for beta in range(3):
-                _, _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
+                _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
                 I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff).real
         return I_pp
 
@@ -430,7 +453,7 @@ class CIderiv(CorrelatedDerivs):
             dn0_R, dn1_R, dn2_R = self._aat_dc_normalized(pR, gauge)
             R_pq = self._build_Dtilde(dn1_R, dn2_R, dn0_R)
             for beta in range(3):
-                _, _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
+                _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
         return AAT_cphi.real
 
@@ -483,7 +506,7 @@ class CIderiv(CorrelatedDerivs):
             dn0_R, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)), gauge)
             D_tilde_R = self._build_Dtilde(dn1_R, dn2_R, dn0_R)
             for gamma in range(3):
-                _, _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
+                _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
                 Icphi[la, gamma] = c('pq,pq->', D_tilde_R, U_A)
         return Icphi
 
@@ -496,7 +519,7 @@ class CIderiv(CorrelatedDerivs):
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
-            _, _, U_R = self._cpci_ints(pR, gauge)
+            _, U_R = self._cpci_ints(pR, gauge)
             half_S = np.asarray(self.ci.derivatives.overlap_half(A)[beta_])
             Ur_eff = U_R + half_S.T
             for gamma in range(3):
@@ -513,11 +536,11 @@ class CIderiv(CorrelatedDerivs):
         I_pp = np.zeros((3 * natom, 3), dtype=complex)
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
-            _, _, U_R = self._cpci_ints(Perturbation('nuclear', (A, beta_)), gauge)
+            _, U_R = self._cpci_ints(Perturbation('nuclear', (A, beta_)), gauge)
             half_S = np.asarray(self.ci.derivatives.overlap_half(A)[beta_])
             Ur_eff = U_R + half_S.T
             for gamma in range(3):
-                _, _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
+                _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
                 I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
         return I_pp
 

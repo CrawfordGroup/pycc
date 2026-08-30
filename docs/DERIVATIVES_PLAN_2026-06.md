@@ -989,8 +989,8 @@ so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the r
   | `Derivatives._d2int` | 9 second-derivative `nmo^4` blocks per atom pair, accumulating | **removed**: the dict *and* the `cache` parameter are gone, so it cannot be selected at all |
   | `DerivStore._ram` | every tensor the store would have written, unbounded | **removed**: the store is mandatory and disk-only; missing h5py raises `PyCCError` |
   | `Derivatives._d1_atom` / `_d1_cache` | one atom's first-derivative blocks | **removed**: it was the store-disabled branch of `_eri_cached`, unreachable once the store is mandatory |
-  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | **still open**, up to `3 * nmo^4` each |
-  | `CIderiv._cpci_ints_cache` | `(dF, dERI, U)` per perturbation; for `'nuclear'` the `dERI` is already store-backed | **still open**: a RAM copy of a tensor that is on disk |
+  | `CPHF._mag_int`, `CPHF._mom_int` | `(U, dF, dERI)` per `(axis, ncore, gauge)`; `dERI` is a full `nmo^4` | **removed in s.13**: `(U, dF)` stay in RAM, `dERI` moves to the store |
+  | `CIderiv._cpci_ints_cache` | `(dF, dERI, U)` per perturbation; for `'nuclear'` the `dERI` is already store-backed | **removed in s.13**: caches `(dF, U)`; `dERI` via the uncached `_cpci_eri` |
 
   What `dERI` is, since the naming misleads: it is the derivative of the **two-electron integrals**
   with respect to a magnetic field or vector potential, arising entirely through the orbital
@@ -1031,6 +1031,68 @@ so the key-aliasing trap above becomes moot for this issue (see s.12.4 for the r
   That case is the regression test for the whole design.
 - Keep the existing `test_090` reference cross-check (s.11.3) green, and add a call-count assertion
   that `mo_tei_deriv1` runs once per atom, not twice.
+
+## 13. The AAT / VG-APT four-index RAM caches -- DESIGN + IMPLEMENTED
+
+**Status: DONE** (branch `perf/aat-vgapt-ram-caches`).  Closes the two entries left open by the
+s.12.4 audit, under the same rule: four-index derivative quantities belong in the `DerivStore`, not
+in memory.  Unlike the Hessian, where s.12 could not move the peak because `ao_tei_deriv2` sat above
+it, the AAT / VG-APT path never calls `ao_tei_deriv2`, so these caches sit near the top.
+
+### 13.1 What they held (measured, direct `.nbytes`, not RSS)
+
+Per **single** property call on a fresh driver (water/6-31G, 3 atoms):
+
+| | entries | 4-index | 2-index |
+|---|---|---|---|
+| CISD `aat()` `_cpci_ints_cache` | 12 = `3N + 3` (9 nuclear, 3 magnetic) | `12.00 * nmo^4` | 24 `nmo^2` |
+| CISD `apt(gauge='velocity')` `_cpci_ints_cache` | 12 = `3N + 3` (9 nuclear, 3 vecpot) | `12.00 * nmo^4` | 24 `nmo^2` |
+| `CPHF._mag_int` (AAT) | 3 | `3.00 * nmo^4` | 6 `nmo^2` |
+| `CPHF._mom_int` (VG-APT) | 3 | `3.00 * nmo^4` | 6 `nmo^2` |
+
+Running both properties on one driver accumulates to 15 and 3+3; that sharing is the cache working
+as designed, not a leak.  Every entry holds exactly one `nmo^4` plus two `nmo^2`.
+
+**Peak context** (phase-resolved peak RSS, sampling RSS against `pycc.timing._stack`; script
+`scratchpad/phase_aat.py`).  MP2 `aat()` + `apt(velocity)`, water: **cc-pVTZ** peak = baseline +
+`15.47 * nmo^4`; **cc-pVQZ** (nmo = 115) peak = baseline + `11.09 * nmo^4`, with phase plateaus at
+6.08 / 7.08 / 8.08 / 9.08 / 11.05 / 11.09 -- integer steps, i.e. the growth really is `nmo^4` arrays
+being added one at a time.  The coefficient FALLS with basis size (fixed overhead divided by a
+growing `nmo^4`), so use the larger-basis figure and treat ~11 as an upper bound.  The `6.08`
+plateau is `_mag_int` + `_mom_int` themselves.
+
+### 13.2 The two fixes
+
+- **`CIderiv._cpci_ints_cache`**: `_cpci_ints` now returns `(dF, U)`, both `nmo^2`.  The `nmo^4`
+  `dERI` moves to a new uncached `_cpci_eri(pert, gauge)`.  Motivation: of the nine `_cpci_ints`
+  call sites, **eight want `U` alone**; only the CPCI solve wants `dERI`.  Nothing is recomputed --
+  the `'nuclear'` branch reads `CPHF.perturbed_eri`, already `DerivStore`-backed under `'deri'`
+  (so those entries were a RAM copy of a tensor on disk), and the field branches read the magnetic /
+  momentum engines.
+- **`CPHF._mag_int` / `_mom_int`**: split by cost and size.  `(U, dF)` (`nmo^2`, costing the CPHF
+  solve) stay in RAM so a repeat property call still skips the solve; `dERI` (`nmo^4`, costing four
+  `nmo^5` contractions) is persisted to the store under `'deri_field'`, keyed `(kind, axis)` with
+  ctx `(ncore, gauge)`.  New shared helpers `_field_ints` / `_field_eri`; new public
+  `magnetic_eri` / `momentum_eri`.  `magnetic_ints` / `momentum_ints` now return a **2-tuple**
+  (arity change; all six in-tree consumers updated -- 4 in `mpderiv`, 2 in `cideriv`).
+  `DerivStore.read` was added: a read for an entry the caller has already guaranteed, raising
+  `KeyError` rather than accepting a builder that could never run.
+
+### 13.3 Result (measured)
+
+Four-index tensors held in RAM per single property call: **`(3N + 3) * nmo^4` -> none** (CISD
+`aat()`), **`3 * nmo^4` -> none** (MP2 `aat()`).  For a ten-atom molecule at `nbf = 224`
+(`nmo^4` = 18.75 GiB) that is ~620 GiB and ~56 GiB removed respectively.  The repeat-call benefit
+survives: a second `aat()` on the same driver still runs **zero** engine builds.
+
+Cost: the magnetic / momentum `dERI` are now written to disk, which the store did not previously
+hold -- `3 * nmo^4` per kind of new store traffic on the first call, plus a read per use.  Against
+four `nmo^5` contractions to rebuild, that is clearly the right trade, but it is new disk usage
+rather than a pure removal (unlike the CPCI nuclear entries, which duplicated something already
+stored).
+
+**The s.12.4 audit is now closed: no four-index derivative tensor is held in memory anywhere in the
+derivative machinery.**
 
 ## Appendix A: condensed changelog (by PR)
 

@@ -199,6 +199,19 @@ class DerivStore:
                 f.create_dataset(name, data=arr)
         return np.array(arr[comp])                  # copy: do not pin the full stack
 
+    def read(self, quantity, pert, ctx=()):
+        """Read an entry that must already exist, raising :class:`KeyError` if it does not.
+
+        For callers that have already guaranteed the entry (e.g. a companion method that built and
+        persisted it), so the read site does not have to carry a builder it can never run."""
+        name = self._name(quantity, pert, ctx)
+        f = self._ensure()
+        dset = f.get(name)
+        if dset is None:
+            raise KeyError(f"DerivStore has no entry for {(quantity, pert, ctx)!r}")
+        with timer("derivative cache read"):
+            return dset[()]
+
     def has(self, quantity, pert, ctx=()) -> bool:
         name = self._name(quantity, pert, ctx)
         return self._f is not None and name in self._f
