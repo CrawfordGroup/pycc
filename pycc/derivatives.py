@@ -1000,3 +1000,37 @@ class Derivatives(object):
         variant: the transform runs once per atom and every later request is a disk read."""
         stack = self.store.get_or_compute('eri1', atom, lambda: np.asarray(compute()), ctx=key)
         return list(stack)
+
+    def overlap_dd_sum(self, atom: int, b1: str = 'all', b2: str = 'all') -> np.ndarray:
+        """Component-SUMMED two-sided overlap derivatives ("contact" class) for `atom`,
+        one MO-basis array of::
+
+            K_pq = C_mu,p [ sum_X <d chi_mu / dX | d chi_nu / dX> ] C_nu,q
+                 = 2 C_mu,p <chi_mu| T |chi_nu> C_nu,q   (same-atom block only)
+
+        the `S^{(x)(y)}`-type integral class of DBOC theory (Gauss et al., JCP 125,
+        144111 (2006)), nonzero only for both functions on `atom`.  Fully analytic
+        through textbook integrals alone: the center derivative of an atom-`A`
+        function equals MINUS its electron-coordinate derivative, so integrating by
+        parts and summing the three Cartesian components gives,
+
+            sum_X <d_X chi_mu | d_X chi_nu> = -<chi_mu|nabla^2|chi_nu>
+                                            = 2 <chi_mu|T|chi_nu>,
+
+        i.e. twice the same-atom block of the ordinary kinetic-energy matrix.
+        AO block cached per atom."""
+        if not hasattr(self, '_dds_cache'):
+            self._dds_cache = {}
+        if atom not in self._dds_cache:
+            bs = self.wfn.H.basisset
+            idx = np.concatenate(
+                [np.arange(bs.shell(i).function_index,
+                           bs.shell(i).function_index + bs.shell(i).nfunction)
+                 for i in range(bs.nshell()) if bs.shell_to_center(i) == atom])
+            T = np.asarray(self.mints.ao_kinetic())
+            K = np.zeros_like(T)
+            K[np.ix_(idx, idx)] = 2.0 * T[np.ix_(idx, idx)]
+            self._dds_cache[atom] = K
+        C1 = self._mo(b1, as_array=True)
+        C2 = self._mo(b2, as_array=True)
+        return C1.T @ self._dds_cache[atom] @ C2
