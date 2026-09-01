@@ -1023,10 +1023,8 @@ class Derivatives(object):
             self._dds_cache = {}
         if atom not in self._dds_cache:
             bs = self.wfn.H.basisset
-            idx = np.concatenate(
-                [np.arange(bs.shell(i).function_index,
-                           bs.shell(i).function_index + bs.shell(i).nfunction)
-                 for i in range(bs.nshell()) if bs.shell_to_center(i) == atom])
+            idx = np.array([mu for mu in range(bs.nbf())
+                            if bs.function_to_center(mu) == atom])
             T = np.asarray(self.mints.ao_kinetic())
             K = np.zeros_like(T)
             K[np.ix_(idx, idx)] = 2.0 * T[np.ix_(idx, idx)]
