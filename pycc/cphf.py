@@ -543,8 +543,8 @@ class CPHF(object):
             gx = self._skeleton_eri(pert)
             U = self.full_U(pert, ncore, canonical)
             return gx + self._rotate_eri(U, ERI)
-        # persistent, perturbation-keyed store (disk when enabled, RAM when not) -- shared across
-        # property calls on this wavefunction, replacing the old per-CPHF ``_deri`` RAM dict.
+        # persistent, perturbation-keyed store (always disk-backed) -- shared across property
+        # calls on this wavefunction, replacing the old per-CPHF ``_deri`` RAM dict.
         full = self.wfn.derivatives.store.get_or_compute('deri', pert, _build, ctx=(ncore, canonical))
         if blocks is None:
             return full

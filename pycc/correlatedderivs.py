@@ -617,7 +617,7 @@ class CorrelatedDerivs:
     def _relaxed_response(self, pert):
         """Per-perturbation :class:`PerturbedResponse` ``(dDrel, dGam, dI)`` for ``pert``,
         dispatched to the spatial or spin-orbital solve and memoized in the persistent store
-        (:attr:`Derivatives.store`, disk when enabled, RAM otherwise).  The record is
+        (:attr:`Derivatives.store`, always disk-backed).  The record is
         method-dependent -- it consumes this driver's amplitudes through
         :meth:`_perturbed_unrelaxed_densities` -- so it is keyed on the driver-instance id
         ``_uid`` alongside the perturbation, gauge, and route.  A second property call on the
