@@ -56,7 +56,7 @@ This package requires the following:
   - [numpy](https://numpy.org/)
   - [opt_einsum](https://optimized-einsum.readthedocs.io/en/stable/)
   - [scipy](https://www.scipy.org/)
-  - [h5py](https://www.h5py.org/) (on-disk cache for derivative tensors; falls back to in-memory memoization if absent)
+  - [h5py](https://www.h5py.org/) (disk-backed store for derivative tensors; required for analytic derivative properties)
 
 Optional packages:
   - [pytorch](https://pytorch.org/)

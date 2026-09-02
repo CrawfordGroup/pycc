@@ -31,8 +31,9 @@ dependencies = [
     "scipy",
     "qcelemental",    # physical constants / unit conversions used by pycc.properties; imported by
                       # pycc/__init__, so this is a HARD requirement (import pycc fails without it)
-    "h5py",           # on-disk persistent store for derivative tensors (DerivStore); degrades to
-                      # in-memory memoization if absent, so this is a soft requirement
+    "h5py",           # disk-backed persistent store for derivative tensors (DerivStore).  The
+                      # store is disk-only and raises if h5py is missing, so every analytic
+                      # derivative property needs it; energy-only runs never construct one.
     # example: "numpy >=2.3.3; python_version >='3.14'",
 ]
 
