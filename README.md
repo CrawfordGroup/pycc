@@ -38,9 +38,10 @@ include:
     length and velocity gauge), atomic axial tensors (AATs), and nuclear Hessians, sharing the
     same `CorrelatedDerivs` base as the MP2 and CC properties
   - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
-    `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that dispatches on wavefunction type and returns
-    each property's nuclear/reference/correlation decomposition as a `PropertyComponents`
-    dataclass (`.total`, `.nuclear`, `.reference`, `.correlation`, `.electronic`)
+    `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that takes a derivative driver (`pycc.CCderiv`,
+    `pycc.MPderiv`, `pycc.CIderiv`) or an `HFwfn`, and returns each property's
+    nuclear/reference/correlation decomposition as a `PropertyComponents` dataclass
+    (`.total`, `.nuclear`, `.reference`, `.correlation`, `.electronic`)
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
 
