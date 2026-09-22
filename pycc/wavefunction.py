@@ -6,8 +6,7 @@ the Psi4 reference, the orbital spaces (full MO basis, with active occupied/virt
 slices that offset past any frozen core), the MO coefficients (optionally with
 localized occupied orbitals), the full-MO-basis integrals (Hamiltonian), and the
 device/precision manager. Method-specific machinery (amplitudes, denominators,
-densities, response, ...) lives in the subclasses (CCwfn, MPwfn, HFwfn, and --
-planned -- CIwfn).
+densities, response, ...) lives in the subclasses (HFwfn, MPwfn, CIwfn, CCwfn).
 
 Part of the 2026-06 refactor (docs/archive/REFACTOR_PLAN_2026-06.md, Phase 3): the
 reference/orbital/integral setup and the DeviceManager were lifted out of

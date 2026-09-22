@@ -68,11 +68,18 @@ from .timing import timed
 
 # A perturbation descriptor used to key the response and full-derivative caches.
 # ``kind`` is 'field' (electric dipole, axis ``comp`` in 0/1/2), 'nuclear' (atomic
-# displacement, ``comp`` = (atom, cart)), or 'magnetic' (axis ``comp``). It is the
-# shared identity under which CPHF memoizes ``U^x`` and the full (CPHF-folded) first
-# derivatives ``d_x f`` and ``d_x <pq||rs>`` so multi-property workflows (e.g. IR + VCD,
-# or an MP2 gradient + polarizability) never recompute them. Only 'field' is wired so
-# far; 'nuclear'/'magnetic' slot into the same machinery later.
+# displacement, ``comp`` = (atom, cart)), 'magnetic' (axis ``comp``), or 'vecpot'
+# (linear momentum / vector potential, axis ``comp``). It is the shared identity under
+# which CPHF memoizes ``U^x`` and the full (CPHF-folded) first derivatives ``d_x f`` and
+# ``d_x <pq||rs>`` so multi-property workflows (e.g. IR + VCD, or an MP2 gradient +
+# polarizability) never recompute them.
+#
+# The orbital-response machinery keyed on this descriptor (``_skeleton_eri``,
+# ``_skeleton_derivatives``, ``_ov_response``, ``full_U``) is wired for 'field' and
+# 'nuclear'; the other kinds raise there.  'magnetic' and 'vecpot' are nonetheless full
+# members of the type: they serve as the cache identity for the CI derivative code
+# (``cideriv``, which builds the AATs and the velocity-gauge APTs), whose one-electron
+# folds come from ``magnetic_ints`` / ``momentum_ints`` rather than from an ov CPHF solve.
 Perturbation = namedtuple('Perturbation', ['kind', 'comp'])
 
 
