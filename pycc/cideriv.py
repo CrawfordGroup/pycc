@@ -556,3 +556,76 @@ class CIderiv(CorrelatedDerivs):
         overlap_total = (self.compute_Icc_VG_APT(gauge) + self.compute_Icphi_VG_APT(gauge)
                           + self.compute_Iphic_VG_APT(gauge) + self.compute_Iphiphi_VG_APT(gauge))
         return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
+
+    def dboc(self, gauge='canonical'):
+        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
+        true-normalized CISD wavefunction (Gauss et al., JCP 125, 144111 (2006)):
+        `E = \sum_{A\alpha} \|\partial_{A\alpha}\psi\|^2 / 2M_A`, bare
+        NUCLEAR masses.
+
+        The sectors are the AAT's (``Icc``, ``Icphi`` = ``Iphic``, ``Iphiphi``)
+        with both perturbations nuclear; ``Iphiphi`` keeps the 2-RDM contraction
+        the AAT's symmetry theorem eliminates.  The one new ingredient is the AO
+        contact term `\sum_{pq} D_{pq}(Q - B^TB)_{pq}` (the paper's
+        `S^{(x)(y)}` class; both derivatives move the basis functions, so
+        it has no AAT analog), with the `Q` part via the kinetic sum rule
+        `\sum_X Q^{(X)} = 2T_{AA}` (`Derivatives.overlap_dd_sum`)
+        and `B` the half-derivative overlap. Matches the paper's Table I(a)
+        CISD column to its printed precision."""
+        from .cphf import Perturbation
+        ci = self.ci
+        c = self.contract
+        o, v = ci.o, ci.v
+        nmo = ci.nmo
+        mol = ci.ref.molecule()
+        natom = mol.natom()
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+        n0, n1, n2, _ = ci._normalized_amplitudes()
+        Dfull = np.asarray(ci._cisd_densities()[0]).real
+        Dcorr, Gam = self._unrelaxed_densities()
+        Dcorr, Gam = np.asarray(Dcorr).real, np.asarray(Gam).real
+        Dref = Dfull - Dcorr
+
+        # 2-PDM in the <E_pq E_rs> pairing: stored Gam + separable reference terms
+        def sep(A, B):
+            return (c('pq,rs->pqrs', A, B)
+                    - 0.5 * c('ps,rq->pqrs', A, B))
+
+        Gfull = (2.0 * Gam.transpose(0, 2, 1, 3)
+                 + sep(Dref, Dref) + sep(Dref, Dcorr) + sep(Dcorr, Dref))
+
+        E = 0.0
+        for A in range(natom):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            # Q part of the contact term via the kinetic sum rule (once per atom)
+            E += w * np.sum(Dfull * np.asarray(ci.derivatives.overlap_dd_sum(A)))
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                dF, U = self._cpci_ints(p, gauge=gauge)
+                dERI = self._cpci_eri(p, gauge=gauge)
+                dc1, dc2, dc0v, _, _ = self._solve_cpci_ints(
+                    np.asarray(dF), np.asarray(dERI))
+                dc1 = np.nan_to_num(np.asarray(dc1).real)
+                dc2 = np.nan_to_num(np.asarray(dc2).real)
+                dc0v = float(np.nan_to_num(np.asarray(dc0v).real))
+                half_S = np.asarray(
+                    ci.derivatives.overlap_half(A)[cart]).T
+                Ueff = np.asarray(U).real + half_S
+                Icc = (dc0v * dc0v + 2.0 * np.sum(dc1 * dc1)
+                       + np.sum((2.0 * dc2 - dc2.swapaxes(2, 3)) * dc2))
+                R = np.asarray(self._build_Dtilde(dc1, dc2, dc0v)).real
+                T = np.zeros((nmo, nmo))
+                T[o, o] = R[o, o].T
+                T[v, v] = R[v, v].T
+                T[o, v] = (2.0 * dc0v * n1
+                           + 2.0 * c('jb,ijab->ia', dc1, 2.0 * n2 - n2.swapaxes(2, 3)))
+                T[v, o] = (2.0 * n0 * dc1.T
+                           + 2.0 * c('ijab,jb->ai', 2.0 * dc2 - dc2.swapaxes(2, 3), n1))
+                Icphi = np.sum(T * Ueff)
+                Iphic = Icphi
+                Iphiphi = (c('pq,pq->', Dfull, Ueff @ Ueff.T)
+                           - c('pqrs,pq,rs->', Gfull, Ueff, Ueff))
+                contact = -np.sum(Dfull * (half_S.T @ half_S))
+                E += w * (Icc + Icphi + Iphic + Iphiphi + contact)
+        return E

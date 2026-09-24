@@ -628,3 +628,45 @@ class HFwfn(Wavefunction):
                 for alpha in range(3):
                     P[A, beta, alpha] = -2.0 * self.contract('ia,ia->', Ur[beta] + Sh[beta], Ua[alpha])
         return P
+
+    def dboc(self):
+        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
+        Hartree-Fock determinant,
+
+            E_\mathrm{DBOC} = \sum_{A\alpha} \frac{1}{2 M_A}
+            \Big[\, 2 \sum_{ia} (\tilde U^{A\alpha}_{ia})^2
+            + \sum_{pq} D^\mathrm{ref}_{pq} (Q - B^T B)_{pq} \,\Big]
+
+        with `\tilde U = U + S^{(x)}/2` the antisymmetric connection,
+        `B` the half-derivative overlap, and bare NUCLEAR masses (atomic
+        mass minus `Z m_e`).  The `Q` (two-sided AO-derivative) part
+        of the contact term is evaluated through the kinetic sum rule
+        `\sum_X Q^{(X)} = 2T_{AA}` (`Derivatives.overlap_dd_sum`) -
+        the DBOC weights the three components of each atom equally, so only the
+        component sum is needed, and it reduces to ordinary kinetic integrals.  This is the single-determinant limit of the
+        correlated formulations (`CIderiv.dboc` / `MPderiv.dboc`):
+        no coefficient response, and the orbital-orbital sector reduces to
+        `2\sum_{ia}\tilde U_{ia}^2` (the separable HF two-particle density
+        cancels the occupied-occupied rotations).  Matches Gauss, Tajti, Kallay,
+        Stanton, and Szalay, J. Chem. Phys. 125, 144111 (2006), Table I HF rows
+        at the Ref.-14 (HEAT) geometries."""
+        from .cphf import Perturbation
+        mol = self.ref.molecule()
+        no = self.no
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+        E = 0.0
+        for A in range(mol.natom()):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            # component-summed Q part of the contact term: kinetic sum rule
+            K = np.asarray(self.derivatives.overlap_dd_sum(A))
+            E += w * 2.0 * np.trace(K[:no, :no])
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                half_S = np.asarray(
+                    self.derivatives.overlap_half(A)[cart]).T
+                Ueff = np.asarray(self.cphf.full_U(p)).real + half_S
+                el = 2.0 * np.sum(Ueff[:no, no:] ** 2)
+                contact = -2.0 * np.trace((half_S.T @ half_S)[:no, :no])
+                E += w * (el + contact)
+        return E
