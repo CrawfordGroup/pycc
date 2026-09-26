@@ -173,14 +173,15 @@ def t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, WithDenom=True):
         return t3
 
 
-# Lee and Rendell's formulation
+# Rendell, Lee, and Komornicki's formulation
 def t_tjl(ccwfn: "CCwfn") -> float:
     """Compute the (T) energy correction (spatial, spin-adapted closed-shell RHF) using the
-    efficient formulation of Lee and Rendell, Chem. Phys. Lett. 178, 462-470 (1991).
+    efficient formulation of Rendell, Lee, and Komornicki, Chem. Phys. Lett. 178, 462-470
+    (1991).
 
     Returns the same E(T) as :func:`t_vikings` / :func:`t_vikings_inverted`, but via the
-    Lee-Rendell factorization: the connected T3 batch ``W3`` (:func:`t3c_ijk`) and the full
-    numerator ``V3 = W3 + t3d`` are combined into the ``X3``/``Y3``/``Z3`` symmetry
+    Rendell-Lee-Komornicki factorization: the connected T3 batch ``W3`` (:func:`t3c_ijk`) and
+    the full numerator ``V3 = W3 + t3d`` are combined into the ``X3``/``Y3``/``Z3`` symmetry
     intermediates and summed over the *triangular* ranges i>=j>=k and a>=b>=c with the
     corresponding permutation multiplicity weights -- about a factor of 6 fewer batch
     contractions than the full-loop viking algorithm.
