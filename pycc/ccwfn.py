@@ -23,7 +23,7 @@ from .utils import helper_diis, zeros_like, clone, sqrt, permute_triples, title,
 from .wavefunction import Wavefunction
 from .local import Local
 from . import cctriples
-from .cctriples import t_tjl, t3c_ijk, t3_pert_ijk
+from .cctriples import t_tjl, t_vikings, t_vikings_inverted, t3c_ijk, t3_pert_ijk
 from .cctriples import t_vikings_so, t3c_ijk_so
 from .lccwfn import lccwfn
 from ._typing import Tensor
@@ -305,7 +305,7 @@ class CCwfn(Wavefunction):
                     elif self.orbital_basis == 'spinorbital':
                         et = t_vikings_so(o, v, self.t1, self.t2, F, self.H.ERI, contract)
                     else:
-                        et = t_tjl(self)
+                        et = self.t_tjl()
                     print("E(T)    = %20.15f" % et)
                     ecc = ecc + et
                 else:
@@ -317,6 +317,45 @@ class CCwfn(Wavefunction):
             diis.add_error_vector(self.t1, self.t2)
             if niter >= start_diis:
                 self.t1, self.t2 = diis.extrapolate(self.t1, self.t2)
+
+    # ---- (T) energy: the spatial algorithms, callable directly ----
+    # All three return the SAME E(T) for a converged closed-shell RHF CCSD(T) wavefunction; they
+    # differ only in loop structure and therefore cost (test_005_ccsd_t_energy cross-checks all
+    # three against psi4).  ``solve_cc`` uses :meth:`t_tjl`, the cheapest.  The other two are
+    # exposed for validation rather than as a production route, which is why ``solve_cc`` takes no
+    # algorithm keyword.
+
+    def _require_spatial_triples(self, name: str) -> None:
+        """Guard the spatial (T) drivers.  They assume a spin-adapted closed-shell RHF reference,
+        and on spin-orbital amplitudes they would return a plausible but wrong number rather than
+        fail, so reject that case explicitly."""
+        if self.orbital_basis == 'spinorbital':
+            raise NotImplementedError(
+                "%s is the spatial (spin-adapted closed-shell RHF) (T) algorithm, but this "
+                "wavefunction is spin-orbital; solve_cc uses cctriples.t_vikings_so for that "
+                "case." % name)
+
+    def t_tjl(self) -> float:
+        """The (T) energy correction by the Rendell-Lee-Komornicki triangular-loop algorithm
+        (:func:`pycc.cctriples.t_tjl`).  This is the route :meth:`solve_cc` itself uses.  Requires
+        converged CCSD amplitudes."""
+        self._require_spatial_triples('t_tjl')
+        return t_tjl(self)
+
+    def t_vikings(self) -> float:
+        """The (T) energy correction by the Helgaker-Jorgensen-Olsen "vikings" algorithm, batched
+        over the occupied indices (:func:`pycc.cctriples.t_vikings`).  Returns the same E(T) as
+        :meth:`t_tjl` at higher cost, as an independent cross-check.  Requires converged CCSD
+        amplitudes."""
+        self._require_spatial_triples('t_vikings')
+        return t_vikings(self)
+
+    def t_vikings_inverted(self) -> float:
+        """The (T) energy correction by the virtual-batched form of the "vikings" algorithm
+        (:func:`pycc.cctriples.t_vikings_inverted`).  Returns the same E(T) as :meth:`t_tjl`.
+        Requires converged CCSD amplitudes."""
+        self._require_spatial_triples('t_vikings_inverted')
+        return t_vikings_inverted(self)
 
     def residuals(self, F, t1, t2, real_time=False):
         """

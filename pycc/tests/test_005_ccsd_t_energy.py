@@ -47,6 +47,37 @@ def test_ccsd_t_h2o(rhf_wfn):
     assert (abs(epsi4 - et_tjl) < 1e-11)
 
 
+def test_t_methods_match_the_module_drivers(rhf_wfn):
+    """The CCwfn (T) methods are the discoverable entry points for the three spatial algorithms.
+    Each must return exactly what the module-level driver returns (they delegate), and all three
+    must agree with each other, since they are the same E(T) by different loop structures."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
+                  e_convergence=1e-12, d_convergence=1e-12)
+    cc = pycc.CCwfn(wfn, model="CCSD(T)")
+    cc.solve_cc(e_conv=1e-12, r_conv=1e-12)
+
+    assert cc.t_tjl() == t_tjl(cc)
+    assert cc.t_vikings() == t_vikings(cc)
+    assert cc.t_vikings_inverted() == t_vikings_inverted(cc)
+
+    assert abs(cc.t_vikings() - cc.t_tjl()) < 1e-12
+    assert abs(cc.t_vikings_inverted() - cc.t_tjl()) < 1e-12
+
+
+def test_spatial_t_methods_reject_a_spin_orbital_wavefunction(rhf_wfn):
+    """The three spatial drivers assume a spin-adapted closed-shell reference and would return a
+    plausible but wrong number on spin-orbital amplitudes rather than fail, so the methods guard
+    the case explicitly instead of letting it through."""
+    wfn = rhf_wfn("H2O", "STO-3G", freeze_core="false",
+                  e_convergence=1e-12, d_convergence=1e-12)
+    so = pycc.CCwfn(wfn, model="CCSD(T)", orbital_basis="spinorbital")
+    so.solve_cc(e_conv=1e-10, r_conv=1e-10)
+
+    for name in ("t_tjl", "t_vikings", "t_vikings_inverted"):
+        with pytest.raises(NotImplementedError, match="spin-orbital"):
+            getattr(so, name)()
+
+
 def test_so_ccsd_t_equals_spatial_rhf(rhf_wfn):
     """Spin-orbital CCSD(T) (forced) reproduces spin-adapted spatial CCSD(T) on a
     closed shell, isolating the spin-orbital (T) driver."""
