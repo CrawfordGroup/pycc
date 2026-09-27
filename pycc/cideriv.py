@@ -655,7 +655,7 @@ class CIderiv(CorrelatedDerivs):
         U_ME = 1822.888486209
         ME_U = 5.48579909065e-4
         n0, n1, n2, _ = ci._normalized_amplitudes()
-        Dfull = np.asarray(ci._cisd_densities()[0]).real
+        Dfull = np.asarray(self._cisd_densities()[0]).real
         Dcorr, Gam = self._unrelaxed_densities()
         Dcorr, Gam = np.asarray(Dcorr).real, np.asarray(Gam).real
         Dref = Dfull - Dcorr
