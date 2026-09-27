@@ -653,3 +653,100 @@ class MPderiv(CorrelatedDerivs):
                     P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
         self.vgapt = P
         return P
+
+    def dboc(self):
+        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
+        fully normalized MP2 wave function
+        `|\Psi\rangle = N(1 + \hat T_2)|\Phi_0\rangle`,
+
+            E_\mathrm{DBOC} = \sum_{A\alpha} \frac{1}{2 M_A}
+            \|\partial_{A\alpha}\Psi\|^2
+
+        with bare NUCLEAR masses (atomic mass minus `Z m_e`) - the
+        `c_1 = 0` case of `CIderiv.dboc` (Gauss, Tajti, Kallay,
+        Stanton, and Szalay, J. Chem. Phys. 125, 144111 (2006)), with the
+        amplitude responses in closed form (`_perturbed_t2`; no
+        iterative solves).  Sectors are the AAT's with both perturbations
+        nuclear: ``Icc`` (coefficient response norm, including
+        `\delta c_0 = -c_0^3\,\tilde\tau\cdot\delta t_2`),
+        ``Icphi = Iphic`` (transition density x `\tilde U`; oo/vv
+        blocks only - no singles), ``Iphiphi`` (1-RDM x
+        `\tilde U\tilde U^T` plus the 2-RDM contraction of the true
+        two-particle density of the normalized linear vector - the CISD
+        blocks with `c_1 = 0` - and the separable reference terms),
+        and the analytic AO contact term
+        `\sum D(Q - B^T B)` (the `Q` part through the kinetic sum
+        rule `\sum_X Q^{(X)} = 2T_{AA}`, `Derivatives.overlap_dd_sum`).
+        """
+        from .cphf import Perturbation
+        mp = self.mp
+        c = self.contract
+        o, v = mp.o, mp.v
+        nmo = mp.nmo
+        nof = o.stop
+        mol = mp.ref.molecule()
+        natom = mol.natom()
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+        t2 = np.asarray(mp.t2)
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        c0 = mp._mp2_normalization()
+        n2 = c0 * t2
+        tau_n = 2.0 * n2 - n2.swapaxes(2, 3)
+        cphf = self._full_occ_cphf()
+        ncore = o.stop - mp.no
+
+        Dfull = np.zeros((nmo, nmo))
+        Dfull[o, o] = -2.0 * c('ikab,jkab->ij', tau_n, n2)
+        Dfull[v, v] = +2.0 * c('ijac,ijbc->ab', tau_n, n2)
+        Dcorr = Dfull.copy()
+        Dfull[np.arange(nof), np.arange(nof)] += 2.0
+        Dref = Dfull - Dcorr
+
+        G = np.zeros((nmo, nmo, nmo, nmo))
+        G[o, o, o, o] = c('klab,ijab->ijkl', n2, tau_n)
+        G[v, v, v, v] = c('ijab,ijcd->abcd', n2, tau_n)
+        G[v, o, o, v] = 2.0 * c('jkac,ikbc->aijb', tau_n, tau_n)
+        G[v, o, v, o] = (-4.0 * c('jkac,ikbc->aibj', n2, n2)
+                         + 2.0 * c('jkac,ikcb->aibj', n2, n2)
+                         + 2.0 * c('jkca,ikbc->aibj', n2, n2)
+                         - 4.0 * c('jkca,ikcb->aibj', n2, n2))
+        G[o, o, v, v] = c0 * tau_n
+        tau_swp = (2.0 * n2.swapaxes(0, 2).swapaxes(1, 3)
+                   - n2.swapaxes(2, 3).swapaxes(0, 2).swapaxes(1, 3))
+        G[v, v, o, o] = c0 * tau_swp
+        Gam = 0.25 * (G + G.transpose(1, 0, 3, 2) + G.transpose(2, 3, 0, 1)
+                      + G.transpose(3, 2, 1, 0))
+
+        def sep(A_, B_):
+            return (c('pq,rs->pqrs', A_, B_)
+                    - 0.5 * c('ps,rq->pqrs', A_, B_))
+
+        Gfull = (2.0 * Gam.transpose(0, 2, 1, 3)
+                 + sep(Dref, Dref) + sep(Dref, Dcorr) + sep(Dcorr, Dref))
+
+        E = 0.0
+        for A in range(natom):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            # Q part of the contact term via the kinetic sum rule (once per atom)
+            E += w * np.sum(Dfull * np.asarray(mp.derivatives.overlap_dd_sum(A)))
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                dt2 = np.asarray(self._perturbed_t2_stored(p)).real
+                dc0 = -c0**3 * c('ijab,ijab->', tau, dt2)
+                dc2 = dc0 * t2 + c0 * dt2
+                half_S = np.asarray(
+                    mp.derivatives.overlap_half(A)[cart]).T
+                Ueff = np.asarray(cphf.full_U(p, ncore)).real + half_S
+                Icc = (dc0 * dc0
+                       + np.sum((2.0 * dc2 - dc2.swapaxes(2, 3)) * dc2))
+                T = np.zeros((nmo, nmo))
+                T[o, o] = -2.0 * c('ikab,jkab->ij', tau_n, dc2)
+                T[v, v] = +2.0 * c('ijbc,ijac->ab', tau_n, dc2)
+                Icphi = np.sum(T * Ueff)
+                Iphic = Icphi
+                Iphiphi = (c('pq,pq->', Dfull, Ueff @ Ueff.T)
+                           - c('pqrs,pq,rs->', Gfull, Ueff, Ueff))
+                contact = -np.sum(Dfull * (half_S.T @ half_S))
+                E += w * (Icc + Icphi + Iphic + Iphiphi + contact)
+        return E
