@@ -750,3 +750,39 @@ class MPderiv(CorrelatedDerivs):
                 contact = -np.sum(Dfull * (half_S.T @ half_S))
                 E += w * (Icc + Icphi + Iphic + Iphiphi + contact)
         return E
+
+    def dboc_mp1(self):
+        """Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.)
+        at the MP level: DBOC(MP1) of Tajti, Szalay, and Gauss, J. Chem. Phys. 127, 014102
+        (2007), Eq. (30): the SCF DBOC plus the first-order correlation
+        correction :math:`2\langle\partial\Psi^{(0)}|\partial\Psi^{(1)}\rangle
+        = -4\sum \tilde\tau_{ijab}\tilde U_{ia}\tilde U_{jb}` per coordinate -
+        linear in the MP2 doubles: no second-order amplitudes, no 2-rdm.
+        Matches the DBOC(MP1) totals CFOUR prints in ``CALC=SCF, DBOC=ON`` runs."""
+        from .cphf import Perturbation
+        mp = self.mp
+        c = self.contract
+        o, v = mp.o, mp.v
+        nof = o.stop
+        mol = mp.ref.molecule()
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+        t2 = np.asarray(mp.t2)
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        cphf = self._full_occ_cphf()
+        ncore = o.stop - mp.no
+        E = 0.0
+        for A in range(mol.natom()):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            # Q part of the SCF contact term via the kinetic sum rule
+            E += w * 2.0 * np.trace(np.asarray(mp.derivatives.overlap_dd_sum(A))[:nof, :nof])
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                half_S = np.asarray(
+                    mp.derivatives.overlap_half(A)[cart]).T
+                Ueff = np.asarray(cphf.full_U(p, ncore)).real + half_S
+                Uov = Ueff[o, v]
+                scf = (2.0 * np.sum(Uov ** 2)
+                       - 2.0 * np.trace((half_S.T @ half_S)[:nof, :nof]))
+                E += w * (scf - 4.0 * c('ijab,ia,jb->', tau, Uov, Uov))
+        return E
