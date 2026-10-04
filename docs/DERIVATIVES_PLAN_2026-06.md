@@ -1099,9 +1099,10 @@ stored).
 **The s.12.4 audit is now closed: no four-index derivative tensor is held in memory anywhere in the
 derivative machinery.**
 
-## 14. Perturbed amplitudes in the DerivStore -- CISD first -- DESIGN
+## 14. Perturbed amplitudes in the DerivStore -- CISD first -- DESIGN + IMPLEMENTED
 
-**Status: DESIGN, awaiting review.**  Source: issue #252 and its addendum comment.  This section
+**Status: IMPLEMENTED for CISD** (branch `fix/cpci-nuclear-gauge`); the `CCderiv` half stays
+deferred (s.14.7).  Source: issue #252 and its addendum comment.  This section
 records what was independently verified against the source, where the proposal in the issue should
 change, and what is deferred.
 
@@ -1487,6 +1488,37 @@ for the AAT/VG-APT hoist.
   s.14.6 makes true by construction.
 - **RAM**: assert that `CIderiv` has no `_cpci_cache`/`_cpci_raw_cache` attributes after the
   change, so the caches cannot quietly return.
+
+### 14.10 Result (measured)
+
+Implemented as `_cpci_record` / `_cpci_dc` / `_cpci_ctx` in `cideriv.py`.  Both consumers go through
+the one store-backed record: the base's hook (`_perturbed_unrelaxed_densities`, which hands in the
+`df`/`deri` it already built) and the AAT / VG-APT overlap code (`_solve_cpci`).  `_cpci_cache` and
+`_cpci_raw_cache` are gone; `_cpci_ints_cache` stays (`nmo^2`, s.14.8).
+
+CPCI solves counted by instrumenting `_solve_cpci_ints`, water/STO-3G (3 atoms, so 9 nuclear):
+
+| | before | after |
+|---|---|---|
+| Hessian | 9 nuclear | 9 nuclear |
+| AAT after a Hessian | 9 nuclear + 3 magnetic | **3 magnetic** |
+| AAT repeated, same driver | 0 (RAM cache) | 0 (store) |
+| AAT on a second driver, same wavefunction | 12 | **0** |
+
+So Hessian-then-AAT falls from 21 solves to 12; the repeat-call benefit the RAM caches gave is
+preserved; and the second-driver case is new (the `_uid` drop, s.14.6).
+
+**The VG-APT was covered without separate work, and gains more than the AAT.**  It reaches the
+amplitudes through `_aat_dc_normalized` -> `_solve_cpci`, so it reads the same record.  Previously
+the "3 vecpot solves only" figure in s.14.3 held *only because an AAT had run first* and populated
+`_cpci_cache`; a standalone `apt(gauge='velocity')` re-solved all `3N` nuclear.  It now reads the
+Hessian's records whether or not an AAT ran.
+
+**New cost to watch.**  The AAT calls `_aat_dc_normalized` once per nuclear perturbation in each of
+its four sectors (`compute_Icc`/`Iphic`/`Iphiphi`/`Icphi`).  Those were free RAM lookups after the
+first sector and are now four disk reads of `o^2 v^2` each: 4 * 3N * 63 MB at cc-pVTZ, ~7.5 GB for
+a ten-atom molecule.  Expected to be noise against a multi-hour block, but it is new traffic and
+should be measured rather than assumed -- see the instrumentation item in s.14.8.
 
 ## Appendix A: condensed changelog (by PR)
 
