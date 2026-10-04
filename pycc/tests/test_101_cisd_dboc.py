@@ -64,3 +64,35 @@ def test_cisd_dboc_hf():
 
 def test_cisd_dboc_h2o():
     assert abs(_cisd_dboc_cm(GEOMS['h2o']) - 615.69) < 0.01
+
+
+def _cisd_wfn(geom, basis='sto-3g'):
+    """Converged CISD wavefunction only (the reference checks above go through _cisd_dboc_cm,
+    which returns the DBOC directly and so cannot be reused for a two-driver comparison)."""
+    psi4.core.clean()
+    psi4.set_memory('2 GB')
+    psi4.core.set_output_file('output.dat', False)
+    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+                      'e_convergence': 1e-12, 'd_convergence': 1e-12})
+    psi4.geometry(geom)
+    _e, wfn = psi4.energy('scf', return_wfn=True)
+    ci = pycc.CIwfn(wfn, model='CISD')
+    ci.solve_ci(e_conv=1e-11, r_conv=1e-11, maxiter=200)
+    return ci
+
+
+def test_cisd_dboc_perturbed_mo_gauge_invariance():
+    """The CISD DBOC is invariant to the perturbed-MO gauge, the canonical vs non-canonical choice
+    governing the *nuclear* perturbations it is built from.
+
+    That choice is real, but it is NOT what the former ``dboc(gauge=...)`` argument selected: that
+    one was the *imaginary*-perturbation gauge, which the DBOC's nuclear-only perturbations never
+    consume, so it was bitwise inert and the cross-check it invited could not fail.  The genuine
+    choice reaches the CPCI solve from the driver, and this guards it."""
+    for geom in (GEOMS['h2'], GEOMS['h2o']):
+        ci = _cisd_wfn(geom)
+        nc = CIderiv(ci).dboc()
+        cd = CIderiv(ci)
+        cd._gauge_override = 'canonical'
+        ca = cd.dboc()
+        assert abs(nc - ca) < 1e-9 * max(1.0, abs(nc)), (nc, ca)

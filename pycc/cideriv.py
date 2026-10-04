@@ -689,7 +689,7 @@ class CIderiv(CorrelatedDerivs):
                           + self.compute_Iphic_VG_APT(gauge) + self.compute_Iphiphi_VG_APT(gauge))
         return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
 
-    def dboc(self, gauge='canonical'):
+    def dboc(self):
         r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
         true-normalized CISD wavefunction (Gauss et al., JCP 125, 144111 (2006)):
         `E = \sum_{A\alpha} \|\partial_{A\alpha}\psi\|^2 / 2M_A`, bare
@@ -703,7 +703,19 @@ class CIderiv(CorrelatedDerivs):
         it has no AAT analog), with the `Q` part via the kinetic sum rule
         `\sum_X Q^{(X)} = 2T_{AA}` (`Derivatives.overlap_dd_sum`)
         and `B` the half-derivative overlap. Matches the paper's Table I(a)
-        CISD column to its printed precision."""
+        CISD column to its printed precision.
+
+        Takes **no gauge argument**, unlike its neighbours on this class (``aat``,
+        ``_correlation_velocity_dipole_derivatives``, the ``compute_*`` sectors).  Theirs select
+        the redundant oo/vv response of an *imaginary* perturbation (magnetic / momentum); the
+        DBOC builds only ``Perturbation('nuclear', ...)``, so there is no imaginary perturbation
+        and that argument had no consumer -- it was bitwise inert, which is worse than noise,
+        since it advertised a cross-check that could not fail.  The real canonical vs
+        non-canonical choice for nuclear perturbations is the *perturbed-MO* gauge, which comes
+        from the driver (:attr:`~pycc.correlatedderivs.CorrelatedDerivs.perturbed_mo_gauge`) and
+        which the DBOC is invariant to -- see
+        ``test_cisd_dboc_perturbed_mo_gauge_invariance``.  Matches ``HFwfn.dboc``,
+        ``MPderiv.dboc`` and ``MPderiv.dboc_mp1``, none of which takes one either."""
         from .cphf import Perturbation
         ci = self.ci
         c = self.contract
@@ -734,8 +746,8 @@ class CIderiv(CorrelatedDerivs):
             E += w * np.sum(Dfull * np.asarray(ci.derivatives.overlap_dd_sum(A)))
             for cart in range(3):
                 p = Perturbation('nuclear', (A, cart))
-                dF, U = self._cpci_ints(p, gauge=gauge)
-                dERI = self._cpci_eri(p, gauge=gauge)
+                dF, U = self._cpci_ints(p)
+                dERI = self._cpci_eri(p)
                 dc1, dc2, dc0v, _, _ = self._solve_cpci_ints(
                     np.asarray(dF), np.asarray(dERI))
                 dc1 = np.nan_to_num(np.asarray(dc1).real)
