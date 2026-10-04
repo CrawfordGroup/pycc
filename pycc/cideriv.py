@@ -117,8 +117,11 @@ class CIderiv(CorrelatedDerivs):
         pert, in the same convention as _unrelaxed_densities. Solves the coupled-perturbed-CI
         response directly from the base's own full-occupied-space (frozen-core aware)
         perturbed integrals. """
-        label = perturbation_label(pert, self.ci.ref.molecule())
-        dc1, dc2, dc0v, _dt1, _dt2 = self._solve_cpci_ints(df, deri, imaginary=False, label=label)
+        # Through the shared store-backed record (not _solve_cpci_ints directly), so the AAT and
+        # VG-APT can read back what this solve produced instead of repeating it.  df/deri are
+        # handed in: the base already built them, and after the gauge fix in _cpci_ints they are
+        # the same integrals the AAT path would build for itself.
+        dc1, dc2, dc0v = self._cpci_dc(pert, df=df, deri=deri)
         dD_corr = self._perturbed_cisd_corr_opdm(dc1, dc2)
         dG_raw = self._perturbed_cisd_tpdm(dc1, dc2, dc0v)
         dGam = self._cisd_symmetrize(dG_raw)
@@ -141,7 +144,13 @@ class CIderiv(CorrelatedDerivs):
         ncore = self.ci.o.stop - self.ci.no
         cphf = self._full_occ_cphf()
         if pert.kind == 'nuclear':
-            return np.asarray(cphf.perturbed_eri(pert, ncore))          # DerivStore-backed
+            # Take the perturbed-MO gauge from the driver, NOT from this method's default: the
+            # base's second-derivative path passes it (correlatedderivs.py, _perturbed_relaxed_
+            # density), so letting it default here would solve the same CPCI equations from
+            # different integrals on a driver whose gauge is not the default.  Must stay in step
+            # with the identical line in _cpci_ints -- dF and dERI have to come from one gauge.
+            canonical = self.perturbed_mo_gauge == 'canonical'
+            return np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canonical))  # DerivStore-backed
         if pert.kind == 'magnetic':
             return np.asarray(cphf.magnetic_eri(pert.comp, ncore, gauge))
         if pert.kind == 'vecpot':
@@ -166,14 +175,17 @@ class CIderiv(CorrelatedDerivs):
         properties."""
         if getattr(self, '_cpci_ints_cache', None) is None:
             self._cpci_ints_cache = {}
-        key = (pert, gauge)
+        # The perturbed-MO gauge is in the key as well as the field gauge: it is a driver
+        # property, but ``_gauge_override`` can change it between calls on one driver.
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        key = (pert, gauge, canonical)
         if key in self._cpci_ints_cache:
             return self._cpci_ints_cache[key]
         ncore = self.ci.o.stop - self.ci.no
         if pert.kind == 'nuclear':
             cphf = self._full_occ_cphf()
-            dF = np.asarray(cphf.perturbed_fock(pert, ncore))
-            U = np.asarray(cphf.full_U(pert, ncore))
+            dF = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canonical))
+            U = np.asarray(cphf.full_U(pert, ncore, canonical=canonical))
             result = (dF, U)
         elif pert.kind == 'magnetic':
             U, dF = self._full_occ_cphf().magnetic_ints(pert.comp, ncore, gauge)
@@ -348,36 +360,83 @@ class CIderiv(CorrelatedDerivs):
 
         return dc1, dc2, dc0v, dt1, dt2
 
-    def _solve_cpci(self, pert, gauge='non-canonical', maxiter=100, diis_start=2, diis_max=8,
-                     e_convergence=1e-11, d_convergence=1e-11):
-        """Coupled-perturbed CI, entry point keyed by Perturbation - used by the AAT/VG-APT
-        overlap code below (magnetic/vecpot/nuclear via _cpci_ints). Cached by pert. Returns
-        (dc1, dc2, dc0v). The base's second-derivative machinery does NOT go through this -
-        see _perturbed_unrelaxed_densities, which calls _solve_cpci_ints directly with the
-        base's own full-occupied-space (df, deri)."""
-        if getattr(self, '_cpci_cache', None) is None:
-            self._cpci_cache = {}
-        key = (pert, gauge)
-        if key in self._cpci_cache:
-            return self._cpci_cache[key]
-        dF, U = self._cpci_ints(pert, gauge)
-        dERI = self._cpci_eri(pert, gauge)              # nmo^4, fetched here and released below
-        imaginary = pert.kind in ('magnetic', 'vecpot')
-        dc1, dc2, dc0v, dt1, dt2 = self._solve_cpci_ints(
-            dF, dERI, imaginary=imaginary, maxiter=maxiter, diis_start=diis_start,
-            diis_max=diis_max, e_convergence=e_convergence, d_convergence=d_convergence,
-            label=perturbation_label(pert, self.ci.ref.molecule()))
-        if getattr(self, '_cpci_raw_cache', None) is None:
-            self._cpci_raw_cache = {}
-        self._cpci_raw_cache[key] = (dt1, dt2)
-        result = (dc1, dc2, dc0v)
-        self._cpci_cache[key] = result
-        return result
+    # ---- the perturbed-CI record: one per (perturbation, perturbed-MO gauge), on disk ----
+    # Both consumers of the CPCI solve go through here.  The base's second-derivative machinery
+    # reaches it from _perturbed_unrelaxed_densities (passing the (df, deri) it has already built);
+    # the AAT / VG-APT overlap code reaches it from _solve_cpci, which builds its own.  Before this
+    # they were separate solves with separate RAM caches, so a VCD re-solved all 3N nuclear
+    # perturbations for the AAT that the Hessian had already solved.  See
+    # docs/DERIVATIVES_PLAN_2026-06.md section 14.
+
+    def _cpci_ctx(self, pert, gauge):
+        """The store ctx for a CPCI record: the perturbed-MO gauge **that produced it**.
+
+        One member, not two.  :meth:`_solve_cpci_ints` takes no gauge argument, so all gauge
+        dependence enters through ``dF``/``dERI``, and each perturbation kind draws those from
+        exactly one source: the real (nuclear / field) perturbations from the driver's
+        :attr:`~pycc.correlatedderivs.CorrelatedDerivs.perturbed_mo_gauge`, the imaginary
+        (magnetic / vecpot) ones from ``gauge``.  Carrying the other one would not be inert, it
+        would be a spurious miss: a cross-check run at a non-default magnetic gauge would discard
+        all 3N nuclear records, which is exactly the saving this record exists to deliver.
+
+        ``_uid`` is deliberately absent (the ``'pt2'`` precedent, mpderiv.py).  A ``CIwfn`` fixes
+        its model at construction and ``CIderiv.__init__`` takes no other argument, so the only
+        per-driver variability is the gauge above; two independently built drivers give
+        bit-identical amplitudes.  Dropping it lets ``pycc.hessian(pycc.CIderiv(ci))`` followed by
+        ``pycc.aat(pycc.CIderiv(ci))`` share records instead of re-solving."""
+        real = pert.kind in ('nuclear', 'field')
+        return (self.perturbed_mo_gauge if real else gauge,)
+
+    def _cpci_record(self, pert, gauge='non-canonical', df=None, deri=None, **kwargs):
+        """``(dt1, dt2, dc0v)`` for ``pert``, memoized in the :class:`~pycc.derivatives.DerivStore`.
+
+        ``dt2`` is the four-index (``o^2 v^2``) member; ``dt1`` and the scalar ``dc0v`` are the
+        companions that make the record self-contained, since :meth:`_cpci_dc` needs ``dc0v`` and
+        recomputing it would need ``dt1``.  ``df``/``deri`` let a caller that has already built the
+        perturbed integrals hand them in rather than have the builder fetch them again."""
+        def _build():
+            dF, dERI = df, deri
+            if dF is None:
+                dF, _U = self._cpci_ints(pert, gauge)
+                dERI = self._cpci_eri(pert, gauge)
+            _dc1, _dc2, dc0v, dt1, dt2 = self._solve_cpci_ints(
+                np.asarray(dF), np.asarray(dERI),
+                imaginary=pert.kind in ('magnetic', 'vecpot'),
+                label=perturbation_label(pert, self.ci.ref.molecule()), **kwargs)
+            return dt1, dt2, np.asarray(dc0v)
+        return self.wfn.derivatives.store.get_or_compute_group(
+            'cpci', pert, _build, ('dt1', 'dt2', 'dc0v'), ctx=self._cpci_ctx(pert, gauge))
+
+    def _cpci_dc(self, pert, gauge='non-canonical', df=None, deri=None, **kwargs):
+        r"""``(dc1, dc2, dc0v)``: the true-normalized perturbed CI coefficients, rebuilt from the
+        stored record.  ``dc`` is an exact linear function of ``dt``::
+
+            dc1 = dc0v * c1 + n0 * dt1,    dc2 = dc0v * c2 + n0 * dt2
+
+        and the single formula covers **both** branches of :meth:`_solve_cpci_ints`, because
+        ``dc0v`` is zero for an imaginary perturbation.  So no ``imaginary`` flag is threaded here,
+        and ``dc1``/``dc2`` are never stored: they are two array expressions over quantities the
+        wavefunction already holds, against a CPCI solve to recompute."""
+        dt1, dt2, dc0v = self._cpci_record(pert, gauge, df=df, deri=deri, **kwargs)
+        dc0v = dc0v[()] if isinstance(dc0v, np.ndarray) else dc0v
+        n0 = self.ci._normalized_amplitudes()[0]
+        return dc0v * self.ci.c1 + n0 * dt1, dc0v * self.ci.c2 + n0 * dt2, dc0v
+
+    def _solve_cpci(self, pert, gauge='non-canonical', **kwargs):
+        """Coupled-perturbed CI keyed by :class:`~pycc.cphf.Perturbation`, returning
+        ``(dc1, dc2, dc0v)`` -- the entry point for the AAT / VG-APT overlap code below.
+
+        A thin reader over :meth:`_cpci_dc`, so it shares the on-disk record with the base's
+        second-derivative machinery: on a Hessian-then-AAT run the nuclear perturbations are solved
+        once, not twice.  The former ``_cpci_cache`` / ``_cpci_raw_cache`` RAM dicts are gone; they
+        grew monotonically for the driver's lifetime at ``o^2 v^2`` per entry and held two
+        normalizations of the same information."""
+        return self._cpci_dc(pert, gauge, **kwargs)
 
     def _cpci_raw(self, pert, gauge='non-canonical'):
-        if getattr(self, '_cpci_raw_cache', None) is None or (pert, gauge) not in self._cpci_raw_cache:
-            self._solve_cpci(pert, gauge)
-        return self._cpci_raw_cache[(pert, gauge)]
+        """The raw (``t``-normalized) perturbed amplitudes ``(dt1, dt2)`` for ``pert``."""
+        dt1, dt2, _dc0v = self._cpci_record(pert, gauge)
+        return dt1, dt2
 
     # raw perturbed correlation-density builders (true-normalized)
 
@@ -630,7 +689,7 @@ class CIderiv(CorrelatedDerivs):
                           + self.compute_Iphic_VG_APT(gauge) + self.compute_Iphiphi_VG_APT(gauge))
         return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
 
-    def dboc(self, gauge='canonical'):
+    def dboc(self):
         r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
         true-normalized CISD wavefunction (Gauss et al., JCP 125, 144111 (2006)):
         `E = \sum_{A\alpha} \|\partial_{A\alpha}\psi\|^2 / 2M_A`, bare
@@ -644,7 +703,19 @@ class CIderiv(CorrelatedDerivs):
         it has no AAT analog), with the `Q` part via the kinetic sum rule
         `\sum_X Q^{(X)} = 2T_{AA}` (`Derivatives.overlap_dd_sum`)
         and `B` the half-derivative overlap. Matches the paper's Table I(a)
-        CISD column to its printed precision."""
+        CISD column to its printed precision.
+
+        Takes **no gauge argument**, unlike its neighbours on this class (``aat``,
+        ``_correlation_velocity_dipole_derivatives``, the ``compute_*`` sectors).  Theirs select
+        the redundant oo/vv response of an *imaginary* perturbation (magnetic / momentum); the
+        DBOC builds only ``Perturbation('nuclear', ...)``, so there is no imaginary perturbation
+        and that argument had no consumer -- it was bitwise inert, which is worse than noise,
+        since it advertised a cross-check that could not fail.  The real canonical vs
+        non-canonical choice for nuclear perturbations is the *perturbed-MO* gauge, which comes
+        from the driver (:attr:`~pycc.correlatedderivs.CorrelatedDerivs.perturbed_mo_gauge`) and
+        which the DBOC is invariant to -- see
+        ``test_cisd_dboc_perturbed_mo_gauge_invariance``.  Matches ``HFwfn.dboc``,
+        ``MPderiv.dboc`` and ``MPderiv.dboc_mp1``, none of which takes one either."""
         from .cphf import Perturbation
         ci = self.ci
         c = self.contract
@@ -675,10 +746,11 @@ class CIderiv(CorrelatedDerivs):
             E += w * np.sum(Dfull * np.asarray(ci.derivatives.overlap_dd_sum(A)))
             for cart in range(3):
                 p = Perturbation('nuclear', (A, cart))
-                dF, U = self._cpci_ints(p, gauge=gauge)
-                dERI = self._cpci_eri(p, gauge=gauge)
-                dc1, dc2, dc0v, _, _ = self._solve_cpci_ints(
-                    np.asarray(dF), np.asarray(dERI))
+                dF, U = self._cpci_ints(p)
+                # Through the shared store-backed record, so a DBOC run after a Hessian (or an
+                # AAT) reads the 3N nuclear amplitudes instead of re-solving them.  The record's
+                # builder reaches the same integrals this method would have built for itself.
+                dc1, dc2, dc0v = self._cpci_dc(p)
                 dc1 = np.nan_to_num(np.asarray(dc1).real)
                 dc2 = np.nan_to_num(np.asarray(dc2).real)
                 dc0v = float(np.nan_to_num(np.asarray(dc0v).real))
