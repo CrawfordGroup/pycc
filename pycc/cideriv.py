@@ -83,7 +83,13 @@ class CIderiv(CorrelatedDerivs):
         ncore = self.ci.o.stop - self.ci.no
         cphf = self._full_occ_cphf()
         if pert.kind == 'nuclear':
-            return np.asarray(cphf.perturbed_eri(pert, ncore))          # DerivStore-backed
+            # Take the perturbed-MO gauge from the driver, NOT from this method's default: the
+            # base's second-derivative path passes it (correlatedderivs.py, _perturbed_relaxed_
+            # density), so letting it default here would solve the same CPCI equations from
+            # different integrals on a driver whose gauge is not the default.  Must stay in step
+            # with the identical line in _cpci_ints -- dF and dERI have to come from one gauge.
+            canonical = self.perturbed_mo_gauge == 'canonical'
+            return np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canonical))  # DerivStore-backed
         if pert.kind == 'magnetic':
             return np.asarray(cphf.magnetic_eri(pert.comp, ncore, gauge))
         if pert.kind == 'vecpot':
@@ -108,14 +114,17 @@ class CIderiv(CorrelatedDerivs):
         properties."""
         if getattr(self, '_cpci_ints_cache', None) is None:
             self._cpci_ints_cache = {}
-        key = (pert, gauge)
+        # The perturbed-MO gauge is in the key as well as the field gauge: it is a driver
+        # property, but ``_gauge_override`` can change it between calls on one driver.
+        canonical = self.perturbed_mo_gauge == 'canonical'
+        key = (pert, gauge, canonical)
         if key in self._cpci_ints_cache:
             return self._cpci_ints_cache[key]
         ncore = self.ci.o.stop - self.ci.no
         if pert.kind == 'nuclear':
             cphf = self._full_occ_cphf()
-            dF = np.asarray(cphf.perturbed_fock(pert, ncore))
-            U = np.asarray(cphf.full_U(pert, ncore))
+            dF = np.asarray(cphf.perturbed_fock(pert, ncore, canonical=canonical))
+            U = np.asarray(cphf.full_U(pert, ncore, canonical=canonical))
             result = (dF, U)
         elif pert.kind == 'magnetic':
             U, dF = self._full_occ_cphf().magnetic_ints(pert.comp, ncore, gauge)

@@ -266,6 +266,11 @@ Conventions: spatial methods unlabeled, spin-orbital prefixed `_so_`.
 - **ROHF orbital response — deferred, guarded.** The semicanonical spin-orbital response is UHF-like
   and does not reproduce the restricted ROHF response; `CPHF.solve` raises for ROHF. The CPHF-free
   ROHF HF gradient is unaffected.
+- **Perturbed amplitudes in the store (s.14) -- DESIGN, under review.** The s.12/s.13 sweeps moved
+  the `nmo^4` tensors to the `DerivStore` but not the active-space (`o^2 v^2`) perturbed amplitudes.
+  `CIderiv` keeps two unevictable RAM dicts and the AAT re-solves all `3*natom` nuclear CPCI
+  perturbations the Hessian already solved (issue #252).  CISD first; the `CCderiv` half is gated on
+  the CC-AAT carryover, like the AAT/VG-APT hoist above.
 - Out of scope: 2n+2 / higher-order (cubic-response) economies.
 
 ## 7. CCSD(T) gradient — spatial RHF + spin-orbital UHF (design & status)
@@ -1093,6 +1098,395 @@ stored).
 
 **The s.12.4 audit is now closed: no four-index derivative tensor is held in memory anywhere in the
 derivative machinery.**
+
+## 14. Perturbed amplitudes in the DerivStore -- CISD first -- DESIGN
+
+**Status: DESIGN, awaiting review.**  Source: issue #252 and its addendum comment.  This section
+records what was independently verified against the source, where the proposal in the issue should
+change, and what is deferred.
+
+The rule from s.12/s.13 was "four-index derivative quantities belong in the `DerivStore`, not in
+memory."  Both sweeps were carried out against the `nmo^4` tensors.  The **active-space** perturbed
+amplitudes (`o^2 v^2`) are also four-index and were not swept up with them.
+
+### 14.1 The gap: three drivers, three strategies
+
+| driver | perturbed amplitudes | mechanism |
+|---|---|---|
+| `MPderiv` | `pt2` -> **DerivStore** | `get_or_compute('pt2', ...)`, `mpderiv.py:219` |
+| `CIderiv` | `dc1,dc2,dc0v` **and** `dt1,dt2` -> **two RAM dicts** | `_cpci_cache` / `_cpci_raw_cache`, `cideriv.py:293-322`; never evicted |
+| `CCderiv` | `dt1,dt2` + `dl1,dl2` -> **neither** | computed inline, `ccderiv.py:121-146` |
+
+Verified: `ccderiv.py` contains **zero** `store.` calls and no cache dict.
+
+No rationale for the omission was found in the commit history, in this document, in
+`docs/TIMING_PLAN_2026-08.md`, or in inline comments.  For contrast, where a non-caching decision
+*was* taken it is documented: `cideriv.py:71-79` records `_cpci_eri` as "Deliberately uncached"
+with its reasoning.  Treat this as an omission, not a decision.
+
+### 14.2 Why the CISD AAT re-solves what the Hessian already solved
+
+This is a routing fact, not a cache-eviction accident, and it follows from the source:
+
+- The **Hessian** reaches the CPCI solve through the base: `_perturbed_relaxed_density`
+  (`correlatedderivs.py:487`) calls `_perturbed_unrelaxed_densities`, whose CISD implementation
+  calls `_solve_cpci_ints` **directly** (`cideriv.py:63`), bypassing `_solve_cpci` and therefore
+  its cache.  Only the *contraction* of the amplitudes survives, persisted as the `'resp'` group
+  `('dDrel','dGam','dI')` (`correlatedderivs.py:630`).
+- The **length-gauge APT** (`route='2n+1-nuclear'`) wants exactly those `'resp'` records, so it
+  hits the store and runs no CPCI at all.
+- The **AAT** needs the raw `dc1`/`dc2` for the state-vector overlap `<dPsi_R|dPsi_H>`.
+  `compute_Icc_AATs` (`cideriv.py:392-407`) loops over all `3*natom` nuclear perturbations through
+  `_aat_dc_normalized` -> `_solve_cpci`.  `dDrel`/`dGam` cannot be un-contracted back into
+  amplitudes, so every nuclear perturbation is solved a second time.
+- The **velocity-gauge APT** then hits `_cpci_cache`, which the *AAT* populated, so only its three
+  vecpot solves run.  The cache works; it is simply never populated by the Hessian.
+
+The two solves are reached with the same inputs (verified, not assumed):
+
+| | Hessian (`_perturbed_relaxed_density`) | AAT (`_cpci_ints` / `_cpci_eri`) |
+|---|---|---|
+| CPHF source | `_full_occ_cphf()` | `_full_occ_cphf()` |
+| `ncore` | `o.stop - wfn.no` | `ci.o.stop - ci.no` (same) |
+| `canonical` | `perturbed_mo_gauge == 'canonical'` -> `False` | parameter default -> `False` |
+| `df` | `perturbed_fock(pert, ncore, canonical=False)` | `perturbed_fock(pert, ncore)` |
+| `deri` | `perturbed_eri(pert, ncore, canonical=False)` | `perturbed_eri(pert, ncore)` |
+| `imaginary` | `False` | `False` for `pert.kind == 'nuclear'` |
+
+That equality holds **for the default gauge only**.  The `canonical` row is `False` on both sides
+because `perturbed_mo_gauge` is `'non-canonical'` for CISD; on a driver with `_gauge_override =
+'canonical'` the two sides diverge, which is why s.14.6 makes `_cpci_ints` follow its driver before
+any record is shared.
+
+### 14.3 Measurements
+
+**Not instrumented here.**  The figures below are from the runs reported in issue #252 (ARC, owl;
+pycc `main` @ `960aee9`; 3-chloro-1-butyne, 224 bf, 10 atoms), quoted with their job ids so they
+can be re-checked.
+
+CISD(FC)/cc-pVTZ VCD, job 909338, 28.1 h total.  CPCI solve counts by stage:
+
+| stage | CPCI solves |
+|---|---|
+| Hessian | 30 nuclear |
+| length-gauge APT | none |
+| AAT | 3 magnetic + **30 nuclear (repeat)** |
+| velocity-gauge APT | 3 vecpot only |
+
+Stage wall times from the same run:
+
+| block | wall |
+|---|---|
+| CISD Hessian (total) | 56814 s |
+| -- of which perturbed wave functions | 40164 s |
+| length-gauge APT | 5049 s |
+| **atomic axial tensors** | **35186 s** |
+| velocity-gauge APT | 3619 s |
+
+The AAT is the largest block after the Hessian, and most of it is the repeat.
+
+Sizes, MP2(FC)/cc-pVTZ VCD, job 906856.  Per perturbation the store holds `deri` (18.76 GB) and
+`resp`/`dGam` (18.76 GB); an amplitude record would add 0.059 GB, i.e. **0.16%**.  Store high-water
+on that run was 2362 GB over 39 perturbations.  So the disk cost of the fix is noise.
+
+Independent size check (this session, arithmetic only, not a run): frozen-core cc-pVTZ for
+C4H5Cl gives `o = 14`, `v = 201`, so `o^2 v^2 * 8 B` = **63 MB**, consistent with the quoted 59 MB.
+Two live copies (`dc2` and `dt2`) over 39 perturbations is 4.9 GB, consistent with the quoted
+4.6 GB of unevictable `CIderiv` RAM.
+
+### 14.4 Two source facts, and what the gauge arguments actually select
+
+**(a) `dc` is an exact linear function of `dt`, under a single formula for both branches.**
+`cideriv.py:276-289`:
+
+```python
+dc0  = ci._cisd_dn0(dt1, dt2)
+# imaginary (magnetic / vecpot):     dc0v = 0.0 ; dc1 = n0*dt1          ; dc2 = n0*dt2
+# real      (nuclear / field):       dc0v = dc0 ; dc1 = dc0*c1 + n0*dt1 ; dc2 = dc0*c2 + n0*dt2
+```
+
+Because `dc0v` is **zero** in the imaginary branch, `dc = dc0v*c + n0*dt` reproduces *both*.  The
+rebuild therefore needs no `imaginary` flag and no branch: given `(dt1, dt2, dc0v)` plus the
+wavefunction-level `c1`, `c2`, `n0` (already resident, not per-perturbation), `dc1`/`dc2` are two
+array expressions.  Storing `dc2` alongside `dt2` would store the same information twice.
+
+`dc0v` is itself strictly redundant -- it is `_cisd_dn0(dt1, dt2)` for a real perturbation and
+exactly `0.0` for an imaginary one, and `pert.kind` (part of the key) says which.  It is stored
+anyway because it is 8 bytes and recomputing it costs two contractions over `o^2 v^2`.  That is the
+only sense in which the record is not minimal.
+
+**(b) `canonical` and `orbital_gauge` are the same physical choice, applied to different
+perturbation kinds.**  This matters for the keying (s.14.6), and the two names are a standing source
+of confusion.  There are four `Perturbation` kinds, and the two arguments partition them by
+**reality**, not by nuclear-vs-field:
+
+| kind | argument | type | reached through |
+|---|---|---|---|
+| `'nuclear'` | `canonical` | `bool` | `perturbed_fock` / `perturbed_eri` / `full_U` |
+| `'field'` (static electric) | `canonical` | `bool` | same three (`correlatedderivs.py:901`, the `'2n+1-field'` APT route) |
+| `'magnetic'` | `orbital_gauge` | `str` | `magnetic_ints` / `magnetic_eri` |
+| `'vecpot'` (linear momentum) | `orbital_gauge` | `str` | `momentum_ints` / `momentum_eri` |
+
+So `canonical` covers the **real (Hermitian)** perturbations and `orbital_gauge` the **imaginary
+(anti-Hermitian)** ones.  It is NOT "nuclear vs field": the static electric field goes through
+`canonical`.
+
+Underneath they are one rule.  Both decide how to fill the **redundant oo/vv blocks of the
+perturbed-orbital matrix `U^x`**, which the CPHF equations leave undetermined whenever the
+correlation energy is invariant to oo/vv rotations.  Only the value of the non-canonical rule
+differs:
+
+| perturbation | non-canonical | canonical |
+|---|---|---|
+| nuclear | `U_ij = -1/2 S^(x)_ij`, **nonzero** (the basis functions move) | `d f_ij/dx = 0` |
+| electric field | `U_ij = -1/2 S^(x)_ij = 0` (`S^(x) = 0`) | `d f_ij/dF = 0` |
+| magnetic / vecpot | within-space rotations set to **0** (`S^B = 0`) | `d f_ij/dB = 0` |
+
+One rule, three cases; it collapses to zero in the last two because the basis functions do not
+depend on the field.  `full_U`'s own docstring records this ("For an electric field `S^(x) = 0`, so
+the oo/vv blocks vanish").
+
+For the imaginary perturbations specifically, `magnetic_ints` (`cphf.py:658-682`) solves the CPHF
+for the **ov** block only; the oo/vv blocks are genuinely free.  `'non-canonical'` (the default)
+zeroes the redundant within-space rotations and fills only the non-redundant core<->active-occupied
+block from the canonical condition, avoiding the near-degenerate divides of the fully canonical
+choice; `'canonical'` fills every oo/vv block from `d_B f_pq = 0`.  **The assembled AAT is invariant
+to the choice** (the `aat` facade marks `orbital_gauge` expert-only, "for verification/debugging"),
+but the individual `dt1`/`dt2`/`dc1`/`dc2` are **not**.
+
+**GIAO caveat.**  The magnetic row is degenerate only because PyCC uses a common gauge origin, so
+the basis functions do not depend on `B` and `S^B = 0`.  With GIAOs, `S^B` would not vanish, the
+oo/vv blocks would stop being free, and `orbital_gauge` would acquire physical content rather than
+being a numerical-stability knob.  That is a reason to carry it in the key explicitly rather than
+lean on today's invariance.
+
+**Two naming warts, recorded rather than fixed here.**  (i) Same vocabulary, two parameter names,
+two types: `canonical` is a `bool`, `orbital_gauge` a `str` taking `'canonical'`/`'non-canonical'`,
+and `CorrelatedDerivs.perturbed_mo_gauge` is a third spelling (a `str` that
+`_perturbed_relaxed_density` converts to the `bool`).  (ii) The defaults differ by path:
+`canonical` defaults to `False` but is driven by `perturbed_mo_gauge` (so `True` for CCSD(T)), while
+`orbital_gauge` defaults to `'non-canonical'` everywhere and is never driven by the driver.
+Unifying them is a wider change than this section and is deliberately out of scope.
+
+### 14.5 Proposed change: a separate `'cpci'` group, for **every** perturbation
+
+The addendum proposes extending the `'resp'` group from `('dDrel','dGam','dI')` to
+`('dDrel','dGam','dI','dt2','dt1','dc0v')`.  **Prefer a separate store group**, for three reasons:
+
+1. `'resp'` is owned by the **base** (`CorrelatedDerivs._relaxed_response`,
+   `correlatedderivs.py:617-632`) and is shared by all three drivers.  Its member list would have
+   to become method-dependent, and the amplitudes would have to be threaded up from
+   `_perturbed_unrelaxed_densities` through `_perturbed_relaxed_density` to `_relaxed_response`.
+   That is base surgery for a leaf-specific quantity.
+2. There is already a precedent for the separate-key shape: `MPderiv`'s `pt2` is its own key,
+   written inside `_perturbed_t2_stored` (`mpderiv.py:200-221`), not folded into `'resp'`.
+3. It keeps the change inside `cideriv.py`, which keeps the blast radius on a leaf and leaves the
+   MP2 and CC paths bit-identical.
+
+**Store every perturbation, not only the nuclear ones (PI, 2026-10-03).**  An earlier draft of this
+section persisted only the `3N` nuclear records, on the grounds that the Hessian never solves the
+magnetic or vecpot ones so there is nothing to *share* with them.  That reasoning was wrong, because
+it only considered property-to-property sharing.  The field records are shared **call to call**:
+a second `aat()` on one driver currently hits `_cpci_cache` for its 3 magnetic records, and a second
+`apt(gauge='velocity')` for its 3 vecpot records.  Dropping the RAM caches while persisting only the
+nuclear records would therefore be a **regression against today's behavior**, not merely a missed
+future opportunity.  Persisting all of them preserves what the caches already buy, and costs
+6 extra records of `o^2 v^2` = ~378 MB at cc-pVTZ against a 2362 GB store (0.016%).
+
+Record shape, following the self-contained-record principle that `'resp'` already embodies (`dGam`
+is the four-index member, `dDrel`/`dI` the `nmo^2` companions that make the record usable):
+
+| member | shape | cc-pVTZ |
+|---|---|---|
+| `dt2` | `o^2 v^2` | 63 MB |
+| `dt1` | `o x v` | 22 KB |
+| `dc0v` | scalar | 8 B |
+
+`dt1` and `dc0v` would not qualify on their own, but without them the record is not reconstructible
+(see s.14.4(a)).  They cost 0.04% over the four-index member.
+
+Mechanics:
+
+- **Write** in `CIderiv._perturbed_unrelaxed_densities` (`cideriv.py:57-67`), which is where the
+  Hessian's solve already happens, via `store.get_or_compute_group('cpci', pert, ...)`.
+- **Read** in `CIderiv._solve_cpci` (`cideriv.py:293-322`), replacing the RAM lookup; rebuild
+  `dc1`/`dc2` from `(dt1, dt2, dc0v)` with the single formula in s.14.4(a).
+- **Delete** `_cpci_cache` and `_cpci_raw_cache`; `_cpci_raw` (`cideriv.py:319-322`) then reads the
+  store too.
+
+### 14.6 Keying
+
+**One member, uniformly.**  A `'cpci'` record's identity is the wavefunction, the perturbation, and
+**the perturbed-MO gauge that produced its own `dF`/`dERI`**:
+
+    ctx = (self._uid, perturbed_mo_gauge)
+
+There is no asymmetry between perturbation kinds.  An earlier draft of this section keyed
+magnetic/vecpot records on *both* gauges; that was wrong (PI, 2026-10-03).
+
+**Why one member is sufficient and two is wrong.**  `_solve_cpci_ints` (`cideriv.py:131`) takes no
+gauge argument.  Its inputs are `(dF, dERI)` plus wavefunction-level state only (`ci.c1`, `ci.c2`,
+`ci.H.F`, `ci.H.ERI`, `ci.Dia`, `ci.Dijab`, `ci.eci`, `_normalized_amplitudes`, `_cisd_densities`).
+*All* gauge dependence enters through `dF`/`dERI`, and each perturbation kind draws those from
+exactly one source:
+
+| kind | `dF` / `dERI` from | carries |
+|---|---|---|
+| `'nuclear'`, `'field'` | `perturbed_fock` / `perturbed_eri` / `full_U` | the **real**-perturbation gauge |
+| `'magnetic'`, `'vecpot'` | `magnetic_ints` / `momentum_ints` (+ `_eri`) | the **imaginary**-perturbation gauge |
+
+So a magnetic record is bit-identical regardless of the real-perturbation gauge, and a nuclear
+record is bit-identical regardless of the imaginary one.  Putting both in either key would not merely
+waste space: it would cause a **spurious miss**, re-solving a record whose value had not changed.
+Concretely, carrying the imaginary gauge in the nuclear key would make an
+`aat(perturbed_mo_gauge='canonical')` cross-check miss on all `3N` nuclear records and re-solve every
+one of them, removing exactly the saving this section exists to deliver; carrying the real gauge in
+the magnetic key would discard the 3 magnetic records whenever the driver's nuclear gauge changed.
+
+**Naming (PI, 2026-10-03).**  The single vocabulary is **`perturbed_mo_gauge`**, a `str` taking
+`'canonical'`/`'non-canonical'`, replacing the `canonical` bool at the CPHF level and
+`orbital_gauge` on the `pycc.aat` / `pycc.apt` facade.  The parameter appears in **two** places
+because there are two independent *choices* to make, not two concepts: see s.14.4(b).  That rename
+is its own change (it is a public API change with 21 explicit test call sites) and is not part of
+this one.
+
+**The two values must stay independently settable.**  They serve unrelated purposes: the real-
+perturbation gauge is method-driven and cost-motivated (canonical for CCSD(T), which lets the (T)
+contributions to Doo/Dvv come from diagonal oo/vv blocks and saves an O(N^7) step), while the
+imaginary one is stability-motivated.  Measured (2026-10-03, CISD AAT, 6-31G, all-electron, two
+*antiparallel* HF related by a C2 axis so the F 1s cores are symmetry-equivalent and split only by
+exponentially decaying overlap):
+
+| system | core-core gap | max abs AAT(canonical) - AAT(non-canonical) | max abs AAT |
+|---|---|---|---|
+| bonded C2H2 (control) | 2.9e-3 | 4.4e-13 | 6.1e-2 |
+| R = 10 bohr | 1.1e-8 | 3.4e-9 | 8.1e-2 |
+| R = 20 bohr | 3.6e-15 | 2.1e-7 | 1.6e-1 |
+| R = 30 bohr | 1.2e-13 | 3.3e-7 | 2.4e-1 |
+
+The AAT is gauge-invariant, so the entire discrepancy is numerical error: once the cores are
+degenerate, the canonical choice loses five to six significant figures (1.3e-6 relative at
+R = 20) and does so **silently**, returning a finite plausible number rather than raising.  Tying the
+two values together would force a future CCSD(T) AAT onto that choice, since CCSD(T) wants canonical
+perturbed MOs for the cost reason above.  Note the degeneracy needs the equivalent heavy centers to
+be both symmetry-related *and* weakly coupled: bonded equivalent atoms (acetylene) are fine.
+
+**`_uid` is NOT needed, and should be dropped (audited 2026-10-03).**  Unlike `CCwfn` (CCSD vs
+CCSD(T) on one wavefunction), a `CIwfn` fixes its model at construction and
+`CIderiv.__init__(ciwfn)` takes no other argument, so the only per-driver variability is
+`_gauge_override` -- which `perturbed_mo_gauge` in the ctx already captures.  Measured on
+water/STO-3G by comparing `(dt1, dt2, dc0v)` from two independently built drivers:
+
+| perturbation | varying | max abs diff |
+|---|---|---|
+| nuclear | two fresh drivers, same settings | **0.0 (bit-identical)** |
+| nuclear | `perturbed_mo_gauge` | 4.0e-2 |
+| nuclear | the imaginary-perturbation gauge | 0.0 |
+| magnetic | two fresh drivers, same settings | **0.0 (bit-identical)** |
+| magnetic | `perturbed_mo_gauge` | 0.0 |
+| magnetic | the imaginary-perturbation gauge | 4.5e-1 |
+
+Rows 1 and 4 say `_uid` separates nothing; rows 2 and 6 say the gauge member separates exactly what
+needs separating; rows 3 and 5 confirm the single-member key above.  So the ctx reduces to
+
+    ctx = (perturbed_mo_gauge,)
+
+following the `'pt2'` precedent (`mpderiv.py:200-216`) of keying by what actually varies.  The
+payoff is real and the usage pattern is the natural one: `pycc.hessian(pycc.CIderiv(ci))` followed
+by `pycc.aat(pycc.CIderiv(ci))` builds two drivers, which with `_uid` in the key would share
+nothing and re-solve every perturbation.
+
+Note the measurement above is **post-fix**: before the `_cpci_ints` prerequisite below, row 2 read
+0.0 as well, i.e. the driver's gauge had no effect on the AAT's nuclear solve at all.  `'resp'`
+keeps `_uid` regardless, since it is base-owned and `CCderiv` genuinely needs it.
+
+**A one-line prerequisite: make the AAT's nuclear solve follow its driver.**  Today
+`_cpci_ints`'s nuclear branch calls `perturbed_fock(pert, ncore)` and `full_U(pert, ncore)` and lets
+the gauge fall to its `'non-canonical'` default, while the Hessian path passes the driver's own value
+(`correlatedderivs.py:525-526`).  On a driver with `_gauge_override = 'canonical'` the two paths
+therefore solve CPCI from **different** integrals.  Both are individually valid (the assembled
+properties are gauge-invariant, which is what `test_079`/`test_082` check), so today this is merely
+redundant work.  Share one record between them and it becomes wrong.
+
+Fix (IMPLEMENTED 2026-10-03, branch `fix/cpci-nuclear-gauge`): pass the driver's
+`perturbed_mo_gauge` in the nuclear branch of **both** `_cpci_ints` *and* `_cpci_eri` -- they must
+move together, since `dF` and `dERI` have to come from one gauge -- and add it to the per-driver
+`_cpci_ints_cache` key, because `_gauge_override` can change it between calls on one driver.
+
+This made a new invariance testable for the first time: with the gauge previously ignored on that
+path, "the AAT is invariant to the perturbed-MO gauge" held trivially and guarded nothing.  Measured
+after the fix (water/STO-3G, correlation blocks, all-electron and frozen-core): AAT 3.4e-12 /
+1.8e-12 and VG-APT 1.7e-11 / 5.3e-12 against max values of ~2.7e-2 and ~8.4e-2.  Added as
+`test_cisd_aat_perturbed_mo_gauge_invariance` (test_081) and
+`test_cisd_vg_apt_perturbed_mo_gauge_invariance` (test_080), siblings of the existing
+*magnetic*-gauge invariance tests in those modules and named to match
+`test_cisd_{lg_apt,hessian}_perturbed_mo_gauge_invariance` in test_079/test_082.
+
+**Status of the `_gauge_override` hazard (checked 2026-10-03).**  The hook is live but the dangerous
+combination is not exercised.  Its only callers are two CISD gauge-invariance tests,
+`test_079_cisd_lg_apt.py:187` and `test_082_cisd_hessian.py:190` (documented at
+`correlatedderivs.py:1157`); nothing in the library sets it.  Both set it on a **fresh driver**, so
+`_uid` already keeps those records apart.  The unexercised combination is one driver with
+`_gauge_override = 'canonical'` on which both `hessian()` and `aat()` are called.
+
+### 14.7 Why `CCderiv` is deferred
+
+Proposal 2 of the issue, persisting `CCderiv`'s `(dt1, dt2, dl1, dl2)`, has **no measurable payoff
+today**:
+
+- CC has no AAT and no velocity-gauge APT, so the "a later consumer re-solves what the Hessian
+  already solved" argument, which is the whole case for CISD, does not apply to it.
+- `CCderiv._perturbed_unrelaxed_densities` is reached **only** from the `'resp'` builders
+  (`correlatedderivs.py:528` and `:583`), which are already store-backed.  CC amplitudes are
+  therefore already computed once per (perturbation, driver).
+- The only other CC amplitude call site is `_response_density` (`ccderiv.py:1116/1120`), which
+  solves *field* perturbations at frequency `omega` against a zero ERI derivative.  Those are
+  different records that this one could not serve.
+
+So persisting them would add `2 * o^2 v^2` per perturbation of store traffic and save nothing until
+CC AATs exist.  **Gate the CC half on the CC-AAT work**, which is the same gate s.6 already records
+for the AAT/VG-APT hoist.
+
+### 14.8 What this does not address
+
+- **`_cpci_ints_cache`** (`cideriv.py:110-118`) holds `(dF, U)` per `(pert, gauge)`.  These are
+  `nmo^2`, so they do not violate the four-index rule; about 29 MB over 39 perturbations at
+  `nmo ~ 215`.  **Leave it alone**; it is the cache that makes a repeat property call skip the CPHF
+  solve, exactly as s.13.2 decided for `_mag_int`/`_mom_int`.
+- **The dominant store cost is untouched.**  `deri` and `dGam` are 18.76 GB each per perturbation;
+  the amplitude record is 0.16% of that.  This change is about wall time and RAM, not store size.
+- **AAT progress instrumentation.**  At cc-pVTZ the AAT is a single ~10 h block that prints a
+  banner and then a result, which on job 907345 was indistinguishable from a hang for >12 h.
+  `docs/TIMING_PLAN_2026-08.md` notes that instrumentation "stops at the Hessian path".  Adding
+  per-perturbation progress lines there is a separate, small, and worthwhile item.
+
+### 14.9 Validation plan
+
+- **Numerical invariance is the primary test.**  The CISD AAT and VG-APT must be bit-identical
+  before and after, since the change only avoids recomputing a quantity, and the existing AAT and
+  VG-APT tests are the oracle.  Run the CISD derivative suite plus `test_091`.
+- **A cross-property sharing test**, in the spirit of
+  `test_mp2_hessian_transforms_once_per_atom_631g`: on one `CIderiv`, compute the Hessian and then
+  the AAT, and assert that the AAT runs **zero** nuclear CPCI solves.  Count by instrumenting
+  `_solve_cpci_ints` entries rather than by parsing output.
+- **A repeat-call test** (the behavior the earlier draft of s.14.5 would have broken): a second
+  `aat()` on the same driver must run **zero** CPCI solves of any kind, and a second
+  `apt(gauge='velocity')` likewise.  This is what `_cpci_cache` buys today, so it is a regression
+  guard rather than a new guarantee, and it is the test that fails if the magnetic/vecpot records
+  are left out of the store.
+- **An isolation test**: a second `CIderiv` on the same wavefunction must still solve, confirming
+  `_uid` does its job.
+- **A gauge-independence test** for the key (s.14.6): each record must be keyed on the gauge that
+  produced it and on no other.  (i) An `aat` run at a non-default *imaginary*-perturbation gauge,
+  after a Hessian, must still **hit** all `3N` nuclear records (they did not change) while its own
+  3 magnetic records **miss** against a prior default-gauge `aat()` (they did).  (ii) The mirror:
+  changing the *real*-perturbation gauge must miss the nuclear records and hit the magnetic ones.
+  Together these prove the key carries exactly one gauge member and the right one.
+- **A driver-consistency test**: with `_gauge_override = 'canonical'`, the AAT's nuclear solve must
+  see the driver's gauge rather than the parameter default, which the `_cpci_ints` prerequisite in
+  s.14.6 makes true by construction.
+- **RAM**: assert that `CIderiv` has no `_cpci_cache`/`_cpci_raw_cache` attributes after the
+  change, so the caches cannot quietly return.
 
 ## Appendix A: condensed changelog (by PR)
 

@@ -169,3 +169,19 @@ def test_cisd_aat_gauge_invariance():
         ca = np.asarray(pycc.CIderiv(ci).aat(orbital_gauge='canonical').correlation)
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))
 
+
+def test_cisd_aat_perturbed_mo_gauge_invariance():
+    """The CISD correlation AAT is invariant to the **perturbed-MO** gauge, the choice that governs
+    the *real* (nuclear) perturbations -- distinct from the magnetic orbital gauge covered by
+    :func:`test_cisd_aat_gauge_invariance`, which governs the *imaginary* ones.
+
+    This became testable only once ``_cpci_ints``/``_cpci_eri`` took the gauge from the driver
+    instead of their own default: before that, ``_gauge_override`` had no effect on the AAT's
+    nuclear solve at all, so the invariance held trivially and guarded nothing."""
+    for fc in ('false', 'true'):
+        ci = _ciwfn(fc)
+        nc = np.asarray(pycc.CIderiv(ci).aat().correlation)
+        cd = pycc.CIderiv(ci)
+        cd._gauge_override = 'canonical'
+        ca = np.asarray(cd.aat().correlation)
+        assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))

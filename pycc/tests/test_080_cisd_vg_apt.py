@@ -122,3 +122,15 @@ def test_cisd_vg_apt_gauge_invariance():
         assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))
 
 
+def test_cisd_vg_apt_perturbed_mo_gauge_invariance():
+    """The CISD correlation velocity-gauge APT is invariant to the **perturbed-MO** gauge (the
+    real/nuclear perturbations), as distinct from the momentum orbital gauge covered by
+    :func:`test_cisd_vg_apt_gauge_invariance` (the imaginary ones).  See the companion test in
+    test_081 for why this only became a real guard once the CPCI solve followed its driver."""
+    for fc in ('false', 'true'):
+        ci = _ciwfn(fc)[0]                      # this module's helper returns (ci, psi4 wfn)
+        nc = np.asarray(pycc.CIderiv(ci).apt(gauge='velocity').correlation)
+        cd = pycc.CIderiv(ci)
+        cd._gauge_override = 'canonical'
+        ca = np.asarray(cd.apt(gauge='velocity').correlation)
+        assert np.max(np.abs(nc - ca)) < 1e-9, (fc, np.max(np.abs(nc - ca)))
