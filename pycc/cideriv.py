@@ -27,7 +27,8 @@ import time
 import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
-from .cphf import perturbation_label
+from .cphf import Perturbation, perturbation_label
+from .timing import timer, timed, progress
 from .utils import title, iteration, converged
 
 
@@ -368,6 +369,19 @@ class CIderiv(CorrelatedDerivs):
     # perturbations for the AAT that the Hessian had already solved.  See
     # docs/DERIVATIVES_PLAN_2026-06.md section 14.
 
+    # ---- progress instrumentation ----
+    # The AAT, VG-APT and DBOC are each a long single block over 3N nuclear perturbations; before
+    # this they printed a banner and then a result, which on a cc-pVTZ run was indistinguishable
+    # from a hang for hours (docs/TIMING_PLAN_2026-08.md notes that instrumentation "stops at the
+    # Hessian path").  Same idiom as the Hessian: a timer per stage, one progress line per step.
+
+    def _nuclear_step(self, stage, la, natom, t0):
+        """One progress line for perturbation ``la`` of a ``3 * natom`` nuclear loop."""
+        atom, cart = divmod(la, 3)
+        progress(stage, la + 1, 3 * natom, t0,
+                 perturbation_label(Perturbation('nuclear', (atom, cart)),
+                                    self.ci.ref.molecule()))
+
     def _cpci_ctx(self, pert, gauge):
         """The store ctx for a CPCI record: the perturbed-MO gauge **that produced it**.
 
@@ -528,6 +542,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         I_cc = np.zeros((3 * natom, 3))
         magH = {b: self._aat_dc_normalized(Perturbation('magnetic', b), gauge) for b in range(3)}
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
@@ -537,6 +552,7 @@ class CIderiv(CorrelatedDerivs):
                 term = 2.0 * c('ia,ia->', dn1_R.conj(), dn1_H)
                 term = term + c('ijab,ijab->', (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_H)
                 I_cc[la, beta] = term.real
+            self._nuclear_step('CISD AAT Icc', la, natom, t_stage)
         return I_cc
 
     def compute_Iphic_AATs(self, gauge='non-canonical'):
@@ -545,6 +561,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         AAT_phic = np.zeros((3 * natom, 3), dtype=complex)
         magH = {b: self._aat_dc_normalized(Perturbation('magnetic', b), gauge) for b in range(3)}
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
@@ -555,6 +572,7 @@ class CIderiv(CorrelatedDerivs):
                 dn0_H, dn1_H, dn2_H = magH[beta]
                 R_pq = self._build_Dtilde(dn1_H, dn2_H, dn0_H)
                 AAT_phic[la, beta] = c('pq,qp->', R_pq, Ur_eff)
+            self._nuclear_step('CISD AAT Iphic', la, natom, t_stage)
         return AAT_phic.real
 
     def compute_Iphiphi_AATs(self, gauge='non-canonical'):
@@ -563,6 +581,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM (true-normalized)
         I_pp = np.zeros((3 * natom, 3))
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
@@ -572,6 +591,7 @@ class CIderiv(CorrelatedDerivs):
             for beta in range(3):
                 _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
                 I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff).real
+            self._nuclear_step('CISD AAT Iphiphi', la, natom, t_stage)
         return I_pp
 
     def compute_Icphi_AATs(self, gauge='non-canonical'):
@@ -579,6 +599,7 @@ class CIderiv(CorrelatedDerivs):
         c = self.contract
         natom = self.ci.derivatives.natom
         AAT_cphi = np.zeros((3 * natom, 3), dtype=complex)
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
@@ -587,6 +608,7 @@ class CIderiv(CorrelatedDerivs):
             for beta in range(3):
                 _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
+            self._nuclear_step('CISD AAT Icphi', la, natom, t_stage)
         return AAT_cphi.real
 
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
@@ -608,8 +630,17 @@ class CIderiv(CorrelatedDerivs):
         avoiding the near-degenerate divides of `'canonical'` among close-lying core orbitals.
         Frozen-core aware."""
         natom = self.ci.ref.molecule().natom()
-        total = (self.compute_Icc_AATs(gauge) + self.compute_Iphic_AATs(gauge)
-                 + self.compute_Iphiphi_AATs(gauge) + self.compute_Icphi_AATs(gauge))
+        # One timer per sector: each makes its own pass over the 3N nuclear perturbations, so the
+        # report shows where the block's time actually goes (the first sector pays the CPCI solves
+        # or store reads; the rest are contractions over records already on disk).
+        with timer("AAT Icc"):
+            total = self.compute_Icc_AATs(gauge)
+        with timer("AAT Iphic"):
+            total = total + self.compute_Iphic_AATs(gauge)
+        with timer("AAT Iphiphi"):
+            total = total + self.compute_Iphiphi_AATs(gauge)
+        with timer("AAT Icphi"):
+            total = total + self.compute_Icphi_AATs(gauge)
         return total.reshape(natom, 3, 3)
 
     def compute_Icc_VG_APT(self, gauge='non-canonical'):
@@ -618,6 +649,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         I_cc = np.zeros((3 * natom, 3), dtype=complex)
         vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g), gauge) for g in range(3)}
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             _, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)), gauge)
@@ -626,6 +658,7 @@ class CIderiv(CorrelatedDerivs):
                 I_cc[la, gamma] = (2.0 * c('ia,ia->', dn1_R.conj(), dn1_A)
                                    + c('ijab,ijab->',
                                        (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_A))
+            self._nuclear_step('CISD VG-APT Icc', la, natom, t_stage)
         return I_cc
 
     def compute_Icphi_VG_APT(self, gauge='non-canonical'):
@@ -633,6 +666,7 @@ class CIderiv(CorrelatedDerivs):
         c = self.contract
         natom = self.ci.derivatives.natom
         Icphi = np.zeros((3 * natom, 3), dtype=complex)
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             dn0_R, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)), gauge)
@@ -640,6 +674,7 @@ class CIderiv(CorrelatedDerivs):
             for gamma in range(3):
                 _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
                 Icphi[la, gamma] = c('pq,pq->', D_tilde_R, U_A)
+            self._nuclear_step('CISD VG-APT Icphi', la, natom, t_stage)
         return Icphi
 
     def compute_Iphic_VG_APT(self, gauge='non-canonical'):
@@ -648,6 +683,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         Iphic = np.zeros((3 * natom, 3), dtype=complex)
         vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g), gauge) for g in range(3)}
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             pR = Perturbation('nuclear', (A, beta_))
@@ -658,6 +694,7 @@ class CIderiv(CorrelatedDerivs):
                 dn0_A, dn1_A, dn2_A = vecA[gamma]
                 D_tilde_A = self._build_Dtilde(dn1_A, dn2_A, dn0_A)
                 Iphic[la, gamma] = c('pq,qp->', D_tilde_A.conj(), Ur_eff)
+            self._nuclear_step('CISD VG-APT Iphic', la, natom, t_stage)
         return Iphic
 
     def compute_Iphiphi_VG_APT(self, gauge='non-canonical'):
@@ -666,6 +703,7 @@ class CIderiv(CorrelatedDerivs):
         natom = self.ci.derivatives.natom
         _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM (true-normalized)
         I_pp = np.zeros((3 * natom, 3), dtype=complex)
+        t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
             _, U_R = self._cpci_ints(Perturbation('nuclear', (A, beta_)), gauge)
@@ -674,6 +712,7 @@ class CIderiv(CorrelatedDerivs):
             for gamma in range(3):
                 _, U_A = self._cpci_ints(Perturbation('vecpot', gamma), gauge)
                 I_pp[la, gamma] = c('pq,pq->', D_pq, U_A.T @ Ur_eff)
+            self._nuclear_step('CISD VG-APT Iphiphi', la, natom, t_stage)
         return I_pp
 
     def _correlation_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
@@ -685,10 +724,17 @@ class CIderiv(CorrelatedDerivs):
         `CPHF.momentum_ints`), `'non-canonical'` (default) or `'canonical'`; the VG APT is
         invariant to it. Frozen-core aware."""
         natom = self.ci.ref.molecule().natom()
-        overlap_total = (self.compute_Icc_VG_APT(gauge) + self.compute_Icphi_VG_APT(gauge)
-                          + self.compute_Iphic_VG_APT(gauge) + self.compute_Iphiphi_VG_APT(gauge))
+        with timer("VG-APT Icc"):
+            overlap_total = self.compute_Icc_VG_APT(gauge)
+        with timer("VG-APT Icphi"):
+            overlap_total = overlap_total + self.compute_Icphi_VG_APT(gauge)
+        with timer("VG-APT Iphic"):
+            overlap_total = overlap_total + self.compute_Iphic_VG_APT(gauge)
+        with timer("VG-APT Iphiphi"):
+            overlap_total = overlap_total + self.compute_Iphiphi_VG_APT(gauge)
         return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
 
+    @timed("CISD DBOC")
     def dboc(self):
         r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
         true-normalized CISD wavefunction (Gauss et al., JCP 125, 144111 (2006)):
@@ -740,6 +786,7 @@ class CIderiv(CorrelatedDerivs):
                  + sep(Dref, Dref) + sep(Dref, Dcorr) + sep(Dcorr, Dref))
 
         E = 0.0
+        t_stage = time.time()
         for A in range(natom):
             w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
             # Q part of the contact term via the kinetic sum rule (once per atom)
@@ -773,4 +820,5 @@ class CIderiv(CorrelatedDerivs):
                            - c('pqrs,pq,rs->', Gfull, Ueff, Ueff))
                 contact = -np.sum(Dfull * (half_S.T @ half_S))
                 E += w * (Icc + Icphi + Iphic + Iphiphi + contact)
+                self._nuclear_step('CISD DBOC', A * 3 + cart, natom, t_stage)
         return E
