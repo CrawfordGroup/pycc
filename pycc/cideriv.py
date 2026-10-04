@@ -48,9 +48,67 @@ class CIderiv(CorrelatedDerivs):
         return 0.25 * (D_pqrs_raw + D_pqrs_raw.transpose(1, 0, 3, 2)
                        + D_pqrs_raw.transpose(2, 3, 0, 1) + D_pqrs_raw.transpose(3, 2, 1, 0))
 
+    # ---- unrelaxed correlation densities ----
+    # The unrelaxed CISD one- and two-particle densities are pure functions of the converged
+    # amplitudes (``self.ci.c1``/``c2``) and nothing outside the derivative code consumes them, so
+    # they live here on the derivative driver rather than on ``CIwfn`` -- the same split MPderiv
+    # documents and CC realizes through pycc.ccdensity.  The *normalization* they are built from
+    # (``CIwfn._normalized_amplitudes``) is a wavefunction-level quantity and stays on ``CIwfn``.
+
+    def _cisd_densities(self):
+        """``(D_pq, D_pq_corr, D_pqrs)``: full 1-PDM, correlation-only 1-PDM, and 2-PDM,
+        cached on this driver (``_ci_dens``), so a second ``CIderiv`` on the same
+        wavefunction rebuilds them rather than sharing the first driver's copy.
+
+        The reference block ``2 delta_ij`` spans the FULL occupied space (frozen core +
+        active, ``slice(0, o.stop)``) - the correlation blocks below are active-only
+        (placed by ``o``/``v``), but the doubly occupied core still carries its two
+        electrons, so ``Tr(D) = 2 (nfzc + no)``. ``D_corr`` subtracts the same reference
+        block back off and is therefore the pure correlation density in either case."""
+        if getattr(self, '_ci_dens', None) is None:
+            ci = self.ci
+            c = self.contract
+            o, v, nmo = ci.o, ci.v, ci.nmo
+            ndocc = o.stop                      # nfzc + no: the full occupied space
+            n0, n1, n2, tau_n = ci._normalized_amplitudes()
+
+            D = np.zeros((nmo, nmo), dtype=n1.dtype)
+            for i in range(ndocc):
+                D[i, i] += 2.0
+            D[o, o] -= 2.0 * c('ja,ia->ij', n1.conj(), n1)
+            D[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n.conj(), n2)
+            D[v, v] += 2.0 * c('ia,ib->ab', n1.conj(), n1)
+            D[v, v] += 2.0 * c('ijac,ijbc->ab', tau_n.conj(), n2)
+            D[o, v] += (2.0 * n0 * n1 + 2.0 * c('jb,ijab->ia', n1.conj(), 2.0 * n2 - n2.swapaxes(2, 3)))
+            D[v, o] += (2.0 * n0 * n1.conj().T + 2.0 * c('ijab,jb->ai', (2.0 * n2 - n2.swapaxes(2, 3)).conj(), n1))
+            D_corr = D.copy()
+            for i in range(ndocc):
+                D_corr[i, i] -= 2.0
+
+            G = np.zeros((nmo, nmo, nmo, nmo), dtype=n1.dtype)
+            G[o, o, o, o] += c('klab,ijab->ijkl', n2, tau_n)
+            G[v, v, v, v] += c('ijab,ijcd->abcd', n2, tau_n)
+            G[o, v, v, o] += 4.0 * c('ja,ib->iabj', n1, n1)
+            G[o, v, o, v] -= 2.0 * c('ja,ib->iajb', n1, n1)
+            G[v, o, o, v] += 2.0 * c('jkac,ikbc->aijb', tau_n, tau_n)
+            G[v, o, v, o] -= 4.0 * c('jkac,ikbc->aibj', n2, n2)
+            G[v, o, v, o] += 2.0 * c('jkac,ikcb->aibj', n2, n2)
+            G[v, o, v, o] += 2.0 * c('jkca,ikbc->aibj', n2, n2)
+            G[v, o, v, o] -= 4.0 * c('jkca,ikcb->aibj', n2, n2)
+            G[o, o, v, v] += n0 * tau_n
+            tau_swp = (2.0 * n2.swapaxes(0, 2).swapaxes(1, 3) - n2.swapaxes(2, 3).swapaxes(0, 2).swapaxes(1, 3))
+            G[v, v, o, o] += np.conjugate(tau_swp) * n0
+            G[v, o, v, v] += 2.0 * c('ja,ijcb->aibc', n1, tau_n)
+            G[o, v, o, o] -= 2.0 * c('kjab,ib->iajk', tau_n, n1)
+            G[v, v, v, o] += 2.0 * c('jiab,jc->abci', tau_n, n1)
+            G[o, o, o, v] -= 2.0 * c('kb,ijba->ijka', n1, tau_n)
+
+            self._ci_dens = (D, D_corr, G)
+        return self._ci_dens
+
     def _unrelaxed_densities(self):
         """CISD unrelaxed reduced densities (D, Gam) as full-MO arrays."""
-        _D_pq, D_pq_corr, D_pqrs = self.ci._cisd_densities()
+        _D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
         Gam = self._cisd_symmetrize(D_pqrs)
         return D_pq_corr, Gam
 
@@ -152,7 +210,7 @@ class CIderiv(CorrelatedDerivs):
         n0 = ci._normalized_amplitudes()[0]
         dF, dERI = np.asarray(dF), np.asarray(dERI)
 
-        D_pq, D_pq_corr, D_pqrs = ci._cisd_densities()
+        D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
         dE = c('pq,pq->', dF, D_pq) + c('pqrs,pqrs->', dERI, D_pqrs)
 
         dt1 = -(dE * t1).astype(complex)
@@ -274,7 +332,7 @@ class CIderiv(CorrelatedDerivs):
                 print(converged(name, time.time() - t0))
                 break
 
-        dc0 = ci._cisd_dn0(dt1, dt2)
+        dc0 = self._cisd_dn0(dt1, dt2)
         if imaginary:
             dc0v = 0.0
             dc1 = n0 * dt1
@@ -322,6 +380,21 @@ class CIderiv(CorrelatedDerivs):
         return self._cpci_raw_cache[(pert, gauge)]
 
     # raw perturbed correlation-density builders (true-normalized)
+
+    def _cisd_dn0(self, dn1, dn2):
+        """First derivative of the normalization factor ``n0`` along a perturbation, the
+        derivative counterpart of :meth:`CIwfn._normalized_amplitudes`::
+
+            dn0/dx = -n0^3 (2 c1_ia dc1_ia + (2 c2 - c2.swap)_ijab dc2_ijab)
+
+        Consumed by :meth:`_solve_cpci_ints`, which needs it to carry the perturbed normalization
+        into ``dc1``/``dc2``."""
+        ci = self.ci
+        c = self.contract
+        t1, t2 = ci.c1, ci.c2
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        n0 = ci._normalized_amplitudes()[0]
+        return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1) + c('ijab,ijab->', tau.conj(), dn2))
 
     def _perturbed_cisd_corr_opdm(self, dc1, dc2):
         ci = self.ci
@@ -429,7 +502,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        _, D_pq, _ = self.ci._cisd_densities()   # correlation-only 1-PDM (true-normalized)
+        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM (true-normalized)
         I_pp = np.zeros((3 * natom, 3))
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -532,7 +605,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        _, D_pq, _ = self.ci._cisd_densities()   # correlation-only 1-PDM (true-normalized)
+        _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM (true-normalized)
         I_pp = np.zeros((3 * natom, 3), dtype=complex)
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -582,7 +655,7 @@ class CIderiv(CorrelatedDerivs):
         U_ME = 1822.888486209
         ME_U = 5.48579909065e-4
         n0, n1, n2, _ = ci._normalized_amplitudes()
-        Dfull = np.asarray(ci._cisd_densities()[0]).real
+        Dfull = np.asarray(self._cisd_densities()[0]).real
         Dcorr, Gam = self._unrelaxed_densities()
         Dcorr, Gam = np.asarray(Dcorr).real, np.asarray(Gam).real
         Dref = Dfull - Dcorr

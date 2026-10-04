@@ -80,7 +80,7 @@ def test_cisd_density_particle_number(rhf_wfn, freeze_core):
                   e_convergence=1e-12, d_convergence=1e-12)
     ci = pycc.CIwfn(wfn)
     ci.solve_ci(e_conv=1e-11, r_conv=1e-11)
-    D, D_corr, _ = ci._cisd_densities()
+    D, D_corr, _ = pycc.CIderiv(ci)._cisd_densities()
     nelec = 2 * (ci.nfzc + ci.no)
     assert abs(np.trace(np.asarray(D)) - nelec) < 1e-10
     assert abs(np.trace(np.asarray(D_corr))) < 1e-10

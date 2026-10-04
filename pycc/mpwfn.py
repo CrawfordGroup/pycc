@@ -153,18 +153,3 @@ class MPwfn(Wavefunction):
         t2 = np.asarray(self.t2)
         norm2 = 0.25 * self.contract('ijab,ijab->', t2, t2)
         return 1.0 / np.sqrt(1.0 + norm2)
-
-
-    # ---- reference for the total (reference + correlation) properties ----
-    # The property methods above are the correlation contribution only.  The full molecular
-    # property (nuclear + SCF reference + correlation) is assembled by the pycc property facade
-    # (pycc.dipole/gradient/polarizability/hessian/apt/aat), which pairs each correlation method
-    # with the SCF reference below and the separate nuclear term.
-
-    def _reference_hf(self):
-        """The all-electron :class:`HFwfn` for the SCF reference (cached), supplying the reference
-        (electronic) contribution to the total MP2 properties via the pycc property facade."""
-        if getattr(self, '_ref_hf', None) is None:
-            from .hfwfn import HFwfn
-            self._ref_hf = HFwfn(self.ref, orbital_basis=self.orbital_basis, quiet=True)
-        return self._ref_hf
