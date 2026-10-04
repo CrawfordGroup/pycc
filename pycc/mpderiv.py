@@ -19,9 +19,13 @@ stays on ``MPwfn``; the AAT/VG-APT overlaps read it via ``self.mp``.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
+from .derivatives import atom_label
+from .timing import timed, progress
 
 
 class MPderiv(CorrelatedDerivs):
@@ -277,6 +281,15 @@ class MPderiv(CorrelatedDerivs):
 
     # ---- atomic axial tensors (VCD, magnetic/nuclear mixed derivative) ----
 
+    # ---- progress instrumentation ----
+    # The AAT, VG-APT and DBOC blocks each loop over the atoms with an inner 3-Cartesian loop and
+    # previously printed nothing between the banner and the result.  Same idiom as the Hessian in
+    # the base: one progress line per atom.
+
+    def _atom_step(self, stage, atom, natom, t0):
+        """One progress line for atom ``atom`` of a ``natom`` loop."""
+        progress(stage, atom + 1, natom, t0, atom_label(self.mp.ref.molecule(), atom))
+
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
         """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
         See :func:`pycc.aat`."""
@@ -384,6 +397,7 @@ class MPderiv(CorrelatedDerivs):
             gH.append((R, dc2H))
 
         P = np.zeros((natom, 3, 3))
+        t_stage = time.time()
         for A in range(natom):
             hs = d.overlap_half(A)                             # 3 x (nmo, nmo), full
             for cart in range(3):
@@ -404,6 +418,7 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ji->', RH[o, o], UReff[o, o]) + c('ab,ab->', RH[v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
                     P[A, cart, b] = Icc + Icphi + Iphic + Ipp
+            self._atom_step('MP2 AAT', A, natom, t_stage)
         return P
 
     def _so_atomic_axial_tensors(self, gauge: str = 'non-canonical') -> np.ndarray:
@@ -475,6 +490,7 @@ class MPderiv(CorrelatedDerivs):
             gH.append(gdens(dc2H, imaginary=True))        # antisymmetric
 
         P = np.zeros((natom, 3, 3))
+        t_stage = time.time()
         for A in range(natom):
             hs = d.so_overlap_half(A)
             for cart in range(3):
@@ -490,6 +506,7 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ij->', gH[b][o, o], UReff[o, o]) + c('ab,ab->', gH[b][v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UH[b].T @ UReff)
                     P[A, cart, b] = Icc + Icphi + Iphic + Ipp
+            self._atom_step('MP2 AAT (SO)', A, natom, t_stage)
         return P
 
     def _correlation_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
@@ -554,6 +571,7 @@ class MPderiv(CorrelatedDerivs):
             gA.append((R, dc2A))
 
         P = np.zeros((natom, 3, 3))
+        t_stage = time.time()
         for A in range(natom):
             hs = d.overlap_half(A)
             for beta in range(3):
@@ -574,6 +592,7 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ji->', RA[o, o], UReff[o, o]) + c('ab,ab->', RA[v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
                     P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
+            self._atom_step('MP2 VG-APT', A, natom, t_stage)
         self.vgapt = P
         return P
 
@@ -636,6 +655,7 @@ class MPderiv(CorrelatedDerivs):
             gA.append(gdens(dc2A, imaginary=True))
 
         P = np.zeros((natom, 3, 3))
+        t_stage = time.time()
         for A in range(natom):
             hs = d.so_overlap_half(A)
             for beta in range(3):
@@ -651,9 +671,11 @@ class MPderiv(CorrelatedDerivs):
                     Iphic = c('ij,ij->', gA[alpha][o, o], UReff[o, o]) + c('ab,ab->', gA[alpha][v, v], UReff[v, v])
                     Ipp = c('pq,pq->', gamma, UA[alpha].T @ UReff)
                     P[A, beta, alpha] = 2.0 * (Icc + Icphi + Iphic + Ipp)
+            self._atom_step('MP2 VG-APT (SO)', A, natom, t_stage)
         self.vgapt = P
         return P
 
+    @timed('MP2 DBOC')
     def dboc(self):
         r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
         fully normalized MP2 wave function
@@ -726,6 +748,7 @@ class MPderiv(CorrelatedDerivs):
                  + sep(Dref, Dref) + sep(Dref, Dcorr) + sep(Dcorr, Dref))
 
         E = 0.0
+        t_stage = time.time()
         for A in range(natom):
             w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
             # Q part of the contact term via the kinetic sum rule (once per atom)
@@ -749,8 +772,10 @@ class MPderiv(CorrelatedDerivs):
                            - c('pqrs,pq,rs->', Gfull, Ueff, Ueff))
                 contact = -np.sum(Dfull * (half_S.T @ half_S))
                 E += w * (Icc + Icphi + Iphic + Iphiphi + contact)
+            self._atom_step('MP2 DBOC', A, natom, t_stage)
         return E
 
+    @timed('MP2 DBOC(MP1)')
     def dboc_mp1(self):
         """Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.)
         at the MP level: DBOC(MP1) of Tajti, Szalay, and Gauss, J. Chem. Phys. 127, 014102
@@ -772,6 +797,7 @@ class MPderiv(CorrelatedDerivs):
         cphf = self._full_occ_cphf()
         ncore = o.stop - mp.no
         E = 0.0
+        t_stage = time.time()
         for A in range(mol.natom()):
             w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
             # Q part of the SCF contact term via the kinetic sum rule
@@ -785,4 +811,5 @@ class MPderiv(CorrelatedDerivs):
                 scf = (2.0 * np.sum(Uov ** 2)
                        - 2.0 * np.trace((half_S.T @ half_S)[:nof, :nof]))
                 E += w * (scf - 4.0 * c('ijab,ia,jb->', tau, Uov, Uov))
+            self._atom_step('MP2 DBOC(MP1)', A, mol.natom(), t_stage)
         return E

@@ -791,6 +791,7 @@ class CorrelatedDerivs:
             Drel = self._orbital_response().Drel
         mu = [np.asarray(wfn.H.mu[a]) for a in range(3)]
         alpha = np.zeros((3, 3))
+        t_stage = time.time()
         for b in range(3):
             pert = Perturbation('field', b)
             dDrel = self._relaxed_response(pert).dDrel
@@ -798,6 +799,7 @@ class CorrelatedDerivs:
             for a in range(3):
                 rot = Ub.T @ mu[a] + mu[a] @ Ub
                 alpha[a, b] = c('pq,pq->', dDrel, mu[a]) + c('pq,pq->', Drel, rot)
+            progress("Polarizability field response", b + 1, 3, t_stage, "mu_%s" % "xyz"[b])
         return alpha
 
     def _correlation_dipole_derivatives(self, route: str = '2n+1-field') -> np.ndarray:
@@ -877,6 +879,7 @@ class CorrelatedDerivs:
         P = np.zeros((natom, 3, 3))
 
         if route == '2n+1-nuclear':
+            t_stage = time.time()
             for A in range(natom):
                 dip = d.so_dipole(A) if so else d.dipole(A)          # [alpha*3 + beta]
                 for beta in range(3):
@@ -888,18 +891,25 @@ class CorrelatedDerivs:
                         rot = UX.T @ mu[alpha] + mu[alpha] @ UX
                         P[A, beta, alpha] = (c('pq,pq->', dDrel, mu[alpha])
                                              + c('pq,pq->', Drel, dmu + rot))
+                progress("APT nuclear response", A + 1, natom, t_stage, atom_label(d.mol, A))
             return P
 
         # route == '2n+1-field'
         Gam = rec.Gam
         I = self._lagrangian(Drel, Gam)
         field = [Perturbation('field', a) for a in range(3)]
-        resp = [self._relaxed_response(field[a]) for a in range(3)]   # one perturbed solve per field
+        with timer("APT field response"):
+            t_stage = time.time()
+            resp = []
+            for a in range(3):
+                resp.append(self._relaxed_response(field[a]))         # one perturbed solve per field
+                progress("APT field response", a + 1, 3, t_stage, "mu_%s" % "xyz"[a])
         dDrel = [r.dDrel for r in resp]
         dGamF = [r.dGam for r in resp]                                # F = field-perturbation response
         dI = [r.dI for r in resp]                                     # perturbed energy-weighted density
         U = [np.asarray(cphf.full_U(field[a], ncore, canonical=canonical)) for a in range(3)]
 
+        t_stage = time.time()
         for A in range(natom):
             hx = d.so_core(A) if so else d.core(A)
             Sx = d.so_overlap(A) if so else d.overlap(A)
@@ -936,6 +946,7 @@ class CorrelatedDerivs:
                                           + c('pq,pq->', dI[alpha], SX)           # 2n+1 I response
                                           - c('pq,pq->', Drel, muX)               # D~ f^(XF), f^(XF) = -muX
                                           + orb)
+            progress("APT nuclear skeletons", A + 1, natom, t_stage, atom_label(d.mol, A))
         return P
 
     @contextlib.contextmanager

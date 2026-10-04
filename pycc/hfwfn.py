@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from .wavefunction import Wavefunction
+from .timing import timed
 from .utils import diag
 
 
@@ -629,6 +630,7 @@ class HFwfn(Wavefunction):
                     P[A, beta, alpha] = -2.0 * self.contract('ia,ia->', Ur[beta] + Sh[beta], Ua[alpha])
         return P
 
+    @timed("SCF DBOC")
     def dboc(self):
         r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
         Hartree-Fock determinant,
