@@ -747,9 +747,10 @@ class CIderiv(CorrelatedDerivs):
             for cart in range(3):
                 p = Perturbation('nuclear', (A, cart))
                 dF, U = self._cpci_ints(p)
-                dERI = self._cpci_eri(p)
-                dc1, dc2, dc0v, _, _ = self._solve_cpci_ints(
-                    np.asarray(dF), np.asarray(dERI))
+                # Through the shared store-backed record, so a DBOC run after a Hessian (or an
+                # AAT) reads the 3N nuclear amplitudes instead of re-solving them.  The record's
+                # builder reaches the same integrals this method would have built for itself.
+                dc1, dc2, dc0v = self._cpci_dc(p)
                 dc1 = np.nan_to_num(np.asarray(dc1).real)
                 dc2 = np.nan_to_num(np.asarray(dc2).real)
                 dc0v = float(np.nan_to_num(np.asarray(dc0v).real))
