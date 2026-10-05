@@ -262,7 +262,7 @@ class CIderiv(CorrelatedDerivs):
         diis = helper_diis(dt1, dt2, diis_max, getattr(ci, 'precision', 1e-12))
 
         name = "CISD perturbed amplitudes" + (" (%s)" % label if label else "")
-        print(title(name))
+        print(title(name), flush=True)
         t0 = time.time()
         for niter in range(1, maxiter + 1):
             dE_proj_old = dE_proj
@@ -339,10 +339,10 @@ class CIderiv(CorrelatedDerivs):
             delta_dE = abs(dE_proj - dE_proj_old)
             rms_dt1 = np.sqrt(np.sum((dt1 - dt1_old) ** 2))
             rms_dt2 = np.sqrt(np.sum((dt2 - dt2_old) ** 2))
-            print(iteration(niter, de=delta_dE, rms=np.sqrt(abs(rms_dt1) ** 2 + abs(rms_dt2) ** 2)))
+            print(iteration(niter, de=delta_dE, rms=np.sqrt(abs(rms_dt1) ** 2 + abs(rms_dt2) ** 2)), flush=True)
             if niter > 1 and (delta_dE < e_convergence and rms_dt1 < d_convergence
                               and rms_dt2 < d_convergence):
-                print(converged(name, time.time() - t0))
+                print(converged(name, time.time() - t0), flush=True)
                 break
 
         dc0 = self._cisd_dn0(dt1, dt2)

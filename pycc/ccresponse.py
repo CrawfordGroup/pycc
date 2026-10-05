@@ -259,8 +259,8 @@ class ccresponse(object):
             pertbar.name + ("" if omega == 0.0 else ", omega=%.4f" % omega))
 
         pseudo = self.pseudoresponse(pertbar, X1, X2)
-        print(title(name))
-        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"))
+        print(title(name), flush=True)
+        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"), flush=True)
 
         diis = helper_diis(X1, X2, max_diis)
         contract = self.ccwfn.contract
@@ -305,10 +305,10 @@ class ccresponse(object):
 
             pseudo = self.pseudoresponse(pertbar, self.X1, self.X2)
             pseudodiff = np.abs(pseudo - pseudo_last)
-            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"))
+            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"), flush=True)
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
-                print(converged(name, time.time() - solver_start))
+                print(converged(name, time.time() - solver_start), flush=True)
                 if self.ccwfn.model == 'CC3':
                     if self.ccwfn.store_triples:
                         # full X3 was formed and stored each iteration
@@ -1781,8 +1781,8 @@ class ccresponse(object):
             pertbar.name + ("" if omega == 0.0 else ", omega=%.4f" % omega))
 
         pseudo = self.pseudoresponse(pertbar, Y1, Y2)
-        print(title(name))
-        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"))
+        print(title(name), flush=True)
+        print(iteration(0, energy=pseudo, de=pseudo, e_label="pseudoresponse"), flush=True)
 
         diis = helper_diis(Y1, Y2, max_diis)
         contract = self.ccwfn.contract
@@ -1812,10 +1812,10 @@ class ccresponse(object):
 
             pseudo = self.pseudoresponse(pertbar, self.Y1, self.Y2)
             pseudodiff = np.abs(pseudo - pseudo_last)
-            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"))
+            print(iteration(niter, energy=pseudo, de=pseudodiff, rms=rms, e_label="pseudoresponse"), flush=True)
 
             if ((abs(pseudodiff) < e_conv) and abs(rms) < r_conv):
-                print(converged(name, time.time() - solver_start))
+                print(converged(name, time.time() - solver_start), flush=True)
                 return self.Y1, self.Y2 , pseudo
 
             diis.add_error_vector(self.Y1, self.Y2)

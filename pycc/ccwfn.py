@@ -260,8 +260,8 @@ class CCwfn(Wavefunction):
         ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
         name = "T-amplitudes (%s)" % self.model
         print(solve_params(self.model, e_conv, r_conv, maxiter, max_diis, start_diis))
-        print(title(name))
-        print(iteration(0, energy=ecc, de=-ecc, e_label="CC Ecorr", note="MP2"))
+        print(title(name), flush=True)
+        print(iteration(0, energy=ecc, de=-ecc, e_label="CC Ecorr", note="MP2"), flush=True)
 
         diis = helper_diis(self.t1, self.t2, max_diis, self.precision)
 
@@ -285,7 +285,7 @@ class CCwfn(Wavefunction):
 
             ecc = self.cc_energy(o, v, F, L, self.t1, self.t2)
             ediff = ecc - ecc_last
-            print(iteration(niter, energy=ecc, de=ediff, rms=rms, e_label="CC Ecorr"))
+            print(iteration(niter, energy=ecc, de=ediff, rms=rms, e_label="CC Ecorr"), flush=True)
 
             # check for convergence. abs() dispatches to __abs__ on both NumPy scalars
             # and 0-d torch tensors, so this single block (and the (T) correction below)
@@ -293,7 +293,7 @@ class CCwfn(Wavefunction):
             # silently skipped the (T) step, so CCSD(T) on a torch tensor returned the
             # bare CCSD energy.
             if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                print(converged(name, time.time() - ccsd_tstart))
+                print(converged(name, time.time() - ccsd_tstart), flush=True)
                 print("E(REF)  = %20.15f" % self.eref)
                 if (self.model == 'CCSD(T)'):
                     print("E(CCSD) = %20.15f" % ecc)

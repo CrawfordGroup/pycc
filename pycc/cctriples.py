@@ -1034,7 +1034,7 @@ def t_invariant_so(o, v, t1, t2, F, ERI, contract, e_conv=1e-11, maxiter=100):
     t3 = source / denom
     eold = _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract)
     name = "(T) T3 (Jacobi)"
-    print(title(name))
+    print(title(name), flush=True)
     t0 = time.time()
     for niter in range(1, maxiter + 1):
         # <nu3|[F_offdiag,T3]|0>: virtual (c->d via Fvv) + occupied (k->l via Foo)
@@ -1044,9 +1044,9 @@ def t_invariant_so(o, v, t1, t2, F, ERI, contract, e_conv=1e-11, maxiter=100):
         comm = comm + (tmp - tmp.swapaxes(0, 2) - tmp.swapaxes(1, 2))
         t3 = (source + comm) / denom
         et = _t_energy_from_t3_so(o, v, t1, t2, F, ERI, t3, contract)
-        print(iteration(niter, energy=et, de=et - eold, e_label="E(T)"))
+        print(iteration(niter, energy=et, de=et - eold, e_label="E(T)"), flush=True)
         if abs(et - eold) < e_conv:
-            print(converged(name, time.time() - t0))
+            print(converged(name, time.time() - t0), flush=True)
             return et
         eold = et
     raise RuntimeError("t_invariant_so: T3 iteration did not converge in %d cycles "
