@@ -10,8 +10,17 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# One run per ref: a second push to a PR cancels the first rather than queueing a
+# duplicate matrix (3 jobs x ~25 min each).  main is excluded so pushes there always
+# produce a complete record.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
+    timeout-minutes: 90          # the suite runs 21-29 min; this bounds a hang well
+                                 # short of GitHub's 6-hour default
     defaults:
       run:
         shell: bash -l {0}
@@ -36,7 +45,21 @@ jobs:
 
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
+
+    # Cache the downloaded conda package tarballs (not the environment itself: the env is
+    # only partly defined by psi.yaml, since psi4 is conda-installed in a later step).  The
+    # key tracks psi.yaml; bump CACHE_NUMBER by hand to force a cold rebuild.  The upstream
+    # README also suggests `use-only-tar-bz2: true` on setup-miniconda alongside this; that
+    # is deliberately NOT set here, since forcing the older package format on conda-forge
+    # (which publishes .conda) would cost more than the cache saves.
+    - name: Cache conda packages
+      uses: actions/cache@v6
+      env:
+        CACHE_NUMBER: 0
+      with:
+        path: ~/conda_pkgs_dir
+        key: ${{ runner.os }}-${{ runner.arch }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('devtools/conda-envs/psi.yaml') }}
 
     - name: Additional info about the build
       shell: bash
@@ -47,13 +70,17 @@ jobs:
 
 
     - name: Create Psi4 Environment
-      uses: conda-incubator/setup-miniconda@v3
+      uses: conda-incubator/setup-miniconda@v4
       with:
         miniconda-version: "latest"
         activate-environment: p4env
         environment-file: devtools/conda-envs/psi.yaml
         python-version: ${{ matrix.python-version }}
         auto-activate-base: false
+        # Required for the cache step above to be worth anything: this input defaults to
+        # "", in which case conda keeps its packages in the default pkgs dir and the cached
+        # path stays empty.  The two paths must match.
+        pkgs-dirs: ~/conda_pkgs_dir
 
     - name: Install Psi4
       run: |
@@ -63,13 +90,6 @@ jobs:
         env
         conda install psi4 python=${{ matrix.python-version }} pip numpy=2 -c conda-forge
         ls -l $CONDA
-
-    - name: Test Psi4 Python Loading
-      if: false
-      run: |
-        export PATH=$CONDA_PREFIX/bin:$PATH
-        export PYTHONPATH=$CONDA_PREFIX/lib:$PYTHONPATH
-        python -c 'import psi4;print(psi4.__file__, psi4.__version__)' || true
 
     - name: Install PyCC and Deps
       run: |
@@ -105,7 +125,12 @@ jobs:
         coverage xml
         ls -l
 
+    # Advisory, never fatal: a coverage-service outage must not redden a run whose tests
+    # all passed.  `fail_ci_if_error` would NOT cover this -- it governs upload errors,
+    # while the 2026-10-05 nightly failure was the action itself throwing (TLS handshake
+    # refused) and exiting 1, which only continue-on-error catches.
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v7
+      continue-on-error: true
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
