@@ -1159,7 +1159,6 @@ class CorrelatedDerivs:
         ncore = wfn.o.stop - wfn.no
         co = slice(0, ncore)                                  # frozen core (independent core<->active rot.)
         eps = np.diag(np.asarray(wfn.H.F))                    # orbital energies (dependent pairs)
-        w = np.asarray(wfn.H.ERI if so else wfn.H.L)          # orbital-Hessian weight (<pq||rs> / L)
         # The orbital response uses the reference-doc form (eq:d2E-noncanon line 2, or
         # eq:d2E-canon-final when canonical) via the skeleton Lagrangian I'^(x).  The gauge follows
         # perturbed_mo_gauge (canonical for CCSD(T)); the relaxed densities Drel/dDrel already fold in
@@ -1191,6 +1190,7 @@ class CorrelatedDerivs:
                 U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
                 progress("Hessian perturbed wave functions", i + 1, len(pert), t_stage,
                          "%s %s" % (atom_label(d.mol, p.comp[0]), "xyz"[p.comp[1]]))
+            del r      # the loop variable would otherwise pin the last dGam (nmo^4) through both passes
 
         # per-X first skeletons.  wx = the 1-PDM two-electron kernel (L^(x) closed-shell /
         # <pq||rs>^(x) spin-orbital); erix = the 2-PDM ERI skeleton (<pq|rs>^(x) closed-shell /
@@ -1216,6 +1216,9 @@ class CorrelatedDerivs:
                     Xx.append(xt); I2x.append(it); Pf_x.append(pf)
                 else:
                     Xx.append(xov); I2x.append(i2); Pf_x.append(None)
+            # Loop variables outlive the loop: erix is a view that pins the last atom's whole
+            # 3-Cartesian eri stack and wx is one more nmo^4, i.e. 4*nmo^4 held through both passes.
+            del erix, wx
         # ---- assembly: two atom-pair sweeps, one per nmo^4 working set ----
         # The correlation Hessian is a sum of two contributions with DISJOINT nmo^4 inputs:
         #   (1) the fixed-density second skeleton  Gam*<pq||rs>^(XY) (+ Drel*f2 + I*S2), which
