@@ -955,8 +955,10 @@ class CorrelatedDerivs:
         duration of the block, and restore them on exit.  The assembly contracts only ``Gam`` (pass 1)
         and the per-pair derivative tensors, so the baseline MO ERIs (``H.ERI`` and, on the spatial
         path, ``H.L``) and the raw CISD unrelaxed 2-PDM (``_ci_dens[2]``, used only to build ``Gam``
-        and the perturbed-CI ``dE`` in the setup) sit idle -- 2-3 ``nmo^4`` arrays.  Spilling them
-        drops the resident floor from ~4 to ~1 ``nmo^4`` (52 -> 13 GiB at cc-pVTZ; peak 168 -> 129 GiB).
+        and the perturbed-CI ``dE`` in the setup) sit idle -- 2-3 ``nmo^4`` arrays -- and so do the
+        reference HFwfn's own copies (``_ref_hf.H.ERI``/``H.L``, present once the gradient has built
+        it), 2 more.  Measured (H2O2 MP2/cc-pVTZ, live ndarrays at pass-1 entry): with these spilled,
+        only ``Gam`` and ``Gam_eff^AO`` remain resident.
 
         Each spilled array is written to a temp file and reloaded on exit (``H.ERI`` and the 2-PDM are
         genuine work -- the ``O(N^5)`` transform and the density build -- worth restoring rather than
@@ -964,19 +966,25 @@ class CorrelatedDerivs:
         dropped and recomputed on restore.  The local reference is dropped after each spill so the RAM
         is actually reclaimed (nulling the attribute is not enough).  Exception-safe: the ``finally``
         always restores and deletes the temp files."""
-        H = self.wfn.H
         restores = []
+        # Spill files go where the DerivStore lives (PYCC_DERIV_STORE_DIR, else the tempfile
+        # default), so they inherit its vetted, disk-backed location rather than a possibly
+        # RAM-backed /tmp.
+        spill_dir = self.wfn.derivatives.store._dir
 
         def _spill(array, restore):
             """Write ``array`` to a temp file; register ``restore(reloaded_array)`` for the exit."""
-            fd, path = tempfile.mkstemp(suffix='.npy')
+            fd, path = tempfile.mkstemp(suffix='.npy', prefix='pycc_spill_', dir=spill_dir)
             os.close(fd)
             np.save(path, np.asarray(array))
             restores.append((restore, path))
 
-        # Baseline MO ERIs: spill H.ERI, drop H.L (recomputed from H.ERI on restore).
-        eri = getattr(H, 'ERI', None)
-        if eri is not None:
+        def _spill_mo_eri(H):
+            """Baseline MO ERIs of one Hamiltonian: spill H.ERI, drop H.L (recomputed from H.ERI on
+            restore with the same expression as the Hamiltonian builds it)."""
+            eri = getattr(H, 'ERI', None)
+            if eri is None:
+                return
             has_L = getattr(H, 'L', None) is not None
             def _restore_eri(a):
                 H.ERI = a
@@ -986,7 +994,13 @@ class CorrelatedDerivs:
             H.ERI = None
             if has_L:
                 H.L = None
-        del eri
+
+        # The correlated wavefunction's MO ERIs, and those of the reference HFwfn (_ref_hf, built by
+        # the gradient and later used for the reference blocks of the APT/AAT/VG-APT), which holds
+        # its own copies and is not read by the assembly either.
+        _spill_mo_eri(self.wfn.H)
+        if self._ref_hf is not None:
+            _spill_mo_eri(self._ref_hf.H)
 
         # CISD raw unrelaxed 2-PDM (absent for MP2/CC).  Its ONLY reference is the _ci_dens cache;
         # keep the two nmo^2 1-PDMs resident, spill the nmo^4 2-PDM, and restore the full triple.
@@ -1159,7 +1173,6 @@ class CorrelatedDerivs:
         ncore = wfn.o.stop - wfn.no
         co = slice(0, ncore)                                  # frozen core (independent core<->active rot.)
         eps = np.diag(np.asarray(wfn.H.F))                    # orbital energies (dependent pairs)
-        w = np.asarray(wfn.H.ERI if so else wfn.H.L)          # orbital-Hessian weight (<pq||rs> / L)
         # The orbital response uses the reference-doc form (eq:d2E-noncanon line 2, or
         # eq:d2E-canon-final when canonical) via the skeleton Lagrangian I'^(x).  The gauge follows
         # perturbed_mo_gauge (canonical for CCSD(T)); the relaxed densities Drel/dDrel already fold in
@@ -1191,6 +1204,7 @@ class CorrelatedDerivs:
                 U.append(np.asarray(cphf.full_U(p, ncore, canonical=canonical)))
                 progress("Hessian perturbed wave functions", i + 1, len(pert), t_stage,
                          "%s %s" % (atom_label(d.mol, p.comp[0]), "xyz"[p.comp[1]]))
+            del r      # the loop variable would otherwise pin the last dGam (nmo^4) through both passes
 
         # per-X first skeletons.  wx = the 1-PDM two-electron kernel (L^(x) closed-shell /
         # <pq||rs>^(x) spin-orbital); erix = the 2-PDM ERI skeleton (<pq|rs>^(x) closed-shell /
@@ -1216,6 +1230,9 @@ class CorrelatedDerivs:
                     Xx.append(xt); I2x.append(it); Pf_x.append(pf)
                 else:
                     Xx.append(xov); I2x.append(i2); Pf_x.append(None)
+            # Loop variables outlive the loop: erix is a view that pins the last atom's whole
+            # 3-Cartesian eri stack and wx is one more nmo^4, i.e. 4*nmo^4 held through both passes.
+            del erix, wx
         # ---- assembly: two atom-pair sweeps, one per nmo^4 working set ----
         # The correlation Hessian is a sum of two contributions with DISJOINT nmo^4 inputs:
         #   (1) the fixed-density second skeleton  Gam*<pq||rs>^(XY) (+ Drel*f2 + I*S2), which
