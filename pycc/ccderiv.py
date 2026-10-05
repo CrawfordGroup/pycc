@@ -261,7 +261,7 @@ class CCderiv(CorrelatedDerivs):
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
         name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
-        print(title(name))
+        print(title(name), flush=True)
         t0 = time.time()
         for niter in range(1, maxiter + 1):
             j1, j2 = self._ccsd_jacobian(X1, X2, hbar)
@@ -271,9 +271,9 @@ class CCderiv(CorrelatedDerivs):
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
             rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
-            print(iteration(niter, rms=rms))
+            print(iteration(niter, rms=rms), flush=True)
             if rms < rconv:
-                print(converged(name, time.time() - t0))
+                print(converged(name, time.time() - t0), flush=True)
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
@@ -315,7 +315,7 @@ class CCderiv(CorrelatedDerivs):
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
         diis = helper_diis(X1, X2, 8)
         name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
-        print(title(name))
+        print(title(name), flush=True)
         t0 = time.time()
         for niter in range(1, maxiter + 1):
             j1, j2 = self._so_ccsd_jacobian(X1, X2, hbar)
@@ -323,9 +323,9 @@ class CCderiv(CorrelatedDerivs):
             X1 = X1 + r1 / Dia
             X2 = X2 + r2 / Dijab
             rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
-            print(iteration(niter, rms=rms))
+            print(iteration(niter, rms=rms), flush=True)
             if rms < rconv:
-                print(converged(name, time.time() - t0))
+                print(converged(name, time.time() - t0), flush=True)
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
@@ -595,7 +595,7 @@ class CCderiv(CorrelatedDerivs):
         dl1, dl2 = B1 / Dia, B2 / Dijab
         diis = helper_diis(dl1, dl2, 8)
         name = "perturbed Lambda" + (" (%s)" % label if label else "")
-        print(title(name))
+        print(title(name), flush=True)
         t0 = time.time()
         for niter in range(1, maxiter + 1):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
@@ -606,9 +606,9 @@ class CCderiv(CorrelatedDerivs):
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
             rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
-            print(iteration(niter, rms=rms))
+            print(iteration(niter, rms=rms), flush=True)
             if rms < rconv:
-                print(converged(name, time.time() - t0))
+                print(converged(name, time.time() - t0), flush=True)
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)
@@ -668,7 +668,7 @@ class CCderiv(CorrelatedDerivs):
         dl1, dl2 = B1 / Dia, B2 / Dijab
         diis = helper_diis(dl1, dl2, 8)
         name = "perturbed Lambda" + (" (%s)" % label if label else "")
-        print(title(name))
+        print(title(name), flush=True)
         t0 = time.time()
         for niter in range(1, maxiter + 1):
             Gvv_d = np.asarray(lam.build_Gvv(t2, dl2)); Goo_d = np.asarray(lam.build_Goo(t2, dl2))
@@ -678,9 +678,9 @@ class CCderiv(CorrelatedDerivs):
             dl1 = dl1 + r1 / Dia
             dl2 = dl2 + r2 / Dijab
             rms = np.sqrt(np.sum((r1 / Dia) ** 2) + np.sum((r2 / Dijab) ** 2))
-            print(iteration(niter, rms=rms))
+            print(iteration(niter, rms=rms), flush=True)
             if rms < rconv:
-                print(converged(name, time.time() - t0))
+                print(converged(name, time.time() - t0), flush=True)
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)

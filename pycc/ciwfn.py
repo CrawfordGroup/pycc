@@ -80,8 +80,8 @@ class CIwfn(Wavefunction):
         eci = self.ci_energy(o, v, F, L, self.c1, self.c2)
         name = "CI-amplitudes (%s)" % self.model
         print(solve_params(self.model, e_conv, r_conv, maxiter, max_diis, start_diis))
-        print(title(name))
-        print(iteration(0, energy=eci, de=-eci, e_label="CI Ecorr", note="MP2"))
+        print(title(name), flush=True)
+        print(iteration(0, energy=eci, de=-eci, e_label="CI Ecorr", note="MP2"), flush=True)
 
         diis = helper_diis(self.c1, self.c2, max_diis, self.precision)
 
@@ -102,10 +102,10 @@ class CIwfn(Wavefunction):
 
             eci = self.ci_energy(o, v, F, L, self.c1, self.c2)
             ediff = eci - eci_last
-            print(iteration(niter, energy=eci, de=ediff, rms=rms, e_label="CI Ecorr"))
+            print(iteration(niter, energy=eci, de=ediff, rms=rms, e_label="CI Ecorr"), flush=True)
 
             if (abs(ediff) < e_conv) and abs(rms) < r_conv:
-                print(converged(name, time.time() - ci_tstart))
+                print(converged(name, time.time() - ci_tstart), flush=True)
                 print("E(REF)   = %20.15f" % self.eref)
                 print("E(%s)  = %20.15f" % (self.model, eci))
                 print("E(TOT)   = %20.15f" % (eci + self.eref))

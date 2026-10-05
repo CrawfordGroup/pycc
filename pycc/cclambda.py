@@ -119,8 +119,8 @@ class cclambda(object):
         lecc = self.pseudoenergy(o, v, ERI, l2)
 
         name = "Lambda-amplitudes (%s)" % self.ccwfn.model
-        print(title(name))
-        print(iteration(0, energy=lecc, de=-lecc, e_label="LCC PseudoE"))
+        print(title(name), flush=True)
+        print(iteration(0, energy=lecc, de=-lecc, e_label="LCC PseudoE"), flush=True)
 
         diis = helper_diis(l1, l2, max_diis, self.ccwfn.precision)
 
@@ -178,15 +178,15 @@ class cclambda(object):
 
             lecc = self.pseudoenergy(o, v, ERI, self.l2)
             ediff = lecc - lecc_last
-            print(iteration(niter, energy=lecc, de=ediff, rms=rms, e_label="LCC PseudoE"))
+            print(iteration(niter, energy=lecc, de=ediff, rms=rms, e_label="LCC PseudoE"), flush=True)
 
             if HAS_TORCH and isinstance(self.l1, torch.Tensor):
                 if ((torch.abs(ediff) < e_conv) and torch.abs(rms) < r_conv):
-                    print(converged(name, time.time() - lambda_tstart))
+                    print(converged(name, time.time() - lambda_tstart), flush=True)
                     return lecc
             else:
                 if ((abs(ediff) < e_conv) and abs(rms) < r_conv):
-                    print(converged(name, time.time() - lambda_tstart))
+                    print(converged(name, time.time() - lambda_tstart), flush=True)
                     return lecc
 
             diis.add_error_vector(self.l1, self.l2)

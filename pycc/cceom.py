@@ -123,7 +123,7 @@ class cceom(object):
         V = np.hstack((np.reshape(C1, (nguess, s1_len)), np.zeros((nguess, s2_len))))
         V = self._orthonormalize(V)
         W = np.empty((0, sigma_len), float)     # sigma vectors, in lockstep with V
-        print(title("EOM-CCSD (%s)" % eom_type))
+        print(title("EOM-CCSD (%s)" % eom_type), flush=True)
         print("Guess vectors obtained from %s." % (guess))
 
         E = np.zeros((N))
