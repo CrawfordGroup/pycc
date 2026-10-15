@@ -76,12 +76,12 @@ class CIderiv(CorrelatedDerivs):
             D = np.zeros((nmo, nmo), dtype=n1.dtype)
             for i in range(ndocc):
                 D[i, i] += 2.0
-            D[o, o] -= 2.0 * c('ja,ia->ij', n1.conj(), n1)
-            D[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n.conj(), n2)
-            D[v, v] += 2.0 * c('ia,ib->ab', n1.conj(), n1)
-            D[v, v] += 2.0 * c('ijac,ijbc->ab', tau_n.conj(), n2)
-            D[o, v] += (2.0 * n0 * n1 + 2.0 * c('jb,ijab->ia', n1.conj(), 2.0 * n2 - n2.swapaxes(2, 3)))
-            D[v, o] += (2.0 * n0 * n1.conj().T + 2.0 * c('ijab,jb->ai', (2.0 * n2 - n2.swapaxes(2, 3)).conj(), n1))
+            D[o, o] -= 2.0 * c('ja,ia->ij', n1, n1)
+            D[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n, n2)
+            D[v, v] += 2.0 * c('ia,ib->ab', n1, n1)
+            D[v, v] += 2.0 * c('ijac,ijbc->ab', tau_n, n2)
+            D[o, v] += (2.0 * n0 * n1 + 2.0 * c('jb,ijab->ia', n1, 2.0 * n2 - n2.swapaxes(2, 3)))
+            D[v, o] += (2.0 * n0 * n1.T + 2.0 * c('ijab,jb->ai', (2.0 * n2 - n2.swapaxes(2, 3)), n1))
             D_corr = D.copy()
             for i in range(ndocc):
                 D_corr[i, i] -= 2.0
@@ -226,7 +226,7 @@ class CIderiv(CorrelatedDerivs):
         D_pq, D_pq_corr, D_pqrs = self._cisd_densities()
         dE = c('pq,pq->', dF, D_pq) + c('pqrs,pqrs->', dERI, D_pqrs)
 
-        dt1 = -(dE * t1).astype(complex)
+        dt1 = -(dE * t1)
         dt1 = dt1 - c('ji,ja->ia', dF[o, o], t1)
         dt1 = dt1 + c('ab,ib->ia', dF[v, v], t1)
         dt1 = dt1 + c('jabi,jb->ia', 2.0 * dERI[o, v, v, o] - dERI.swapaxes(2, 3)[o, v, v, o], t1)
@@ -235,7 +235,7 @@ class CIderiv(CorrelatedDerivs):
         dt1 = dt1 - c('kjib,kjab->ia', 2.0 * dERI[o, o, o, v] - dERI.swapaxes(2, 3)[o, o, o, v], t2)
         dt1 = dt1 / Dia
 
-        dt2 = -(dE * t2).astype(complex)
+        dt2 = -(dE * t2)
         dt2 = dt2 + c('abcj,ic->ijab', dERI[v, v, v, o], t1)
         dt2 = dt2 + c('abic,jc->ijab', dERI[v, v, o, v], t1)
         dt2 = dt2 - c('kbij,ka->ijab', dERI[o, v, o, o], t1)
@@ -269,7 +269,7 @@ class CIderiv(CorrelatedDerivs):
             dt1_old, dt2_old = dt1.copy(), dt2.copy()
 
             # singles residual - driving terms (dF/dERI acting on t1/t2)
-            dRt1 = dF.copy().swapaxes(0, 1)[o, v].astype(complex)
+            dRt1 = dF.copy().swapaxes(0, 1)[o, v]
             dRt1 = dRt1 - dE_proj * t1
             dRt1 = dRt1 - c('ji,ja->ia', dF[o, o], t1)
             dRt1 = dRt1 + c('ab,ib->ia', dF[v, v], t1)
@@ -287,7 +287,7 @@ class CIderiv(CorrelatedDerivs):
             dRt1 = dRt1 - c('kjib,kjab->ia', 2.0 * ERI[o, o, o, v] - ERI.swapaxes(2, 3)[o, o, o, v], dt2)
 
             # doubles residual - driving terms
-            dRt2 = dERI.copy().swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v].astype(complex)
+            dRt2 = dERI.copy().swapaxes(0, 2).swapaxes(1, 3)[o, o, v, v]
             dRt2 = dRt2 - dE_proj * t2
             dRt2 = dRt2 + c('abcj,ic->ijab', dERI[v, v, v, o], t1)
             dRt2 = dRt2 + c('abic,jc->ijab', dERI[v, v, o, v], t1)
@@ -351,10 +351,6 @@ class CIderiv(CorrelatedDerivs):
             dc1 = n0 * dt1
             dc2 = n0 * dt2
         else:
-            # real perturbation (nuclear/field): the response is real - return real arrays so
-            # downstream densities stay real (no ComplexWarning casts in the base assembly)
-            dt1, dt2 = dt1.real, dt2.real
-            dc0 = dc0.real if hasattr(dc0, 'real') else dc0
             dc0v = dc0
             dc1 = dc0 * t1 + n0 * dt1
             dc2 = dc0 * t2 + n0 * dt2
@@ -467,7 +463,7 @@ class CIderiv(CorrelatedDerivs):
         t1, t2 = ci.c1, ci.c2
         tau = 2.0 * t2 - t2.swapaxes(2, 3)
         n0 = ci._normalized_amplitudes()[0]
-        return -n0**3 * (2.0 * c('ia,ia->', t1.conj(), dn1) + c('ijab,ijab->', tau.conj(), dn2))
+        return -n0**3 * (2.0 * c('ia,ia->', t1, dn1) + c('ijab,ijab->', tau, dn2))
 
     def _perturbed_cisd_corr_opdm(self, dc1, dc2):
         ci = self.ci
@@ -521,7 +517,7 @@ class CIderiv(CorrelatedDerivs):
         n0, n1, n2, tau_n = self.ci._normalized_amplitudes()
         o, v, nmo = self.ci.o, self.ci.v, self.ci.nmo
 
-        R = np.zeros((nmo, nmo), dtype=complex)
+        R = np.zeros((nmo, nmo))
         R[o, o] -= 2.0 * c('ja,ia->ij', n1, dc1)
         R[o, o] -= 2.0 * c('jkab,ikab->ij', tau_n, dc2)
         R[v, v] += 2.0 * c('ia,ib->ab', n1, dc1)
@@ -549,9 +545,9 @@ class CIderiv(CorrelatedDerivs):
             _, dn1_R, dn2_R = self._aat_dc_normalized(pR, gauge)
             for beta in range(3):
                 _, dn1_H, dn2_H = magH[beta]
-                term = 2.0 * c('ia,ia->', dn1_R.conj(), dn1_H)
-                term = term + c('ijab,ijab->', (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_H)
-                I_cc[la, beta] = term.real
+                term = 2.0 * c('ia,ia->', dn1_R, dn1_H)
+                term = term + c('ijab,ijab->', (2.0 * dn2_R - dn2_R.swapaxes(2, 3)), dn2_H)
+                I_cc[la, beta] = term
             self._nuclear_step('CISD AAT Icc', la, natom, t_stage)
         return I_cc
 
@@ -559,7 +555,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        AAT_phic = np.zeros((3 * natom, 3), dtype=complex)
+        AAT_phic = np.zeros((3 * natom, 3))
         magH = {b: self._aat_dc_normalized(Perturbation('magnetic', b), gauge) for b in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
@@ -573,7 +569,7 @@ class CIderiv(CorrelatedDerivs):
                 R_pq = self._build_Dtilde(dn1_H, dn2_H, dn0_H)
                 AAT_phic[la, beta] = c('pq,qp->', R_pq, Ur_eff)
             self._nuclear_step('CISD AAT Iphic', la, natom, t_stage)
-        return AAT_phic.real
+        return AAT_phic
 
     def compute_Iphiphi_AATs(self, gauge='non-canonical'):
         from .cphf import Perturbation
@@ -590,7 +586,7 @@ class CIderiv(CorrelatedDerivs):
             Ur_eff = U_R + half_S.T
             for beta in range(3):
                 _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
-                I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff).real
+                I_pp[la, beta] = c('pq,pq->', D_pq, U_H.T @ Ur_eff)
             self._nuclear_step('CISD AAT Iphiphi', la, natom, t_stage)
         return I_pp
 
@@ -598,7 +594,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        AAT_cphi = np.zeros((3 * natom, 3), dtype=complex)
+        AAT_cphi = np.zeros((3 * natom, 3))
         t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -609,7 +605,7 @@ class CIderiv(CorrelatedDerivs):
                 _, U_H = self._cpci_ints(Perturbation('magnetic', beta), gauge)
                 AAT_cphi[la, beta] = c('pq,pq->', R_pq, U_H)
             self._nuclear_step('CISD AAT Icphi', la, natom, t_stage)
-        return AAT_cphi.real
+        return AAT_cphi
 
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
         """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
@@ -647,7 +643,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        I_cc = np.zeros((3 * natom, 3), dtype=complex)
+        I_cc = np.zeros((3 * natom, 3))
         vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g), gauge) for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
@@ -655,9 +651,9 @@ class CIderiv(CorrelatedDerivs):
             _, dn1_R, dn2_R = self._aat_dc_normalized(Perturbation('nuclear', (A, beta_)), gauge)
             for gamma in range(3):
                 _, dn1_A, dn2_A = vecA[gamma]
-                I_cc[la, gamma] = (2.0 * c('ia,ia->', dn1_R.conj(), dn1_A)
+                I_cc[la, gamma] = (2.0 * c('ia,ia->', dn1_R, dn1_A)
                                    + c('ijab,ijab->',
-                                       (2.0 * dn2_R - dn2_R.swapaxes(2, 3)).conj(), dn2_A))
+                                       (2.0 * dn2_R - dn2_R.swapaxes(2, 3)), dn2_A))
             self._nuclear_step('CISD VG-APT Icc', la, natom, t_stage)
         return I_cc
 
@@ -665,7 +661,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        Icphi = np.zeros((3 * natom, 3), dtype=complex)
+        Icphi = np.zeros((3 * natom, 3))
         t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -681,7 +677,7 @@ class CIderiv(CorrelatedDerivs):
         from .cphf import Perturbation
         c = self.contract
         natom = self.ci.derivatives.natom
-        Iphic = np.zeros((3 * natom, 3), dtype=complex)
+        Iphic = np.zeros((3 * natom, 3))
         vecA = {g: self._aat_dc_normalized(Perturbation('vecpot', g), gauge) for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
@@ -693,7 +689,7 @@ class CIderiv(CorrelatedDerivs):
             for gamma in range(3):
                 dn0_A, dn1_A, dn2_A = vecA[gamma]
                 D_tilde_A = self._build_Dtilde(dn1_A, dn2_A, dn0_A)
-                Iphic[la, gamma] = c('pq,qp->', D_tilde_A.conj(), Ur_eff)
+                Iphic[la, gamma] = c('pq,qp->', D_tilde_A, Ur_eff)
             self._nuclear_step('CISD VG-APT Iphic', la, natom, t_stage)
         return Iphic
 
@@ -702,7 +698,7 @@ class CIderiv(CorrelatedDerivs):
         c = self.contract
         natom = self.ci.derivatives.natom
         _, D_pq, _ = self._cisd_densities()   # correlation-only 1-PDM (true-normalized)
-        I_pp = np.zeros((3 * natom, 3), dtype=complex)
+        I_pp = np.zeros((3 * natom, 3))
         t_stage = time.time()
         for la in range(3 * natom):
             A, beta_ = divmod(la, 3)
@@ -732,7 +728,7 @@ class CIderiv(CorrelatedDerivs):
             overlap_total = overlap_total + self.compute_Iphic_VG_APT(gauge)
         with timer("VG-APT Iphiphi"):
             overlap_total = overlap_total + self.compute_Iphiphi_VG_APT(gauge)
-        return (-2.0 * overlap_total).real.reshape(natom, 3, 3)
+        return (-2.0 * overlap_total).reshape(natom, 3, 3)
 
     @timed("CISD DBOC")
     def dboc(self):
@@ -772,9 +768,9 @@ class CIderiv(CorrelatedDerivs):
         U_ME = 1822.888486209
         ME_U = 5.48579909065e-4
         n0, n1, n2, _ = ci._normalized_amplitudes()
-        Dfull = np.asarray(self._cisd_densities()[0]).real
+        Dfull = np.asarray(self._cisd_densities()[0])
         Dcorr, Gam = self._unrelaxed_densities()
-        Dcorr, Gam = np.asarray(Dcorr).real, np.asarray(Gam).real
+        Dcorr, Gam = np.asarray(Dcorr), np.asarray(Gam)
         Dref = Dfull - Dcorr
 
         # 2-PDM in the <E_pq E_rs> pairing: stored Gam + separable reference terms
@@ -798,15 +794,15 @@ class CIderiv(CorrelatedDerivs):
                 # AAT) reads the 3N nuclear amplitudes instead of re-solving them.  The record's
                 # builder reaches the same integrals this method would have built for itself.
                 dc1, dc2, dc0v = self._cpci_dc(p)
-                dc1 = np.nan_to_num(np.asarray(dc1).real)
-                dc2 = np.nan_to_num(np.asarray(dc2).real)
-                dc0v = float(np.nan_to_num(np.asarray(dc0v).real))
+                dc1 = np.nan_to_num(np.asarray(dc1))
+                dc2 = np.nan_to_num(np.asarray(dc2))
+                dc0v = float(np.nan_to_num(np.asarray(dc0v)))
                 half_S = np.asarray(
                     ci.derivatives.overlap_half(A)[cart]).T
-                Ueff = np.asarray(U).real + half_S
+                Ueff = np.asarray(U) + half_S
                 Icc = (dc0v * dc0v + 2.0 * np.sum(dc1 * dc1)
                        + np.sum((2.0 * dc2 - dc2.swapaxes(2, 3)) * dc2))
-                R = np.asarray(self._build_Dtilde(dc1, dc2, dc0v)).real
+                R = np.asarray(self._build_Dtilde(dc1, dc2, dc0v))
                 T = np.zeros((nmo, nmo))
                 T[o, o] = R[o, o].T
                 T[v, v] = R[v, v].T
