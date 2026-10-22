@@ -844,9 +844,9 @@ copy ~40 lines of subtle response physics across both spin paths.
   anti-divergence guard for the duplicated skeleton), and the `ao_tei_deriv2` call count halved.
 - Both: spatial + spin-orbital, AE + FC, C1 + C2v, psi4 1.9 + 1.10.
 
-## 12. Reference CPHF response from the correlated full-occupied CPHF -- DESIGN
+## 12. Reference CPHF response from the correlated full-occupied CPHF -- IMPLEMENTED
 
-**Status: DESIGNED, not yet implemented.**  Corrects an assumption in s.11.2.  That section
+**Status: IMPLEMENTED** (PR #249, 2026-08-28).  Corrects an assumption in s.11.2.  That section
 delegated the ao-independent reference response to `HFwfn._hessian_response()` on the grounds that it
 is "the same CPHF work the facade already pays today, so no regression".  True against the pre-#245
 baseline, but it classified `_hessian_response` only by what it does *not* need (no `ao_tei_deriv2`)
@@ -1520,6 +1520,290 @@ first sector and are now four disk reads of `o^2 v^2` each: 4 * 3N * 63 MB at cc
 a ten-atom molecule.  Expected to be noise against a multi-hour block, but it is new traffic and
 should be measured rather than assumed -- see the instrumentation item in s.14.8.
 
+## 15. Coupled-cluster atomic axial tensors -- DESIGN
+
+**Status: DESIGN, awaiting review.  No code written.**  Source: Eq. (39) of the CC-VCD draft,
+`~/iCloud/manuscripts/cc_vcd/theory.tex` (`\label{eq:result}`).  Target: a new branch, not to be
+pushed until the PI says so.
+
+### 15.1 What Eq. (39) asks for
+
+With `x = R_{lambda,alpha}` (nuclear) and `y = H_beta` (magnetic field), the electronic CC AAT is
+
+    2 I^lambda_{alpha,beta}
+      =  SUM_mu ( lambda^R_mu t^H_mu  -  lambda^H_mu t^R_mu )                      [term 1]
+       + SUM_pq D^R_pq <phi_p|d_H phi_q>  -  SUM_pq D^H_pq <phi_p|d_R phi_q>       [term 2]
+       + SUM_pq D^(0,0)_pq ( <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> )       [term 3]
+
+Three structural facts make this cheaper than it looks:
+
+- **No two-particle density.**  The `Gamma` block cancels identically in the antisymmetric
+  combination `S_xy - S_yx`.  This matches what the CISD code already does: `compute_Iphiphi_AATs`
+  contracts the 1-PDM only.
+- **The ingredients are the same five objects the existing AAT code uses**: perturbed amplitudes,
+  perturbed 1-PDMs, the unperturbed 1-PDM, and the two half-derivative overlaps.
+- **The term structure is exactly the existing four-sector decomposition.**  Mapping onto
+  `cideriv.py`:
+
+  | Eq. (39) | CISD sector | contracts |
+  |---|---|---|
+  | term 1 | `compute_Icc_AATs` | perturbed amplitudes, both perturbations |
+  | term 2 | `compute_Icphi_AATs` + `compute_Iphic_AATs` | `D^x` against the other side's `U^y` |
+  | term 3 | `compute_Iphiphi_AATs` | `D^(0,0)` against `U_H^T @ U_R_eff` |
+
+The half-derivative overlaps already have established spellings in the tree:
+
+    <phi_p|d_R phi_q>  ->  U^R + half_S^T     (half_S = derivatives.overlap_half(A)[cart])
+    <phi_p|d_H phi_q>  ->  U^H                (no half_S: S^(B) = 0 without GIAOs)
+
+### 15.2 What CCderiv already has
+
+More than the PI's framing suggests.  The perturbed-T and perturbed-Lambda solvers exist **and are
+already exercised with a magnetic perturbation**:
+
+- `_perturbation_ints('m')` returns the magnetic-dipole integrals with the `i` factored out,
+  `np.real(-1.0j * H.m[x])` -- **the same convention `CPHF._field_ints` uses**
+  (`hop = np.asarray(-1.0j * op[axis]).real`).  So the pure-imaginary nature of `m_beta` is already
+  handled, identically, on both sides of the tree.
+- `_response_density(op_ints, omega, label)` already drives `_perturbed_amplitudes` **and**
+  `_perturbed_lambda` with that operator, at `omega = 0` as a special case, on both the spatial and
+  spin-orbital paths.  `optical_rotation` is a live consumer.
+
+**The one real difference** is which perturbed integrals go in.  `_response_density` deliberately
+uses the **bare** operator ("no perturbed two-electron integrals, no CPHF folding -- the
+orbital-unrelaxed field derivative"), which is correct for dynamic response.  Eq. (39) needs the
+**orbital-relaxed** magnetic perturbation, i.e. `dF^H` and `dERI^H` from `CPHF.magnetic_ints` /
+`CPHF.magnetic_eri` -- exactly what `CIderiv._cpci_ints` / `_cpci_eri` already pass to the CPCI
+solve.  Both halves exist; they have never been connected.
+
+### 15.3 The piece that is missing, and it is on the nuclear side
+
+Term 1 needs `t^R` and `lambda^R` as well as `t^H` and `lambda^H`.  `CCderiv` computes the nuclear
+ones inside `_perturbed_unrelaxed_densities` and **throws them away**, keeping only the contracted
+densities:
+
+    dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, hbar, label=label)
+    dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2, hbar, lam, ...)
+    return self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam, dt3=dt3)
+
+This is precisely the CISD situation before #255, and the fix is the same: persist them.  **It is
+also proposal 2 of issue #252**, which s.14.7 deferred on the explicit grounds that "CC has no AAT
+or VG-APT, so persisting its amplitudes would add storage and save nothing until CC AATs exist."
+**Building CC AATs is the event that opens that gate.**  The CC record is
+`(dt1, dt2, dl1, dl2)` rather than CISD's `(dt1, dt2, dc0v)`, keyed the same way
+(s.14.6: one gauge member, the gauge that produced the record).
+
+Note `_uid` **is** required in the CC key, unlike CISD: CCSD and CCSD(T) drivers on one `CCwfn`
+genuinely differ, which is the original reason `'resp'` carries it.
+
+### 15.4 Proposed layout in ccderiv.py
+
+Mirroring `cideriv.py` so the two read alike and a later hoist (s.15.6) is mechanical:
+
+1. **`_cc_amplitude_record(pert, gauge)`** -- the store-backed `(dt1, dt2, dl1, dl2)` for one
+   perturbation, built from the orbital-relaxed perturbed integrals.  Dispatches on `pert.kind`:
+   nuclear via `CPHF.perturbed_fock`/`perturbed_eri`, magnetic via `magnetic_ints`/`magnetic_eri`,
+   vecpot via `momentum_ints`/`momentum_eri` (s.15.5).  This is the single new primitive.
+2. **`_perturbed_unrelaxed_densities`** rewired to read that record rather than solve inline, so the
+   Hessian/APT path and the AAT path share one solve, exactly as `_cpci_dc` does for CISD.
+3. **Four sector methods** named to match CISD: `compute_Icc_AATs`, `compute_Icphi_AATs`,
+   `compute_Iphic_AATs`, `compute_Iphiphi_AATs`, each looping `3N` nuclear perturbations with the
+   three magnetic ones hoisted out of the loop.
+4. **`_correlation_aat(gauge)`** summing the four, with the per-sector timers and
+   `_nuclear_step` progress lines the other drivers now have (#256).
+5. **`aat(origin, orbital_gauge)`** -- the thin facade delegator, matching `MPderiv.aat`.
+
+Nothing in `properties.py` changes: `pycc.aat` already dispatches on `_correlation_aat`, so CC
+appears in the facade the moment the method exists.
+
+**Keep the CC record `float64` throughout.**  The `i` of the magnetic / vecpot operators is
+stripped at the operator (`CPHF._field_ints`), so every quantity on every perturbation kind is
+real.  `cideriv.py` used to carry this data in `complex128` containers with identically zero
+imaginary parts; **PR #259 removed that**, so it is now a correct template to copy from, and
+`ccderiv.py`, `mpderiv.py` and `correlatedderivs.py` were already clean.  Nothing to avoid here
+any more, but do not reintroduce it.
+
+### 15.5 VG-APT: a parameter swap, as the PI says
+
+Confirmed.  `CPHF` already exposes `momentum_ints`/`momentum_eri` in exact parallel to
+`magnetic_ints`/`magnetic_eri`, and `CIderiv`'s VG-APT sectors are structurally identical to its
+AAT sectors with `Perturbation('vecpot', g)` in place of `Perturbation('magnetic', b)`.  If
+`_cc_amplitude_record` dispatches on `pert.kind` from the start, the VG-APT costs four more sector
+methods and no new physics.
+
+### 15.6 Hoisting into correlatedderivs (the PI's item 4)
+
+Sound, and the draft supports it: "For a real CI-type wave function Eq. (39) reduces to twice
+Eq. (27) of Ref. Krishnan2026:density."
+
+The base currently has **two** leaf hooks (`_unrelaxed_densities`, `_perturbed_unrelaxed_densities`).
+Eq. (39) needs **one more**: the per-perturbation amplitudes and multipliers for term 1.  Terms 2
+and 3 are already served by the existing two.  So the hoist is a natural extension of the
+established "leaf supplies densities, base supplies assembly" split, not a new pattern.
+
+Two cautions before committing to it:
+
+- **MP2's current AAT is a different formulation** (the gauge-invariant folded density of PR #170),
+  not a specialization of Eq. (39) in its present form.  Moving MP2 onto Eq. (39) is a
+  *reformulation*, and must reproduce the existing MP2 AAT numbers to their current validated
+  tolerance, not merely run.
+- **Do the hoist last.**  Get CC AATs working and validated against something external first.  A
+  simultaneous new-method-plus-refactor would leave a disagreement ambiguous between the two.
+
+### 15.7 Open questions and risks
+
+1. **The two-particle cancellation: SETTLED, no representation caveat (2026-10-10).**  An earlier
+   draft of this section worried that the draft proves the cancellation only "in the spin-orbital
+   representation".  That concern was unfounded, on two independent grounds.
+
+   *Analytically*, the required relation `Gamma_rpsq = Gamma_prqs` is **particle exchange**, which
+   follows from anticommutation alone: with `Gamma_prqs = <a_p+ a_r+ a_s a_q>`,
+
+       a_r+ a_p+ a_q a_s = (-a_p+ a_r+)(-a_s a_q) = a_p+ a_r+ a_s a_q
+
+   Two sign flips that cancel.  The identity never touches the `(1 + Lambda) e^{-T}` sandwich, so it
+   is independent of the state, of Hermiticity, and of `Lambda != T^dagger`; relabelling the two
+   electrons is basis-independent.  (Note the CISD precedent is **not** evidence here, as the PI
+   pointed out: CI's bra is the adjoint of its ket, so its cancellation could follow from bra-ket
+   symmetry, which CC does not have.)
+
+   *Empirically*, an exhaustive sweep of all 24 index permutations of `Gam` from
+   `CCderiv._unrelaxed_densities()` (water/STO-3G, CCSD) finds **exactly three** satisfied, and the
+   **same three on both paths**:
+
+   | permutation | spatial | spin-orbital |
+   |---|---|---|
+   | `Gam[p,q,r,s] == Gam[q,p,s,r]` (particle exchange) | 5.3e-17 | 1.4e-15 |
+   | `Gam[p,q,r,s] == Gam[r,s,p,q]` (bra-ket) | 6.6e-18 | 0.0 |
+   | `Gam[p,q,r,s] == Gam[s,r,q,p]` (both) | 5.3e-17 | 1.4e-15 |
+
+   PyCC stores `Gam` in physicist ordering (contracted as `c('pqrs,pqrs->', dGam, eriX)` against
+   `<pq|rs>^(X)`), so electron 1 holds slots 0 and 2 and particle exchange is `(1,0,3,2)` -- the
+   first row.  The term drops, in both representations.
+
+   **Caution worth carrying into the implementation:** the *second* row, bra-ket exchange, is NOT
+   guaranteed by CC theory (`Lambda != T^dagger`).  It holds only because
+   `ccdensity.gradient_densities()` returns an explicitly **symmetrized** cumulant, as its own
+   docstring states.  The stored object therefore carries more symmetry than the theory provides.
+   Eq. (39)'s cancellation does not need it; do not write code that leans on it, or the result will
+   be correct today and silently wrong if that symmetrization is ever dropped.
+2. **CCSD only, at first.**  `_response_density` already guards `model != 'CCSD'` with
+   `NotImplementedError`.  CCSD(T) brings perturbed (T) sources into `_perturbed_lambda` via
+   `dS1`/`dS2`, and Eq. (39) is derived for the `(1 + Lambda) e^{-T}` bra without (T).  Scope CCSD
+   first and raise for CCSD(T), matching the existing response guard.
+3. **Frozen core.**  The AAT's nuclear and magnetic sides must span the same occupied space.  The
+   existing path achieves this with `_full_occ_cphf`; the CC path must use the same, not
+   `wfn.cphf`.
+4. **The factor of i, and where `.real` is taken.**  Term 1 multiplies a real (nuclear) amplitude
+   response by an imaginary (magnetic) one.  The existing drivers resolve this by factoring `i` out
+   of the operator and taking `.real` at the end of each sector.  The CC bookkeeping must be
+   written down explicitly rather than inherited by analogy, since CC has no normalization factor
+   where CISD has `dc0v`.
+5. **Gauge origin.**  AATs are origin-dependent; the existing code uses psi4's input-frame origin
+   and the facade shifts only the nuclear term.  CC must match, or the comparison to MP2/CISD is
+   meaningless.
+6. **Cost.**  Term 1 needs perturbed Lambda for all `3N + 3` perturbations.  For CC that is an
+   iterative solve each, on top of the perturbed T.  This roughly doubles the per-perturbation cost
+   relative to the Hessian path, which only needs the contracted densities.  The s.15.3 store
+   record is what keeps a Hessian-then-AAT run from paying twice.
+
+### 15.8 Validation
+
+The PI has offered to supply validation data.  In the meantime the checks that need no external
+reference:
+
+- **CISD reduction.**  Eq. (39) should reproduce twice Eq. (27) of the CI paper for a real CI-type
+  wave function.  Implementing Eq. (39) in `CIderiv` alongside the existing sectors and comparing
+  to the validated CISD AAT is a self-contained check of the *formulation* before CC is trusted.
+- **Gauge invariance**, both knobs: the perturbed-MO gauge and the imaginary-perturbation
+  `orbital_gauge`, each varied independently (the s.14.6 distinction).  The AAT is invariant to
+  both; after the #255 gauge fix these are real tests rather than vacuous ones.
+- **Store sharing**, in the spirit of s.14.9: a Hessian followed by an AAT on one driver must run
+  zero redundant perturbed-amplitude solves.
+
+## 16. Skeleton Fock derivative from the AO integrals -- IMPLEMENTED
+
+**Status: IMPLEMENTED** (PR #260, 2026-10-21), spatial route only, gated to Hartree-Fock-owned
+`CPHF` objects by the follow-up fix (branch `fix/skeleton-fock-ao-correlated-regression`,
+2026-10-22).
+
+The two-electron part of the skeleton Fock derivative is a **two-index** object, the Coulomb and
+exchange terms of a Fock build, differentiated::
+
+    fx_pq += sum_m ( 2 <pm|qm> - <pm|mq> )  =  sum_m ( 2 (pq|mm) - (pm|mq) )
+
+`CPHF._skeleton_derivatives` was producing it by materializing the full `nmo^4` MO derivative
+integrals (`mo_tei_deriv1`), slicing two occupied-restricted blocks out, and discarding the rest,
+with the `nmo^4` block persisted to the store under `'eri1'` on the way past.  It now folds the
+occupied sum into the density and contracts the AO derivative integrals directly::
+
+    J^x_mu,nu = (mu nu|la si)^x D_la,si      D = C_occ C_occ^T
+    K^x_mu,si = (mu nu|la si)^x D_nu,la
+    fx        = C^T (2 J^x - K^x) C
+
+**No four-index MO object is formed or stored.**  Measured, Hartree-Fock length-gauge APT on H2O2:
+cc-pVTZ goes 74.1 -> 57.1 s, peak RSS 4.83 -> 1.95 GB, and the store contribution 5.757 GB -> **0**
+(cc-pVDZ 4.23 -> 3.71 s, 0.18 -> 0.07 GB, 0.200 GB -> 0).  Helps every Hartree-Fock property needing
+the nuclear orbital response (both polar tensors, the axial tensors, the DBOC, the Hessian response
+term); does not touch the gradient (already blocked), the dipole, or the static polarizability (a
+field perturbation reaches no derivative integrals).
+
+### 16.1 The AO route is for Hartree-Fock-owned objects only
+
+The four-index route's persisted `'eri1'` block is not a by-product to be discarded: it is what
+`perturbed_eri` consumes in the correlated amplitude response.  Taking the AO route on a correlated
+`CPHF` leaves that entry unpopulated, so `perturbed_eri` runs the full transform itself and the pair
+costs **more** than the four-index route did.  Measured, MP2/H2O2, one nuclear perturbation:
+
+| | `perturbed_fock` | `perturbed_eri` | total |
+|---|---|---|---|
+| cc-pVDZ, four-index | 1.61 s | 0.07 s | 1.68 s |
+| cc-pVDZ, AO | 1.29 s | 1.58 s | 2.87 s |
+| cc-pVTZ, four-index | 22.92 s | 3.46 s | 26.37 s |
+| cc-pVTZ, AO | 15.35 s | 24.33 s | **39.67 s (+50%)** |
+
+The AO route makes the Fock build itself cheaper even here (cc-pVTZ 15.35 s against 22.92 s), and
+still loses, because it costs `perturbed_eri` 20.9 s.  `_uses_ao_skeleton_fock` therefore gates on
+`isinstance(self.wfn, HFwfn)`.
+
+A `DerivStore.has('eri1', ...)` check will not substitute: `_perturbed_relaxed_density` calls
+`perturbed_fock` **before** `perturbed_eri`, so the entry does not exist at the moment the decision
+is made, and the gate would always choose the AO route on the first perturbation.  Ownership is the
+exact test because every caller of `perturbed_eri` (`cideriv`, `mpderiv`, `correlatedderivs`)
+reaches it through `CorrelatedDerivs._full_occ_cphf`, built on the correlated wavefunction; nothing
+calls it on an `HFwfn`-owned object.
+
+**The general lesson is about the store, not this method.**  A quantity that is expensive to form
+and is persisted on the way past has two consumers: the caller and whoever later reads the store.
+Replacing the expensive form with a cheaper one that computes only what the caller wants silently
+charges the second consumer full price.  #260 was measured only on Hartree-Fock runs, which is the
+one case with no second consumer, so the regression did not appear until the correlated path was
+measured.
+
+### 16.2 Rejected first, and worth not rediscovering
+
+Keeping `mo_tei_deriv1` and asking only for the blocks consumed.  That is ~86x less output and was
+measured **1.6-1.9x slower**, because generating the AO derivative integrals is **77-92%** of
+`mo_tei_deriv1`, so a blocked call costs nearly as much as a full one, and two are structurally
+required (Coulomb wants chemist index 2 free and 4 occupied; exchange wants the reverse; no
+rectangular block holds both).  **Array size does not predict the cost of these integral routines**;
+the cost is in AO generation, not the transform.
+
+### 16.3 Incidental gain, and limits
+
+No frozen-core guard is needed on the AO route: `C[:, self.o]` spans whatever occupied space the
+object was built for, unlike `Derivatives._mo('o')`, which is the *first* `no` columns (the blocked
+route needed an explicit gate here, a silent wrong-answer path).
+
+Spin-orbital runs keep the four-index route (spatial AO integrals against spin-blocked
+coefficients).  The transient peak is unchanged at `3 nao^4`: `ao_tei_deriv1` returns all three
+Cartesians with no per-Cartesian or shell-blocked entry point, the same Psi4-side floor as
+`ao_tei_deriv2` in s.12.  The gain is in not holding an `nmo^4` MO copy beside it.
+
+Two code paths now compute the same physics differently (AO contraction for Hartree-Fock, four-index
+for correlated and for spin-orbital).  That is a real cost of this change and worth revisiting if
+the correlated path ever stops needing the full block.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
@@ -1547,6 +1831,9 @@ Reference layer, then the MP2 derivative effort:
 | #172 | **property facade** — `pycc.PropertyComponents` + `pycc.dipole/gradient/polarizability/hessian/apt/aat`; nuclear un-bundled from the HF methods; `MPwfn.total_*` removed |
 | #176 | **CCSD gradient** — spatial closed-shell RHF via `CCderiv` (CCSD relaxed density + Z-vector, reusing the MP2 assembly) |
 | #177 | **CCSD gradient** — spin-orbital UHF (SO 2-PDM + gradient; all-electron + frozen core) |
+| #178/#179/#180 | open-shell derivative-property test coverage — UHF-MP2 (NH2), UHF-CCSD gradient for OH in C2v (degenerate reference); test-suite cleanup (timing table, cc-pVDZ coverage, frozen finite-difference oracles) |
+| #181 | **per-atom integral cache** — first-derivative MO two-electron integrals cached one atom at a time (`derivatives.py` `_d1_cache`/`_eri_cached`), the AAT/VG-APT perturbation loops' main saving |
+| #182 | **CISD VCD** — analytic CISD APT, AAT and Hessian with tests (the transitional `CIwfn` derivative code later retired by #216) |
 | #183 | **CCSD(T) gradient** — spatial RHF, all-electron; + frozen core sourced from psi4 only (`frozen_core` pycc override removed) |
 | #184 | **frozen-core CCSD(T) gradient** — oo/vv dependent-pair κ̄ generalized from the frozen-core `Pco`; diagonal-only (T) `Doo`/`Dvv` |
 | #185 | **spin-orbital CCSD(T) gradient** — SO (T) density + oo/vv κ̄ in `_so_gradient` (all-electron + frozen core); (T) density builders moved to `cctriples` (no `ccwfn`→`ccdensity` dependency) |
@@ -1565,29 +1852,82 @@ Reference layer, then the MP2 derivative effort:
 | #204 | **CCSD/CCSD(T) APT** — nuclear dipole derivatives on the shared 2n+1 base, spatial + spin-orbital(-on-RHF), all-electron + frozen core; CFOUR DIPDER-anchored (HOF, water) |
 | #205 | **CCSD/CCSD(T) Hessian** — molecular Hessians on the shared 2n+1 base, spatial + spin-orbital(-on-RHF), all-electron + frozen core; CFOUR FCMFINAL-anchored |
 | #206 | both-format (ASCII + LaTeX) math docstrings across the core + derivative codes |
+| #207 | both-format math docstrings extended to the derivative, real-time, and utility modules (completes #206) |
+| #208/#215 | notation — ERI skeleton derivatives returned in physicist `<pq\|rs>` notation (7 consumer transposes dropped); derivative-code notation aligned with the theory notes |
+| #209 | `cphf` — the magnetic orbital Hessian unified onto one build and one `ov` solve (`_antisym_field_ints` reuses `solve(kind='magnetic')`; the inline `Gm` dropped) |
 | #210/#211 | deriv-object facade API — eager-build `MPderiv`/`CCderiv` driver objects behind the `pycc.*` property facade |
+| #212 | properties — the obsolete `route='explicit'` expunged, and the vestigial route argument dropped from polarizability/Hessian |
+| #213 | **CISD polarizability** (2n+1 + explicit routes), with Hessian/dipole fixes |
 | #214 | `ccresponse` reformulation onto `CCderiv` — CCSD polarizability (static + dynamic) + optical rotation as the perturbed-amplitude machinery; validated vs `ccresponse` |
 | #216 | **CISD `CIderiv` implemented + registered** (`register_deriv(CIwfn, CIderiv)`); CISD Hessian/APT run through the shared base, transitional `CIwfn` derivative code retired |
+| #217/#218 | 2nd-derivative ERI — both accessors return the complete symmetric tensor (`eri2`/`so_eri2` hazard resolved); the nuclear-Hessian cache keyed on the canonical `(min,max)` atom pair |
 | #219 | **DerivStore** — persistent per-wavefunction HDF5 store memoizing the large `nmo⁴` derivative tensors (`deri`/`eri1`/`resp`), so the Hessian/APT assembly streams one atom pair at a time |
 | #220 | **reference-doc orbital response** — `hessian()`/`dipole_derivatives()` recast onto eq:d2E-canon-final (`2 U^Y X̃^(X) + S^(Y) Ĩ''^(X) + P^(X) f^(Y)`), shared per-perturbation builders `_skeleton_lagrangian`/`_augment_with_canonical_pair_rotations`; the `rot4`/`Gamrot` path removed; frozen-core independent core↔active `P_ci` in the doc form; `.tex` notation tightened (`\alloc`, `c→d`) |
+| #221 | plan status refreshed through #220 |
+| #222/#230 | open-shell test anchors — UHF-CC Hessian on H2O+ (X²B₁); UHF-CCSD(T) Hessian gate coverage (twisted C2H4+) |
+| #223 | the perturbed MP2 T2 memoized in the `DerivStore` |
+| #224 | MO orbital energies moved onto the Hamiltonian; `CCwfn`/`CIwfn` no longer depend on `MPwfn` |
+| #225 | coherent run output, and `pycc.optical_rotation` reporting specific rotation |
+| #226 | **vibrational analysis** — IR and VCD spectra, plus the property checkpoint (`pycc.ir`/`pycc.vcd`, `save_checkpoint`) |
+| #227 | CISD frozen-core and non-canonical derivative properties fixed |
+| #228 | ci — `libxc-c` pinned to 7.0.0 (7.1.2 dropped `XC_GGA_XC_TH_FL`) |
+| #229 | **(T) dependent-pair gap gate** — `_dependent_pairs` was gated on the numerator while the derivative was gap-gated, giving wrong CCSD(T) gradients/Hessians/APTs at near-symmetric geometries; regression test is 0.2°-twisted ethylene against CFOUR |
+| #231 | the core `MPwfn` property shortcuts removed (facade-only, as for CC/CI) |
+| #232 | MP2 AAT / VG-APT moved onto `MPderiv`, and `pycc.aat` routed through the driver facade |
+| #233 | response frequency accepted in nm; the `ccresponse` route documented |
+| #234 | **velocity-gauge and origin-independent IR/VCD** (LGOI) |
+| #235/#236/#237 | **Hessian memory arc** — the correlated assembly split into skeleton and response passes, then the baseline MO ERIs spilled, then the raw CISD 2-PDM spilled; peak 322 → 129 GiB (cc-pVTZ) and 4.66 → 1.86 TiB (cc-pVQZ) for methyloxirane, bit-identical throughout |
+| #238 | warn when the `DerivStore` scratch directory is RAM-backed (tmpfs) |
 | #239 | **AO route** — per-component AO→MO transform of the 2nd-deriv ERI (`ao_eri2` + `eri2_mo_component`/`so_eri2_mo_component`), holding 1 MO block instead of 9; the `mo_eri_helper` ket-swap (`transpose(0,1,3,2)`) is mandatory on any raw `ao_tei_deriv2` consumer |
+| #240 | HF molecular Hessian built AO-direct over unique atom pairs |
 | #241/#242/#243 | **AO-density skeleton** (§10) — fold `D_rel·f` into an effective 2-PDM `Γ_eff`, back-transform to AO once, contract the raw `ao_tei_deriv{1,2}`; Hessian spatial (#241) + spin-orbital (#242, spin blocks folded onto the one spatial tensor), gradient both spin paths (#243, reuses the Hessian builders since `ao_tei_deriv1` is fully symmetric). No `f^(XY)` build; bit-identical to the MO route |
 | #244 | **facade simplification** (§11.1) — every property a public method returning `PropertyComponents` (`pycc.X(x) == x.X()`); registry/`_dispatch`/`_wfn_of`/`_method_name`/bare-wfn rejection deleted |
 | #245 | **reference Hessian shared** (§11.2) — SCF reference Hessian folded into the correlated Pass-1 loop so `ao_tei_deriv2` is generated once, not twice; `_correlation_hessian`→`_hessian_blocks` returns `(reference, correlation)`; `HFwfn._hessian_electronic` split into `_hessian_skeleton`+`_hessian_response`; cross-check test guards the duplicated skeleton |
+| #246 | **facade guard** — a bare wavefunction passed to a property that needs a derivative driver now raises a clear error instead of failing downstream |
+| #247 | **`ir`/`vcd` route** — the one-call spectrum drivers take the `'2n+1-nuclear'` APT route, so the APT reuses the Hessian's perturbed responses instead of solving a second field-side set |
+| #248 | **timing instrumentation** — wall/user/system per block across the derivative-property path; the measured baseline (and the `OMP_WAIT_POLICY=PASSIVE` caveat: it must precede `import numpy`) |
+| #249 | **reference CPHF response shared** (§12) — the reference response comes from the correlated full-occupied CPHF, so the second `Wavefunction` from `_reference_hf()` no longer re-runs the per-atom `mo_tei_deriv1` set on its own `DerivStore` (~15% of an MP2/STO-3G Hessian); #245 had shared only `ao_tei_deriv2` |
+| #250 | **AAT/VG-APT RAM caches** (§13) — the last four-index in-memory caches move to the `DerivStore` |
+| #251/#253 | **DBOC** — analytic diagonal Born-Oppenheimer correction (HF/MP2/CISD); then DBOC(MP1) of Tajti, Szalay and Gauss (JCP **127**, 014102) |
+| #254 | cleanup — CISD densities onto `CIderiv`, dead `MPwfn` code dropped ((T) citation + method tidy) |
+| #255 | **CISD perturbed CI amplitudes in the DerivStore** (§14) — the CPCI solves are memoized and reused across properties: Hessian-then-AAT 21 → 12 solves, AAT on a second driver 12 → 0, DBOC after a Hessian 9 → 0, and 4.6 GB of unevictable RAM removed |
+| #256 | **progress + per-stage timing** for the derivative-property blocks (AAT, VG-APT, DBOC, LG-APT, polarizability), so a long run reports which perturbation it is on |
+| #257 | **Hessian peak RSS** — unused large tensors dropped from the assembly, 22.5 → 14.6 `nmo^4` |
+| #258 | **output flush** — solver iteration and progress lines flush, so a redirected run streams instead of buffering |
+| #259 | **real `float64` in `cideriv`** — the `complex128` up-casts of purely real and purely imaginary quantities removed (the `i`-strip convention made explicit) |
+| #260 | **AO skeleton Fock derivative** (§16) — the two-electron skeleton Fock derivative from an AO density contraction rather than a four-index MO transform (Hartree-Fock cc-pVTZ LG-APT 74.1 → 57.1 s, peak RSS 4.83 → 1.95 GB, store 5.757 GB → 0); gated to Hartree-Fock-owned `CPHF` objects by the follow-up fix, since the four-index route's stored block is what `perturbed_eri` consumes |
 
-Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
-gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
-`test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
-(MP2 velocity APT), `test_074` (property facade). (`test_070`, the old explicit-vs-2n+1
-polarizability cross-check, was removed with the explicit route in #194.) CISD: `test_079`–`test_082`
-(LG-APT, VG-APT, AAT, Hessian). CC gradients: `test_076` (CCSD, spatial),
-`test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), spatial + spin-orbital,
-all-electron + frozen core), `test_034` (CCSD(T) density/dipole). CC polarizability: `test_084`
-(CCSD + CCSD(T), spatial + spin-orbital, all-electron + frozen core, incl. the CFOUR-anchored (T)
-cases), `test_085` (invariant [F,T3] (T) energy), `test_086` (SO (T) unrelaxed dipole). CC second derivatives:
-`test_087` (CCSD/CCSD(T) **APT**, spatial + SO, AE + FC, CFOUR DIPDER-anchored), `test_090` (CCSD
-**Hessian**) and `test_089` (CCSD(T) **Hessian**), spatial + SO, AE + FC, CFOUR FCMFINAL-anchored. The
-MP2 2n+1 APT/Hessian cross-checks live in `test_068`/`test_069`.
+Tests, by layer:
+
+- **Reference (Hartree-Fock)**: `test_046`-`test_050` (gradient, CPHF polarizability, dipole
+  derivatives, Hessian, AAT), `test_062`-`test_066` (the spin-orbital counterparts), `test_071`
+  (velocity-gauge APT), `test_102` (DBOC against CFOUR at the HEAT geometries).
+- **MP2**: `test_061` (gradient / relaxed density), `test_067` (polarizability), `test_068` (APT),
+  `test_069` (Hessian), `test_072` (AAT), `test_073` (velocity-gauge APT), `test_103` (DBOC(MP1)
+  against Tajti, Szalay and Gauss).  The 2n+1 APT/Hessian cross-checks live in
+  `test_068`/`test_069`.
+- **CISD**: `test_079`-`test_082` (LG-APT, VG-APT, AAT, Hessian), `test_091` (polarizability),
+  `test_099` (gradient), `test_101` (DBOC against Gauss, Tajti, Kallay, Stanton and Szalay).
+- **CC first derivatives**: `test_076` (CCSD gradient, spatial), `test_078` (spin-orbital),
+  `test_077` (SO 2-PDM), `test_083` (CCSD(T) gradient, spatial + SO, AE + FC), `test_034` (CCSD(T)
+  density/dipole), `test_086` (SO (T) unrelaxed dipole).
+- **CC second derivatives**: `test_084` (CCSD + CCSD(T) polarizability, spatial + SO, AE + FC,
+  including the CFOUR-anchored (T) cases), `test_085` (invariant [F,T3] (T) energy), `test_088`
+  (CCSD **APT**) and `test_087` (CCSD(T) **APT**), both CFOUR DIPDER-anchored, `test_090` (CCSD
+  **Hessian**) and `test_089` (CCSD(T) **Hessian**), both CFOUR FCMFINAL-anchored.
+- **CC response**: `test_092` (dynamic polarizability at omega = 0 against
+  `ccresponse.polarizability`), `test_093` (optical rotation against `ccresponse.optrot`),
+  `test_098` (the two routes to G'(omega) for H2O2, which must agree).  The independent code those
+  first two check against has its own suite, `test_055`-`test_058` (spin-orbital and spatial
+  `ccresponse` polarizability and optical rotation), outside this effort but load-bearing for them.
+- **Infrastructure**: `test_074` (property facade), `test_094` (the `DerivStore` contract:
+  mandatory and always disk-backed), `test_097` (the RAM-backed-scratch warning), `test_100`
+  (timing and progress bookkeeping), `test_095` (end-to-end VCD for hydrogen peroxide against
+  independent references), `test_096` (the property checkpoint and the `pycc.ir`/`pycc.vcd`
+  drivers).
+
+(`test_070`, the old explicit-vs-2n+1 polarizability cross-check, was removed with the explicit
+route in #194.)
 
 ## Appendix B: superseded early decisions
 
