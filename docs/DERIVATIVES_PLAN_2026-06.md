@@ -1520,11 +1520,39 @@ first sector and are now four disk reads of `o^2 v^2` each: 4 * 3N * 63 MB at cc
 a ten-atom molecule.  Expected to be noise against a multi-hour block, but it is new traffic and
 should be measured rather than assumed -- see the instrumentation item in s.14.8.
 
-## 15. Coupled-cluster atomic axial tensors -- DESIGN
+## 15. Coupled-cluster atomic axial tensors -- IMPLEMENTED
 
-**Status: DESIGN, awaiting review.  No code written.**  Source: Eq. (39) of the CC-VCD draft,
-`~/iCloud/manuscripts/cc_vcd/theory.tex` (`\label{eq:result}`).  Target: a new branch, not to be
-pushed until the PI says so.
+**Status: IMPLEMENTED** (CCSD, spatial path), 2026-10-22.  Source: Eq. (39) of the CC-VCD draft,
+`~/iCloud/manuscripts/cc_vcd/theory.tex` (`\label{eq:result}`), which is Eq. (35) of
+`cc_aat_derivation.tex`.  Validation plan and results: `docs/cc_aat_validation_plan.md`.
+Tests: `test_104`.
+
+### 15.0 One correction to the design below, and the validation outcome
+
+**The orbital-orbital block is a commutator.**  Not an amendment to Eq. (39), which is written in
+terms of the overlaps themselves and needs none: the commutator falls out of expanding it.  The
+error was in this document's own translation to matrix algebra (the s.15.1 spellings, now
+corrected), which dropped the `i` and so assumed the two overlaps transform alike.  Orthonormality gives
+`<d_x phi_p|phi_q> = -<phi_p|d_x phi_q>`, so the nuclear overlap `M_R = U^R + half_S^T` is
+antisymmetric (measured 5.9e-15).  The magnetic one is not: with `C^H = i C U` and real orbitals
+the same condition reads `U_pq = U_qp`, so `M_H` is symmetric once the `i` is stripped (measured
+6.7e-16).  Hence
+
+    <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> = -i ( M_R M_H - M_H M_R )
+
+Contracting `M_R^T M_H - M_H^T M_R`, which is what copying the nuclear side's spelling from
+`cideriv.py` produces, gives the anticommutator instead.  That was the only implementation error;
+it broke both gauge invariances (3.5e-2 and 5.9e-2) and nothing else caught it.
+
+All five tests of the validation plan pass: two-electron against CISD (3.2e-14), size intensivity
+(R^-2 to 1.4e-9 relative at 1e5 bohr), the translational sum rule (4e-12), invariance in both gauge
+conventions (5.4e-13), and the amplitude block against the response code (3e-7 extrapolated).  The sum rule is
+independently confirmed on the externally validated CISD code (1.1e-12), so it is verified rather
+than merely self-consistent; that needed the correct imaginary-perturbation density, the
+**antisymmetrized** one-sided object `T - T^T`, where the symmetrized `T + T^T` that
+`_perturbed_cisd_corr_opdm` builds is the right object for real perturbations only.  Open items
+recorded there: the R^-2 residual's attribution, and MP2's sum rule, which still fails and is most
+likely a reconstruction problem in that test's RHS rather than in `mpderiv.py`.
 
 ### 15.1 What Eq. (39) asks for
 
@@ -1553,8 +1581,14 @@ Three structural facts make this cheaper than it looks:
 
 The half-derivative overlaps already have established spellings in the tree:
 
-    <phi_p|d_R phi_q>  ->  U^R + half_S^T     (half_S = derivatives.overlap_half(A)[cart])
-    <phi_p|d_H phi_q>  ->  U^H                (no half_S: S^(B) = 0 without GIAOs)
+    <phi_p|d_R phi_q>  ->  M_R = U^R + half_S^T   (half_S = derivatives.overlap_half(A)[cart])
+    <phi_p|d_H phi_q>  ->  i U^H                  (no half_S: S^(B) = 0 without GIAOs)
+
+**These two do not transform alike, and the spellings above hide it** because the stored `U^H` has
+its `i` stripped at the operator.  `M_R` is real antisymmetric; `U^H` is real **symmetric**
+(orthonormality reads `<d_x phi_p|phi_q> = -<phi_p|d_x phi_q>`, which for `C^H = i C U` with real
+orbitals gives `U_pq = U_qp`).  Any term quadratic in the overlaps must therefore expand the bra
+conjugation explicitly rather than reuse the nuclear side's index pattern -- see s.15.0.
 
 ### 15.2 What CCderiv already has
 
@@ -1920,6 +1954,10 @@ Tests, by layer:
   `test_098` (the two routes to G'(omega) for H2O2, which must agree).  The independent code those
   first two check against has its own suite, `test_055`-`test_058` (spin-orbital and spatial
   `ccresponse` polarizability and optical rotation), outside this effort but load-bearing for them.
+- **CC atomic axial tensors**: `test_104` (CCSD AAT, spatial, Eq. (39); anchored on exact
+  identities rather than tabulated numbers, since there is no external CC AAT reference: two
+  electrons against validated CISD, the translational sum rule and its per-ingredient zero sums,
+  both gauge invariances, store sharing with the Hessian, and the CCSD(T)/spin-orbital guards).
 - **Infrastructure**: `test_074` (property facade), `test_094` (the `DerivStore` contract:
   mandatory and always disk-backed), `test_097` (the RAM-backed-scratch warning), `test_100`
   (timing and progress bookkeeping), `test_095` (end-to-end VCD for hydrogen peroxide against

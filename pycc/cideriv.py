@@ -371,13 +371,6 @@ class CIderiv(CorrelatedDerivs):
     # from a hang for hours (docs/TIMING_PLAN_2026-08.md notes that instrumentation "stops at the
     # Hessian path").  Same idiom as the Hessian: a timer per stage, one progress line per step.
 
-    def _nuclear_step(self, stage, la, natom, t0):
-        """One progress line for perturbation ``la`` of a ``3 * natom`` nuclear loop."""
-        atom, cart = divmod(la, 3)
-        progress(stage, la + 1, 3 * natom, t0,
-                 perturbation_label(Perturbation('nuclear', (atom, cart)),
-                                    self.ci.ref.molecule()))
-
     def _cpci_ctx(self, pert, gauge):
         """The store ctx for a CPCI record: the perturbed-MO gauge **that produced it**.
 
@@ -466,6 +459,14 @@ class CIderiv(CorrelatedDerivs):
         return -n0**3 * (2.0 * c('ia,ia->', t1, dn1) + c('ijab,ijab->', tau, dn2))
 
     def _perturbed_cisd_corr_opdm(self, dc1, dc2):
+        """Real perturbations only.
+
+        This is the symmetrized (product-rule) derivative, ``T + T^T`` over the one-sided
+        :meth:`_build_Dtilde`, which is the derivative of the density for a **real** perturbation.
+        An imaginary one gives ``T - T^T`` instead (``<Psi|p+q|d_H Psi> = +i T_pq`` against
+        ``<d_H Psi|p+q|Psi> = -i T_qp``), so routing a magnetic or vecpot perturbation through here
+        returns the wrong symmetry.  Only the nuclear and field perturbations of the base's 2n+1
+        machinery reach it; the AAT and VG-APT sectors contract ``_build_Dtilde`` directly."""
         ci = self.ci
         c = self.contract
         o, v, nmo = ci.o, ci.v, ci.nmo

@@ -127,6 +127,18 @@ class CorrelatedDerivs:
             return self._gauge_override   # test/validation override (e.g. force canonical for CCSD)
         return 'canonical' if getattr(self.wfn, 'model', '').upper() == 'CCSD(T)' else 'non-canonical'
 
+    def _nuclear_step(self, stage, la, natom, t0):
+        """One progress line for perturbation ``la`` of a ``3 * natom`` nuclear loop.
+
+        Shared by the long single-block properties (AAT, VG-APT, DBOC), each of which loops over
+        all ``3N`` nuclear perturbations and would otherwise print a banner and then nothing for
+        hours."""
+        from .cphf import Perturbation, perturbation_label
+        atom, cart = divmod(la, 3)
+        progress(stage, la + 1, 3 * natom, t0,
+                 perturbation_label(Perturbation('nuclear', (atom, cart)),
+                                    self.wfn.ref.molecule()))
+
     def _full_occ_cphf(self):
         """A CPHF over the **full** occupied space (frozen core + active) in the wavefunction's own
         MO ordering (cached).  The perturbed-response (2n+1) routes need the orbital response over the

@@ -20,6 +20,7 @@ import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
 from .cphf import perturbation_label
+from .timing import timer
 from .utils import title, iteration, converged
 
 if TYPE_CHECKING:
@@ -131,6 +132,12 @@ class CCderiv(CorrelatedDerivs):
         lam = self.cclambda
         hbar = self.hbar
         is_t = cc.model.upper() == 'CCSD(T)'
+        if not is_t:
+            # Through the shared store-backed record, so the AAT contracts the multipliers this
+            # solve produced instead of re-solving all 3N perturbations (section 15.3).  CCSD(T)
+            # keeps the inline path below: its perturbed (T) intermediates are not in the record.
+            dt1, dt2, dl1, dl2 = self._cc_amplitude_record(pert, df=df, deri=deri, dL=dL)
+            return self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
         label = perturbation_label(pert, cc.ref.molecule())
         if cc.orbital_basis == 'spinorbital':
             dt1, dt2 = self._so_perturbed_amplitudes(df, deri, hbar, label=label)
@@ -1121,3 +1128,269 @@ class CCderiv(CorrelatedDerivs):
             dl1, dl2 = self._perturbed_lambda(op_ints, zero_eri, zero_L, dt1, dt2, hbar, lam, omega=omega, label=label)
         dD, _ = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, lam)
         return dD
+
+    # ---- atomic axial tensors (Eq. 39 of the CC-VCD theory notes) ---------
+    # With x = R_{lambda,alpha} (nuclear) and y = H_beta (magnetic field),
+    #
+    #   2 I^lambda_{alpha,beta} = sum_mu ( lam^R_mu t^H_mu - lam^H_mu t^R_mu )             [Icc]
+    #                           + sum_pq ( D^R_pq <phi_p|d_H phi_q>
+    #                                      - D^H_pq <phi_p|d_R phi_q> )            [Icphi/Iphic]
+    #                           + sum_pq D_pq ( <d_R phi_p|d_H phi_q>
+    #                                           - <d_H phi_p|d_R phi_q> )               [Iphiphi]
+    #
+    # The cumulant 2-PDM does not appear: it cancels in the antisymmetric combination by particle
+    # exchange (Gam_rpsq = Gam_prqs), which follows from anticommutation alone and so holds in
+    # both representations.  Do not lean on bra-ket exchange, which the stored Gam also satisfies
+    # only because ccdensity symmetrizes it.
+    #
+    # Half-derivative overlaps: <phi_p|d_R phi_q> = U^R + half_S^T, and <phi_p|d_H phi_q> = U^H
+    # (S^(B) = 0 without GIAOs).  The four sector methods mirror cideriv.py so the two read alike
+    # and the later hoist into correlatedderivs is mechanical.
+    # docs/DERIVATIVES_PLAN_2026-06.md section 15.
+
+    def _require_ccsd(self, what):
+        """``what`` is CCSD-only: the perturbed-amplitude record carries no (T) intermediates, and
+        Eq. (39) is derived for the ``(1 + Lambda) e^{-T}`` bra without (T)."""
+        if self.ccwfn.model.upper() != 'CCSD':
+            raise NotImplementedError(
+                f"{what} is implemented for CCSD only; not {self.ccwfn.model} "
+                "(perturbed (T) sources are a later phase).")
+
+    def _half_overlap(self, atom):
+        """The three Cartesian half-derivative overlaps ``<phi_p|d_R phi_q>`` for ``atom``, in
+        whichever basis this driver works in.  Everything else the AAT needs is already
+        basis-agnostic: the perturbed-amplitude record dispatches internally, and ``CPHF`` returns
+        spin-blocked perturbed integrals and orbital responses for a spin-orbital wavefunction."""
+        d = self.wfn.derivatives
+        return (d.so_overlap_half(atom) if self.ccwfn.orbital_basis == 'spinorbital'
+                else d.overlap_half(atom))
+
+    def _cc_perturbed_ints(self, pert, gauge='non-canonical'):
+        """``(df, deri, U)`` for one :class:`~pycc.cphf.Perturbation`: the **orbital-relaxed**
+        perturbed Fock and two-electron integrals, and the orbital response.
+
+        Relaxed, not bare.  :meth:`_response_density` deliberately drives the perturbed amplitudes
+        with the bare operator (the orbital-unrelaxed dynamic response); Eq. (39) needs the
+        relaxed perturbation, which is why this builder exists alongside it.
+
+        Every branch takes its response from :meth:`_full_occ_cphf` (core + active), so the
+        nuclear and magnetic sides of the overlap span the same occupied space under a frozen
+        core.  ``deri`` is fetched, never cached here: it is one ``nmo^4`` per perturbation, and
+        the nuclear branch is already backed by the on-disk store."""
+        cc = self.ccwfn
+        ncore = cc.o.stop - cc.no
+        cphf = self._full_occ_cphf()
+        if pert.kind == 'nuclear':
+            # The gauge comes from the driver, not this method's default, so that the record built
+            # here and the one the base's second-derivative path builds are the same solve.
+            canonical = self.perturbed_mo_gauge == 'canonical'
+            df = cphf.perturbed_fock(pert, ncore, canonical=canonical)
+            deri = cphf.perturbed_eri(pert, ncore, canonical=canonical)
+            U = cphf.full_U(pert, ncore, canonical=canonical)
+        elif pert.kind == 'magnetic':
+            U, df = cphf.magnetic_ints(pert.comp, ncore, gauge)
+            deri = cphf.magnetic_eri(pert.comp, ncore, gauge)
+        elif pert.kind == 'vecpot':
+            U, df = cphf.momentum_ints(pert.comp, ncore, gauge)
+            U, df = -np.asarray(U), -np.asarray(df)          # +Del -> -Del, as in CIderiv
+            deri = -np.asarray(cphf.momentum_eri(pert.comp, ncore, gauge))
+        else:
+            raise ValueError(f"unknown perturbation kind {pert.kind!r}")
+        return np.asarray(df), np.asarray(deri), np.asarray(U)
+
+    def _cc_amplitude_ctx(self, pert, gauge):
+        """The store ctx for a perturbed-amplitude record.
+
+        One gauge member, the one that produced the record: the real (nuclear / field)
+        perturbations draw their integrals from :attr:`perturbed_mo_gauge`, the imaginary
+        (magnetic / vecpot) ones from ``gauge``.  Carrying both would make a cross-check at a
+        non-default magnetic gauge discard all 3N nuclear records.
+
+        ``_uid`` **is** present, unlike CISD's ``'cpci'`` record: CCSD and CCSD(T) drivers on one
+        ``CCwfn`` differ, and the spatial and spin-orbital paths produce differently shaped
+        amplitudes."""
+        real = pert.kind in ('nuclear', 'field')
+        return (self._uid,
+                self.perturbed_mo_gauge if real else gauge,
+                'so' if self.ccwfn.orbital_basis == 'spinorbital' else 'sp')
+
+    def _cc_amplitude_record(self, pert, gauge='non-canonical', df=None, deri=None, dL=None):
+        """``(dt1, dt2, dl1, dl2)`` for ``pert``, memoized in the
+        :class:`~pycc.derivatives.DerivStore`.
+
+        The single new primitive behind the AAT.  Both consumers go through here: this method for
+        Eq. (39) term 1, and :meth:`_perturbed_unrelaxed_densities` for the Hessian/APT path, so a
+        Hessian followed by an AAT on one driver runs each perturbed solve once.  The multipliers
+        are the reason the record is needed at all: the density path contracts them and throws
+        them away, and re-solving perturbed Lambda for 3N + 3 perturbations is the dominant cost
+        of the AAT.
+
+        ``df``/``deri``/``dL`` let a caller that has already built the perturbed integrals hand
+        them in.  All four members are ``float64``: the ``i`` of the magnetic and vecpot operators
+        is stripped at the operator (:meth:`~pycc.cphf.CPHF._field_ints`), so every quantity on
+        every perturbation kind is real."""
+        self._require_ccsd("the perturbed-amplitude record")
+        cc = self.ccwfn
+
+        def _build():
+            dF, dERI, dLL = df, deri, dL
+            if dF is None:
+                dF, dERI, _U = self._cc_perturbed_ints(pert, gauge)
+            if dLL is None and cc.orbital_basis != 'spinorbital':
+                dLL = 2.0 * dERI - dERI.swapaxes(2, 3)
+            label = perturbation_label(pert, cc.ref.molecule())
+            if cc.orbital_basis == 'spinorbital':
+                dt1, dt2 = self._so_perturbed_amplitudes(dF, dERI, self.hbar, label=label)
+                dl1, dl2 = self._so_perturbed_lambda(dF, dERI, dt1, dt2, self.hbar,
+                                                     self.cclambda, label=label)
+            else:
+                dt1, dt2 = self._perturbed_amplitudes(dF, dERI, dLL, self.hbar, label=label)
+                dl1, dl2 = self._perturbed_lambda(dF, dERI, dLL, dt1, dt2, self.hbar,
+                                                  self.cclambda, label=label)
+            return dt1, dt2, dl1, dl2
+
+        return self.wfn.derivatives.store.get_or_compute_group(
+            'ccamp', pert, _build, ('dt1', 'dt2', 'dl1', 'dl2'),
+            ctx=self._cc_amplitude_ctx(pert, gauge))
+
+    def _biorthogonal_overlap(self, l1, l2, t1, t2):
+        r"""``sum_mu lambda_mu t_mu`` over the singles and doubles manifold.
+
+        The weights differ only in the doubles factor::
+
+            spin-orbital: l1_ia t1_ia + 1/4 l2_ijab t2_ijab
+            spatial:      l1_ia t1_ia + 1/2 l2_ijab t2_ijab
+
+        The singles weight is 1 on both paths and the spatial doubles carry no ``2 t - t.swap``
+        adaptation, because pycc's spatial multipliers already absorb it.  Fixed by requiring the
+        two paths to agree on the unperturbed amplitudes (water/STO-3G CCSD: 2.8e-14)."""
+        c = self.contract
+        w2 = 0.25 if self.ccwfn.orbital_basis == 'spinorbital' else 0.5
+        return c('ia,ia->', l1, t1) + w2 * c('ijab,ijab->', l2, t2)
+
+    def _aat_perturbed_opdm(self, pert, gauge='non-canonical'):
+        """The orbital-unrelaxed perturbed correlation 1-PDM ``D^x_pq`` for ``pert``, rebuilt from
+        the stored record.  Not stored itself: it is one contraction over quantities already on
+        disk, against a perturbed amplitude and Lambda solve to recompute."""
+        dt1, dt2, dl1, dl2 = self._cc_amplitude_record(pert, gauge)
+        dD, _dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, self.cclambda)
+        return np.asarray(dD)
+
+    def compute_Icc_AATs(self, gauge='non-canonical'):
+        """Term 1: ``sum_mu ( lam^R_mu t^H_mu - lam^H_mu t^R_mu )``.
+
+        Antisymmetric in the two perturbations, where the CISD sector is a plain overlap
+        ``<dPsi_R|dPsi_H>``: CC has no bra-ket symmetry to collapse the two orderings onto one."""
+        from .cphf import Perturbation
+        natom = self.wfn.derivatives.natom
+        I_cc = np.zeros((3 * natom, 3))
+        magH = {b: self._cc_amplitude_record(Perturbation('magnetic', b), gauge) for b in range(3)}
+        t_stage = time.time()
+        for la in range(3 * natom):
+            A, cart = divmod(la, 3)
+            t1_R, t2_R, l1_R, l2_R = self._cc_amplitude_record(
+                Perturbation('nuclear', (A, cart)), gauge)
+            for beta in range(3):
+                t1_H, t2_H, l1_H, l2_H = magH[beta]
+                I_cc[la, beta] = (self._biorthogonal_overlap(l1_R, l2_R, t1_H, t2_H)
+                                  - self._biorthogonal_overlap(l1_H, l2_H, t1_R, t2_R))
+            self._nuclear_step('CCSD AAT Icc', la, natom, t_stage)
+        return I_cc
+
+    def compute_Icphi_AATs(self, gauge='non-canonical'):
+        """Term 2, nuclear-density half: ``sum_pq D^R_pq <phi_p|d_H phi_q>``."""
+        from .cphf import Perturbation
+        c = self.contract
+        natom = self.wfn.derivatives.natom
+        I_cphi = np.zeros((3 * natom, 3))
+        U_H = {b: self._cc_perturbed_ints(Perturbation('magnetic', b), gauge)[2] for b in range(3)}
+        t_stage = time.time()
+        for la in range(3 * natom):
+            A, cart = divmod(la, 3)
+            dD_R = self._aat_perturbed_opdm(Perturbation('nuclear', (A, cart)), gauge)
+            for beta in range(3):
+                I_cphi[la, beta] = c('pq,pq->', dD_R, U_H[beta])
+            self._nuclear_step('CCSD AAT Icphi', la, natom, t_stage)
+        return I_cphi
+
+    def compute_Iphic_AATs(self, gauge='non-canonical'):
+        """Term 2, magnetic-density half: ``-sum_pq D^H_pq <phi_p|d_R phi_q>``.
+
+        The sign is carried here rather than in :meth:`_correlation_aat`, so each sector returns
+        the quantity Eq. (39) adds."""
+        from .cphf import Perturbation
+        c = self.contract
+        natom = self.wfn.derivatives.natom
+        I_phic = np.zeros((3 * natom, 3))
+        dD_H = {b: self._aat_perturbed_opdm(Perturbation('magnetic', b), gauge) for b in range(3)}
+        t_stage = time.time()
+        for la in range(3 * natom):
+            A, cart = divmod(la, 3)
+            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
+            Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
+            for beta in range(3):
+                I_phic[la, beta] = -c('pq,pq->', dD_H[beta], Ur_eff)
+            self._nuclear_step('CCSD AAT Iphic', la, natom, t_stage)
+        return I_phic
+
+    def compute_Iphiphi_AATs(self, gauge='non-canonical'):
+        r"""Term 3: ``sum_pq D_pq ( <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> )``, the
+        unperturbed correlation 1-PDM against the two half-derivative overlaps.
+
+        The two overlaps have **opposite** transpose symmetry, which sets the form of this sector.
+        Orthonormality gives ``<d_x phi_p|phi_q> = -<phi_p|d_x phi_q>``, so the nuclear overlap
+        ``M_R = U^R + half_S^T`` is antisymmetric.  The magnetic one is not: with ``C^H = i C U``
+        and real orbitals the same condition reads ``U_pq = U_qp``, so ``M_H = U^H`` is
+        **symmetric** once the ``i`` is stripped at the operator.  Writing the bra conjugation out,
+
+            <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> = -i ( M_R M_H - M_H M_R )
+
+        a commutator, and the overall ``i`` is the one factored out of the AAT.  Contracting
+        ``M_R^T M_H - M_H^T M_R`` instead gives the anticommutator and is wrong."""
+        from .cphf import Perturbation
+        c = self.contract
+        natom = self.wfn.derivatives.natom
+        D_pq = np.asarray(self._unrelaxed_densities()[0])
+        I_pp = np.zeros((3 * natom, 3))
+        U_H = {b: self._cc_perturbed_ints(Perturbation('magnetic', b), gauge)[2] for b in range(3)}
+        t_stage = time.time()
+        for la in range(3 * natom):
+            A, cart = divmod(la, 3)
+            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
+            Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
+            for beta in range(3):
+                I_pp[la, beta] = c('pq,pq->', D_pq,
+                                  U_H[beta] @ Ur_eff - Ur_eff @ U_H[beta])
+            self._nuclear_step('CCSD AAT Iphiphi', la, natom, t_stage)
+        return I_pp
+
+    def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
+        """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
+        See :func:`pycc.aat`."""
+        from . import properties
+        return properties.aat(self, origin=origin, orbital_gauge=orbital_gauge)
+
+    def _correlation_aat(self, gauge: str = 'non-canonical') -> np.ndarray:
+        r"""CCSD **correlation** atomic axial tensors, shape ``(natom, 3, 3)`` indexed
+        ``[A, alpha, beta]``.  The SCF reference AAT (:meth:`HFwfn.aat`) and the nuclear term are
+        supplied by the :func:`pycc.aat` facade, matching :class:`~pycc.mpderiv.MPderiv` and
+        :class:`~pycc.cideriv.CIderiv`.
+
+        The ``1/2`` is Eq. (39)'s left-hand side: it gives ``2 I``, where the CISD sectors give
+        ``I`` directly.
+
+        ``gauge`` selects the redundant magnetic oo/vv orbital response
+        (:meth:`~pycc.cphf.CPHF.magnetic_ints`); the AAT is invariant to it.  Frozen-core aware
+        through :meth:`_full_occ_cphf`."""
+        self._require_ccsd("CC atomic axial tensors")
+        natom = self.wfn.ref.molecule().natom()
+        # One timer per sector: the first pays the perturbed solves, the rest read the records.
+        with timer("AAT Icc"):
+            total = self.compute_Icc_AATs(gauge)
+        with timer("AAT Icphi"):
+            total = total + self.compute_Icphi_AATs(gauge)
+        with timer("AAT Iphic"):
+            total = total + self.compute_Iphic_AATs(gauge)
+        with timer("AAT Iphiphi"):
+            total = total + self.compute_Iphiphi_AATs(gauge)
+        return 0.5 * total.reshape(natom, 3, 3)
