@@ -1897,19 +1897,37 @@ Reference layer, then the MP2 derivative effort:
 | #259 | **real `float64` in `cideriv`** — the `complex128` up-casts of purely real and purely imaginary quantities removed (the `i`-strip convention made explicit) |
 | #260 | **AO skeleton Fock derivative** (§16) — the two-electron skeleton Fock derivative from an AO density contraction rather than a four-index MO transform (Hartree-Fock cc-pVTZ LG-APT 74.1 → 57.1 s, peak RSS 4.83 → 1.95 GB, store 5.757 GB → 0); gated to Hartree-Fock-owned `CPHF` objects by the follow-up fix, since the four-index route's stored block is what `perturbed_eri` consumes |
 
-Tests: `test_046`–`test_050` (spatial HF), `test_062`–`test_066` (SO HF), `test_061` (MP2
-gradient/relaxed density), `test_067` (polarizability), `test_068` (APT), `test_069` (Hessian),
-`test_071` (HF velocity APT), `test_072` (MP2 AAT), `test_073`
-(MP2 velocity APT), `test_074` (property facade). (`test_070`, the old explicit-vs-2n+1
-polarizability cross-check, was removed with the explicit route in #194.) CISD: `test_079`–`test_082`
-(LG-APT, VG-APT, AAT, Hessian). CC gradients: `test_076` (CCSD, spatial),
-`test_078` (CCSD, spin-orbital), `test_077` (SO 2-PDM), `test_083` (CCSD(T), spatial + spin-orbital,
-all-electron + frozen core), `test_034` (CCSD(T) density/dipole). CC polarizability: `test_084`
-(CCSD + CCSD(T), spatial + spin-orbital, all-electron + frozen core, incl. the CFOUR-anchored (T)
-cases), `test_085` (invariant [F,T3] (T) energy), `test_086` (SO (T) unrelaxed dipole). CC second derivatives:
-`test_087` (CCSD/CCSD(T) **APT**, spatial + SO, AE + FC, CFOUR DIPDER-anchored), `test_090` (CCSD
-**Hessian**) and `test_089` (CCSD(T) **Hessian**), spatial + SO, AE + FC, CFOUR FCMFINAL-anchored. The
-MP2 2n+1 APT/Hessian cross-checks live in `test_068`/`test_069`.
+Tests, by layer:
+
+- **Reference (Hartree-Fock)**: `test_046`-`test_050` (gradient, CPHF polarizability, dipole
+  derivatives, Hessian, AAT), `test_062`-`test_066` (the spin-orbital counterparts), `test_071`
+  (velocity-gauge APT), `test_102` (DBOC against CFOUR at the HEAT geometries).
+- **MP2**: `test_061` (gradient / relaxed density), `test_067` (polarizability), `test_068` (APT),
+  `test_069` (Hessian), `test_072` (AAT), `test_073` (velocity-gauge APT), `test_103` (DBOC(MP1)
+  against Tajti, Szalay and Gauss).  The 2n+1 APT/Hessian cross-checks live in
+  `test_068`/`test_069`.
+- **CISD**: `test_079`-`test_082` (LG-APT, VG-APT, AAT, Hessian), `test_091` (polarizability),
+  `test_099` (gradient), `test_101` (DBOC against Gauss, Tajti, Kallay, Stanton and Szalay).
+- **CC first derivatives**: `test_076` (CCSD gradient, spatial), `test_078` (spin-orbital),
+  `test_077` (SO 2-PDM), `test_083` (CCSD(T) gradient, spatial + SO, AE + FC), `test_034` (CCSD(T)
+  density/dipole), `test_086` (SO (T) unrelaxed dipole).
+- **CC second derivatives**: `test_084` (CCSD + CCSD(T) polarizability, spatial + SO, AE + FC,
+  including the CFOUR-anchored (T) cases), `test_085` (invariant [F,T3] (T) energy), `test_088`
+  (CCSD **APT**) and `test_087` (CCSD(T) **APT**), both CFOUR DIPDER-anchored, `test_090` (CCSD
+  **Hessian**) and `test_089` (CCSD(T) **Hessian**), both CFOUR FCMFINAL-anchored.
+- **CC response**: `test_092` (dynamic polarizability at omega = 0 against
+  `ccresponse.polarizability`), `test_093` (optical rotation against `ccresponse.optrot`),
+  `test_098` (the two routes to G'(omega) for H2O2, which must agree).  The independent code those
+  first two check against has its own suite, `test_055`-`test_058` (spin-orbital and spatial
+  `ccresponse` polarizability and optical rotation), outside this effort but load-bearing for them.
+- **Infrastructure**: `test_074` (property facade), `test_094` (the `DerivStore` contract:
+  mandatory and always disk-backed), `test_097` (the RAM-backed-scratch warning), `test_100`
+  (timing and progress bookkeeping), `test_095` (end-to-end VCD for hydrogen peroxide against
+  independent references), `test_096` (the property checkpoint and the `pycc.ir`/`pycc.vcd`
+  drivers).
+
+(`test_070`, the old explicit-vs-2n+1 polarizability cross-check, was removed with the explicit
+route in #194.)
 
 ## Appendix B: superseded early decisions
 
