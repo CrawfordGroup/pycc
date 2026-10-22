@@ -330,39 +330,28 @@ class CPHF(object):
 
     def _build_skeleton_fock_2e(self, atom: int):
         r"""The two-electron skeleton Fock derivative for all three Cartesians of ``atom``, as
-        three ``nmo x nmo`` matrices, from **one** pass over the AO derivative integrals.
+        three ``nmo x nmo`` matrices, from one pass over the AO derivative integrals.
 
-        The quantity wanted is two-index::
+        The quantity is the Coulomb and exchange terms of a Fock build, differentiated::
 
-            fx_pq += sum_m ( 2 <pm|qm> - <pm|mq> )   =   sum_m ( 2 (pq|mm) - (pm|mq) )
+            fx_pq += sum_m ( 2 <pm|qm> - <pm|mq> )  =  sum_m ( 2 (pq|mm) - (pm|mq) )
 
-        i.e. the Coulomb and exchange terms of a Fock build, differentiated.  Routing that
-        through a four-index MO transform -- full or blocked -- is the wrong shape of
-        operation: measured, generating the AO derivative integrals is 77-92% of
-        ``mo_tei_deriv1``, so the transform on top buys little and blocking it buys less than
-        nothing (two blocked calls regenerate the AO integrals twice).  Contracting against the
-        occupied AO density instead gives the answer directly and forms no four-index MO
-        object at all::
+        Folding the occupied sum into the density gives it without forming any four-index MO
+        object::
 
-            J^x_mu,nu    = (mu nu|la si)^x D_la,si          D = C_occ C_occ^T
-            K^x_mu,si    = (mu nu|la si)^x D_nu,la
-            fx           = C^T (2 J^x - K^x) C
+            J^x_mu,nu = (mu nu|la si)^x D_la,si      D = C_occ C_occ^T
+            K^x_mu,si = (mu nu|la si)^x D_nu,la
+            fx        = C^T (2 J^x - K^x) C
 
-        ``C[:, self.o]`` is used directly, so this is correct for a frozen core as well: unlike
-        ``Derivatives._mo('o')`` (the *first* ``no`` columns), ``self.o`` spans whatever occupied
-        space this object was built for, including core + active under ``full_occ=True``.
-
-        Cached one atom at a time: the AO integrals come back for all three Cartesians together,
-        so they are consumed in one go and only the three ``nmo^2`` results are kept."""
+        ``C[:, self.o]`` spans whatever occupied space this object was built for, so a frozen core
+        needs no special case.  Cached one atom at a time: the AO integrals arrive for all three
+        Cartesians together, so they are consumed in one pass and only the ``nmo^2`` results kept."""
         d = self.wfn.derivatives
         C = np.asarray(self.wfn.C)
         Co = C[:, self.o]
         D = Co @ Co.T                                    # occupied AO density (no factor 2)
         c = self.contract
-        # ao_tei_deriv1 returns all three Cartesians at once and there is no per-Cartesian or
-        # shell-blocked entry point, so the transient peak is 3*nao^4 whatever we do here.  That
-        # is the same Psi4-side floor as ao_tei_deriv2 for the Hessian.  What this route does
-        # avoid is holding (and storing) an nmo^4 MO copy alongside it.
+        # Peak is 3*nao^4: ao_tei_deriv1 has no per-Cartesian or shell-blocked entry point.
         ao = d.mints.ao_tei_deriv1(atom)                 # 3 x (nao^4), chemist (mu nu|la si)
         out = []
         for g in ao:
@@ -372,20 +361,36 @@ class CPHF(object):
             out.append(C.T @ (2.0 * J - K) @ C)
         return out
 
-    def _skeleton_fock_2e(self, pert: "Perturbation") -> np.ndarray:
-        """One Cartesian of :meth:`_build_skeleton_fock_2e`, via a 1-atom cache.
+    def _uses_ao_skeleton_fock(self) -> bool:
+        """Whether :meth:`_skeleton_fock_2e` may take the AO route.
 
-        Spin-orbital runs keep the original four-index route for now: the AO integrals are
-        spatial while the spin-orbital coefficients are spin-blocked, so the density
-        contraction needs separate bookkeeping that this prototype does not attempt."""
+        Only when nothing on this object needs the full four-index block: the AO route does not
+        populate the store's ``'eri1'`` entry, which :meth:`perturbed_eri` requires.  Every caller
+        of that method reaches it through ``_full_occ_cphf`` on a correlated wavefunction, never on
+        an ``HFwfn``, so ownership is the test."""
+        from .hfwfn import HFwfn
+        return isinstance(self.wfn, HFwfn)
+
+    def _skeleton_fock_2e(self, pert: "Perturbation") -> np.ndarray:
+        """One Cartesian of the two-electron skeleton Fock derivative.
+
+        AO density contraction when this object has no correlated consumer
+        (:meth:`_uses_ao_skeleton_fock`), else the four-index route, which also persists the block
+        for :meth:`perturbed_eri`.  Spin-orbital always takes the four-index route: the AO
+        integrals are spatial while the coefficients are spin-blocked."""
         atom, cart = pert.comp
+        o = self.o
         if self.wfn.orbital_basis == 'spinorbital':
             gx = np.asarray(self.wfn.derivatives.so_eri_component(atom, cart))
-            return self.contract('pmqm->pq', gx[:, self.o, :, self.o])
-        cache = getattr(self, '_fock2e', None)
-        if cache is None or atom not in cache:
-            cache = self._fock2e = {atom: self._build_skeleton_fock_2e(atom)}
-        return cache[atom][cart]
+            return self.contract('pmqm->pq', gx[:, o, :, o])
+        if self._uses_ao_skeleton_fock():
+            cache = getattr(self, '_fock2e', None)
+            if cache is None or atom not in cache:
+                cache = self._fock2e = {atom: self._build_skeleton_fock_2e(atom)}
+            return cache[atom][cart]
+        gx = self._skeleton_eri(pert)                      # physicist <pq|rs>^(x), via the store
+        w = 2.0 * gx - gx.swapaxes(2, 3)                   # spin-adapted L^(x)
+        return self.contract('pmqm->pq', w[:, o, :, o])
 
     def _skeleton_derivatives(self, pert: "Perturbation"):
         r"""Skeleton (fixed-MO-coefficient) derivatives for ``pert``: the pair
@@ -423,9 +428,6 @@ class CPHF(object):
             else:
                 hx = np.asarray(d.core(atom)[cart])
                 Sx = np.asarray(d.overlap(atom)[cart])
-            # No nmo^4 MO derivative is materialized here: on the spatial route
-            # _skeleton_fock_2e contracts the AO derivative integrals against the occupied
-            # density and returns the nmo^2 result directly (see its docstring).
             fx = hx + self._skeleton_fock_2e(pert)               # skeleton Fock derivative
         else:
             raise NotImplementedError(
