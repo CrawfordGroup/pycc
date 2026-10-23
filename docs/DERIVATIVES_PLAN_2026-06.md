@@ -1838,6 +1838,57 @@ Two code paths now compute the same physics differently (AO contraction for Hart
 for correlated and for spin-orbital).  That is a real cost of this change and worth revisiting if
 the correlated path ever stops needing the full block.
 
+## 17. CC velocity-gauge APT, and the four-index store audit that precedes it -- PLANNED
+
+**Status: PLANNED** (PI 2026-10-22), needed for the broader VCD simulations.  The VG-APT is s.15's
+machinery with `Perturbation('vecpot', g)` in place of `Perturbation('magnetic', b)`:
+`_cc_perturbed_ints` already dispatches on `pert.kind` and already has the vecpot branch
+(`momentum_ints` / `momentum_eri`, with the `+Del -> -Del` sign), and `_cc_amplitude_record` is
+kind-agnostic, so the work is four more sector methods and
+`_correlation_velocity_dipole_derivatives`, mirroring `cideriv.py`.  **The orbital-orbital block
+needs the same care as s.15.0**: the momentum operator is anti-Hermitian like the magnetic dipole,
+so its `U` is symmetric after the `i` is stripped and that block is again a commutator, not the
+nuclear side's index pattern.
+
+### 17.1 What is already on the store (audited 2026-10-22)
+
+Every four-index **integral** is persisted and released; nothing of `nmo^4` size is held in RAM by
+the integral layer:
+
+| quantity | holds | written by |
+|---|---|---|
+| `'eri1'` | nuclear perturbed MO ERI | `CPHF.perturbed_eri` |
+| `'deri'` | nuclear derivative integrals | `Derivatives._eri_cached` |
+| `'deri_field'` | magnetic / momentum perturbed ERI | `CPHF._field_ints`, read back by `_field_eri` |
+| `'resp'` | `(dDrel, dGam, dI)`; `dGam` is `nmo^4` | `CorrelatedDerivs._relaxed_response` |
+| `'pt2'` | MP2 perturbed T2 | `MPderiv._perturbed_t2_stored` |
+| `'cpci'` | CISD perturbed CI amplitudes | `CIderiv._cpci_record` |
+| `'ccamp'` | CC perturbed `(dt1, dt2, dl1, dl2)` | `CCderiv._cc_amplitude_record` |
+
+`_field_ints` keeps only the `nmo^2` `(U, dF)` resident, which is the right split: those are cheap
+to hold and expensive to rebuild.
+
+### 17.2 The two real exposures, both in the sector loops
+
+1. **The imaginary-perturbation records are held resident across each sector.**  Each of
+   `compute_I*_AATs` hoists the three magnetic records out of the nuclear loop
+   (`magH = {b: self._cc_amplitude_record(...)}`), so three records, each carrying `dt2` and `dl2`
+   at `o^2 v^2`, stay resident for the whole pass.  A VG-APT adds three vecpot records, and a VCD
+   run that wants both tensors has six.  Options: hold only `(dt1, dl1)` resident and stream the
+   doubles per perturbation, or restructure so one pass over the nuclear loop feeds all four
+   sectors (see below), which removes the repetition rather than the residency.
+2. **Each record is read four times, once per sector.**  The four sectors each loop over all `3N`
+   nuclear perturbations and re-read the same `'ccamp'` record, so a `3N`-perturbation AAT performs
+   `12N` reads of an `o^2 v^2` record where `3N` would do.  This is the same shape of problem as
+   the Hessian's Pass-2 store traffic, and the fix is the same kind: one loop that accumulates all
+   four sector contributions per perturbation.  Measure the contraction-versus-I/O split before
+   restructuring, since the sectors are cheap contractions and the current form is much easier to
+   read; per-sector timers already exist to attribute it.
+
+Neither is a correctness issue, and neither should be addressed by making the AAT less readable
+until it is measured.  Both get worse by a factor of two when the VG-APT lands, which is why this
+audit belongs before that phase rather than after.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
