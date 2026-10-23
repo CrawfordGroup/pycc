@@ -74,8 +74,11 @@ def test_cc_aat_two_electron_equals_cisd():
     Fixes the overall sign (the magnetic operator enters as Im(m), so the sign is a convention the
     invariance tests cannot see) and the Eq. (39) prefactor.  The CISD side carries its
     intermediate-normalization correction and the CC side needs none, so this also checks the
-    normalization result."""
-    wfn = _scf(H3P)
+    normalization result.
+
+    6-31G, not STO-3G: H3+ in a minimal basis has one occupied and two virtual orbitals, and its
+    DIIS B matrix is singular enough that Linux LAPACK raises where macOS does not."""
+    wfn = _scf(H3P, basis='6-31G')
 
     cc = pycc.ccwfn(wfn, model='CCSD', orbital_basis='spatial')
     e_cc = cc.solve_cc(1e-13, 1e-13, 200)
