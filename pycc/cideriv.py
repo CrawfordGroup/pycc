@@ -9,6 +9,8 @@ quantities (amplitude solve, energy, raw densities); this class supplies the two
 genuinely CISD-specific wave-function-overlap properties - the AAT (`_correlation_aat`) and the
 velocity-gauge APT (`_correlation_velocity_dipole_derivatives`) - are custom code, together with the
 coupled-perturbed-CI (CPCI) response machinery they (and the two density hooks) are built from.
+These use half-derivative overlaps, where `CCderiv` uses the antisymmetric full-derivative form of
+Eq. (39); all three are to be unified onto that form in the base (DERIVATIVES_PLAN section 15.6).
 
 CPCI/MAGNETIC/VECPOT MACHINERY
 -------------------------------
