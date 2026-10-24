@@ -286,7 +286,10 @@ symmetrized density. Normalization is not implicated anywhere: at two electrons 
 unperturbed density agrees with CC's to 1.6e-14 and $U^H$ agrees bit for bit.
 
 **MP2 still fails**, with ratios 0.917 and -2.306 (H$_3^+$) and 1.047, 1.046, -0.021, -0.274
-(H$_2$O), using the antisymmetrized `R - R^T`. Unresolved.
+(H$_2$O), using the antisymmetrized `R - R^T`. **TO RESOLVE SOON (PI 2026-10-23)** -- the
+sharp diagnostic is the two-electron limit, which is what cracked the CISD case: there MP2 is
+not exact, so compare instead against its own apyib-validated AAT and look for the failure in
+this RHS rather than in `mpderiv.py`.
 
 Caveat on the MP2 result: the folded-density formulation exposes no `D`/`D^H`
 accessor, so both expressions were replicated from `_correlation_aat` and carry
