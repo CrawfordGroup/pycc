@@ -596,8 +596,9 @@ def vcd(source: Any, checkpoint: str = None, project_trans: bool = False,
       computed; the stored data is re-analyzed via :func:`harmonic_analysis`.
 
     The rotatory strengths (Stephens' APT*AAT contraction) are validated against DALTON to
-    ~5e-4 (10^-44 esu^2 cm^2) for H2O2/STO-3G at the SCF level.  AATs exist for SCF / MP2 / CISD
-    (not yet CCSD), so the compute path of ``vcd`` currently requires an HF, MP2, or CISD source.
+    ~5e-4 (10^-44 esu^2 cm^2) for H2O2/STO-3G at the SCF level.  AATs and velocity-gauge APTs both
+    exist for SCF, MP2, CISD and CCSD, so any of those may be the compute source, with or without
+    ``velocity_gauge=True``.
 
     Parameters and return are as for :func:`ir`.
     """

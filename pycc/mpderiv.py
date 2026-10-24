@@ -4,7 +4,9 @@
 docs/DERIVATIVES_PLAN_2026-06.md section 9): it supplies MP2's two density hooks -- the unrelaxed
 reduced densities (:meth:`_unrelaxed_densities`) and their first-order response
 (:meth:`_perturbed_unrelaxed_densities`) -- and adds the MP2-specific atomic axial tensors (AAT) and
-velocity-gauge APT, which are overlap formulations the base does not provide.  Everything else is
+velocity-gauge APT, which are overlap formulations the base does not provide.  MP2 and CISD build
+them from half-derivative overlaps; `CCderiv` uses the antisymmetric full-derivative form of
+Eq. (39), onto which all three are to be unified in the base (DERIVATIVES_PLAN section 15.6).  Everything else is
 inherited: the base owns the method-agnostic orbital-response (Z-vector) solve and the 2n+1 assembly,
 so the relaxed dipole, gradient, polarizability, length-gauge APT, and Hessian come from it unchanged,
 driven by the two hooks above.

@@ -3,7 +3,8 @@
 `CCderiv` is the downstream derivative driver for a converged :class:`~pycc.ccwfn.CCwfn`, sitting
 at the end of the chain ``ccwfn -> cchbar -> cclambda -> ccdensity``: it lazily builds the Lambda
 amplitudes and reduced densities it needs and assembles the analytic gradient, Hessian, atomic polar
-tensors, and (via its CC linear-response leaf) the dynamic polarizability and optical rotation.
+tensors in both gauges, atomic axial tensors, and (via its CC linear-response leaf) the dynamic
+polarizability and optical rotation.
 Keeping this out of `CCwfn` respects the layering -- `cclambda`/`ccdensity` are downstream of
 `ccwfn`, so the wavefunction never reaches forward to build them.  Each property is a method on this
 driver (``CCderiv(ccwfn).gradient()`` etc.), and the :mod:`pycc.properties` facade functions
@@ -52,9 +53,20 @@ class CCderiv(CorrelatedDerivs):
     supported, all-electron and frozen core; ROHF is not (the semicanonical response does not
     reproduce the restricted ROHF response).
 
+    ``CCderiv`` also carries the two **overlap** properties, which are not energy derivatives and so
+    have no 2n+1 route: the atomic axial tensors (:meth:`_correlation_aat`, Eq. (39) of the CC-VCD
+    derivation) and the velocity-gauge atomic polar tensors
+    (:meth:`_correlation_velocity_dipole_derivatives`, Eq. (11) of ``cc_vgapt_derivation.pdf``,
+    which is Eq. (39) with the magnetic field replaced by a uniform vector potential).  Both are
+    the same four blocks (:meth:`_mixed_overlap_tensor`) differing only in the imaginary
+    perturbation, both bases, all-electron and frozen core, **CCSD only**.
+
     Validation: CCSD against tight finite fields of the relaxed dipole and SO == spatial keystones;
     CCSD(T) against energy finite differences and CFOUR oracles (``POLAR`` / ``DIPDER`` /
-    ``FCMFINAL`` minus their SCF values; see test_084 / test_087 / test_089).
+    ``FCMFINAL`` minus their SCF values; see test_084 / test_087 / test_089).  The two overlap
+    properties have no external reference, so they are anchored on exact identities instead -- the
+    two-electron limit against validated CISD, the translational sum rules, and gauge invariance
+    (test_104 / test_105; ``docs/cc_aat_validation_plan.md``).
     """
 
     def __init__(self, ccwfn: "CCwfn", e_conv=None, r_conv=None, maxiter=None,
@@ -1276,93 +1288,123 @@ class CCderiv(CorrelatedDerivs):
         dD, _dGam = self._perturbed_correlation_densities(dt1, dt2, dl1, dl2, self.cclambda)
         return np.asarray(dD)
 
-    def compute_Icc_AATs(self, gauge='non-canonical'):
-        """Term 1: ``sum_mu ( lam^R_mu t^H_mu - lam^H_mu t^R_mu )``.
+    # The four blocks below serve BOTH tensors.  cc_vgapt_derivation.pdf Eq. (11) is Eq. (39) with
+    # the magnetic field replaced by a uniform vector potential, block for block, so only the
+    # imaginary perturbation differs: 'magnetic' gives the AAT, 'vecpot' the velocity-gauge APT.
+    # Both operators are -i times a real antisymmetric one-electron matrix, so each gives a
+    # symmetric i-stripped orbital response and the orbital-orbital block is a commutator either
+    # way.  Named for the derivation's own blocks rather than cideriv.py's
+    # Icc/Icphi/Iphic/Iphiphi, which needs eight methods to say the same thing.
+
+    _TENSOR_NAME = {'magnetic': 'AAT', 'vecpot': 'VG-APT'}
+
+    def _block_amplitude_amplitude(self, kind, gauge):
+        """``sum_mu ( lam^R_mu t^y_mu - lam^y_mu t^R_mu )``.
 
         Antisymmetric in the two perturbations, where the CISD sector is a plain overlap
-        ``<dPsi_R|dPsi_H>``: CC has no bra-ket symmetry to collapse the two orderings onto one."""
+        ``<dPsi_R|dPsi_y>``: CC has no bra-ket symmetry to collapse the two orderings onto one."""
         from .cphf import Perturbation
         natom = self.wfn.derivatives.natom
-        I_cc = np.zeros((3 * natom, 3))
-        magH = {b: self._cc_amplitude_record(Perturbation('magnetic', b), gauge) for b in range(3)}
+        out = np.zeros((3 * natom, 3))
+        imag = {g: self._cc_amplitude_record(Perturbation(kind, g), gauge) for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
             t1_R, t2_R, l1_R, l2_R = self._cc_amplitude_record(
                 Perturbation('nuclear', (A, cart)), gauge)
-            for beta in range(3):
-                t1_H, t2_H, l1_H, l2_H = magH[beta]
-                I_cc[la, beta] = (self._biorthogonal_overlap(l1_R, l2_R, t1_H, t2_H)
-                                  - self._biorthogonal_overlap(l1_H, l2_H, t1_R, t2_R))
-            self._nuclear_step('CCSD AAT Icc', la, natom, t_stage)
-        return I_cc
+            for g in range(3):
+                t1_y, t2_y, l1_y, l2_y = imag[g]
+                out[la, g] = (self._biorthogonal_overlap(l1_R, l2_R, t1_y, t2_y)
+                              - self._biorthogonal_overlap(l1_y, l2_y, t1_R, t2_R))
+            self._nuclear_step('CCSD %s amplitude-amplitude' % self._TENSOR_NAME[kind],
+                               la, natom, t_stage)
+        return out
 
-    def compute_Icphi_AATs(self, gauge='non-canonical'):
-        """Term 2, nuclear-density half: ``sum_pq D^R_pq <phi_p|d_H phi_q>``."""
+    def _block_nuclear_density_orbital(self, kind, gauge):
+        """``sum_pq D^R_pq <phi_p|d_y phi_q>``, the nuclear-density half of the amplitude-orbital
+        block."""
         from .cphf import Perturbation
         c = self.contract
         natom = self.wfn.derivatives.natom
-        I_cphi = np.zeros((3 * natom, 3))
-        U_H = {b: self._cc_perturbed_ints(Perturbation('magnetic', b), gauge)[2] for b in range(3)}
+        out = np.zeros((3 * natom, 3))
+        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[2] for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
             dD_R = self._aat_perturbed_opdm(Perturbation('nuclear', (A, cart)), gauge)
-            for beta in range(3):
-                I_cphi[la, beta] = c('pq,pq->', dD_R, U_H[beta])
-            self._nuclear_step('CCSD AAT Icphi', la, natom, t_stage)
-        return I_cphi
+            for g in range(3):
+                out[la, g] = c('pq,pq->', dD_R, U_y[g])
+            self._nuclear_step('CCSD %s nuclear-density' % self._TENSOR_NAME[kind],
+                               la, natom, t_stage)
+        return out
 
-    def compute_Iphic_AATs(self, gauge='non-canonical'):
-        """Term 2, magnetic-density half: ``-sum_pq D^H_pq <phi_p|d_R phi_q>``.
-
-        The sign is carried here rather than in :meth:`_correlation_aat`, so each sector returns
-        the quantity Eq. (39) adds."""
+    def _block_field_density_orbital(self, kind, gauge):
+        """``-sum_pq D^y_pq <phi_p|d_R phi_q>``, the field-density half of the amplitude-orbital
+        block.  The sign is carried here, so each block returns the quantity Eq. (11) adds."""
         from .cphf import Perturbation
         c = self.contract
         natom = self.wfn.derivatives.natom
-        I_phic = np.zeros((3 * natom, 3))
-        dD_H = {b: self._aat_perturbed_opdm(Perturbation('magnetic', b), gauge) for b in range(3)}
+        out = np.zeros((3 * natom, 3))
+        dD_y = {g: self._aat_perturbed_opdm(Perturbation(kind, g), gauge) for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
             U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
             Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
-            for beta in range(3):
-                I_phic[la, beta] = -c('pq,pq->', dD_H[beta], Ur_eff)
-            self._nuclear_step('CCSD AAT Iphic', la, natom, t_stage)
-        return I_phic
+            for g in range(3):
+                out[la, g] = -c('pq,pq->', dD_y[g], Ur_eff)
+            self._nuclear_step('CCSD %s field-density' % self._TENSOR_NAME[kind],
+                               la, natom, t_stage)
+        return out
 
-    def compute_Iphiphi_AATs(self, gauge='non-canonical'):
-        r"""Term 3: ``sum_pq D_pq ( <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> )``, the
-        unperturbed correlation 1-PDM against the two half-derivative overlaps.
+    def _block_orbital_orbital(self, kind, gauge):
+        r"""``sum_pq D_pq ( <d_R phi_p|d_y phi_q> - <d_y phi_p|d_R phi_q> )``, the unperturbed
+        correlation 1-PDM against the two half-derivative overlaps.
 
-        The two overlaps have **opposite** transpose symmetry, which sets the form of this sector.
+        The two overlaps have **opposite** transpose symmetry, which sets the form of this block.
         Orthonormality gives ``<d_x phi_p|phi_q> = -<phi_p|d_x phi_q>``, so the nuclear overlap
-        ``M_R = U^R + half_S^T`` is antisymmetric.  The magnetic one is not: with ``C^H = i C U``
-        and real orbitals the same condition reads ``U_pq = U_qp``, so ``M_H = U^H`` is
+        ``M_R = U^R + half_S^T`` is antisymmetric.  The imaginary one is not: with ``C^y = i C U``
+        and real orbitals the same condition reads ``U_pq = U_qp``, so ``M_y = U^y`` is
         **symmetric** once the ``i`` is stripped at the operator.  Writing the bra conjugation out,
 
-            <d_R phi_p|d_H phi_q> - <d_H phi_p|d_R phi_q> = -i ( M_R M_H - M_H M_R )
+            <d_R phi_p|d_y phi_q> - <d_y phi_p|d_R phi_q> = -i ( M_R M_y - M_y M_R )
 
-        a commutator, and the overall ``i`` is the one factored out of the AAT.  Contracting
-        ``M_R^T M_H - M_H^T M_R`` instead gives the anticommutator and is wrong."""
+        a commutator, and the overall ``i`` is the one factored out of the tensor.  Contracting
+        ``M_R^T M_y - M_y^T M_R`` instead gives the anticommutator and is wrong."""
         from .cphf import Perturbation
         c = self.contract
         natom = self.wfn.derivatives.natom
         D_pq = np.asarray(self._unrelaxed_densities()[0])
-        I_pp = np.zeros((3 * natom, 3))
-        U_H = {b: self._cc_perturbed_ints(Perturbation('magnetic', b), gauge)[2] for b in range(3)}
+        out = np.zeros((3 * natom, 3))
+        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[2] for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
             U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
             Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
-            for beta in range(3):
-                I_pp[la, beta] = c('pq,pq->', D_pq,
-                                  U_H[beta] @ Ur_eff - Ur_eff @ U_H[beta])
-            self._nuclear_step('CCSD AAT Iphiphi', la, natom, t_stage)
-        return I_pp
+            for g in range(3):
+                out[la, g] = c('pq,pq->', D_pq, U_y[g] @ Ur_eff - Ur_eff @ U_y[g])
+            self._nuclear_step('CCSD %s orbital-orbital' % self._TENSOR_NAME[kind],
+                               la, natom, t_stage)
+        return out
+
+    def _mixed_overlap_tensor(self, kind: str, gauge: str) -> np.ndarray:
+        """The four blocks of Eq. (11) summed, shape ``(natom, 3, 3)`` indexed ``[A, alpha, y]``.
+
+        The ``1/2`` is the equation's left-hand side, which gives twice the tensor.  One timer per
+        block: the first pays the perturbed solves, the rest read the records back."""
+        self._require_ccsd("The CC %s" % self._TENSOR_NAME[kind])
+        name = self._TENSOR_NAME[kind]
+        natom = self.wfn.ref.molecule().natom()
+        total = None
+        for label, block in (('amplitude-amplitude', self._block_amplitude_amplitude),
+                             ('nuclear-density', self._block_nuclear_density_orbital),
+                             ('field-density', self._block_field_density_orbital),
+                             ('orbital-orbital', self._block_orbital_orbital)):
+            with timer("%s %s" % (name, label)):
+                contribution = block(kind, gauge)
+            total = contribution if total is None else total + contribution
+        return 0.5 * total.reshape(natom, 3, 3)
 
     def aat(self, origin=None, orbital_gauge: str = 'non-canonical') -> "PropertyComponents":
         """Atomic axial tensors (AATs, for VCD) as a :class:`pycc.PropertyComponents`.
@@ -1372,25 +1414,31 @@ class CCderiv(CorrelatedDerivs):
 
     def _correlation_aat(self, gauge: str = 'non-canonical') -> np.ndarray:
         r"""CCSD **correlation** atomic axial tensors, shape ``(natom, 3, 3)`` indexed
-        ``[A, alpha, beta]``.  The SCF reference AAT (:meth:`HFwfn.aat`) and the nuclear term are
-        supplied by the :func:`pycc.aat` facade, matching :class:`~pycc.mpderiv.MPderiv` and
-        :class:`~pycc.cideriv.CIderiv`.
-
-        The ``1/2`` is Eq. (39)'s left-hand side: it gives ``2 I``, where the CISD sectors give
-        ``I`` directly.
+        ``[A, alpha, beta]``: Eq. (39), i.e. :meth:`_mixed_overlap_tensor` with the magnetic field
+        as the imaginary perturbation.  The SCF reference AAT (:meth:`HFwfn.aat`) and the nuclear
+        term are supplied by the :func:`pycc.aat` facade, matching
+        :class:`~pycc.mpderiv.MPderiv` and :class:`~pycc.cideriv.CIderiv`.
 
         ``gauge`` selects the redundant magnetic oo/vv orbital response
-        (:meth:`~pycc.cphf.CPHF.magnetic_ints`); the AAT is invariant to it.  Frozen-core aware
+        (:meth:`~pycc.cphf.CPHF.magnetic_ints`); the tensor is invariant to it.  Frozen-core aware
         through :meth:`_full_occ_cphf`."""
-        self._require_ccsd("CC atomic axial tensors")
-        natom = self.wfn.ref.molecule().natom()
-        # One timer per sector: the first pays the perturbed solves, the rest read the records.
-        with timer("AAT Icc"):
-            total = self.compute_Icc_AATs(gauge)
-        with timer("AAT Icphi"):
-            total = total + self.compute_Icphi_AATs(gauge)
-        with timer("AAT Iphic"):
-            total = total + self.compute_Iphic_AATs(gauge)
-        with timer("AAT Iphiphi"):
-            total = total + self.compute_Iphiphi_AATs(gauge)
-        return 0.5 * total.reshape(natom, 3, 3)
+        return self._mixed_overlap_tensor('magnetic', gauge)
+
+    def _correlation_velocity_dipole_derivatives(self, gauge: str = 'non-canonical') -> np.ndarray:
+        r"""CCSD **correlation** velocity-gauge atomic polar tensors, shape ``(natom, 3, 3)`` --
+        Eq. (11) of ``docs/cc_vgapt_derivation.pdf``, which is Eq. (39) with the magnetic field
+        replaced by a uniform vector potential, so it is :meth:`_mixed_overlap_tensor` with
+        ``kind='vecpot'``.
+
+        The perturbing operator is the electronic linear momentum ``pi^e = -i grad``,
+        anti-Hermitian exactly as the magnetic dipole is, which is why the blocks carry over
+        unchanged.  It involves no gauge origin and no field-dependent basis functions, so the
+        tensor is origin-independent.  The reference and nuclear blocks are supplied by
+        ``pycc.apt(..., gauge='velocity')``.
+
+        The ``-2`` is the note's prefactor ``E^(VG) = -(2 i e hbar / m) V``: in atomic units with
+        the ``i`` carried by the operator's strip convention it is ``-2 V``, and
+        :meth:`_mixed_overlap_tensor` returns ``V``.  Confirmed against the validated CISD
+        velocity-gauge APT for a two-electron system, where the ratio is exactly ``-1/2`` without
+        it."""
+        return -2.0 * self._mixed_overlap_tensor('vecpot', gauge)

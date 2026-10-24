@@ -398,8 +398,8 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
     O(N)-cheaper route, 3 field solves) or ``'2n+1-nuclear'``; both give the same tensor.
 
     ``orbital_gauge`` (velocity gauge only; **expert only**) selects the redundant momentum
-    orbital-rotation gauge of the correlation VG APT (MP2 or CISD), ``'non-canonical'`` (default,
-    numerically stable) or ``'canonical'``.  The velocity APT is invariant to this choice, so it
+    orbital-rotation gauge of the correlation VG APT (MP2, CISD or CCSD), ``'non-canonical'``
+    (default, numerically stable) or ``'canonical'``.  The velocity APT is invariant to this choice, so it
     exists only for verification/debugging.
     Both extra knobs are ignored for an ``HFwfn`` (no correlation)."""
     _require_driver(wfn)
@@ -428,12 +428,13 @@ def apt(wfn, gauge='length', route='2n+1-field', orbital_gauge='non-canonical') 
 def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     """Atomic axial tensors (AATs, for VCD) as a :class:`PropertyComponents`
     (``nuclear + reference + correlation``), shape ``(natom, 3, 3)`` each.  Like the other property
-    facades, ``wfn`` is a derivative driver (:class:`~pycc.mpderiv.MPderiv` /
-    :class:`~pycc.cideriv.CIderiv`) for a correlated method, or an :class:`~pycc.hfwfn.HFwfn` for the
-    SCF reference.
+    facades, ``wfn`` is a derivative driver (:class:`~pycc.mpderiv.MPderiv`,
+    :class:`~pycc.cideriv.CIderiv` or :class:`~pycc.ccderiv.CCderiv`) for a correlated method, or an
+    :class:`~pycc.hfwfn.HFwfn` for the SCF reference.
 
     The correlation block is the genuine correlation contribution (the driver's
-    ``_correlation_aat``, which excludes the reference density), the reference block is the
+    ``_correlation_aat``, which excludes the reference density; MP2 and CISD use a half-derivative
+    overlap formulation, CCSD the antisymmetric full-derivative one of Eq. (39)), the reference block is the
     independent SCF AAT (:meth:`~pycc.hfwfn.HFwfn._aat_electronic`), and the nuclear block is
     ``(Z_A/4) eps R``.  Each block is orbital-gauge invariant, so the decomposition is well defined
     independent of the magnetic oo/vv gauge.
@@ -445,7 +446,7 @@ def aat(wfn, origin=None, orbital_gauge='non-canonical') -> PropertyComponents:
     matching electronic-gauge shift is a planned follow-up).
 
     ``orbital_gauge`` (**expert only**) selects the redundant magnetic orbital-rotation gauge of
-    the correlation AAT (MP2 or CISD), ``'non-canonical'`` (default, numerically stable) or
+    the correlation AAT (MP2, CISD or CCSD), ``'non-canonical'`` (default, numerically stable) or
     ``'canonical'``.  The AAT is invariant to this choice, so it exists only for
     verification/debugging; it is ignored for an ``HFwfn`` (no correlation)."""
     _require_driver(wfn)

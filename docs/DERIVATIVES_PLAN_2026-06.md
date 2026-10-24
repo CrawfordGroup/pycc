@@ -1684,6 +1684,49 @@ Two cautions before committing to it:
 - **Do the hoist last.**  Get CC AATs working and validated against something external first.  A
   simultaneous new-method-plus-refactor would leave a disagreement ambiguous between the two.
 
+### 15.6a Unify all three leaves onto the antisymmetric form -- PLANNED (PI 2026-10-23)
+
+**Decided, not now.**  Generalize the MP2, CISD and CCSD AATs *and* velocity-gauge APTs to the
+antisymmetric formulation CC uses -- **full density derivatives rather than half-derivatives** --
+and put the result in **one location** in `CorrelatedDerivs` rather than separately on each leaf.
+
+Why it is cheap.  The PI's reading is that the generalization costs essentially nothing extra for
+MP2 and CISD, and the CC side is already in the shape the base wants: `CCderiv` now has the four
+blocks parameterized by perturbation kind (`_mixed_overlap_tensor`), so the AAT and the VG-APT are
+two two-line entry points over one implementation, where `cideriv.py` carries eight near-identical
+sector methods and `mpderiv.py` another two sets.  Hoisting the parameterized version removes
+roughly three duplicated implementations, not one.
+
+What the hoist has to respect:
+
+- **One more hook, and the leaves already implement it.**  Terms 2 and 3 are served by the
+  existing `_unrelaxed_densities` / `_perturbed_unrelaxed_densities`; term 1 needs the
+  per-perturbation amplitude response, as a **bra-side / ket-side pair**.  The multipliers are
+  *not* a separate leaf concept (PI 2026-10-23): for MP2 and CI the bra side is the amplitude
+  itself, and only CC has a distinct `Lambda`.  All three leaves already have the method under
+  different names -- `MPderiv._perturbed_t2_stored`, `CIderiv._cpci_record`,
+  `CCderiv._cc_amplitude_record` -- so the hook is an agreement on one name and shape, not a new
+  obligation.
+- **One conversion rule, applied in two places.**  For a real perturbation the bra side equals the
+  ket side; for an imaginary one it is minus the ket side once the `i` is stripped.  In term 1
+  that collapses the antisymmetric difference to twice the plain overlap, which is why CISD's
+  `Icc` is a plain overlap; measured at two electrons, CC's term 1 is exactly `2 x` CISD's `Icc`
+  (ratio 2.000000000, difference 1.4e-14), while CC's own multipliers stay distinct there
+  (`|dl1 - dt1|` = 5.2e-3 on a 6.5e-3 amplitude scale).  In term 2 the same rule is the
+  symmetrized `T + T^T` against the antisymmetrized `T - T^T` below.
+- **The imaginary-perturbation density is the ANTISYMMETRIZED one-sided object**, `T - T^T`, where
+  a real perturbation gives the symmetrized `T + T^T` that `_perturbed_cisd_corr_opdm` builds.
+  This is exactly the conversion the half-derivative leaves need, and it is already derived and
+  verified (`cc_aat_validation_plan.md`, test 3: at two electrons `T - T^T` reproduces CC's `D^H`
+  to 1.3e-13).  `_build_Dtilde` is CISD's `T`.
+- **MP2's AAT is a different formulation** (the gauge-invariant folded density of #170), so moving
+  it is a *reformulation* that must reproduce its validated apyib numbers, not a move.
+- **Do it after, not with, a new capability**, so a disagreement is never ambiguous between the
+  two.
+
+Validation for the hoist is already written: every leaf must reproduce its current numbers, and
+the sum rules and both gauge invariances must still hold leaf by leaf.
+
 ### 15.7 Open questions and risks
 
 1. **The two-particle cancellation: SETTLED, no representation caveat (2026-10-10).**  An earlier
@@ -1838,19 +1881,92 @@ Two code paths now compute the same physics differently (AO contraction for Hart
 for correlated and for spin-orbital).  That is a real cost of this change and worth revisiting if
 the correlated path ever stops needing the full block.
 
-## 17. CC velocity-gauge APT, and the four-index store audit that precedes it -- PLANNED
+## 17. CC velocity-gauge APT -- IMPLEMENTED, and the four-index store audit
 
-**Status: PLANNED** (PI 2026-10-22), needed for the broader VCD simulations.  The VG-APT is s.15's
-machinery with `Perturbation('vecpot', g)` in place of `Perturbation('magnetic', b)`:
-`_cc_perturbed_ints` already dispatches on `pert.kind` and already has the vecpot branch
-(`momentum_ints` / `momentum_eri`, with the `+Del -> -Del` sign), and `_cc_amplitude_record` is
-kind-agnostic, so the work is four more sector methods and
-`_correlation_velocity_dipole_derivatives`, mirroring `cideriv.py`.  **The orbital-orbital block
-needs the same care as s.15.0**: the momentum operator is anti-Hermitian like the magnetic dipole,
-so its `U` is symmetric after the `i` is stripped and that block is again a commutator, not the
-nuclear side's index pattern.
+**Status: IMPLEMENTED** (2026-10-23, CCSD, both orbital bases), from
+`docs/cc_vgapt_derivation.pdf`, whose equation numbers are used below.  Tests: `test_105`.
+The four blocks are now shared with the AAT (`CCderiv._mixed_overlap_tensor`, parameterized by
+perturbation kind) rather than duplicated as `cideriv.py` duplicates them.
 
-### 17.1 What is already on the store (audited 2026-10-22)
+### 17.0 The working equation is s.15's with `H_beta -> A_gamma`
+
+Eq. (11) is Eq. (39) with the magnetic field replaced by a uniform vector potential, block for
+block::
+
+    2 V^lambda_{alpha,gamma} = sum_mu ( lam^R_mu t^A_mu - lam^A_mu t^R_mu )
+                             + sum_pq [ D^R_pq <phi_p|d_A phi_q> - D^A_pq <phi_p|d_R phi_q> ]
+                             + sum_pq D_pq [ <d_R phi_p|d_A phi_q> - <d_A phi_p|d_R phi_q> ]
+
+and the tensor is `[P^lambda_{alpha,gamma}]^VG = E^(VG) + Z_lambda e delta_{alpha,gamma}` with
+`E^(VG) = -(2 i e hbar / m) V`.  No two-particle density, for the same reason as the AAT.
+
+**The orbital-orbital block is again a commutator.**  In atomic units the two perturbing operators
+are `d_A H = pi^e_gamma = -i grad_gamma` and `d_H H = -m_beta = -(1/2)(r x grad)_beta`, both `-i`
+times a real antisymmetric one-electron matrix.  So the momentum perturbation is anti-Hermitian
+exactly as the magnetic dipole is, its `i`-stripped orbital response is symmetric, and s.15.0
+applies verbatim.  Swapping the `(1/2)(r x grad)` integrals for the `grad` integrals turns the AAT
+routine into `V`.
+
+**Only three new responses.**  The `3N` displacement responses are the AAT's; the new ones are
+`t^A`, `lambda^A` and the orbital response for the three `A_gamma`.  All of that already exists in
+the tree: `_cc_perturbed_ints` has the `vecpot` branch (`momentum_ints` / `momentum_eri`, carrying
+the `+Del -> -Del` sign), `_cc_amplitude_record` is perturbation-kind agnostic, and `CPHF` routes
+momentum through the same `kind='magnetic'` orbital Hessian.  The work is four sector methods and
+`_correlation_velocity_dipole_derivatives`, mirroring `cideriv.py`.
+
+`pi^e` involves no gauge origin and no field-dependent basis functions, so `E^(VG)` is
+origin-independent.
+
+### 17.1 Validation (the note's s.6), in the order to run it
+
+**Outcome.**  Items 1-4 pass; item 5 is deferred as agreed.
+
+| check | result |
+|---|---|
+| two electrons vs validated CISD VG-APT | 3.4e-13 |
+| momentum-form sum rule, Eq. (13) | ratios exactly 1 on every non-vanishing element |
+| vecpot `orbital_gauge` knob | 4.1e-14 |
+| perturbed-MO gauge knob | 4.7e-14 |
+| spin-orbital == spatial keystone | 3.3e-14 |
+
+The net factor the first item fixed is **-2**, and it is the note's own prefactor
+`E^(VG) = -(2 i e hbar/m) V` in atomic units with the `i` carried by the strip convention:
+`_mixed_overlap_tensor` returns `V`, and without the `-2` the ratio against CISD is exactly
+`-1/2` on every element.  So the sign was a convention count, not a question about the theory.
+
+1. **Two electrons against CISD.**  CCSD VG-APT against the validated CISD VG-APT (`test_080`),
+   element by element.  Needs no new reference and **fixes the net sign**, which is a count of
+   pycc's conventions (the `vecpot` branch's deliberate `-dF`/`-U`/`-momentum_eri`, the operator
+   `i`-strip, the sector prefactor) rather than a question about the theory, where
+   `E^(VG) = -(2 i e hbar/m) V` is unambiguous.  Use 6-31G, not a minimal basis (the DIIS
+   singularity that broke #262's CI).
+2. **SCF / Hermitian limit.**  With `T = Lambda = 0` only the orbital-orbital block survives and
+   must reproduce the HF VG-APT (`HFwfn.velocity_dipole_derivatives`, `test_071`).
+3. **The momentum-form sum rule, Eq. (13)**, which has the same shape as the AAT's and so reuses
+   the machinery validated in `cc_aat_validation_plan.md`::
+
+       sum_lambda E^(VG) = -(i e hbar/m) { sum_pq D^A_pq (grad_alpha)_pq
+                                           + sum_pq D_pq [grad_alpha, kappa^A]_pq }
+
+   Carry over the lesson from the AAT's test 3: against CISD the imaginary-perturbation density is
+   the **antisymmetrized** one-sided object.
+4. **SO == spatial keystone** and both gauge invariances, as for the AAT.
+5. **Origin-shift relation, Eq. (12), LAST** (PI 2026-10-23).  It needs electronic AATs at two
+   gauge origins, and psi4 1.9's `ao_angular_momentum()` takes no origin argument with no setter in
+   `psi4.core`, so the gauge origin is the molecular frame's.  The likely route needs no psi4
+   change: translating the molecule by `B` shifts the gauge origin by `-B`, with `no_com` /
+   `no_reorient` to stop psi4 moving the frame.
+
+**Diagnostics, not pass/fail** (the note's s.6 item 4): `sum_lambda [P]^VG` against `Q delta` and
+`E^(VG)` against the length gauge.  Both measure basis incompleteness and shrink with the basis.
+**This bears directly on `hf_reference_deriv_duplication.md`**, where the 3-chloro-1-butyne VG-APT
+missed charge neutrality by 13.3 while the LG-APT held to 1e-12, which is what motivated the
+cc-pCVTZ reference swap behind #260/#261.  Per the note, exact satisfaction is expected only for
+exact states, while the length gauge satisfies it in any basis that moves with the nuclei -- so
+that violation is a basis diagnostic, not a defect.  13.3 still looks large for cc-pVTZ, so that
+case is worth re-reading with the note in hand.
+
+### 17.2 What is already on the store (audited 2026-10-22)
 
 Every four-index **integral** is persisted and released; nothing of `nmo^4` size is held in RAM by
 the integral layer:
@@ -1868,7 +1984,7 @@ the integral layer:
 `_field_ints` keeps only the `nmo^2` `(U, dF)` resident, which is the right split: those are cheap
 to hold and expensive to rebuild.
 
-### 17.2 The two real exposures, both in the sector loops
+### 17.3 The two real exposures, both in the sector loops
 
 1. **The imaginary-perturbation records are held resident across each sector.**  Each of
    `compute_I*_AATs` hoists the three magnetic records out of the nuclear loop
