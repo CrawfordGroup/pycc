@@ -1984,26 +1984,104 @@ the integral layer:
 `_field_ints` keeps only the `nmo^2` `(U, dF)` resident, which is the right split: those are cheap
 to hold and expensive to rebuild.
 
-### 17.3 The two real exposures, both in the sector loops
+### 17.3 Audit result (measured 2026-10-24)
 
-1. **The imaginary-perturbation records are held resident across each sector.**  Each of
-   `compute_I*_AATs` hoists the three magnetic records out of the nuclear loop
-   (`magH = {b: self._cc_amplitude_record(...)}`), so three records, each carrying `dt2` and `dl2`
-   at `o^2 v^2`, stay resident for the whole pass.  A VG-APT adds three vecpot records, and a VCD
-   run that wants both tensors has six.  Options: hold only `(dt1, dl1)` resident and stream the
-   doubles per perturbation, or restructure so one pass over the nuclear loop feeds all four
-   sectors (see below), which removes the repetition rather than the residency.
-2. **Each record is read four times, once per sector.**  The four sectors each loop over all `3N`
-   nuclear perturbations and re-read the same `'ccamp'` record, so a `3N`-perturbation AAT performs
-   `12N` reads of an `o^2 v^2` record where `3N` would do.  This is the same shape of problem as
-   the Hessian's Pass-2 store traffic, and the fix is the same kind: one loop that accumulates all
-   four sector contributions per perturbation.  Measure the contraction-versus-I/O split before
-   restructuring, since the sectors are cheap contractions and the current form is much easier to
-   read; per-sector timers already exist to attribute it.
+Measured by wrapping `DerivStore.get_or_compute` / `get_or_compute_group` / `read` to count calls,
+bytes and time per quantity; no change to pycc.  Water, cc-pVDZ, `nmo` 24, `nmo^4` = 2.7 MB.
 
-Neither is a correctness issue, and neither should be addressed by making the AAT less readable
-until it is measured.  Both get worse by a factor of two when the VG-APT lands, which is why this
-audit belongs before that phase rather than after.
+**The exposure was neither of the two guessed above.**  It was that `_cc_perturbed_ints` returned
+`(df, deri, U)` and fetched the `nmo^4` block on every call, while three of the four blocks want
+`U` alone: three fetches per nuclear perturbation, four per imaginary one.
+
+| per AAT | before | after |
+|---|---|---|
+| `deri` reads | 18 / 47.8 MB | **0** |
+| `deri_field` reads | 9 / 23.9 MB | 3 / 8.0 MB |
+| `ccamp` reads | 48 / 1.8 MB | unchanged |
+| four-index reads | **71.7 MB** | **9.8 MB** |
+
+Fixed by the `cideriv.py` pattern: `_cc_perturbed_ints` returns `(df, U)` at `nmo^2`, RAM-cached,
+and `_cc_perturbed_eri` fetches the four-index block on demand for the single caller that needs it.
+The saving scales as `nmo^4` (20 GB per avoided read at CBY/cc-pVTZ).
+
+**Guess 1 (resident records) is a non-issue.**  Three records at `2 o^2 v^2` is 0.02 GB at
+H2O2/cc-pVTZ and 0.59 GB at CBY/cc-pVTZ; peak RSS over an AAT moved 0.40 -> 0.42 GB.
+
+**Guess 2 (12N vs 3N reads) was wrong.**  The blocks make 2 record fetches per perturbation, not 4:
+only the amplitude-amplitude block and one density block touch `ccamp`.
+
+**A full VCD run shares as designed.**  Hessian, then AAT, then VG-APT on one driver:
+
+| stage | wall | four-index reads | writes |
+|---|---|---|---|
+| Hessian | 12.0 s | 167.5 MB | 49.2 MB |
+| AAT | 1.3 s | 11.0 MB | 8.4 MB |
+| VG-APT | 0.9 s | 11.0 MB | 8.4 MB |
+
+The AAT writes 3 of its 12 records because the Hessian already wrote the 9 nuclear ones (s.15.3).
+
+### 17.4 The Pass-2 store-traffic item: measured, and not worth doing on this evidence
+
+The deferred item (each `dGam` re-read once per atom) asked for the contraction-versus-I/O split
+first.  Measured: the Hessian spends **0.07 s of 13.11 s, 0.6%, inside store reads**, at
+1.5-3.3 GB/s; the time is in the solves (`resp|build` 2.80 s, `ccamp|build` 1.68 s).  The AAT and
+VG-APT are 2.0% and 2.7%.  The `resp` counts do confirm the item's shape exactly -- 27 datasets
+read 81 times, once per atom for a 3-atom molecule -- it simply costs nothing here.  `eri1` is
+already minimal at one read per perturbation.
+
+**Recommendation: do not implement the residency fix on this evidence.**  Re-measure on the HPC
+filesystem before reconsidering: a laptop SSD with a 57 MB store in page cache is the best case,
+while a shared parallel filesystem with `nmo^4` in the tens of GB is the worst, and a `tmpfs`
+`$TMPDIR` would make the store RAM-backed (the #238 warning) and charge the apparent speed to the
+memory budget instead.
+
+## 18. Sign and convention audit of the field-type integrals -- PLANNED
+
+**Status: PLANNED, and a standing requirement (PI 2026-10-24).**  Several signs and factors on the
+imaginary (magnetic / momentum) perturbations were fixed by **matching a validated code until the
+numbers agreed**, not by derivation.  That is not acceptable as a method: the conventions are to be
+worked through from the theory and from the definitions of the integrals, so the implementation is
+known correct rather than observed consistent.
+
+### 18.1 Honest inventory: what is derived, what was fitted
+
+Fitted (agreement-driven, to be re-derived):
+
+| convention | where | how it was fixed |
+|---|---|---|
+| the `-2` of the CC VG-APT | `_correlation_velocity_dipole_derivatives` | ratio against validated CISD came out exactly `-1/2` |
+| the overall sign of the CC AAT | `_correlation_aat` + the `1/2` | two-electron agreement with validated CISD (s.15.8 test 1) |
+| `+Del -> -Del` | `ccderiv._cc_perturbed_ints` / `_cc_perturbed_eri`, `cideriv._cpci_ints` / `_cpci_eri` | inherited from CIderiv, never re-derived |
+| the biorthogonal doubles weight (1/4 SO, 1/2 spatial) | `_biorthogonal_overlap` | matched SO against spatial numerically |
+
+Derived (but worth re-checking against the integral definitions):
+
+- the orbital-orbital **commutator**, from `<d_x phi_p|phi_q> = -<phi_p|d_x phi_q>` plus
+  `C^y = i C U` giving a symmetric `U` (s.15.0) -- *found* by a gauge-invariance sweep, then
+  derived;
+- the imaginary-perturbation density as the **antisymmetrized** one-sided object `T - T^T`
+  (`cc_aat_validation_plan.md`, test 3).
+
+### 18.2 The chain to work through
+
+Each step carries a sign or factor, and the audit must establish each from its definition:
+
+1. **psi4's integrals.**  What `mints.ao_angular_momentum()` and `mints.ao_nabla()` actually
+   return, including sign: is it `L = r x p` or `-L`, `Del` or `-Del`, and with which origin.
+2. **The operators in `hamiltonian.py`.**  `self.m = (C^T (-0.5 L_ao) C) * i` (the `-(e/2 m_e) L`
+   comment) and `self.p = (C^T Del_ao C) * i` (the `(-e)(-i hbar) Del` comment).  Both the `-0.5`
+   and the two `* 1.0j` need to follow from the stated operator definitions.
+3. **The `i`-strip.**  `np.real(-1.0j * op)` in `CPHF._field_ints` and
+   `CCderiv._perturbation_ints`, and the claim that every downstream quantity is then real.
+4. **The `+Del -> -Del` flips** at the four `vecpot` call sites.
+5. **The property prefactors.**  Eq. (39)'s `1/2`, Eq. (11)'s `1/2` and its `-(2 i e hbar/m)`, and
+   the nuclear terms `(Z_A/4) eps R` (AAT) and `Z_A delta` (APT).
+
+### 18.3 How the result should be recorded
+
+A short derivation note in `docs/`, and a one-line pointer in each docstring that applies a sign or
+factor, so the next reader sees *why* rather than *that*.  Where a test currently pins a convention
+(the two-electron identity), it should remain as a regression test but stop being the justification.
 
 ## Appendix A: condensed changelog (by PR)
 

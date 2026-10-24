@@ -1178,17 +1178,26 @@ class CCderiv(CorrelatedDerivs):
                 else d.overlap_half(atom))
 
     def _cc_perturbed_ints(self, pert, gauge='non-canonical'):
-        """``(df, deri, U)`` for one :class:`~pycc.cphf.Perturbation`: the **orbital-relaxed**
-        perturbed Fock and two-electron integrals, and the orbital response.
+        """``(df, U)`` for one :class:`~pycc.cphf.Perturbation`, both ``nmo x nmo``: the
+        **orbital-relaxed** perturbed Fock matrix and the orbital response.  RAM-cached.
 
         Relaxed, not bare.  :meth:`_response_density` deliberately drives the perturbed amplitudes
-        with the bare operator (the orbital-unrelaxed dynamic response); Eq. (39) needs the
-        relaxed perturbation, which is why this builder exists alongside it.
+        with the bare operator (the orbital-unrelaxed dynamic response); Eq. (39) needs the relaxed
+        perturbation, which is why this builder exists alongside it.
 
-        Every branch takes its response from :meth:`_full_occ_cphf` (core + active), so the
-        nuclear and magnetic sides of the overlap span the same occupied space under a frozen
-        core.  ``deri`` is fetched, never cached here: it is one ``nmo^4`` per perturbation, and
-        the nuclear branch is already backed by the on-disk store."""
+        Every branch takes its response from :meth:`_full_occ_cphf` (core + active), so the nuclear
+        and imaginary sides of the overlap span the same occupied space under a frozen core.
+
+        The ``nmo^4`` perturbed two-electron integrals are **not** returned here: three of the four
+        overlap blocks want ``U`` alone, and fetching the four-index block alongside it re-read it
+        three times per nuclear perturbation and four times per imaginary one.  They are
+        :meth:`_cc_perturbed_eri`, fetched on demand by the one caller that needs them."""
+        cache = getattr(self, '_cc_ints_cache', None)
+        if cache is None:
+            cache = self._cc_ints_cache = {}
+        key = (pert, gauge, self.perturbed_mo_gauge)
+        if key in cache:
+            return cache[key]
         cc = self.ccwfn
         ncore = cc.o.stop - cc.no
         cphf = self._full_occ_cphf()
@@ -1197,18 +1206,37 @@ class CCderiv(CorrelatedDerivs):
             # here and the one the base's second-derivative path builds are the same solve.
             canonical = self.perturbed_mo_gauge == 'canonical'
             df = cphf.perturbed_fock(pert, ncore, canonical=canonical)
-            deri = cphf.perturbed_eri(pert, ncore, canonical=canonical)
             U = cphf.full_U(pert, ncore, canonical=canonical)
         elif pert.kind == 'magnetic':
             U, df = cphf.magnetic_ints(pert.comp, ncore, gauge)
-            deri = cphf.magnetic_eri(pert.comp, ncore, gauge)
         elif pert.kind == 'vecpot':
             U, df = cphf.momentum_ints(pert.comp, ncore, gauge)
             U, df = -np.asarray(U), -np.asarray(df)          # +Del -> -Del, as in CIderiv
-            deri = -np.asarray(cphf.momentum_eri(pert.comp, ncore, gauge))
         else:
             raise ValueError(f"unknown perturbation kind {pert.kind!r}")
-        return np.asarray(df), np.asarray(deri), np.asarray(U)
+        cache[key] = (np.asarray(df), np.asarray(U))
+        return cache[key]
+
+    def _cc_perturbed_eri(self, pert, gauge='non-canonical'):
+        """The ``nmo^4`` perturbed two-electron integrals for ``pert`` -- fetched on demand and
+        **not** cached here.
+
+        Deliberately uncached, as in :meth:`~pycc.cideriv.CIderiv._cpci_eri`: only the
+        perturbed-amplitude solve wants them, and holding one per perturbation would be
+        ``(3N + 3) * nmo^4`` resident.  Nothing is recomputed by fetching instead -- the nuclear
+        branch reads the on-disk store and the imaginary branches read the store-backed magnetic /
+        momentum engines."""
+        cc = self.ccwfn
+        ncore = cc.o.stop - cc.no
+        cphf = self._full_occ_cphf()
+        if pert.kind == 'nuclear':
+            canonical = self.perturbed_mo_gauge == 'canonical'
+            return np.asarray(cphf.perturbed_eri(pert, ncore, canonical=canonical))
+        if pert.kind == 'magnetic':
+            return np.asarray(cphf.magnetic_eri(pert.comp, ncore, gauge))
+        if pert.kind == 'vecpot':
+            return -np.asarray(cphf.momentum_eri(pert.comp, ncore, gauge))   # +Del -> -Del
+        raise ValueError(f"unknown perturbation kind {pert.kind!r}")
 
     def _cc_amplitude_ctx(self, pert, gauge):
         """The store ctx for a perturbed-amplitude record.
@@ -1247,7 +1275,8 @@ class CCderiv(CorrelatedDerivs):
         def _build():
             dF, dERI, dLL = df, deri, dL
             if dF is None:
-                dF, dERI, _U = self._cc_perturbed_ints(pert, gauge)
+                dF = self._cc_perturbed_ints(pert, gauge)[0]
+                dERI = self._cc_perturbed_eri(pert, gauge)
             if dLL is None and cc.orbital_basis != 'spinorbital':
                 dLL = 2.0 * dERI - dERI.swapaxes(2, 3)
             label = perturbation_label(pert, cc.ref.molecule())
@@ -1327,7 +1356,7 @@ class CCderiv(CorrelatedDerivs):
         c = self.contract
         natom = self.wfn.derivatives.natom
         out = np.zeros((3 * natom, 3))
-        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[2] for g in range(3)}
+        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[1] for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
@@ -1349,7 +1378,7 @@ class CCderiv(CorrelatedDerivs):
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
-            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
+            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[1]
             Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
             for g in range(3):
                 out[la, g] = -c('pq,pq->', dD_y[g], Ur_eff)
@@ -1376,11 +1405,11 @@ class CCderiv(CorrelatedDerivs):
         natom = self.wfn.derivatives.natom
         D_pq = np.asarray(self._unrelaxed_densities()[0])
         out = np.zeros((3 * natom, 3))
-        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[2] for g in range(3)}
+        U_y = {g: self._cc_perturbed_ints(Perturbation(kind, g), gauge)[1] for g in range(3)}
         t_stage = time.time()
         for la in range(3 * natom):
             A, cart = divmod(la, 3)
-            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[2]
+            U_R = self._cc_perturbed_ints(Perturbation('nuclear', (A, cart)), gauge)[1]
             Ur_eff = U_R + np.asarray(self._half_overlap(A)[cart]).T
             for g in range(3):
                 out[la, g] = c('pq,pq->', D_pq, U_y[g] @ Ur_eff - Ur_eff @ U_y[g])

@@ -111,7 +111,7 @@ def test_cc_aat_translational_sum_rule(orbital_basis):
     for b in range(3):
         p = Perturbation('magnetic', b)
         magD[b] = d._aat_perturbed_opdm(p)
-        magU[b] = d._cc_perturbed_ints(p)[2]
+        magU[b] = d._cc_perturbed_ints(p)[1]
     D0 = np.asarray(d._unrelaxed_densities()[0])
     aat = np.asarray(d._correlation_aat())
 
@@ -140,7 +140,7 @@ def test_cc_aat_translational_zero_sums():
             p = Perturbation('nuclear', (A, a))
             rec = [np.asarray(x) for x in d._cc_amplitude_record(p)]
             rec.append(np.asarray(d._aat_perturbed_opdm(p)))
-            rec.append(np.asarray(d._cc_perturbed_ints(p)[2]))
+            rec.append(np.asarray(d._cc_perturbed_ints(p)[1]))
             half = np.asarray(d.wfn.derivatives.overlap_half(A)[a]).T
             if sums is None:
                 sums = [x.copy() for x in rec]

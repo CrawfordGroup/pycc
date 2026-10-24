@@ -97,7 +97,7 @@ def test_cc_vg_apt_momentum_sum_rule(orbital_basis):
     for g in range(3):
         p = Perturbation('vecpot', g)
         aD[g] = d._aat_perturbed_opdm(p)
-        aU[g] = d._cc_perturbed_ints(p)[2]
+        aU[g] = d._cc_perturbed_ints(p)[1]
     D0 = np.asarray(d._unrelaxed_densities()[0])
     V = d._mixed_overlap_tensor('vecpot', 'non-canonical')     # the tensor without the -2
 
