@@ -19,10 +19,10 @@ test 3 was derived in discussion and has not been checked numerically.
 | Test | Status |
 |---|---|
 | 1. Two-electron vs CISD | **PASS**, 2.0e-17 (STO-3G) and 3.2e-14 (6-31G) |
-| 2. Non-interacting fragments | **PASS in the limit**, deviation falls as R^-2 to 3.8e-6 relative at 2000 bohr |
+| 2. Non-interacting fragments | **PASS**, 1.5e-14 vs CISD's 4.4e-2 (`test_cc_aat_size_intensivity`); the R^-2 tail is gauge-origin physics, mechanism now measured |
 | 3. Translational sum rule | **PASS for CC**, 4e-12; independently confirmed on validated CISD, 1.1e-12; MP2 open |
 | 4. Orbital-convention invariance | **PASS**, 3.8e-13 (nuclear knob) and 5.4e-13 (magnetic knob) |
-| 5. Amplitude block vs response | **PASS in magnitude** to 3e-7 extrapolated; relative sign is a convention |
+| 5. Amplitude block vs response | **PASS in magnitude** to 8e-11 (H2O2, 4 frequencies, 2 Richardson levels); sign is a convention |
 
 The spin-orbital route adds a sixth check, pycc's usual closed-shell keystone: the spin-orbital and
 spin-adapted paths agree to **1.6e-14** on water/STO-3G, and the spin-orbital path independently
@@ -67,7 +67,7 @@ For two electrons CCSD is exact, so the CCSD AAT must equal the normalized CISD
 AAT element by element, to convergence. CCD must likewise equal CID, because
 $T_2^2$ vanishes.
 
-- Systems: H$_2$, HeH$^+$ or H$_3^+$ at a distorted $C_1$ geometry, so that the
+- Systems: a two-electron system at a genuinely $C_1$ geometry, so that the
   tensors are non-trivial.
 - What it tests: the whole pipeline at once (perturbed $T$ and $\Lambda$, all
   three blocks, the orbital terms and the prefactors).
@@ -80,8 +80,8 @@ $T_2^2$ vanishes.
   nonlinear terms in the perturbed amplitude equations.
 - New code needed: none.
 
-**Result (PASS).** H$_3^+$ at a distorted $C_1$ geometry (1.700 / 1.430 / 0.170
-bohr offsets), all-electron, CCSD and CISD both to 1e-13. Correlation energies
+**Result (PASS).** H$_4^{2+}$ on the H$_2$O$_2$ skeleton (central H-H 1.100 A, terminals
+0.950 and 1.200 A, angles 100.0 deg, dihedral 113.7 deg), all-electron, CCSD and CISD both to 1e-13. Correlation energies
 agree to 6.5e-16 (STO-3G) and 5.0e-15 (6-31G), confirming exactness, and the
 correlation AATs agree element by element: max deviation **2.0e-17** (STO-3G)
 and **3.2e-14** (6-31G), ratio exactly 1. This fixes the overall sign from
@@ -120,8 +120,16 @@ $\lambda^R \cdot t^H = \lambda^R_A \cdot (t^H_A + t^H_B) = \lambda^R_A \cdot t^H
     identical distant monomers give degenerate, delocalized canonical orbitals.
 - New code needed: none.
 
-**Result (PASS in the limit).** Two neutral non-identical fragments, A = water
-at a distorted $C_1$ geometry and B = H$_2$, 6-31G, all-electron, `no_com` and
+**Result (PASS, now exact and in the suite).**  The test is `test_cc_aat_size_intensivity`:
+fragment A the $C_1$ H$_2$O$_2$, fragment B a single He at 40 bohr, 6-31G, deviation **1.5e-14**
+against CISD's 4.4e-2 on the identical geometry.  It is exact rather than asymptotic because
+6-31G helium has **exactly zero** dipole polarizability, which removes the R^-2 tail described
+below; that tail is gauge-origin physics, not a size-intensivity failure, so excluding it isolates
+the property under test.  **Raising the basis makes this test fail for an innocent reason.**
+
+**The R^-2 tail, and its mechanism (measured 2026-11-07).**  Earlier result, retained because it
+is what the tail actually is: Two neutral non-identical fragments, A = water
+at a $C_s$ geometry and B = H$_2$, 6-31G, all-electron, `no_com` and
 `no_reorient` so the gauge origin is common and fragment A sits at identical
 absolute coordinates in both runs. Monomer scale max$|I|$ = 1.59e-2. Fragment-A
 deviation against separation:
@@ -147,19 +155,33 @@ like R^-2, so precision erodes from both ends. **Control:** the identical setup 
 validated CISD code gives 1.152e-3 at *both* 40 and 120 bohr, identical to four
 figures, which is its size-consistency error and confirms the test discriminates.
 
-The R^-2 residual is attributed (hypothesis, not verified) to the common gauge
-origin: with the origin on A, the operator on B is
-$m_B \approx \tfrac12 (\mathbf R \times \mathbf p_B) + \dots$, whose first term
-grows like R, so B's magnetically perturbed density carries an induced dipole
-growing like R and produces a field $\sim R/R^3 = R^{-2}$ at A. Charge-independent,
-which matches: a cationic fragment A (H$_3^+$) gives the same magnitude and the
-same power. Confirm by replacing H$_2$ with He, whose magnetic response is much
-smaller; the deviation should drop sharply at fixed R.
+The R^-2 residual is the common gauge origin: with the origin on A, the operator
+on B is $m_B \approx \tfrac12 (\mathbf R \times \mathbf p_B) + \dots$, whose first
+term grows like R, so B's magnetically perturbed density carries an induced dipole growing like R
+and produces a field $\sim R/R^3 = R^{-2}$ at A.  **Three measurements now support this**, where
+before there was only the power law:
 
-**TO DISCUSS WITH THE PI.** The R^-2 explanation above is an untested hypothesis
-and the PI has asked to discuss it before it is relied on (2026-10-22). What is
-established is the measured power law and the CISD control; the attribution to
-the common gauge origin is not.
+| basis for He | $\alpha$(He), a.u. | deviation at 40 bohr |
+|---|---|---|
+| 6-31G | **0.000000** | 1.5e-14 |
+| cc-pVDZ | 0.308708 | 3.45e-06 |
+| aug-cc-pVDZ | 1.303923 | 1.26e-05 |
+
+1. the exponent is **2.00** over 40 to 1500 bohr (cc-pVDZ, deviation falling 1450x);
+2. it **vanishes identically** when B cannot polarize (6-31G helium is s-only, $\alpha$ exactly 0);
+3. its size **tracks $\alpha$(B)**: deviation ratio 3.66 against an $\alpha$ ratio of 4.22.
+
+**A caution for anyone reading the earlier draft.** An initial He control in 6-31G appeared to show
+the tail was specific to a *polyatomic* B.  That was wrong: 6-31G helium has no p functions and so
+cannot polarize at all, and the agreement was an artifact of the basis rather than of B's
+structure.  The tail returns in cc-pVDZ.  The derivation is still the PI's to confirm; this is
+measurement only.
+
+**STILL TO DISCUSS WITH THE PI**, though the evidence has moved (2026-11-07). The PI asked to
+discuss the R^-2 attribution before it is relied on. Measured now: the power law (2.00 over a
+37-fold range), the vanishing at zero polarizability, and the scaling with alpha(B). What remains
+unconfirmed is the derivation, not the phenomenology. Nothing in the test suite depends on the
+attribution, since `test_cc_aat_size_intensivity` excludes the tail by construction.
 
 ## Test 3: translational sum rule (finite-basis form)
 
@@ -335,8 +357,30 @@ at $\pm\omega$ for small $\omega$ give the slope numerically.
   so a discrepancy here needs interpretation before it is called a bug.
 - New code needed: a small driver.
 
-**Result (PASS in magnitude, sign is a convention).** Distorted $C_1$ water,
-6-31G, CCSD. LHS is the amplitude block from BARE operators (orbitals frozen,
+**Result (PASS in magnitude, sign is a convention).** Now a regression test,
+`test_cc_aat_amplitude_block_vs_response_code`.
+
+Re-run on the $C_1$ H$_2$O$_2$ / 6-31G, where all **9 of 9** block elements are live against 4 of 9
+on the $C_s$ water. Only the frequency derivative is numerical: $G'(\omega)$ is analytic at each
+frequency and $G'(0) = 0$ exactly, so $G'(\omega)/\omega$ is a difference quotient whose error
+carries only even powers of $\omega$. Each Richardson level removes the leading one, and the
+measured residuals follow that exactly:
+
+| | max\|ratio + 1\| | scaling |
+|---|---|---|
+| $\omega$ = 0.0200 | 8.21e-03 | |
+| $\omega$ = 0.0100 | 2.05e-03 | $\omega^2$ (ratio 4.0) |
+| $\omega$ = 0.0050 | 5.11e-04 | 4.0 |
+| $\omega$ = 0.0025 | 1.28e-04 | 4.0 |
+| Richardson level 1 | 6.08e-08 | $\omega^4$ (ratio 16.0) |
+| **Richardson level 2** | **8.15e-11** | $\omega^6$ |
+
+**8e-11 is the number to quote**, from four frequencies and two extrapolation levels (14 s). An
+earlier two-frequency run gave 1e-6, which I wrongly called a convergence floor; there is no floor
+in sight and the scaling is pure truncation, so the agreement is limited only by how many
+frequencies one computes.
+
+Original run, $C_s$ water, 6-31G, CCSD. LHS is the amplitude block from BARE operators (orbitals frozen,
 `zero_eri`/`zero_L` into the perturbed amplitude and Lambda solvers at
 $\omega = 0$); RHS is $G'(\omega)/\omega$, since $G'$ is already the odd-in-$\omega$
 part so its slope at zero is the same as $[LR(+\omega) - LR(-\omega)]/2\omega$.

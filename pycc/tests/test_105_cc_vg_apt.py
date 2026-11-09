@@ -29,20 +29,46 @@ import pycc
 from pycc.cphf import Perturbation
 
 
-H3P = """1 1
-H  0.000000000000  0.000000000000  0.000000000000
-H  1.700000000000  0.000000000000  0.000000000000
-H  0.620000000000  1.430000000000  0.170000000000
+# Two electrons AND genuinely C1, on the H2O2 skeleton the production cases use: a central H-H
+# with one terminal H on each, twisted.  A triatomic cannot be C1, since three nuclei are always
+# coplanar and that plane is a mirror plane.  Internal coordinates (angstrom/degrees):
+#     r(H1-H2) = 1.100   r(H1-H3) = 0.950   r(H2-H4) = 1.200
+#     a(H3-H1-H2) = a(H4-H2-H1) = 100.0     d(H3-H1-H2-H4) = 113.7
+# The UNEQUAL terminal distances are what make it C1: with them equal the structure is C2, which
+# psi4 confirms, so the distortion is load-bearing rather than decorative.  HOMO-LUMO gap 0.57 Eh.
+H4_2PLUS = """2 1
+H   0.511219079100 -0.217582036777 -1.059858587625
+H   0.511219079100 -0.217582036777  1.018840150378
+H   0.511219079100  1.550384055673 -1.371598710702
+H  -1.533657237299 -1.115219982120  1.412617147949
 symmetry c1
 units bohr
+no_com
+no_reorient
 """
 
-WATER_C1 = """
+# Cs, not C1 (triatomic).  no_com / no_reorient keep psi4 from rotating the mirror plane onto a
+# coordinate plane, which would zero 15 of the 27 components; it also pins the AAT's gauge origin.
+WATER_CS = """
 O  0.000000000000  0.000000000000 -0.129476880010
 H  0.080000000000 -1.494186750504  1.027446024111
 H -0.050000000000  1.394186750504  1.127446024111
 symmetry c1
 units bohr
+no_com
+no_reorient
+"""
+
+# Genuinely C1: unequal O-H lengths and an asymmetric dihedral remove the C2 of ordinary H2O2.
+HOOH_C1 = """
+O  0.000000000000  1.317000000000  0.000000000000
+O  0.000000000000 -1.317000000000  0.000000000000
+H  1.585000000000  1.663000000000  0.982000000000
+H -1.471000000000 -1.738000000000  1.058000000000
+symmetry c1
+units bohr
+no_com
+no_reorient
 """
 
 
@@ -61,13 +87,15 @@ def _ccderiv(geom, basis='STO-3G', freeze_core='false', model='CCSD', orbital_ba
     return pycc.CCderiv(cc)
 
 
-def test_cc_vg_apt_two_electron_equals_cisd():
+@pytest.mark.parametrize('basis', ['6-31G', 'cc-pVDZ'])
+def test_cc_vg_apt_two_electron_equals_cisd(basis):
     """For two electrons CCSD is exact, so its correlation velocity-gauge APT must equal the
     validated CISD one.  This is what fixes the ``-2`` of ``E^(VG) = -(2 i e hbar/m) V``: without
     it the ratio is exactly -1/2, which no invariance test would reveal.
 
-    6-31G, since H3+ in a minimal basis has a singular DIIS B matrix on some LAPACK builds."""
-    wfn = _scf(H3P, basis='6-31G')
+    Four nuclei on the H2O2 skeleton with unequal terminal distances, so genuinely C1 (equal ones
+    give C2) and every component is exercised; a triatomic is Cs at best.  Two bases: 6-31G, and cc-pVDZ for polarization functions and a real virtual space."""
+    wfn = _scf(H4_2PLUS, basis=basis)
 
     cc = pycc.ccwfn(wfn, model='CCSD', orbital_basis='spatial')
     cc.solve_cc(1e-13, 1e-13, 200)
@@ -81,16 +109,26 @@ def test_cc_vg_apt_two_electron_equals_cisd():
     assert np.abs(V_cc - V_ci).max() < 1e-10, np.abs(V_cc - V_ci).max()
 
 
-@pytest.mark.parametrize('orbital_basis', ['spatial', 'spinorbital'])
-def test_cc_vg_apt_momentum_sum_rule(orbital_basis):
+# The spatial legs run on the C1 H2O2 in 6-31G: 36 independent components and a real valence
+# space, and these are the numbers quoted for the validation.  The spin-orbital leg stays on
+# water/STO-3G because it costs 2 s there against 67 s on H2O2, and its job is only to show
+# that code path satisfies the identity -- `..._spinorbital_equals_spatial` pins the two
+# against each other directly.
+@pytest.mark.parametrize('orbital_basis,freeze_core,geom,basis',
+                         [('spatial', 'false', HOOH_C1, '6-31G'),
+                          ('spatial', 'true', HOOH_C1, '6-31G'),
+                          ('spinorbital', 'false', WATER_CS, 'STO-3G')],
+                         ids=['H2O2-spatial-AE', 'H2O2-spatial-FC', 'H2O-SO-AE'])
+def test_cc_vg_apt_momentum_sum_rule(orbital_basis, freeze_core, geom, basis):
     """Eq. (13): summing over atoms gives the vector-potential derivative of the momentum
     expectation value::
 
         sum_lambda 2 V = sum_pq D^A_pq (grad_alpha)_pq + sum_pq D_pq [grad_alpha, kappa^A]_pq
 
     Same bracket as the AAT's sum rule with A in place of H.  The right-hand side needs no nuclear
-    response at all, so the two sides share no machinery."""
-    d = _ccderiv(WATER_C1, orbital_basis=orbital_basis)
+    response at all, so the two sides share no machinery.  Run frozen-core as well: it is the only
+    value anchor that survives a frozen core, the two-electron identity having no core to freeze."""
+    d = _ccderiv(geom, basis=basis, orbital_basis=orbital_basis, freeze_core=freeze_core)
     c = d.contract
     grad = [np.real(-1.0j * np.asarray(d.ccwfn.H.p[a])) for a in range(3)]
     aD, aU = {}, {}
@@ -117,7 +155,7 @@ def test_cc_vg_apt_gauge_invariance():
     """Invariant to the redundant vecpot oo/vv response and, separately, to the perturbed-MO gauge
     that governs the nuclear perturbations."""
     for fc in ('false', 'true'):
-        d = _ccderiv(WATER_C1, freeze_core=fc)
+        d = _ccderiv(WATER_CS, freeze_core=fc)
         nc = np.asarray(d._correlation_velocity_dipole_derivatives('non-canonical'))
         ca = np.asarray(d._correlation_velocity_dipole_derivatives('canonical'))
         assert np.abs(nc - ca).max() < 1e-9, (fc, np.abs(nc - ca).max())
@@ -130,18 +168,19 @@ def test_cc_vg_apt_gauge_invariance():
 
 def test_cc_vg_apt_spinorbital_equals_spatial():
     """The closed-shell keystone, as for the AAT."""
-    sp = np.asarray(_ccderiv(WATER_C1, orbital_basis='spatial')
-                    ._correlation_velocity_dipole_derivatives())
-    so = np.asarray(_ccderiv(WATER_C1, orbital_basis='spinorbital')
-                    ._correlation_velocity_dipole_derivatives())
-    assert np.abs(sp).max() > 1e-3, np.abs(sp).max()
-    assert np.abs(sp - so).max() < 1e-10, np.abs(sp - so).max()
+    for fc in ('false', 'true'):
+        sp = np.asarray(_ccderiv(WATER_CS, orbital_basis='spatial', freeze_core=fc)
+                        ._correlation_velocity_dipole_derivatives())
+        so = np.asarray(_ccderiv(WATER_CS, orbital_basis='spinorbital', freeze_core=fc)
+                        ._correlation_velocity_dipole_derivatives())
+        assert np.abs(sp).max() > 1e-3, (fc, np.abs(sp).max())
+        assert np.abs(sp - so).max() < 1e-10, (fc, np.abs(sp - so).max())
 
 
 def test_cc_vg_apt_through_the_facade_and_vcd():
     """``pycc.apt(..., gauge='velocity')`` and ``pycc.vcd(..., velocity_gauge=True)`` both reach it;
     before this existed the latter died with an AttributeError."""
-    d = _ccderiv(WATER_C1)
+    d = _ccderiv(HOOH_C1, basis='6-31G')
     P = pycc.apt(d, gauge='velocity')
     assert np.abs(np.asarray(P.correlation)).max() > 1e-4
     assert np.allclose(np.asarray(P.total),
@@ -156,7 +195,7 @@ def test_cc_vg_apt_through_the_facade_and_vcd():
 
 def test_cc_vg_apt_ccsdt_raises():
     """CCSD only, as for the AAT."""
-    cc_t = pycc.ccwfn(_scf(WATER_C1), model='CCSD(T)', orbital_basis='spatial',
+    cc_t = pycc.ccwfn(_scf(WATER_CS), model='CCSD(T)', orbital_basis='spatial',
                       make_t3_density=True)
     cc_t.solve_cc(1e-12, 1e-12, 100)
     with pytest.raises(NotImplementedError, match='CCSD only'):
