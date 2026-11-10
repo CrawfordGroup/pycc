@@ -220,14 +220,17 @@ class ccdensity(object):
         Returns
         -------
         onepdm : NumPy array
-            the CC one-electron density as a single, full matrix (only the correlated contribution)
+            the CC one-electron density as a single, full matrix (only the correlated contribution),
+            in the MO layout of the Hamiltonian: ``nmo x nmo`` in the spatial path, with the
+            frozen-core rows/columns zero (``o``/``v`` are offset past the core), and
+            ``nact x nact`` in the spin-orbital path (the core is excluded from its MO space)
         """
         o = self.ccwfn.o
         v = self.ccwfn.v
         no = self.ccwfn.no
         nv = self.ccwfn.nv
-        nt = no + nv
         F = self.ccwfn.H.F
+        nt = F.shape[0]   # matches the property integrals contracted with this density
         ERI = self.ccwfn.H.ERI
         L = self.ccwfn.H.L if self.ccwfn.orbital_basis == 'spatial' else None
 
