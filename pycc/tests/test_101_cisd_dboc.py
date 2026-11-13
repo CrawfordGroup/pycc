@@ -41,11 +41,11 @@ symmetry c1
 }
 
 
-def _cisd_dboc_cm(geom):
+def _cisd_dboc_cm(geom, fc=False):
     psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk',
+    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk', 'freeze_core': 'true' if fc else 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     psi4.geometry(geom)
     e, wfn = psi4.energy('scf', return_wfn=True)
@@ -66,7 +66,16 @@ def test_cisd_dboc_h2o():
     assert abs(_cisd_dboc_cm(GEOMS['h2o']) - 615.69) < 0.01
 
 
-def _cisd_wfn(geom, basis='6-31G'):
+def test_cisd_dboc_hf_frozen_core():
+    """Frozen-core CISD DBOC (pycc regression anchors; CFOUR cannot do frozen-core CISD DBOC)."""
+    assert abs(_cisd_dboc_cm(GEOMS['hf'], fc=True) - 615.809107) < 1e-4
+
+
+def test_cisd_dboc_h2o_frozen_core():
+    assert abs(_cisd_dboc_cm(GEOMS['h2o'], fc=True) - 615.101001) < 1e-4
+
+
+def _cisd_wfn(geom, basis='6-31G', fc=False):
     """Converged CISD wavefunction only (the reference checks above go through _cisd_dboc_cm,
     which returns the DBOC directly and so cannot be reused for a two-driver comparison).
 
@@ -82,7 +91,7 @@ def _cisd_wfn(geom, basis='6-31G'):
     psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': basis, 'scf_type': 'pk',
+    psi4.set_options({'basis': basis, 'scf_type': 'pk', 'freeze_core': 'true' if fc else 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     psi4.geometry(geom)
     _e, wfn = psi4.energy('scf', return_wfn=True)
@@ -108,3 +117,12 @@ def test_cisd_dboc_perturbed_mo_gauge_invariance():
     cd._gauge_override = 'canonical'
     ca = cd.dboc()
     assert abs(nc - ca) < 1e-9 * max(1.0, abs(nc)), (nc, ca)
+
+
+def test_cisd_dboc_frozen_core_perturbed_mo_gauge_invariance():
+    """Frozen-core CISD DBOC is invariant to the perturbed-MO gauge."""
+    ci = _cisd_wfn(GEOMS['h2o'], fc=True)
+    nc = CIderiv(ci).dboc()
+    cd = CIderiv(ci)
+    cd._gauge_override = 'canonical'
+    assert abs(nc - cd.dboc()) < 1e-9 * max(1.0, abs(nc)), (nc, cd.dboc())

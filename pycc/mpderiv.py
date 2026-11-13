@@ -808,10 +808,143 @@ class MPderiv(CorrelatedDerivs):
                 p = Perturbation('nuclear', (A, cart))
                 half_S = np.asarray(
                     mp.derivatives.overlap_half(A)[cart]).T
-                Ueff = np.asarray(cphf.full_U(p, ncore)).real + half_S
+                Ueff = np.asarray(cphf.full_U(
+                    p, ncore, canonical=self.perturbed_mo_gauge == 'canonical')).real + half_S
                 Uov = Ueff[o, v]
-                scf = (2.0 * np.sum(Uov ** 2)
+                scf = (2.0 * np.sum(Ueff[:nof, v] ** 2)
                        - 2.0 * np.trace((half_S.T @ half_S)[:nof, :nof]))
                 E += w * (scf - 4.0 * c('ijab,ia,jb->', tau, Uov, Uov))
             self._atom_step('MP2 DBOC(MP1)', A, mol.natom(), t_stage)
+        return E
+
+    @staticmethod
+    def _pt2_singles_residual(eri, t2, o, v, c):
+        """Second-order singles driver R_S (D_ia t1^(2) = R_S)."""
+        L = 2.0 * eri - eri.swapaxes(2, 3)
+        return (c('akcd,ikcd->ia', L[v, o, v, v], t2)
+                - c('klic,klac->ia', L[o, o, o, v], t2))
+
+    @staticmethod
+    def _pt2_doubles_residual(eri, t2, o, v, c):
+        """Second-order doubles (MP3) driver R_D (D_ijab t2^(2) = R_D)."""
+        L = 2.0 * eri - eri.swapaxes(2, 3)
+
+        def sym(x):
+            return 0.5 * (x + x.transpose(1, 0, 3, 2))
+        return (sym(c('abcd,ijcd->ijab', eri[v, v, v, v], t2))
+                + sym(c('klij,klab->ijab', eri[o, o, o, o], t2))
+                + (5.0 / 3.0) * sym(c('akic,jkbc->ijab', L[v, o, o, v], t2))
+                - (2.0 / 3.0) * sym(c('akic,kjbc->ijab', L[v, o, o, v], t2))
+                - (1.0 / 3.0) * sym(c('kaic,kjcb->ijab', eri[o, v, o, v], t2))
+                - (2.0 / 3.0) * sym(c('kaic,jkcb->ijab', eri[o, v, o, v], t2))
+                + (2.0 / 3.0) * sym(c('kaci,kjcb->ijab', eri[o, v, v, o], t2))
+                - (2.0 / 3.0) * sym(c('kaci,jkcb->ijab', eri[o, v, v, o], t2))
+                - 2.0 * sym(c('kbic,kjac->ijab', eri[o, v, o, v], t2)))
+
+    @timed('MP2 DBOC(order-consistent)')
+    def dboc_mp2_oc(self):
+        """Electronic DBOC (a.u.) for the order-consistent MP2 wave function
+        (Def-B / Gauss), Tajti, Szalay, and Gauss, J. Chem. Phys. 127, 014102
+        (2007) Eq. (31); CFOUR's CALC=MP2 DBOC=ON.  Bare nuclear masses."""
+        from .cphf import Perturbation
+        mp = self.mp
+        c = self.contract
+        nmo, nof = mp.nmo, mp.o.stop
+        ncore = nof - mp.no
+        o, u = slice(0, nof), slice(nof, nmo)
+        gauge = 'oo' if self.perturbed_mo_gauge == 'canonical' else False
+        cphf = self._full_occ_cphf()
+        mol = mp.ref.molecule()
+        natom = mol.natom()
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+
+        ERI = np.asarray(mp.H.ERI)
+        eps = np.diag(np.asarray(mp.H.F))
+        Dia = eps[o, None] - eps[None, u]
+        Dijab = (eps[o, None, None, None] + eps[None, o, None, None]
+                 - eps[None, None, u, None] - eps[None, None, None, u])
+
+        t2 = np.zeros((nof, nof, nmo - nof, nmo - nof))
+        t2[ncore:, ncore:] = np.asarray(mp.t2)
+        tau = 2.0 * t2 - t2.swapaxes(2, 3)
+        nrm2 = c('ijab,ijab->', tau, t2)
+        c0 = 1.0 / np.sqrt(1.0 + nrm2)
+        c2 = c0 * t2
+        tau_n = 2.0 * c2 - c2.swapaxes(2, 3)
+
+        def fc(x):
+            x = x.copy()
+            x[:ncore] = 0.0
+            if x.ndim == 4:
+                x[:, :ncore] = 0.0
+            return x
+        t1 = fc(self._pt2_singles_residual(ERI, t2, o, u, c) / Dia)
+        t2_2 = fc(self._pt2_doubles_residual(ERI, t2, o, u, c) / Dijab)
+        tau2 = 2.0 * t2_2 - t2_2.swapaxes(2, 3)
+
+        Dcorr = np.zeros((nmo, nmo))
+        Dcorr[o, o] = -2.0 * c('ikab,jkab->ij', tau_n, c2)
+        Dcorr[u, u] = +2.0 * c('ijac,ijbc->ab', tau_n, c2)
+        Dfull = Dcorr.copy()
+        Dfull[o, o] += 2.0 * np.eye(nof)
+        Dref = Dfull - Dcorr
+
+        G = np.zeros((nmo, nmo, nmo, nmo))
+        G[o, o, o, o] = c('klab,ijab->ijkl', c2, tau_n)
+        G[u, u, u, u] = c('ijab,ijcd->abcd', c2, tau_n)
+        G[u, o, o, u] = 2.0 * c('jkac,ikbc->aijb', tau_n, tau_n)
+        G[u, o, u, o] = (-4.0 * c('jkac,ikbc->aibj', c2, c2) + 2.0 * c('jkac,ikcb->aibj', c2, c2)
+                         + 2.0 * c('jkca,ikbc->aibj', c2, c2) - 4.0 * c('jkca,ikcb->aibj', c2, c2))
+        G[o, o, u, u] = c0 * tau_n
+        G[u, u, o, o] = c0 * tau_n.transpose(2, 3, 0, 1)
+        Gam = 0.25 * (G + G.transpose(1, 0, 3, 2) + G.transpose(2, 3, 0, 1) + G.transpose(3, 2, 1, 0))
+
+        def sep(A_, B_):
+            return c('pq,rs->pqrs', A_, B_) - 0.5 * c('ps,rq->pqrs', A_, B_)
+        Gfull = (2.0 * Gam.transpose(0, 2, 1, 3)
+                 + sep(Dref, Dref) + sep(Dref, Dcorr) + sep(Dcorr, Dref))
+
+        E = 0.0
+        t_stage = time.time()
+        for A in range(natom):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            K = np.asarray(mp.derivatives.overlap_dd_sum(A))
+            E += w * ((1.0 + nrm2) * np.sum(Dfull * K) + 4.0 * np.sum(t1 * K[o, u])
+                      - 2.0 * nrm2 * np.trace(K[o, o]))
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                dF = np.asarray(cphf.perturbed_fock(p, ncore, canonical=gauge)).real
+                dERI = np.asarray(cphf.perturbed_eri(p, ncore, canonical=gauge)).real
+                U = np.asarray(cphf.full_U(p, ncore, canonical=gauge)).real
+                half_S = np.asarray(mp.derivatives.overlap_half(A)[cart])
+                Ueff = U + half_S.T
+                dt2 = (dERI[o, o, u, u]
+                       + c('ac,ijcb->ijab', dF[u, u], t2) + c('bc,ijac->ijab', dF[u, u], t2)
+                       - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab
+                if ncore:
+                    # d_x T2[core]=0, but d_x<Lj|ab> (L core) is not; take those rows in the
+                    # canonical active-oo frame (gauge-invariant).
+                    core = np.asarray(cphf.perturbed_eri(p, ncore, canonical='oo')).real[o, o, u, u] / Dijab
+                    dt2[:ncore] = core[:ncore]
+                    dt2[:, :ncore] = core[:, :ncore]
+                dc0 = -c0**3 * c('ijab,ijab->', tau, dt2)
+                dc2 = dc0 * t2 + c0 * dt2
+                Icc = dc0**2 + np.sum((2.0 * dc2 - dc2.swapaxes(2, 3)) * dc2)
+                T = np.zeros((nmo, nmo))
+                T[o, o] = -2.0 * c('ikab,jkab->ij', tau_n, dc2)
+                T[u, u] = +2.0 * c('ijbc,ijac->ab', tau_n, dc2)
+                M = -(half_S @ half_S.T)
+                el = (Icc + 2.0 * np.sum(T * Ueff)
+                      + np.sum(Dfull * (Ueff @ Ueff.T)) - c('pqrs,pq,rs->', Gfull, Ueff, Ueff)
+                      + np.sum(Dfull * M))
+                dt1 = (self._pt2_singles_residual(dERI, t2, o, u, c)
+                       + self._pt2_singles_residual(ERI, dt2, o, u, c)
+                       + c('ic,ca->ia', t1, dF[u, u]) - c('ik,ka->ia', dF[o, o], t1)) / Dia
+                g1 = dt1 - t1 @ Ueff[u, u] - Ueff[o, o].T @ t1 + c('ijab,jb->ia', tau2, Ueff[o, u])
+                dn2 = 2.0 * c('ijab,ijab->', tau, dt2)
+                Bterm = 4.0 * np.sum(Ueff[u, o].T * g1) + 4.0 * np.sum(t1 * M[o, u])
+                h0 = 2.0 * np.sum(Ueff[o, u]**2) + 2.0 * np.trace(M[o, o])
+                E += w * ((1.0 + nrm2) * el + dn2**2 / (4.0 * (1.0 + nrm2)) + Bterm - nrm2 * h0)
+            self._atom_step('MP2 DBOC(order-consistent)', A, natom, t_stage)
         return E

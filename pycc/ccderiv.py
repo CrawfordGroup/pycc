@@ -1471,3 +1471,144 @@ class CCderiv(CorrelatedDerivs):
         velocity-gauge APT for a two-electron system, where the ratio is exactly ``-1/2`` without
         it."""
         return -2.0 * self._mixed_overlap_tensor('vecpot', gauge)
+
+    @staticmethod
+    def _so1(x):
+        out = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
+        out[:x.shape[0], :x.shape[1]] = out[x.shape[0]:, x.shape[1]:] = x
+        return out
+
+    @staticmethod
+    def _so2(x):
+        no, nv = x.shape[1], x.shape[3]
+        out = np.zeros((2 * no, 2 * no, 2 * nv, 2 * nv))
+        for s in range(2):
+            for t in range(2):
+                i, j = slice(s * no, (s + 1) * no), slice(t * no, (t + 1) * no)
+                a, b = slice(s * nv, (s + 1) * nv), slice(t * nv, (t + 1) * nv)
+                out[i, j, a, b] += x
+                out[i, j, b, a] -= x.swapaxes(2, 3)
+        return out
+
+    def _dboc_twopdm(self, t1, t2, l1, l2, ncore=0, nmo=None):
+        """Spin-free CCSD two-particle density ``<E_pq E_rs>`` (full-MO): pycc's spin-orbital
+        2-PDM (:meth:`ccdensity.build_so_twopdm`) spin-adapted, plus the separable reference."""
+        c = self.contract
+        dens = self.ccdensity
+        no, nv = t1.shape
+        if nmo is None:
+            nmo = ncore + no + nv
+        nocc = ncore + no
+        o, u = slice(ncore, nocc), slice(nocc, nmo)
+        l1n, l2n = 0.5 * l1, (2.0 * l2 + l2.swapaxes(2, 3)) / 6.0
+        B = dens.build_so_twopdm(self._so1(t1), self._so2(t2), self._so1(l1n), self._so2(l2n))
+        sw01, sw23 = lambda x: x.swapaxes(0, 1), lambda x: x.swapaxes(2, 3)
+        blocks = {'oooo': B['ijkl'], 'vvvv': B['abcd'], 'oovv': B['ijab'], 'vvoo': B['abij'],
+                  'ooov': B['ijka'], 'oovo': -sw23(B['ijka']), 'ovoo': B['kaij'], 'vooo': -sw01(B['kaij']),
+                  'vvvo': B['abci'], 'vvov': -sw23(B['abci']), 'vovv': B['ciab'], 'ovvv': -sw01(B['ciab']),
+                  'ovvo': B['ibaj'], 'voov': B['ibaj'].transpose(1, 0, 3, 2),
+                  'vovo': -sw01(B['ibaj']), 'ovov': -sw23(B['ibaj'])}
+        dim = {'o': no, 'v': nv}
+        sl = {'o': o, 'v': u}
+        spins = lambda ch, s: s * dim[ch] + np.arange(dim[ch])
+        G = np.zeros((nmo,) * 4)
+        for k, X in blocks.items():
+            g = sum(X[np.ix_(spins(k[0], s), spins(k[1], t), spins(k[2], s), spins(k[3], t))]
+                    for s in range(2) for t in range(2))
+            G[sl[k[0]], sl[k[2]], sl[k[1]], sl[k[3]]] = g.transpose(0, 2, 1, 3)
+        D = np.zeros((nmo, nmo))
+        D[o, o] = dens.build_Doo(t1, t2, l1, l2)
+        D[u, u] = dens.build_Dvv(t1, t2, l1, l2)
+        D[o, u] = dens.build_Dov(t1, t2, l1, l2)
+        D[u, o] = dens.build_Dvo(l1)
+        Dfull = D.copy()
+        Dfull[np.arange(nocc), np.arange(nocc)] += 2.0
+        Dref = Dfull - D
+        sep = lambda A, Bm: c('pq,rs->pqrs', A, Bm) - 0.5 * c('ps,rq->pqrs', A, Bm)
+        return G + sep(Dref, Dref) + sep(Dref, D) + sep(D, Dref)
+
+    def dboc(self):
+        """Electronic DBOC (a.u.) for CCSD via the Gauss order-consistent formalism
+        (Gauss, Tajti, Kallay, Stanton, and Szalay, J. Chem. Phys. 125, 144111 (2006)):
+        the direct 2-RDM orbital-rotation contraction.  Bare nuclear
+        masses.  Matches CFOUR v2.1 CALC=CCSD DBOC=ON to ~1e-6 cm^-1."""
+        from .cphf import Perturbation
+        cc = self.ccwfn
+        c = self.contract
+        no, nv = cc.no, cc.nv
+        o, v = cc.o, cc.v
+        ncore = cc.nfzc
+        nof = o.stop
+        nmo = cc.nmo
+        mol = cc.ref.molecule()
+        natom = mol.natom()
+        U_ME = 1822.888486209
+        ME_U = 5.48579909065e-4
+        cphf = self._full_occ_cphf()
+        t1 = np.asarray(cc.t1)
+        l1, l2 = np.asarray(self.cclambda.l1), np.asarray(self.cclambda.l2)
+        dens = self.ccdensity
+        z1 = np.zeros((no, nv))
+        z2 = np.zeros((no, no, nv, nv))
+
+        def corr_density(x1, x2):
+            D = np.zeros((nmo, nmo))
+            D[o, o] = dens.build_Doo(t1, cc.t2, x1, x2)
+            D[v, v] = dens.build_Dvv(t1, cc.t2, x1, x2)
+            D[o, v] = dens.build_Dov(t1, cc.t2, x1, x2)
+            D[v, o] = dens.build_Dvo(x1)
+            return D
+
+        Dc0 = corr_density(z1, z2)
+        Dref = Dc0.copy()
+        Dref[np.arange(nof), np.arange(nof)] += 2.0
+        D0 = corr_density(l1, l2)
+        dm2 = self._dboc_twopdm(t1, np.asarray(cc.t2), l1, l2,
+                                ncore=ncore, nmo=nmo)
+
+        def bundle(df, deri, dL):
+            dt1, dt2 = self._perturbed_amplitudes(df, deri, dL, self.hbar)
+            dl1, dl2 = self._perturbed_lambda(df, deri, dL, dt1, dt2,
+                                              self.hbar, self.cclambda)
+            dt1, dt2 = np.asarray(dt1), np.asarray(dt2)
+            dl1, dl2 = np.asarray(dl1), np.asarray(dl2)
+            dD = np.asarray(self._perturbed_correlation_densities(
+                dt1, dt2, dl1, dl2, self.cclambda)[0])
+            lamT = (c('ia,ia->', l1, dt1)
+                    + 0.5 * c('ijab,ijab->', l2, dt2))
+            l1eff = c('ijab,ia->jb', l2, dt1)
+            Dbra = (corr_density(dl1, dl2) - corr_density(l1eff, z2)
+                    - lamT * Dref)
+            return dict(dt1=dt1, dt2=dt2, dl1=dl1, dl2=dl2, lamT=lamT,
+                        l1eff=l1eff, Dbra=Dbra, Dket=dD - Dbra)
+
+        E = 0.0
+        for A in range(natom):
+            w = 1.0 / (2.0 * (mol.mass(A) - mol.Z(A) * ME_U) * U_ME)
+            Dfull0 = D0.copy()
+            Dfull0[np.arange(nof), np.arange(nof)] += 2.0
+            E += w * np.sum(Dfull0 * np.asarray(cc.derivatives.overlap_dd_sum(A)))
+            for cart in range(3):
+                p = Perturbation('nuclear', (A, cart))
+                df = np.asarray(cphf.perturbed_fock(p, ncore))
+                deri = np.asarray(cphf.perturbed_eri(p, ncore))
+                dL = 2.0 * deri - deri.swapaxes(2, 3)
+                U = np.asarray(cphf.full_U(p, ncore))
+                b = bundle(df, deri, dL)
+                half_S = np.asarray(
+                    cc.derivatives.overlap_half(A)[cart]).T
+                Ueff = U + half_S
+                Icc = (c('ia,ia->', b['dl1'], b['dt1'])
+                       + 0.5 * c('ijab,ijab->', b['dl2'], b['dt2'])
+                       - c('ia,ia->', b['l1eff'], b['dt1']))
+                Icphi = c('pq,pq->', b['Dbra'], Ueff)
+                Iphic = -c('pq,pq->', b['Dket'], Ueff)
+                cross = b['lamT'] ** 2
+                Dfull = D0.copy()
+                Dfull[np.arange(nof), np.arange(nof)] += 2.0
+                Iphiphi = (c('pq,pq->', Dfull, Ueff @ Ueff.T)
+                           - c('pqrs,pq,rs->', dm2, Ueff, Ueff))
+                el = Icc + Icphi + Iphic + cross + Iphiphi
+                contact = -np.sum(Dfull * (half_S.T @ half_S))
+                E += w * (el + contact)
+        return E
