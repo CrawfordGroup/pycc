@@ -338,15 +338,21 @@ class rtcc(object):
         -------
         ecc : scalars
             CC Lagrangian energy (including reference contribution, but excluding nuclear repulsion)
+
+        Raises
+        ------
+        NotImplementedError
+            for CC3: there is no CC3 two-particle density (the triples contributions to Gamma),
+            so the CC3 Lagrangian cannot be formed.  :meth:`step` and :meth:`propagate` omit
+            ``ecc`` for CC3; the dipole trajectory does not need it.
         """
+        if self.ccwfn.model == 'CC3':
+            raise NotImplementedError("rtcc.lagrangian: no CC3 two-particle density; "
+                                      "the CC3 Lagrangian is not available")
         o = self.ccwfn.o
         v = self.ccwfn.v
         ERI = self.ccwfn.H.ERI
-        if self.ccwfn.model == 'CC3':
-            (opdm, opdm_cc3) = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
-            opdm = opdm + opdm_cc3
-        else:
-            opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
+        opdm = self.ccdensity.compute_onepdm(t1, t2, l1, l2)
         Doooo = self.ccdensity.build_Doooo(t1, t2, l2)
         Dvvvv = self.ccdensity.build_Dvvvv(t1, t2, l2)
         Dooov = self.ccdensity.build_Dooov(t1, t2, l1, l2)
@@ -517,7 +523,8 @@ class rtcc(object):
         # calculate properties
         ret = {}
         t1, t2, l1, l2, phase = self.extract_amps(y)
-        ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
+        if self.ccwfn.model != 'CC3':     # no CC3 Lagrangian (see lagrangian)
+            ret['ecc'] = self.lagrangian(t,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,magnetic=False)
         ret['mu_x'] = mu_x
         ret['mu_y'] = mu_y
@@ -603,7 +610,8 @@ class rtcc(object):
 
         # initial properties
         t1, t2, l1, l2, phase = self.extract_amps(yi)
-        ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
+        if self.ccwfn.model != 'CC3':     # no CC3 Lagrangian (see lagrangian)
+            ret[key]['ecc'] = self.lagrangian(ti,t1,t2,l1,l2)
         mu_x, mu_y, mu_z = self.dipole(t1,t2,l1,l2,magnetic=False)
         ret[key]['mu_x'] = mu_x
         ret[key]['mu_y'] = mu_y
