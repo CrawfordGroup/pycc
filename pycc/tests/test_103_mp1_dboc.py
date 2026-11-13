@@ -38,15 +38,19 @@ symmetry c1
 }
 
 
-def _mp1_dboc_cm(geom):
+def _mp1_wfn(geom, fc=False):
     psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk',
+    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk', 'freeze_core': 'true' if fc else 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     psi4.geometry(geom)
     e, wfn = psi4.energy('scf', return_wfn=True)
-    return pycc.MPderiv(pycc.MPwfn(wfn)).dboc_mp1() * HARTREE_CM
+    return wfn
+
+
+def _mp1_dboc_cm(geom, fc=False):
+    return pycc.MPderiv(pycc.MPwfn(_mp1_wfn(geom, fc))).dboc_mp1() * HARTREE_CM
 
 
 def test_mp1_dboc_h2():
@@ -59,3 +63,22 @@ def test_mp1_dboc_hf():
 
 def test_mp1_dboc_h2o():
     assert abs(_mp1_dboc_cm(GEOMS['h2o']) - 610.318160) < 0.001
+
+
+def test_mp1_dboc_hf_frozen_core():
+    assert abs(_mp1_dboc_cm(GEOMS['hf'], fc=True) - 611.956979) < 0.001
+
+
+def test_mp1_dboc_h2o_frozen_core():
+    assert abs(_mp1_dboc_cm(GEOMS['h2o'], fc=True) - 609.630785) < 0.001
+
+
+def test_mp1_dboc_perturbed_mo_gauge_invariance():
+    """DBOC(MP1) is invariant to the perturbed-MO gauge, all-electron and frozen core."""
+    for geom in ('hf', 'h2o'):
+        for fc in (False, True):
+            wfn = _mp1_wfn(GEOMS[geom], fc)
+            nc = pycc.MPderiv(pycc.MPwfn(wfn)).dboc_mp1()
+            cd = pycc.MPderiv(pycc.MPwfn(wfn))
+            cd._gauge_override = 'canonical'
+            assert abs(nc - cd.dboc_mp1()) < 1e-9 * max(1.0, abs(nc)), (geom, fc, nc, cd.dboc_mp1())

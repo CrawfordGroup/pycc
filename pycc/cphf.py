@@ -517,13 +517,16 @@ class CPHF(object):
             # Canonical Brillouin divide d_x f_pq = 0 for the active-oo and vv off-diagonal
             # blocks (generalizes the frozen-core core<->active block above), so d_x f is
             # diagonal within oo and vv -- required by the non-invariant (T) kernels.
+            # ``canonical='oo'`` divides the active-oo block only (vv kept at -1/2 S), with
+            # degeneracy/large-rotation cutoffs -- the gauge CFOUR's frozen-core MP2 DBOC uses.
             W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
                  else np.asarray(self.wfn.H.L))
             eps = self.eps
             ao = slice(o.start + ncore, o.stop)             # active occupied
             Soo = Sx[o, o]
             Uvo = U[v, o]
-            for blk in (ao, v):
+            oo_only = canonical == 'oo'
+            for blk in (ao,) if oo_only else (ao, v):
                 Sblk = Sx[blk, blk]
                 Sterm = 0.5 * (self.contract('nm,pnqm->pq', Soo, W[blk, o, blk, o])
                                + self.contract('nm,pmqn->pq', Soo, W[blk, o, blk, o]))
@@ -531,8 +534,10 @@ class CPHF(object):
                          + self.contract('cm,pmqc->pq', Uvo, W[blk, o, blk, v]))
                 num = fx[blk, blk] - Sblk * eps[blk][None, :] - Sterm + Uterm
                 gap = eps[blk][:, None] - eps[blk][None, :]
-                offdiag = np.abs(gap) > 1e-8
-                U[blk, blk] = np.where(offdiag, -num / np.where(offdiag, gap, 1.0), -0.5 * Sblk)
+                offdiag = np.abs(gap) > (1e-5 if oo_only else 1e-8)
+                Uc = -num / np.where(offdiag, gap, 1.0)
+                mask = offdiag & (np.abs(Uc) <= 1.0) if oo_only else offdiag
+                U[blk, blk] = np.where(mask, Uc, -0.5 * Sblk)
         return U
 
     def perturbed_fock(self, pert: "Perturbation", ncore: int = 0, canonical: bool = False) -> np.ndarray:
