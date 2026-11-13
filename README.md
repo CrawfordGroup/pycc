@@ -34,9 +34,20 @@ include:
     matrices), and atomic polar tensors (APTs / dipole derivatives). Both spin paths
     (spin-adapted closed-shell RHF and spin-orbital UHF), all-electron and frozen-core, built
     on the same relaxed-density / Z-vector and 2n+1 machinery as the MP2 derivatives
+  - Analytic CCSD atomic axial tensors (AATs) and velocity-gauge APTs, from the perturbed
+    amplitudes and multipliers rather than the energy-derivative machinery, so CC VCD spectra
+    are available alongside the HF, MP2, and CISD ones. Both spin paths, all-electron and
+    frozen-core; CCSD only (the formulation is derived for the `(1 + Lambda) e^T` bra without
+    (T), so CCSD(T) raises)
   - Analytic derivative properties for CISD (`CIwfn`): atomic polar tensors (APTs, in both the
     length and velocity gauge), atomic axial tensors (AATs), and nuclear Hessians, sharing the
     same `CorrelatedDerivs` base as the MP2 and CC properties
+  - One-call IR and VCD spectra -- `pycc.ir` and `pycc.vcd` -- which compute the Hessian, the
+    APTs and (for VCD) the AATs from a derivative driver, run the harmonic analysis, and return
+    frequencies, intensities and rotatory strengths; `velocity_gauge=True` adds the
+    velocity-gauge and origin-independent rotatory strengths. A property checkpoint
+    (`pycc.save_checkpoint`) archives the tensors so a spectrum can be re-analyzed without
+    recomputing anything
   - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
     `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that takes a derivative driver (`pycc.CCderiv`,
     `pycc.MPderiv`, `pycc.CIderiv`) or an `HFwfn`, and returns each property's
@@ -48,7 +59,6 @@ include:
 Future plans:
   - Quadratic response functions (in development)
   - CC2 and CC3 excited states
-  - Analytic CC atomic axial tensors (AATs) for VCD spectra
 
 This repository is currently under development. To do a developmental install, download this repository and type `pip install -e .` in the repository directory.
 

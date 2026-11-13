@@ -112,7 +112,10 @@ Use whichever reads better::
 
 Every property is available for both spin paths (spin-adapted closed-shell RHF and
 spin-orbital, selected by ``orbital_basis`` on the wavefunction), all-electron and frozen
-core. The length-gauge APT has two equivalent algorithms, ``route='2n+1-field'`` (default,
+core.  One exception: for a CC driver the atomic **axial** tensors and the **velocity-gauge**
+APT are CCSD-only, since their formulation is derived for the ``(1 + Lambda) e^T`` bra without
+(T); a CCSD(T) driver raises :class:`NotImplementedError` for those two, while its gradient,
+dipole, polarizability, Hessian and length-gauge APT are unaffected. The length-gauge APT has two equivalent algorithms, ``route='2n+1-field'`` (default,
 the ``O(N)``-cheaper 3-field-solve route) and ``route='2n+1-nuclear'`` -- a mutual
 cross-check. Because the response solves are cached on the driver, computing several
 properties from one driver does not repeat that work.
@@ -133,10 +136,10 @@ intensities::
 ``project_trans`` / ``project_rot`` remove the rigid-body (translational/rotational) modes so only
 the vibrations remain. :func:`~pycc.vibanalysis.ir` is the same call without the AAT /
 rotatory-strength step.
-Either driver also accepts an :class:`~pycc.hfwfn.HFwfn` (an SCF spectrum); the VCD path currently
-supports HF, MP2, and CISD sources (CCSD AATs are not yet available). Pass ``checkpoint="mol.npz"``
-to archive the computed tensors, then re-run the analysis later straight from the file with
-``pycc.vcd("mol.npz")`` (nothing is recomputed).
+Either driver also accepts an :class:`~pycc.hfwfn.HFwfn` (an SCF spectrum); the VCD path supports
+HF, MP2, CISD and CCSD sources. Pass ``checkpoint="mol.npz"`` to archive the computed tensors, then
+re-run the analysis later straight from the file with ``pycc.vcd("mol.npz")`` (nothing is
+recomputed).
 
 Pass ``velocity_gauge=True`` to also compute the velocity-gauge APT: the analysis then reports the
 length-, velocity-, and mixed-gauge IR intensities (a basis-set completeness check) and, for VCD,
