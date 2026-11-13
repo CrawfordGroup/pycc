@@ -38,11 +38,11 @@ symmetry c1
 }
 
 
-def _hf_dboc_cm(geom):
+def _hf_dboc_cm(geom, fc=False):
     psi4.core.clean()
     psi4.set_memory('2 GB')
     psi4.core.set_output_file('output.dat', False)
-    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk',
+    psi4.set_options({'basis': 'cc-pvdz', 'scf_type': 'pk', 'freeze_core': 'true' if fc else 'false',
                       'e_convergence': 1e-12, 'd_convergence': 1e-12})
     psi4.geometry(geom)
     e, wfn = psi4.energy('scf', return_wfn=True)
@@ -59,3 +59,9 @@ def test_hf_dboc_hf():
 
 def test_hf_dboc_h2o():
     assert abs(_hf_dboc_cm(GEOMS['h2o']) - 600.367450) < 0.001
+
+
+def test_hf_dboc_frozen_core():
+    """SCF DBOC is unchanged by freezing the core (equals the all-electron value)."""
+    assert abs(_hf_dboc_cm(GEOMS['hf'], fc=True) - 604.556499) < 0.001
+    assert abs(_hf_dboc_cm(GEOMS['h2o'], fc=True) - 600.367450) < 0.001
