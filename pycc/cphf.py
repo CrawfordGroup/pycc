@@ -516,7 +516,13 @@ class CPHF(object):
         if canonical:
             # Canonical Brillouin divide d_x f_pq = 0 for the active-oo and vv off-diagonal
             # blocks (generalizes the frozen-core core<->active block above), so d_x f is
-            # diagonal within oo and vv -- required by the non-invariant (T) kernels.
+            # diagonal within oo and vv.  This is the dependent-pair choice: the redundant
+            # within-space rotations come from the dependent-pair CPHF equations rather than from
+            # -1/2 S^(x).  Both are valid for every method here -- (T) is oo/vv-invariant like
+            # MP2 and CCSD -- and canonical is chosen for cost, since it lets the (T) Doo/Dvv be
+            # built from their diagonal blocks alone and avoids an O(N^7) step (correlatedderivs
+            # `perturbed_mo_gauge`).  The only real difficulty either way is handling (near-)
+            # degenerate pairs stably, which the gap guard below is for.
             W = (np.asarray(self.wfn.H.ERI) if self.wfn.orbital_basis == 'spinorbital'
                  else np.asarray(self.wfn.H.L))
             eps = self.eps

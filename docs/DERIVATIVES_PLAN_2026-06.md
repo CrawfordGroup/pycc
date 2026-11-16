@@ -2083,6 +2083,43 @@ A short derivation note in `docs/`, and a one-line pointer in each docstring tha
 factor, so the next reader sees *why* rather than *that*.  Where a test currently pins a convention
 (the two-electron identity), it should remain as a regression test but stop being the justification.
 
+## 19. Non-canonical CCSD(T) derivative route -- PLANNED
+
+**Status: PLANNED** (PI assessment 2026-11-15).  Valuable for testing and benchmarking, not
+required for correctness.
+
+**Where things stand.**  The perturbed-MO choice is how the **dependent pairs** (the redundant
+within-space `oo`/`vv` rotations) are filled: `-1/2 S^(x)` (non-canonical) or the dependent-pair
+CPHF solution (canonical).  The off-diagonal blocks always take the independent-pair CPHF
+coefficients, and under a frozen core the core<->active block is *determined*, not chosen, so it
+sits outside the flag entirely.  Both fillings are valid for every method here: (T) is
+oo/vv-invariant exactly like MP2 and CCSD.  (A comment in `cphf.py` claimed canonical was
+"required by the non-invariant (T) kernels"; that was wrong and is corrected.)
+
+**Why CCSD(T) nonetheless takes canonical.**  Cost, and the implementation now depends on it:
+`cctriples` builds the (T) one-particle increments as **diagonals only** (`dvv = np.zeros(nv)`,
+"Doo/Dvv diagonal in the canonical basis"), which is what avoids the O(N^7) off-diagonal (T)
+density.  Consequence: forcing `_gauge_override = 'non-canonical'` on a CCSD(T) driver today gives
+a **wrong number rather than a slower one**, and nothing raises.  An interim guard that raises
+there would turn a silent wrong answer into a loud one at the cost of a few lines.
+
+**What to build.**  The non-canonical (T) route, carrying the full off-diagonal (T) density, so
+both fillings are available for CCSD(T) and can be cross-checked against each other.  More
+expensive, numerically more stable on (near-)degenerate systems.
+
+**The degeneracy gate stays, and is principled.**  The 1e-8 cutoff in `CPHF.full_U` identifies
+pairs the canonical condition does *not* determine (a redundant rotation whose gap vanishes), and
+falls back to `-1/2 S^(x)`, which is the correct limit.  Exact symmetry degeneracy is therefore
+**safe** -- HF's pi pair splits by 6.9e-15, and the CC AAT reproduces gauge invariance there to
+1.2e-14 frozen-core.  The hazardous regime is the band roughly 1e-8 to 1e-4, where the condition
+formally determines a rotation but the divide amplifies noise.  Loosening the cutoff into that
+band discards rotations that *are* determined, and clamping on `|U|` discards large-but-valid
+ones; neither is the right remedy.
+
+**Rule for test cases.**  Non-canonical is the default.  Canonical is for cases checked to be free
+of (near-)degeneracies.  A comparison that rests on invariance rather than on efficiency should
+pick degeneracy-free molecules rather than widen the gate.
+
 ## Appendix A: condensed changelog (by PR)
 
 Reference layer, then the MP2 derivative effort:
