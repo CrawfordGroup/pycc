@@ -46,6 +46,7 @@ dependent_pair_gate); its reference is FD-of-analytic-gradient-validated rather 
 
 import psi4
 import pycc
+from .conftest import record, current_test_context
 import numpy as np
 import pytest
 
@@ -358,7 +359,7 @@ def _c2h4p_ccsdt_hess():
     return pycc.hessian(pycc.CCderiv(cc))
 
 
-def _check(r, corr_ref):
+def _check(r, corr_ref, fc=None, ao='6-31G'):
     """Shared assertions for a CCSD(T) Hessian run vs the CFOUR oracle: the full 9x9 correlation
     matrix, the facade decomposition (total == nuclear + reference + correlation), and the FD-free
     physics checks -- symmetry and the translational (acoustic) sum rule (E_corr is invariant under
@@ -367,6 +368,12 @@ def _check(r, corr_ref):
     total = np.asarray(r.total)
     natom = corr.shape[0] // 3
     assert corr.shape == (3 * natom, 3 * natom)
+    _dev = float(np.max(np.abs(corr - corr_ref)))
+    _ctx = current_test_context()
+    record('Hessian', 'CCSD(T)', fc or _ctx.get('frozen_core') or 'all-electron', 'cfour', _dev,
+           molecule=_ctx.get('molecule'), note=_ctx.get('route'), ao_basis=ao,
+           limited_by='oracle-print')
+
     assert np.max(np.abs(corr - corr_ref)) < 1e-9, np.max(np.abs(corr - corr_ref))
     parts = np.asarray(r.nuclear) + np.asarray(r.reference) + np.asarray(r.correlation)
     assert np.max(np.abs(total - parts)) < 1e-12
@@ -379,9 +386,9 @@ def test_ccsdt_hessian_cfour_water_spatial():
     oracle -- the full correlation matrix, the facade decomposition, symmetry, and the translational
     sum rule.  Exercises the (T) core<->active and active oo/vv dependent-pair response in the
     perturbed relaxed density (frozen-core case)."""
-    _check(_ccsdt_hess(WATER, 'false', 'spatial'), CFOUR_HESS_T_WATER)
+    _check(_ccsdt_hess(WATER, 'false', 'spatial'), CFOUR_HESS_T_WATER, 'all-electron')
     psi4.core.clean()
-    _check(_ccsdt_hess(WATER, 'true', 'spatial'), CFOUR_HESS_T_WATER_FC)
+    _check(_ccsdt_hess(WATER, 'true', 'spatial'), CFOUR_HESS_T_WATER_FC, 'frozen core')
     psi4.core.clean()
 
 
@@ -389,7 +396,7 @@ def test_so_ccsdt_hessian_cfour_water():
     """All-electron spin-orbital CCSD(T) Hessian for water/6-31G vs the CFOUR oracle -- the direct
     SO-(T) CFOUR anchor kept in the default suite (~55 s).  The genuine SO path (SO perturbed
     amplitudes/Lambda/(T) intermediates, inline orbital Hessian, nuclear-nuclear second skeletons)."""
-    _check(_ccsdt_hess(WATER, 'false', 'spinorbital'), CFOUR_HESS_T_WATER)
+    _check(_ccsdt_hess(WATER, 'false', 'spinorbital'), CFOUR_HESS_T_WATER, 'all-electron')
     psi4.core.clean()
 
 
@@ -397,7 +404,7 @@ def test_so_ccsdt_hessian_cfour_water():
 def test_fc_so_ccsdt_hessian_cfour_water():
     """Frozen-core spin-orbital CCSD(T) Hessian for water/6-31G vs the CFOUR oracle -- the SO (T)
     frozen-core case (core<->active response through the SO perturbed densities).  Marked slow."""
-    _check(_ccsdt_hess(WATER, 'true', 'spinorbital'), CFOUR_HESS_T_WATER_FC)
+    _check(_ccsdt_hess(WATER, 'true', 'spinorbital'), CFOUR_HESS_T_WATER_FC, 'frozen core')
     psi4.core.clean()
 
 
@@ -405,9 +412,9 @@ def test_fc_so_ccsdt_hessian_cfour_water():
 def test_ccsdt_hessian_cfour_hof_spatial():
     """Second-geometry cross-check: spatial CCSD(T) Hessian for HOF/6-31G (Cs) vs the CFOUR oracle
     (all-electron and frozen core).  Marked slow."""
-    _check(_ccsdt_hess(HOF, 'false', 'spatial'), CFOUR_HESS_T_HOF)
+    _check(_ccsdt_hess(HOF, 'false', 'spatial'), CFOUR_HESS_T_HOF, 'all-electron')
     psi4.core.clean()
-    _check(_ccsdt_hess(HOF, 'true', 'spatial'), CFOUR_HESS_T_HOF_FC)
+    _check(_ccsdt_hess(HOF, 'true', 'spatial'), CFOUR_HESS_T_HOF_FC, 'frozen core')
     psi4.core.clean()
 
 
@@ -419,9 +426,9 @@ def test_so_ccsdt_hessian_h2op():
     analytic Hessian, validated once against a full energy-2nd-derivative FD (3.4e-7).  Exercises the
     SO (T) perturbed amplitudes/Lambda/intermediates and the canonical perturbed-MO dependent pairs on
     a genuine UHF reference; also checks the facade decomposition, symmetry, and the sum rule."""
-    _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE)
+    _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE, 'all-electron', ao='STO-3G')
     psi4.core.clean()
-    _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC)
+    _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC, 'frozen core', ao='STO-3G')
     psi4.core.clean()
 
 
@@ -435,7 +442,7 @@ def test_so_ccsdt_hessian_c2h4p_twist_dependent_pair_gate():
     tiny-but-nonzero, so the old numerator gate shifts this Hessian by ~1.3e-7 (fails the 1e-9 check).
     vs pycc's own FD-of-analytic-gradient-validated gap-gate reference; also checks the facade
     decomposition, symmetry, and the acoustic sum rule.  Marked slow (~5 min for the SO (T) Hessian)."""
-    _check(_c2h4p_ccsdt_hess(), C2H4P_CCSDT_HESS)
+    _check(_c2h4p_ccsdt_hess(), C2H4P_CCSDT_HESS, 'all-electron', ao='STO-3G')
     psi4.core.clean()
 
 
@@ -447,4 +454,79 @@ def test_ccsdt_hessian_guards():
     cc_t.solve_cc(1e-12, 1e-12, 100)
     pycc.CCderiv(cc_t)                                          # sets the flag + builds the (T) density
     assert cc_t.make_t3_density is True and hasattr(cc_t, 'S1')
+    psi4.core.clean()
+
+
+# ---- cc-pVDZ water, CCSD(T): d functions through the canonical perturbed-MO machinery ----------
+# The (T) energy derivatives go through the canonical perturbed-MO dependent-pair rotations, which
+# CCSD has no analogue for, so the s/p-only coverage gap had to be closed separately for (T).
+#
+# Oracle: xcfour 2.1 (CALC=CCSD(T), VIB=EXACT, SCF_CONV=13, CC_CONV=12,
+# LINEQ_CONV=12, COORD=CARTESIAN, UNITS=BOHR, SYMMETRY=OFF), same geometry as the 6-31G cases.
+# LINEQ_CONV=12 is required: at CFOUR's default the oracle shifts by ~5e-8.  psi4's cc-pVDZ and
+# CFOUR's PVDZ are the same basis, so no GENBAS transcription is needed.
+CFOUR_HESS_T_WATER_PVDZ = np.array(
+    [[-2.6136554100e-02, -0.0000000000e+00,  0.0000000000e+00,  1.3068276900e-02,  0.0000000000e+00, -0.0000000000e+00,  1.3068276900e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [-0.0000000000e+00, -1.1757970500e-02,  0.0000000000e+00,  0.0000000000e+00,  5.8789853000e-03,  5.5589031000e-03,  0.0000000000e+00,  5.8789853000e-03, -5.5589031000e-03],
+     [ 0.0000000000e+00,  0.0000000000e+00, -3.4029775200e-02,  0.0000000000e+00,  4.3472918000e-03,  1.7014887600e-02,  0.0000000000e+00, -4.3472918000e-03,  1.7014887600e-02],
+     [ 1.3068276900e-02,  0.0000000000e+00,  0.0000000000e+00, -1.1290452400e-02,  0.0000000000e+00,  0.0000000000e+00, -1.7778246000e-03, -0.0000000000e+00, -0.0000000000e+00],
+     [ 0.0000000000e+00,  5.8789853000e-03,  4.3472917000e-03,  0.0000000000e+00, -8.4927336000e-03, -4.9530974000e-03, -0.0000000000e+00,  2.6137483000e-03,  6.0580570000e-04],
+     [-0.0000000000e+00,  5.5589032000e-03,  1.7014887600e-02,  0.0000000000e+00, -4.9530975000e-03, -1.1114630500e-02,  0.0000000000e+00, -6.0580570000e-04, -5.9002570000e-03],
+     [ 1.3068276900e-02,  0.0000000000e+00,  0.0000000000e+00, -1.7778246000e-03, -0.0000000000e+00,  0.0000000000e+00, -1.1290452400e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  5.8789853000e-03, -4.3472917000e-03, -0.0000000000e+00,  2.6137483000e-03, -6.0580570000e-04,  0.0000000000e+00, -8.4927336000e-03,  4.9530974000e-03],
+     [ 0.0000000000e+00, -5.5589032000e-03,  1.7014887600e-02, -0.0000000000e+00,  6.0580570000e-04, -5.9002570000e-03,  0.0000000000e+00,  4.9530975000e-03, -1.1114630500e-02]])
+
+CFOUR_HESS_T_WATER_PVDZ_FC = np.array(
+    [[-2.6736447300e-02, -0.0000000000e+00,  0.0000000000e+00,  1.3368223500e-02,  0.0000000000e+00, -0.0000000000e+00,  1.3368223500e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [-0.0000000000e+00, -1.0763688500e-02,  0.0000000000e+00,  0.0000000000e+00,  5.3818443000e-03,  6.1752270000e-03,  0.0000000000e+00,  5.3818443000e-03, -6.1752270000e-03],
+     [ 0.0000000000e+00,  0.0000000000e+00, -3.3685785200e-02,  0.0000000000e+00,  5.0174521000e-03,  1.6842892700e-02,  0.0000000000e+00, -5.0174521000e-03,  1.6842892700e-02],
+     [ 1.3368223500e-02,  0.0000000000e+00,  0.0000000000e+00, -1.1585384500e-02,  0.0000000000e+00,  0.0000000000e+00, -1.7828392000e-03, -0.0000000000e+00, -0.0000000000e+00],
+     [ 0.0000000000e+00,  5.3818443000e-03,  5.0174520000e-03,  0.0000000000e+00, -7.9779104000e-03, -5.5963395000e-03, -0.0000000000e+00,  2.5960661000e-03,  5.7888750000e-04],
+     [-0.0000000000e+00,  6.1752269000e-03,  1.6842892700e-02,  0.0000000000e+00, -5.5963395000e-03, -1.0935314800e-02,  0.0000000000e+00, -5.7888740000e-04, -5.9075778000e-03],
+     [ 1.3368223500e-02,  0.0000000000e+00,  0.0000000000e+00, -1.7828392000e-03, -0.0000000000e+00,  0.0000000000e+00, -1.1585384500e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  5.3818443000e-03, -5.0174520000e-03, -0.0000000000e+00,  2.5960661000e-03, -5.7888750000e-04,  0.0000000000e+00, -7.9779104000e-03,  5.5963395000e-03],
+     [ 0.0000000000e+00, -6.1752269000e-03,  1.6842892700e-02, -0.0000000000e+00,  5.7888740000e-04, -5.9075778000e-03,  0.0000000000e+00,  5.5963395000e-03, -1.0935314800e-02]])
+
+def _pvdz_wfn(geom, freeze_core):
+    """RHF reference in plain cc-pVDZ.  Unlike the 6-31G cases, psi4's cc-pVDZ and CFOUR's PVDZ are
+    the same basis, so no GENBAS transcription is required."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'scf_type': 'pk', 'basis': 'cc-pVDZ', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    return wfn
+
+
+def _ccsdt_hess_pvdz(geom, freeze_core, orbital_basis):
+    """Converged CCSD(T) Hessian PropertyComponents in plain cc-pVDZ."""
+    wfn = _pvdz_wfn(geom, freeze_core)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=orbital_basis, make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    return pycc.hessian(pycc.CCderiv(cc))
+
+
+def test_ccsdt_hessian_cfour_water_pvdz_spatial():
+    """CCSD(T) Hessian for water/cc-pVDZ (spatial) vs the CFOUR FCMFINAL oracle, all-electron and
+    frozen core.  Puts the canonical perturbed-MO dependent-pair rotations, which CCSD does not use,
+    on a basis with d functions; matches to 1.2e-10 (AE) and 3.5e-10 (FC).  ~26 s + ~18 s."""
+    _check(_ccsdt_hess_pvdz(WATER, 'false', 'spatial'), CFOUR_HESS_T_WATER_PVDZ,
+           'all-electron', ao='cc-pVDZ')
+    psi4.core.clean()
+    _check(_ccsdt_hess_pvdz(WATER, 'true', 'spatial'), CFOUR_HESS_T_WATER_PVDZ_FC,
+           'frozen core', ao='cc-pVDZ')
+    psi4.core.clean()
+
+
+@pytest.mark.slow
+def test_so_ccsdt_hessian_cfour_water_pvdz():
+    """Spin-orbital CCSD(T) Hessian for water/cc-pVDZ vs the CFOUR oracle.  Reproduces the spatial
+    agreements exactly (1.2e-10 / 3.5e-10), so it adds SO code coverage at l >= 2 rather than a new
+    oracle comparison; marked slow at ~215 s + ~126 s."""
+    _check(_ccsdt_hess_pvdz(WATER, 'false', 'spinorbital'), CFOUR_HESS_T_WATER_PVDZ,
+           'all-electron', ao='cc-pVDZ')
+    psi4.core.clean()
+    _check(_ccsdt_hess_pvdz(WATER, 'true', 'spinorbital'), CFOUR_HESS_T_WATER_PVDZ_FC,
+           'frozen core', ao='cc-pVDZ')
     psi4.core.clean()

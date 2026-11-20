@@ -22,6 +22,7 @@ import os
 import numpy as np
 import psi4
 import pycc
+from .conftest import record, current_test_context
 
 # H2O, fixed frame (no_com/no_reorient) so displaced geometries share the molecular axes.
 ATOMS = ['O', 'H', 'H']
@@ -88,6 +89,13 @@ GRAD_REF_FC = np.array([
 ])
 
 
+# The one-time 5-point O(h^4) FD agreements quoted above, for the supplementary validation table.
+# The committed tests regression-check the analytic gradient against the FD-validated frozen arrays
+# (reproducing them to ~4e-15); these are the agreements with the finite difference itself.
+FD_AGREEMENT = 1.8e-12
+FD_AGREEMENT_FC = 1.9e-12
+
+
 def _findiff_gradient(basis="6-31G", frozen_core=False, h=0.005):
     """Regeneration recipe for GRAD_REF / GRAD_REF_FC (not run in the tests): central finite
     difference of the CCSD(T) correlation energy under nuclear displacement."""
@@ -107,6 +115,9 @@ def test_ccsdt_gradient_vs_findiff():
     1e-11 is a tight guard with ample margin for cross-platform floating-point variation."""
     cc = _ccwfn_grad(REF, "6-31G")
     g_an = np.asarray(pycc.CCderiv(cc).gradient().correlation)
+    record('Gradient', 'CCSD(T)', 'all-electron', 'fd-energy',
+           FD_AGREEMENT, molecule='H2O', note='spatial', ao_basis='6-31G',
+           limited_by='fd-truncation')
     assert np.max(np.abs(g_an - GRAD_REF)) < 1e-11, g_an
 
 
@@ -134,6 +145,9 @@ def test_ccsdt_gradient_frozen_core():
     cc = _ccwfn_grad(REF, "6-31G", frozen_core=True)
     assert cc.nfzc > 0
     g_an = np.asarray(pycc.CCderiv(cc).gradient().correlation)
+    record('Gradient', 'CCSD(T)', 'frozen core', 'fd-energy',
+           FD_AGREEMENT_FC, molecule='H2O', note='spatial', ao_basis='6-31G',
+           limited_by='fd-truncation')
     assert np.max(np.abs(g_an - GRAD_REF_FC)) < 1e-11, g_an
     # the (T) 1-/2-PDM (active space) reconstructs the frozen-core CCSD(T) correlation energy
     lam = pycc.cclambda(cc, pycc.cchbar(cc))
@@ -146,40 +160,6 @@ def test_ccsdt_gradient_frozen_core():
 # Spin-orbital (UHF) CCSD(T) gradient -- CCderiv._so_gradient.  The (T) enters through the spin-orbital
 # density and the oo/vv dependent-pair kappa_oo/kappa_vv (the spatial branch with H.L -> <pq||rs>).
 # ---------------------------------------------------------------------------------------------------
-
-# NH2 (2-B1, bent) open-shell UHF reference.  Run in C2v with the 2-B1 ground-state occupation pinned
-# (NH2_OCC) so the SCF cannot fall into the 2-A1 solution ~0.074 Eh higher that a poor guess otherwise
-# reaches -- pinned, the reference is guess- and platform-independent (E_SCF/6-31G = -55.5322382101),
-# hence its gradient is freezeable.  6-31G, not STO-3G: STO-3G leaves the (T) vv dependent-pair
-# identically zero (nv too small), the "minimal basis hides sins" trap, so it would not guard that term.
-NH2 = "0 2\nN\nH 1 1.02\nH 1 1.02 2 103.0\n"
-NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}   # 2-B1 (C2v irreps A1,A2,B1,B2)
-
-
-def _nh2_so_ccsdt():
-    """NH2 (2-B1, C2v pinned) / 6-31G spin-orbital CCSD(T) wavefunction, (T) densities built."""
-    psi4.core.clean(); psi4.core.clean_options(); psi4.core.be_quiet()
-    psi4.geometry(NH2)
-    psi4.set_options({'basis': '6-31G', 'scf_type': 'pk', 'reference': 'uhf', **NH2_OCC,
-                      'e_convergence': 1e-12, 'd_convergence': 1e-12, 'r_convergence': 1e-12})
-    _, wfn = psi4.energy('scf', return_wfn=True)
-    cc = pycc.ccwfn(wfn, model='ccsd(t)', make_t3_density=True, orbital_basis='spinorbital')
-    with open(os.devnull, 'w') as dn, contextlib.redirect_stdout(dn):
-        cc.solve_cc(1e-12, 1e-12, 300)
-    return cc
-
-
-# Frozen open-shell reference: the analytic SO CCSD(T) correlation gradient (NH2 2-B1, C2v pinned occ /
-# 6-31G, in psi4's C2v-oriented frame).  Validated once against a 5-point O(h^4) central FD of pycc's
-# own SO CCSD(T) correlation energy (h=0.005, CC/SCF converged to 1e-13), agreeing to 3.7e-12 -- and
-# every FD point's SCF stayed on the 2-B1 state (E in [-55.5324, -55.5321], never the 2-A1 ~-55.46), so
-# no displaced C1 geometry slipped states.  The x-components vanish by the planar (yz) symmetry.
-GRAD_REF_SO_NH2 = np.array([
-    [0.0,  0.0,                 2.81754964293362e-02],
-    [0.0,  1.53549271288188e-02, -1.40877482146681e-02],
-    [0.0, -1.53549271288188e-02, -1.40877482146681e-02],
-])
-
 
 def test_so_ccsdt_gradient_keystone_equals_spatial():
     """SO == spatial: a closed-shell RHF driven through the spin-orbital path reproduces the spatial
@@ -202,11 +182,51 @@ def test_so_ccsdt_gradient_keystone_frozen_core():
     assert np.max(np.abs(g_so - g_sp)) < 1e-10, (g_so, g_sp)
 
 
-def test_so_ccsdt_gradient_openshell_nh2():
-    """Open-shell UHF SO CCSD(T) correlation gradient (NH2 2-B1, C2v pinned occ / 6-31G) vs the frozen
-    5-point-FD-validated reference.  The genuinely new open-shell (T) physics.  The 1e-8 guard (looser
-    than the closed-shell keystones) reflects the near-singular open-shell spin-orbital orbital Hessian
-    -- the Z-vector solve carries a redundant near-zero mode whose cross-platform BLAS noise leaks into
-    the gradient at that level (cf. test_078); the FD oracle itself is tight to 3.7e-12."""
-    g = np.asarray(pycc.CCderiv(_nh2_so_ccsdt()).gradient().correlation)
-    assert np.max(np.abs(g - GRAD_REF_SO_NH2)) < 1e-8, g
+# ---- CH2 (3-B1) / cc-pVDZ: the open-shell CCSD(T) gradient anchor -------------------------------
+# Replaces the former NH2 (2-B1) case.  Triplet CH2's UHF reference is stable by default (psi4's
+# default SCF and `stability_analysis: follow` return the same energy) and its response equations are
+# not near-singular, so this validates against an EXTERNAL code at CFOUR's ten-decimal print floor
+# rather than against a frozen PyCC value with a loose guard.  It is the suite's only open-shell
+# CCSD(T) gradient and its only CFOUR-anchored CC gradient.
+#
+# Oracle: xcfour 2.1, GRD(CCSD(T)) - GRD(SCF) (CALC=CCSD(T), REFERENCE=UHF, MULTIPLICITY=3,
+# BASIS=PVDZ, DERIV_LEVEL=FIRST, SCF_CONV=13, CC_CONV=12, LINEQ_CONV=12).  The geometry is CFOUR's
+# own full-precision MOL-file frame; psi4's cc-pVDZ is CFOUR's PVDZ, so no GENBAS transcription is
+# needed.
+CH2_CFOUR_FRAME = """
+0 3
+C 0.000000000000000  0.000000000000000  0.114593744572731
+H 0.000000000000000 -1.874001424240600 -0.682224040442087
+H 0.000000000000000  1.874001424240600 -0.682224040442087
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+CFOUR_GRAD_T_CH2_PVDZ = np.array(
+    [[ 0.0000000000e+00,  0.0000000000e+00, -5.9503317000e-03],
+     [ 0.0000000000e+00,  9.8478138000e-03,  2.9751658000e-03],
+     [ 0.0000000000e+00, -9.8478138000e-03,  2.9751658000e-03]])
+
+def test_so_ccsdt_gradient_cfour_ch2_triplet():
+    """Open-shell UHF-CCSD(T) correlation gradient for 3-B1 CH2 / cc-pVDZ vs the CFOUR GRD oracle.
+    The genuinely spin-polarized (T) first-derivative path -- spin-orbital (T) perturbed amplitudes
+    and the canonical perturbed-MO dependent pairs on a UHF reference -- validated against an
+    external code; matches to 4.6e-11, the same level the closed-shell cases reach, in ~18 s."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(CH2_CFOUR_FRAME)
+    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'reference': 'uhf',
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'maxiter': 300})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital', make_t3_density=True)
+    with open(os.devnull, 'w') as dn, contextlib.redirect_stdout(dn):
+        cc.solve_cc(1e-13, 1e-13, 300)
+    g = np.asarray(pycc.CCderiv(cc).gradient().correlation)
+    _dev = float(np.max(np.abs(g - CFOUR_GRAD_T_CH2_PVDZ)))
+    record('Gradient', 'CCSD(T)', 'all-electron', 'cfour', _dev,
+           molecule='CH2', note='spin-orbital', ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(g - CFOUR_GRAD_T_CH2_PVDZ)) < 1e-9, g
+    psi4.core.clean()

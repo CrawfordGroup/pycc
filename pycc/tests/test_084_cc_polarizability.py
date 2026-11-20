@@ -18,6 +18,7 @@ closed-shell RHF, all-electron (frozen core / spin-orbital / (T) to follow)."""
 
 import psi4
 import pycc
+from .conftest import record, current_test_context
 import numpy as np
 import pytest
 
@@ -57,22 +58,6 @@ HOF_ALPHA_REF = np.array([[-1.879732823995, -0.599507379935, 0.0],
 WATER_ALPHA_REF_FC = np.array([[0.071841599990, 0.0, 0.0],
                                [0.0, 0.061126138693, 0.0],
                                [0.0, 0.0, 0.174203460940]])
-
-# Open-shell UHF NH2 (2-B1, bent), run in C2v with the 2-B1 occupation pinned (NH2_OCC) so a poor
-# SCF guess cannot fall into the ~0.074 Eh higher 2-A1 solution (making the value freezeable).  SO
-# CCSD correlation polarizability; alpha_zz validated against a 5-point energy 2nd-derivative finite
-# field (field along the C2 axis, C2v-preserving) to 2.7e-10; the full tensor is symmetric to 4e-16.
-NH2 = """
-0 2
-N
-H 1 1.02
-H 1 1.02 2 103.0
-"""
-NH2_OCC = {'docc': [3, 0, 0, 1], 'socc': [0, 0, 1, 0]}
-NH2_ALPHA_REF = np.array([[0.155624577600, 0.0, 0.0],
-                          [0.0, 0.059976118900, 0.0],
-                          [0.0, 0.0, 0.194543333700]])
-
 
 def _findiff_alpha(geom, basis, F=5e-4, freeze_core='false'):
     """Regeneration recipe for the *_ALPHA_REF tensors (not run in the tests): a 5-point O(h^4)
@@ -175,20 +160,6 @@ def test_so_ccsd_polarizability_keystone(rhf_wfn):
         assert np.max(np.abs(alpha - ref)) < 1e-9, (fc, alpha)
         psi4.core.clean()
 
-
-def test_uhf_ccsd_polarizability_nh2(rhf_wfn):
-    """Open-shell UHF spin-orbital CCSD polarizability (2-B1 NH2, pinned occupation) vs the frozen
-    reference -- the genuinely spin-polarized SO path (beyond the RHF-forced-to-SO keystone).
-    alpha_zz was validated against an external energy finite field; the tensor is symmetric and its
-    diagonal positive."""
-    wfn = rhf_wfn(NH2, "6-31G", reference='uhf', freeze_core='false', **NH2_OCC)
-    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
-    cc.solve_cc(1e-12, 1e-12, 100)
-    alpha = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
-    assert np.max(np.abs(alpha - NH2_ALPHA_REF)) < 1e-9, alpha
-    assert np.max(np.abs(alpha - alpha.T)) < 1e-9
-    assert np.all(np.diag(alpha) > 0.0)
-    psi4.core.clean()
 
 
 # ---- CCSD(T): spin-orbital, energy-second-derivative-FD anchored ----
@@ -359,6 +330,10 @@ def test_ccsdt_polarizability_cfour(route, mol, fc):
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=route, make_t3_density=True)
     cc.solve_cc(1e-13, 1e-13, 100)
     a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
+    _dev = float(np.max(np.abs(a - CFOUR_ALPHA_T[(mol, fc)])))
+    record('Static polarizability', 'CCSD(T)', 'frozen core' if fc=='true' else 'all-electron',
+           'cfour', _dev, molecule=mol, note=route, ao_basis='6-31G',
+           limited_by='oracle-print')
     assert np.max(np.abs(a - CFOUR_ALPHA_T[(mol, fc)])) < 1e-9, (mol, fc, route, a)
     assert np.max(np.abs(a - a.T)) < 1e-9                      # symmetric
     psi4.core.clean()
@@ -377,4 +352,219 @@ def test_ccsd_polarizability_guards(rhf_wfn):
     cc_so = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis='spinorbital')   # no make_t3_density
     cc_so.solve_cc(1e-12, 1e-12, 100)
     pycc.CCderiv(cc_so).polarizability().correlation                 # SO path likewise works without the flag
+    psi4.core.clean()
+
+
+# ---- cc-pVDZ water: the only CFOUR-anchored derivative case with d functions -------------------
+# Every other CFOUR-anchored derivative test in the suite runs in an s/p-only basis (6-31G or
+# STO-3G), so nothing that goes wrong specifically at l >= 2 could be caught.  This closes that gap.
+#
+# Oracle: xcfour 2.1 (CALC=CCSD, PROP=SECOND_ORDER, SCF_CONV=13, CC_CONV=12, LINEQ_CONV=12,
+# COORD=CARTESIAN, UNITS=BOHR, SYMMETRY=OFF), same geometry as the 6-31G cases above.  LINEQ_CONV=12
+# is required: at CFOUR's default the oracle shifts by ~5e-8.  psi4's cc-pVDZ and CFOUR's PVDZ are
+# the same basis (SCF energies agree to 4e-13), so no GENBAS transcription is needed here.
+CFOUR_ALPHA_WATER_PVDZ = np.array(
+    [[ 9.7302225400e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  8.0522948200e-02,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  1.4679824060e-01]])
+
+CFOUR_ALPHA_WATER_PVDZ_FC = np.array(
+    [[ 9.7871140400e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  8.2871830400e-02,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  1.4833005720e-01]])
+
+def _pvdz_wfn(geom, freeze_core):
+    """RHF reference in plain cc-pVDZ.  Unlike the 6-31G cases, psi4's cc-pVDZ and CFOUR's PVDZ are
+    the same basis, so no GENBAS transcription is required."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'scf_type': 'pk', 'basis': 'cc-pVDZ', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    return wfn
+
+
+@pytest.mark.parametrize('route', ['spatial', 'spinorbital'])
+@pytest.mark.parametrize('fc', ['false', 'true'])
+def test_ccsd_polarizability_cfour_water_pvdz(route, fc):
+    """CCSD correlation static polarizability for water/cc-pVDZ vs the CFOUR oracle
+    (POLAR - POLARSCF), all-electron and frozen core, on both routes.  The suite's only
+    CFOUR-anchored polarizability with d functions on the heavy atom, and its only CFOUR-anchored
+    CCSD (rather than CCSD(T)) polarizability; matches to ~4.7e-11 (AE) and ~3.0e-11 (FC).
+    ~1 s spatial, ~9 s spin-orbital."""
+    oracle = CFOUR_ALPHA_WATER_PVDZ_FC if fc == 'true' else CFOUR_ALPHA_WATER_PVDZ
+    wfn = _pvdz_wfn(WATER, fc)
+    cc = pycc.ccwfn(wfn, orbital_basis=route)              # model defaults to CCSD
+    cc.solve_cc(1e-12, 1e-12, 100)
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
+    _dev = float(np.max(np.abs(a - oracle)))
+    record('Static polarizability', 'CCSD', 'frozen core' if fc == 'true' else 'all-electron',
+           'cfour', _dev, molecule='water', note=route, ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(a - oracle)) < 1e-9, (fc, route, a)
+    assert np.max(np.abs(a - a.T)) < 1e-9                  # symmetric
+    psi4.core.clean()
+
+
+# ---- cc-pVDZ water, CCSD(T): d functions through the canonical perturbed-MO machinery ----------
+# The (T) energy derivatives go through the canonical perturbed-MO dependent-pair rotations, which
+# CCSD has no analogue for, so the s/p-only coverage gap had to be closed separately for (T).
+#
+# Oracle: xcfour 2.1 (CALC=CCSD(T), PROP=SECOND_ORDER, SCF_CONV=13, CC_CONV=12,
+# LINEQ_CONV=12, COORD=CARTESIAN, UNITS=BOHR, SYMMETRY=OFF), same geometry as the 6-31G cases.
+# LINEQ_CONV=12 is required: at CFOUR's default the oracle shifts by ~5e-8.  psi4's cc-pVDZ and
+# CFOUR's PVDZ are the same basis, so no GENBAS transcription is needed.
+CFOUR_ALPHA_T_WATER_PVDZ = np.array(
+    [[ 1.0725527000e-01,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  1.1431190900e-01,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  1.7361369260e-01]])
+
+CFOUR_ALPHA_T_WATER_PVDZ_FC = np.array(
+    [[ 1.0783247070e-01,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  1.1647764650e-01,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  1.7504011550e-01]])
+
+_PVDZ_T_CASES = [
+    ('spatial', 'false'), ('spatial', 'true'),
+    pytest.param('spinorbital', 'false', marks=pytest.mark.slow),
+    pytest.param('spinorbital', 'true', marks=pytest.mark.slow),
+]
+
+
+@pytest.mark.parametrize('route,fc', _PVDZ_T_CASES)
+def test_ccsdt_polarizability_cfour_water_pvdz(route, fc):
+    """CCSD(T) correlation static polarizability for water/cc-pVDZ vs the CFOUR oracle
+    (POLAR - POLARSCF), all-electron and frozen core.  The (T) contribution here runs through the
+    canonical perturbed-MO dependent pairs on a d-function basis; matches to 4.0e-11 (AE) and
+    3.5e-11 (FC).  The spin-orbital cases reproduce the spatial ones and cost ~104 s / ~61 s, so
+    they are marked slow."""
+    oracle = CFOUR_ALPHA_T_WATER_PVDZ_FC if fc == 'true' else CFOUR_ALPHA_T_WATER_PVDZ
+    wfn = _pvdz_wfn(WATER, fc)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=route, make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
+    _dev = float(np.max(np.abs(a - oracle)))
+    record('Static polarizability', 'CCSD(T)', 'frozen core' if fc == 'true' else 'all-electron',
+           'cfour', _dev, molecule='water', note=route, ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(a - oracle)) < 1e-9, (fc, route, a)
+    assert np.max(np.abs(a - a.T)) < 1e-9
+    psi4.core.clean()
+
+
+# ---- H2O2 (C1) / cc-pVDZ UHF-CCSD polarizability vs CFOUR ----------------------------------------
+# The suite's only CFOUR-anchored polarizability with a genuine off-diagonal tensor, a C1 molecule,
+# and d functions on the heavy atoms; the water/HOF cases are C2v/Cs with a mostly diagonal tensor.
+#
+# NOTE ON THE FRAME: unlike the water and HOF runs, which CFOUR only translates, CFOUR ROTATES this
+# geometry into its principal-axis frame.  A polarizability is a tensor, so the rotation matters and
+# the geometry below is CFOUR's own full-precision MOL-file frame, not the input frame (verified a
+# rigid rotation: the interatomic-distance matrix is preserved to 2.2e-15).
+#
+# Oracle: xcfour 2.1 (CALC=CCSD, REFERENCE=UHF, BASIS=PVDZ, PROP=SECOND_ORDER, SCF_CONV=13,
+# CC_CONV=12, LINEQ_CONV=12, COORD=CARTESIAN, UNITS=BOHR, SYMMETRY=OFF).  psi4's cc-pVDZ is CFOUR's
+# PVDZ (SCF energies agree to 1.0e-12), so no GENBAS transcription is needed.
+#
+# H2O2 is a closed-shell singlet, so the UHF reference converges to the RHF solution.  This case
+# therefore exercises the UHF/spin-orbital code path on a low-symmetry, d-function, full-tensor
+# problem; it does NOT exercise spin polarization (see the CH2 triplet cases for that).
+HOOH_CFOUR_FRAME = """
+0 1
+O  1.313602544788383  0.124090118251637 -0.055367423238815
+O -1.309383033303342 -0.116326173527049 -0.065499736410004
+H  1.799529345252981 -1.427801218568449  0.920221334021641
+H -1.866496054393653  1.304581781911141  0.998028196417380
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+CFOUR_ALPHA_HOOH_PVDZ = np.array(
+    [[-1.2757709953e+00,  6.5445222100e-02, -8.9168779000e-03],
+     [ 6.5445222100e-02,  2.6253710960e-01,  1.4365897000e-03],
+     [-8.9168779000e-03,  1.4365897000e-03,  2.1068091650e-01]])
+
+
+@pytest.mark.slow
+def test_uhf_ccsd_polarizability_cfour_hooh_pvdz():
+    """UHF-CCSD correlation polarizability for H2O2 (C1) / cc-pVDZ vs the CFOUR oracle
+    (POLAR - POLARSCF).  The only CFOUR-anchored polarizability here with a real off-diagonal block
+    (alpha_xy ~ 0.065), C1 symmetry and d functions; matches the full tensor to 3.7e-11, at CFOUR's
+    ten-decimal print floor.  Symmetric to 4.5e-15.  Marked slow at ~180 s, matching the other
+    spin-orbital polarizability cases in this file."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(HOOH_CFOUR_FRAME)
+    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'reference': 'uhf',
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
+    cc.solve_cc(1e-13, 1e-13, 200)
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
+    _dev = float(np.max(np.abs(a - CFOUR_ALPHA_HOOH_PVDZ)))
+    record('Static polarizability', 'CCSD', 'all-electron', 'cfour', _dev,
+           molecule='H2O2', note='spin-orbital', ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(a - CFOUR_ALPHA_HOOH_PVDZ)) < 1e-9, a
+    assert np.max(np.abs(a - a.T)) < 1e-9                     # symmetric
+    assert abs(a[0, 1]) > 1e-2                                # the off-diagonal block is real
+    psi4.core.clean()
+
+
+# ---- CH2 (3-B1) / cc-pVDZ: the well-conditioned open-shell anchor -------------------------------
+# Triplet CH2 is the suite's clean genuinely spin-polarized case.  Unlike the doublets (NH2, H2O2+),
+# psi4's default UHF here converges straight to the stable solution -- `stability_analysis: follow`
+# returns the same energy -- so no occupation pinning and no stability following are needed, and the
+# response equations are not near-singular (CFOUR's own tensor is exactly symmetric here, whereas for
+# H2O2+ it is only symmetric to 1.4e-9).  PyCC matches the oracle at CFOUR's ten-decimal print floor,
+# the same level the closed-shell cases reach: there is no general open-shell penalty.
+#
+# Oracle: xcfour 2.1 (CALC=CCSD, REFERENCE=UHF, MULTIPLICITY=3, BASIS=PVDZ, SCF_CONV=13, CC_CONV=12,
+# LINEQ_CONV=12).  Geometry is CFOUR's own full-precision MOL-file frame (r(CH)=1.0776 A,
+# angle=133.93 deg); psi4's cc-pVDZ is CFOUR's PVDZ, so no GENBAS transcription is needed.
+CH2_CFOUR_FRAME = """
+0 3
+C 0.000000000000000  0.000000000000000  0.114593744572731
+H 0.000000000000000 -1.874001424240600 -0.682224040442087
+H 0.000000000000000  1.874001424240600 -0.682224040442087
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+
+def _ch2_so_ccwfn():
+    """Converged spin-orbital UHF-CCSD wavefunction for 3-B1 CH2 / cc-pVDZ in CFOUR's frame."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(CH2_CFOUR_FRAME)
+    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'reference': 'uhf',
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'maxiter': 300})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
+    cc.solve_cc(1e-13, 1e-13, 300)
+    return cc
+
+
+CFOUR_ALPHA_CH2_PVDZ = np.array(
+    [[-1.3428527800e-02,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  1.4683632300e-02,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  3.3539820000e-02]])
+
+def test_uhf_ccsd_polarizability_cfour_ch2_triplet():
+    """Open-shell UHF-CCSD correlation polarizability for 3-B1 CH2 / cc-pVDZ vs the CFOUR oracle
+    (POLAR - POLARSCF).  The genuinely spin-polarized counterpart to the closed-shell cc-pVDZ cases;
+    matches the full tensor to 3.7e-11, at CFOUR's ten-decimal print floor, in ~18 s -- the same
+    level the closed-shell comparisons reach."""
+    cc = _ch2_so_ccwfn()
+    a = np.asarray(pycc.CCderiv(cc).polarizability().correlation)
+    _dev = float(np.max(np.abs(a - CFOUR_ALPHA_CH2_PVDZ)))
+    record('Static polarizability', 'CCSD', 'all-electron', 'cfour', _dev,
+           molecule='CH2', note='spin-orbital', ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(a - CFOUR_ALPHA_CH2_PVDZ)) < 1e-9, a
+    assert np.max(np.abs(a - a.T)) < 1e-9                    # symmetric
     psi4.core.clean()

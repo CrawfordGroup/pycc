@@ -11,6 +11,7 @@ frozen core, which psi4's CC gradients do not support -- the spatial frozen-core
 import numpy as np
 import psi4
 import pycc
+from .conftest import record
 
 
 E_CONV = R_CONV = 1e-11
@@ -133,3 +134,58 @@ def test_so_ccsd_gradient_rohf_raises():
     cc, _ = _so_ccwfn(NH2, reference="rohf")
     with pytest.raises(NotImplementedError):
         pycc.CCderiv(cc).gradient().correlation
+
+
+# ---- CH2 (3-B1) / cc-pVDZ: the well-conditioned open-shell anchor -------------------------------
+# Triplet CH2 is the suite's clean genuinely spin-polarized case.  Unlike the doublets (NH2, H2O2+),
+# psi4's default UHF here converges straight to the stable solution -- `stability_analysis: follow`
+# returns the same energy -- so no occupation pinning and no stability following are needed, and the
+# response equations are not near-singular (CFOUR's own tensor is exactly symmetric here, whereas for
+# H2O2+ it is only symmetric to 1.4e-9).  PyCC matches the oracle at CFOUR's ten-decimal print floor,
+# the same level the closed-shell cases reach: there is no general open-shell penalty.
+#
+# Oracle: xcfour 2.1 (CALC=CCSD, REFERENCE=UHF, MULTIPLICITY=3, BASIS=PVDZ, SCF_CONV=13, CC_CONV=12,
+# LINEQ_CONV=12).  Geometry is CFOUR's own full-precision MOL-file frame (r(CH)=1.0776 A,
+# angle=133.93 deg); psi4's cc-pVDZ is CFOUR's PVDZ, so no GENBAS transcription is needed.
+CH2_CFOUR_FRAME = """
+0 3
+C 0.000000000000000  0.000000000000000  0.114593744572731
+H 0.000000000000000 -1.874001424240600 -0.682224040442087
+H 0.000000000000000  1.874001424240600 -0.682224040442087
+symmetry c1
+units bohr
+no_com
+no_reorient
+"""
+
+
+def _ch2_so_ccwfn():
+    """Converged spin-orbital UHF-CCSD wavefunction for 3-B1 CH2 / cc-pVDZ in CFOUR's frame."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(CH2_CFOUR_FRAME)
+    psi4.set_options({'basis': 'cc-pVDZ', 'scf_type': 'pk', 'reference': 'uhf',
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13, 'maxiter': 300})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    cc = pycc.ccwfn(wfn, orbital_basis='spinorbital')
+    cc.solve_cc(1e-13, 1e-13, 300)
+    return cc
+
+
+CFOUR_GRAD_CH2_PVDZ = np.array(
+    [[ 0.0000000000e+00,  0.0000000000e+00, -5.4761065000e-03],
+     [ 0.0000000000e+00,  9.2608332000e-03,  2.7380532000e-03],
+     [ 0.0000000000e+00, -9.2608332000e-03,  2.7380532000e-03]])
+
+def test_so_ccsd_gradient_cfour_ch2_triplet():
+    """Open-shell UHF-CCSD correlation gradient for 3-B1 CH2 / cc-pVDZ vs the CFOUR GRD oracle
+    (GRD(CCSD) - GRD(SCF)).  The suite's only CFOUR-anchored CC gradient and its only genuinely
+    spin-polarized gradient validated against an external code; matches to 4.2e-11, at CFOUR's
+    ten-decimal print floor, in ~8 s."""
+    g = np.asarray(pycc.gradient(pycc.CCderiv(_ch2_so_ccwfn())).correlation)
+    _dev = float(np.max(np.abs(g - CFOUR_GRAD_CH2_PVDZ)))
+    record('Gradient', 'CCSD', 'all-electron', 'cfour', _dev,
+           molecule='CH2', note='spin-orbital', ao_basis='cc-pVDZ',
+           limited_by='oracle-print')
+    assert np.max(np.abs(g - CFOUR_GRAD_CH2_PVDZ)) < 1e-9, g
+    psi4.core.clean()
