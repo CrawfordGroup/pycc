@@ -127,10 +127,43 @@ class CCderiv(CorrelatedDerivs):
         self.cclambda.solve_lambda(e_conv=e_conv, r_conv=r_conv, maxiter=maxiter)
         self.ccdensity = ccdensity(ccwfn, self.cclambda)
 
+    def _ensure_t3_offdiag(self):
+        """Install the full (T) ``Doo``/``Dvv`` when the perturbed-MO gauge is non-canonical.
+
+        :func:`~pycc.cctriples.t3_density` builds these blocks from their diagonals alone, which is
+        valid only while ``d_x f`` is diagonal within oo and vv.  Under non-canonical perturbed MOs
+        the off-diagonal ``d_x f`` survives and the full blocks are required; they are the
+        ``<0|Lambda_3 [E_pq, T_3]|0>`` terms the canonical route carries instead as the oo/vv
+        dependent-pair rotations, so exactly one of the two routes applies them.
+
+        Lazy rather than eager because ``_gauge_override`` can be set after construction.  Replaces
+        the cached blocks on the wavefunction and rebuilds :attr:`ccdensity`, which captured the
+        diagonal-only versions when it was built.
+        """
+        if getattr(self, '_t3_offdiag_installed', False):
+            return
+        if self.ccwfn.model.upper() != 'CCSD(T)' or self.perturbed_mo_gauge != 'non-canonical':
+            return
+        if self.ccwfn.orbital_basis == 'spinorbital':
+            raise NotImplementedError(
+                "CCderiv: non-canonical perturbed MOs for CCSD(T) are implemented for the "
+                "spatial-orbital route only; the spin-orbital off-diagonal (T) density is not "
+                "built yet, and using the diagonal-only blocks here is silently wrong.  Use the "
+                "canonical gauge, or the spatial route.")
+        from . import cctriples
+        from .ccdensity import ccdensity
+        cc = self.ccwfn
+        Doo, Dvv = cctriples.t3_density_offdiag(cc.o, cc.v, cc.no, cc.nv, cc.t1, cc.t2,
+                                                cc.H.F, cc.H.ERI, self.contract)
+        cc.Doo, cc.Dvv = Doo, Dvv
+        self._t3_offdiag_installed = True
+        self.ccdensity = ccdensity(cc, self.cclambda)
+
     def _unrelaxed_densities(self):
         """CC unrelaxed reduced densities: the Lambda-response 1-PDM ``D`` and the (symmetrized)
         cumulant 2-PDM ``Gam`` (:meth:`ccdensity.gradient_densities`), full-MO arrays.  Supplies the
         base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
+        self._ensure_t3_offdiag()
         D, Gam = self.ccdensity.gradient_densities()
         return np.asarray(D), np.asarray(Gam)
 

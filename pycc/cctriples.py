@@ -1158,6 +1158,52 @@ def t3_density(o, v, no, nv, t1, t2, F, ERI, L, contract):
                 'S1': S1, 'S2': S2}
 
 
+def t3_density_offdiag(o, v, no, nv, t1, t2, F, ERI, contract):
+    r"""Full (not diagonal-only) (T) ``Doo``/``Dvv``, spatial-orbital spin-adapted closed shell.
+
+    Needed only for **non-canonical** perturbed MOs.  In the canonical gauge ``d_x f`` is diagonal
+    within oo and vv, so :func:`t3_density` builds these blocks from their diagonals alone; in the
+    non-canonical gauge the off-diagonal ``d_x f`` survives and the full blocks are required.  The
+    off-diagonal elements are the ``<0|Lambda_3 [E_pq, T_3]|0>`` terms that the canonical route
+    instead carries as the oo/vv dependent-pair rotations (Table ccsdt_1pdm caption of
+    ``docs/cc_gradients_orbital_response.tex``), so the two routes must not both be applied.
+
+    Per Table ccsdt_1pdm, with ``M3`` the connected T3 and ``X3+Y3`` the spin-adapted
+    ``Lambda_3`` multiplier (free index on ``Lambda_3`` for vv, on ``M3`` for oo)::
+
+        Dvv_ab = +1/2 (X3+Y3)_acd M3_bcd       (ijk loop: all abc in hand)
+        Doo_ij = -1/2 M3_ikl (X3+Y3)_jkl       (abc loop: all ijk in hand)
+
+    The two blocks contract complementary index sets, so they require **opposite loop orders**:
+    the ijk loop cannot form ``Doo_ij`` for ``i != j`` because only one ``i`` is in hand per
+    iteration.  Both contractions are ``O(N^7)``, the same scaling as the (T) energy itself.
+
+    The diagonals reproduce :func:`t3_density`'s ``doo``/``dvv`` exactly, which is the cheapest
+    regression on this routine.
+    """
+    sym = lambda A: (8*A - 4*A.swapaxes(0,1) - 4*A.swapaxes(1,2) - 4*A.swapaxes(0,2)
+                     + 2*np.moveaxis(A, 0, 2) + 2*np.moveaxis(A, 2, 0))
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+
+    Dvv = np.zeros((nv, nv), dtype=t2.dtype)
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                M3 = t3c_ijk(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract, True)
+                N3 = t3d_ijk(o, v, i, j, k, t1, t2, Woovv, F, contract, True)
+                Dvv += 0.5 * contract('acd,bcd->ab', sym(M3) + sym(N3), M3)
+
+    Doo = np.zeros((no, no), dtype=t2.dtype)
+    for a in range(nv):
+        for b in range(nv):
+            for c in range(nv):
+                M3 = t3c_abc(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract, True)
+                N3 = t3d_abc(o, v, a, b, c, t1, t2, Woovv, F, contract, True)
+                Doo -= 0.5 * contract('ikl,jkl->ij', M3, sym(M3) + sym(N3))
+
+    return Doo, Dvv
+
+
 def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract):
     r"""Analytic response of the spatial (closed-shell RHF) (T) intermediates to any real
     (Hermitian) perturbation (electric field, nuclear displacement, etc.) -- the product-rule
