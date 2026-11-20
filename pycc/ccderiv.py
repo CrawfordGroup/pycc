@@ -598,6 +598,15 @@ class CCderiv(CorrelatedDerivs):
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
+        if self.perturbed_mo_gauge == 'non-canonical':
+            # See the spin-orbital counterpart in _so_perturbed_t3_intermediates.
+            t3f = cctriples.t3_full_coupled(o, v, no, nv, t01, t02, dt1, dt2,
+                                            F0, df, ERI0, deri, self.contract)
+            d = cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
+                                      L0, dL, self.contract, t3_full=t3f)
+            d['Doo'], d['Dvv'] = cctriples.dt3_density_offdiag(
+                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract, t3_full=t3f)
+            return d
         return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
 
     def _so_perturbed_t3_intermediates(self, df, deri, dt1, dt2):
