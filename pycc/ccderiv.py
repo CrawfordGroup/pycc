@@ -127,10 +127,38 @@ class CCderiv(CorrelatedDerivs):
         self.cclambda.solve_lambda(e_conv=e_conv, r_conv=r_conv, maxiter=maxiter)
         self.ccdensity = ccdensity(ccwfn, self.cclambda)
 
+    def _ensure_t3_offdiag(self):
+        """Install the full (T) ``Doo``/``Dvv`` when the perturbed-MO gauge is non-canonical.
+
+        :func:`~pycc.cctriples.t3_density` builds these blocks from their diagonals alone, which is
+        valid only while ``d_x f`` is diagonal within oo and vv.  Under non-canonical perturbed MOs
+        the off-diagonal ``d_x f`` survives and the full blocks are required; they are the
+        ``<0|Lambda_3 [E_pq, T_3]|0>`` terms the canonical route carries instead as the oo/vv
+        dependent-pair rotations, so exactly one of the two routes applies them.
+
+        Lazy rather than eager because ``_gauge_override`` can be set after construction.  Replaces
+        the cached blocks on the wavefunction and rebuilds :attr:`ccdensity`, which captured the
+        diagonal-only versions when it was built.
+        """
+        if getattr(self, '_t3_offdiag_installed', False):
+            return
+        if self.ccwfn.model.upper() != 'CCSD(T)' or self.perturbed_mo_gauge != 'non-canonical':
+            return
+        from . import cctriples
+        from .ccdensity import ccdensity
+        cc = self.ccwfn
+        build = (cctriples.so_t3_density_offdiag if cc.orbital_basis == 'spinorbital'
+                 else cctriples.t3_density_offdiag)
+        Doo, Dvv = build(cc.o, cc.v, cc.no, cc.nv, cc.t1, cc.t2, cc.H.F, cc.H.ERI, self.contract)
+        cc.Doo, cc.Dvv = Doo, Dvv
+        self._t3_offdiag_installed = True
+        self.ccdensity = ccdensity(cc, self.cclambda)
+
     def _unrelaxed_densities(self):
         """CC unrelaxed reduced densities: the Lambda-response 1-PDM ``D`` and the (symmetrized)
         cumulant 2-PDM ``Gam`` (:meth:`ccdensity.gradient_densities`), full-MO arrays.  Supplies the
         base Z-vector (:meth:`CorrelatedDerivs._orbital_response` / :meth:`_so_orbital_response`)."""
+        self._ensure_t3_offdiag()
         D, Gam = self.ccdensity.gradient_densities()
         return np.asarray(D), np.asarray(Gam)
 
@@ -570,6 +598,15 @@ class CCderiv(CorrelatedDerivs):
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
+        if self.perturbed_mo_gauge == 'non-canonical':
+            # See the spin-orbital counterpart in _so_perturbed_t3_intermediates.
+            t3f = cctriples.t3_full_coupled(o, v, no, nv, t01, t02, dt1, dt2,
+                                            F0, df, ERI0, deri, self.contract)
+            d = cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
+                                      L0, dL, self.contract, t3_full=t3f)
+            d['Doo'], d['Dvv'] = cctriples.dt3_density_offdiag(
+                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract, t3_full=t3f)
+            return d
         return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
 
     def _so_perturbed_t3_intermediates(self, df, deri, dt1, dt2):
@@ -581,7 +618,20 @@ class CCderiv(CorrelatedDerivs):
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
-        return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
+        if self.perturbed_mo_gauge == 'non-canonical':
+            # Non-canonical perturbed MOs keep the off-diagonal d_x f, which enters twice: the
+            # perturbed T3 acquires the full coupling (so_t3_full_coupled, materialised because
+            # neither batched loop has the needed indices), and the (T) oo/vv response blocks need
+            # their off-diagonal elements.  See CCderiv._ensure_t3_offdiag.
+            t3f = cctriples.so_t3_full_coupled(o, v, no, nv, t01, t02, dt1, dt2,
+                                               F0, df, ERI0, deri, self.contract)
+            d = cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
+                                         self.contract, t3_full=t3f)
+            d['Doo'], d['Dvv'] = cctriples.so_dt3_density_offdiag(
+                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract, t3_full=t3f)
+            return d
+        return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
+                                        self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None,
                           omega=0.0, maxiter=None, rconv=None, label=None, max_diis=None):
