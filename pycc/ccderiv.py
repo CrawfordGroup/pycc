@@ -17,6 +17,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import warnings
+
 import numpy as np
 
 from .correlatedderivs import CorrelatedDerivs
@@ -26,6 +28,24 @@ from .utils import title, iteration, converged
 
 if TYPE_CHECKING:
     from .ccwfn import CCwfn
+
+
+
+def _unconverged(name, niter, rms, rconv):
+    """Report a perturbed-response solve that exhausted ``maxiter`` without reaching ``rconv``.
+
+    These solves previously fell out of their iteration loop and returned the unconverged
+    amplitudes silently, so every downstream property consumed them with no indication that
+    anything was wrong.  A near-singular perturbed Jacobian can stall the iteration at a residual
+    well above the requested tolerance (DIIS then extrapolates on error vectors that are all at
+    the same noise level), which is exactly the case this guard exists to surface.
+    """
+    msg = ("%s did NOT converge: %d iterations, final rms %.3e > r_conv %.3e. "
+           "The returned amplitudes are unconverged and any property built from them is "
+           "unreliable.  Try a different DIIS subspace (max_diis) or a looser r_conv." %
+           (name, niter, rms, rconv))
+    print("  *** " + msg, flush=True)
+    warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
 
 class CCderiv(CorrelatedDerivs):
@@ -68,6 +88,9 @@ class CCderiv(CorrelatedDerivs):
     two-electron limit against validated CISD, the translational sum rules, and gauge invariance
     (test_104 / test_105; ``docs/cc_aat_validation_plan.md``).
     """
+
+    #: DIIS subspace for the perturbed T / Lambda solves (see ``_unconverged``).
+    _perturbed_max_diis = 8
 
     def __init__(self, ccwfn: "CCwfn", e_conv=None, r_conv=None, maxiter=None,
                  max_diis=8, start_diis=1) -> None:
@@ -236,7 +259,8 @@ class CCderiv(CorrelatedDerivs):
         r2 += tmp - tmp.swapaxes(0, 1) - tmp.swapaxes(2, 3) + tmp.swapaxes(0, 1).swapaxes(2, 3)
         return r1, r2
 
-    def _perturbed_amplitudes(self, df, deri, dL, hbar, omega=0.0, maxiter=None, rconv=None, label=None):
+    def _perturbed_amplitudes(self, df, deri, dL, hbar, omega=0.0, maxiter=None, rconv=None, label=None,
+                              max_diis=None):
         r"""Perturbed CCSD amplitudes ``dt/dx`` (iterative).  Differentiating the CC amplitude
         equation ``R_mu = <mu|HBAR|0> = 0`` with respect to the perturbation ``x`` splits into the
         ``d_x t`` part (the CCSD Jacobian :meth:`_ccsd_jacobian`, ``<mu|[HBAR, d_x t]|0>``) and the
@@ -268,6 +292,7 @@ class CCderiv(CorrelatedDerivs):
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
+        max_diis = self._perturbed_max_diis if max_diis is None else max_diis
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         o, v = cc.o, cc.v
         saveERI, saveL = cc.H.ERI, cc.H.L
@@ -278,7 +303,7 @@ class CCderiv(CorrelatedDerivs):
             cc.H.ERI, cc.H.L = saveERI, saveL
         B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
-        diis = helper_diis(X1, X2, 8)
+        diis = helper_diis(X1, X2, max_diis)
         name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
         print(title(name), flush=True)
         t0 = time.time()
@@ -296,9 +321,12 @@ class CCderiv(CorrelatedDerivs):
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
+        else:
+            _unconverged(name, niter, rms, rconv)
         return X1, X2
 
-    def _so_perturbed_amplitudes(self, df, deri, hbar, omega=0.0, maxiter=None, rconv=None, label=None):
+    def _so_perturbed_amplitudes(self, df, deri, hbar, omega=0.0, maxiter=None, rconv=None, label=None,
+                                 max_diis=None):
         r"""Spin-orbital perturbed CCSD amplitudes ``dt/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_amplitudes` (SO Jacobian :meth:`_so_ccsd_jacobian`; the SO residual has
         no 0.5 and no final symmetrization)::
@@ -322,6 +350,7 @@ class CCderiv(CorrelatedDerivs):
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
+        max_diis = self._perturbed_max_diis if max_diis is None else max_diis
         o, v = cc.o, cc.v
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
         saveERI = cc.H.ERI
@@ -332,7 +361,7 @@ class CCderiv(CorrelatedDerivs):
             cc.H.ERI = saveERI
         B1, B2 = np.asarray(B1), np.asarray(B2)      # singles source's leading term is r_T1's f_ai
         X1, X2 = B1 / Dia, B2 / Dijab                # ([v,o] block A_ai), correct for anti-Hermitian df
-        diis = helper_diis(X1, X2, 8)
+        diis = helper_diis(X1, X2, max_diis)
         name = "perturbed T-amplitudes" + (" (%s)" % label if label else "")
         print(title(name), flush=True)
         t0 = time.time()
@@ -348,6 +377,8 @@ class CCderiv(CorrelatedDerivs):
                 break
             diis.add_error_vector(X1, X2)
             X1, X2 = diis.extrapolate(X1, X2)
+        else:
+            _unconverged(name, niter, rms, rconv)
         return X1, X2
 
     def _perturbed_hbar(self, df, deri, dL, dt1, dt2, hbar):
@@ -553,7 +584,7 @@ class CCderiv(CorrelatedDerivs):
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None,
-                          omega=0.0, maxiter=None, rconv=None, label=None):
+                          omega=0.0, maxiter=None, rconv=None, label=None, max_diis=None):
         r"""Perturbed Lambda ``dLambda/dx`` (iterative, linear): a single inhomogeneous linear solve
         that reuses ``cclambda``'s ground-state Lambda residual ``r_L`` as the operator (no separate
         perturbed-multiplier amplitudes).  Differentiating the Lambda
@@ -580,6 +611,7 @@ class CCderiv(CorrelatedDerivs):
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
+        max_diis = self._perturbed_max_diis if max_diis is None else max_diis
         o, v = cc.o, cc.v
         c = self.contract
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
@@ -612,7 +644,7 @@ class CCderiv(CorrelatedDerivs):
         rL1_0 = rL1(zl1, zl2, H0, zGvv, zGoo)           # = 2*Hov (the Lambda-independent constant)
         rL2_0 = rL2(zl1, zl2, L0, H0, zGvv, zGoo)       # = SYM[L]
         dl1, dl2 = B1 / Dia, B2 / Dijab
-        diis = helper_diis(dl1, dl2, 8)
+        diis = helper_diis(dl1, dl2, max_diis)
         name = "perturbed Lambda" + (" (%s)" % label if label else "")
         print(title(name), flush=True)
         t0 = time.time()
@@ -631,10 +663,12 @@ class CCderiv(CorrelatedDerivs):
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)
+        else:
+            _unconverged(name, niter, rms, rconv)
         return dl1, dl2
 
     def _so_perturbed_lambda(self, df, deri, dt1, dt2, hbar, lam, dS1=None, dS2=None,
-                             omega=0.0, maxiter=None, rconv=None, label=None):
+                             omega=0.0, maxiter=None, rconv=None, label=None, max_diis=None):
         r"""Spin-orbital perturbed Lambda ``dLambda/dx`` -- the spin-orbital analogue of
         :meth:`_perturbed_lambda` (SO ``_so_r_L``; inhomogeneity = ``r_L`` with perturbed HBAR +
         perturbed ERI, unperturbed G, plus the ``dG.H`` / ``dG.<pq||rs>`` product-rule halves)::
@@ -654,6 +688,7 @@ class CCderiv(CorrelatedDerivs):
         cc = self.ccwfn
         maxiter = cc.maxiter if maxiter is None else maxiter
         rconv = cc.r_conv if rconv is None else rconv
+        max_diis = self._perturbed_max_diis if max_diis is None else max_diis
         o, v = cc.o, cc.v
         c = self.contract
         Dia, Dijab = cc.Dia + omega, cc.Dijab + omega
@@ -685,7 +720,7 @@ class CCderiv(CorrelatedDerivs):
         rL1_0 = rL1(zl1, zl2, H0, zGvv, zGoo)
         rL2_0 = rL2(zl1, zl2, ERI0, H0, zGvv, zGoo)
         dl1, dl2 = B1 / Dia, B2 / Dijab
-        diis = helper_diis(dl1, dl2, 8)
+        diis = helper_diis(dl1, dl2, max_diis)
         name = "perturbed Lambda" + (" (%s)" % label if label else "")
         print(title(name), flush=True)
         t0 = time.time()
@@ -703,6 +738,8 @@ class CCderiv(CorrelatedDerivs):
                 break
             diis.add_error_vector(dl1, dl2)
             dl1, dl2 = diis.extrapolate(dl1, dl2)
+        else:
+            _unconverged(name, niter, rms, rconv)
         return dl1, dl2
 
     def _perturbed_correlation_densities(self, dt1, dt2, dl1, dl2, lam, dt3=None):

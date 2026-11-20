@@ -193,3 +193,100 @@ def cisd_h2o2(psi4_environment):
         ci.solve_ci(e_conv=1e-13, r_conv=1e-13, maxiter=150)
         return ci
     return _make
+
+
+# ---------------------------------------------------------------------------
+# Validation-table instrumentation
+# ---------------------------------------------------------------------------
+# The tests already compute the achieved deviation from their oracle and then
+# discard it when the assertion passes.  ``record()`` keeps it, so the manuscript's
+# supplementary validation table reports *measured* agreement rather than the
+# assertion tolerance (an upper bound somebody chose).
+#
+# Opt-in: nothing is written unless PYCC_VALIDATION_LOG names an output file.
+# Rows accumulate in memory and are flushed once at session end, so a partial or
+# interrupted run still leaves whatever it reached.
+#
+#   PYCC_VALIDATION_LOG=/tmp/validation.json pytest pycc/tests/test_090*.py
+#
+# ``oracle`` is a short key into the table's footnoted oracle list (see
+# docs/validation_table.py); ``limited_by`` marks a row whose agreement is set by
+# the reference rather than by PyCC -- CFOUR's printed precision, or a finite
+# difference's truncation error.
+
+import atexit as _atexit
+import json as _json
+
+_VALIDATION_ROWS = []
+
+
+def record(property, method, basis, oracle, achieved, *,
+           reference=None, note=None, limited_by=None, molecule=None, ao_basis=None):
+    """Record one measured agreement for the supplementary validation table.
+
+    Parameters
+    ----------
+    property : str   e.g. 'Hessian', 'APT (length gauge)', 'AAT'
+    method   : str   e.g. 'CCSD', 'CCSD(T)', 'MP2', 'CISD'
+    basis    : str   the all-electron / frozen-core label for this case
+    ao_basis : str, optional -- the AO basis set ('6-31G', 'cc-pVDZ', 'STO-3G').
+               Pass it explicitly; it is reported as its own column in the
+               supplementary validation table.
+    oracle   : str   short key: 'cfour', 'fd-energy', 'fd-dipole', 'internal',
+                     'identity', 'psi4'
+    achieved : float measured max|pycc - reference|
+    limited_by : str, optional -- 'oracle-print' or 'fd-truncation' when the
+                 number reflects the reference's precision, not PyCC's error.
+    """
+    if not os.environ.get('PYCC_VALIDATION_LOG'):
+        return
+    _VALIDATION_ROWS.append({
+        'property': property, 'method': method, 'basis': basis,
+        'ao_basis': ao_basis,
+        'molecule': molecule, 'oracle': oracle, 'achieved': float(achieved),
+        'reference': reference, 'note': note, 'limited_by': limited_by,
+    })
+
+
+@_atexit.register
+def _flush_validation_rows():
+    path = os.environ.get('PYCC_VALIDATION_LOG')
+    if not path or not _VALIDATION_ROWS:
+        return
+    existing = []
+    if os.path.exists(path):
+        try:
+            with open(path) as fh:
+                existing = _json.load(fh)
+        except (ValueError, OSError):
+            existing = []
+    with open(path, 'w') as fh:
+        _json.dump(existing + _VALIDATION_ROWS, fh, indent=1)
+
+
+def current_test_context():
+    """Molecule / orbital-basis / frozen-core context parsed from the running test's name.
+
+    pytest exports ``PYTEST_CURRENT_TEST`` as e.g.
+    ``pycc/tests/test_090_ccsd_hessian.py::test_ccsd_hessian_hof_spinorbital_fc (call)``.
+    Instrumenting a shared ``_check``-style helper therefore needs no change at the call
+    sites: the molecule and route are already encoded in the test name.
+    """
+    raw = os.environ.get('PYTEST_CURRENT_TEST', '')
+    name = raw.split('::')[-1].split(' ')[0] if raw else ''
+    low = name.lower()
+    mol = None
+    for tag, label in (('h2op', 'H2O+'), ('c2h4p', 'C2H4+'), ('hof', 'HOF'),
+                       ('h2o2', 'H2O2'), ('water', 'H2O'), ('ch4', 'CH4'),
+                       ('h2o', 'H2O'), ('nh2', 'NH2')):
+        if tag in low:
+            mol = label
+            break
+    if 'spinorbital' in low or '_so' in low or low.endswith('_so'):
+        route = 'spin-orbital'
+    elif 'spatial' in low:
+        route = 'spatial'
+    else:
+        route = None
+    fc = 'frozen core' if ('_fc' in low or 'frozen' in low) else ('all-electron' if route else None)
+    return {'test': name, 'molecule': mol, 'route': route, 'frozen_core': fc}

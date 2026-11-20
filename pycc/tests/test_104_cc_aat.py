@@ -26,6 +26,17 @@ import psi4
 import pytest
 
 import pycc
+from .conftest import record, current_test_context
+
+
+def _fc_label(value):
+    """Normalize psi4's freeze_core string to the label used in the validation table."""
+    return 'frozen core' if str(value).lower() == 'true' else 'all-electron'
+
+
+def _route_label(orbital_basis):
+    return 'spin-orbital' if 'spin' in str(orbital_basis).lower() else 'spatial'
+
 from pycc.cphf import Perturbation
 
 
@@ -118,6 +129,9 @@ def test_cc_aat_two_electron_equals_cisd(basis):
 
     assert abs(float(e_cc) - float(e_ci)) < 1e-12, (e_cc, e_ci)   # CCSD == CISD for 2 electrons
     assert np.abs(A_ci).max() > 1e-4, np.abs(A_ci).max()          # the reference is non-trivial
+    record('AAT', 'CCSD', 'all-electron', 'identity', float(np.abs(A_cc - A_ci).max()),
+           reference='CISD AAT (CCSD exact for two electrons)', note='two-electron exactness',
+           molecule='H4_2PLUS', ao_basis=basis)
     assert np.abs(A_cc - A_ci).max() < 1e-10, np.abs(A_cc - A_ci).max()
 
 
@@ -129,7 +143,7 @@ def test_cc_aat_two_electron_equals_cisd(basis):
 @pytest.mark.parametrize('orbital_basis,freeze_core,geom,basis',
                          [('spatial', 'false', HOOH_C1, '6-31G'),
                           ('spatial', 'true', HOOH_C1, '6-31G'),
-                          ('spinorbital', 'false', WATER_CS, 'STO-3G')],
+                          ('spinorbital', 'false', WATER_CS, 'cc-pVDZ')],
                          ids=['H2O2-spatial-AE', 'H2O2-spatial-FC', 'H2O-SO-AE'])
 def test_cc_aat_translational_sum_rule(orbital_basis, freeze_core, geom, basis):
     """Summing the AAT over atoms gives the field derivative of the momentum expectation value::
@@ -163,6 +177,9 @@ def test_cc_aat_translational_sum_rule(orbital_basis, freeze_core, geom, basis):
             lhs = 2.0 * aat[:, a, b].sum()
             rhs = (c('pq,pq->', magD[b], grad[a])
                    + c('pq,pq->', D0, grad[a] @ magU[b] - magU[b] @ grad[a]))
+            record('AAT', 'CCSD', _fc_label(freeze_core), 'identity', abs(lhs - rhs),
+                   reference='translational sum rule', note=_route_label(orbital_basis),
+                   molecule=('H2O2' if geom is HOOH_C1 else 'H2O'), ao_basis=basis)
             assert abs(lhs - rhs) < 1e-10, (a, b, lhs, rhs)
             if abs(lhs) > 1e-6:
                 checked += 1
@@ -222,6 +239,8 @@ def test_cc_aat_size_intensivity():
                                     'He 0.000000000000 0.000000000000 40.000000000000\nunits bohr')
     A_super = np.asarray(_ccderiv(supermolecule, basis='6-31G')._correlation_aat())
     dev = np.abs(A_super[:4] - A_mono).max()
+    record('AAT', 'CCSD', 'all-electron', 'identity', float(dev),
+           reference='size intensivity', note='spatial', molecule='H2O2', ao_basis='6-31G')
     assert dev < 1e-8 * scale, (dev, dev / scale)
 
 
@@ -230,9 +249,12 @@ def test_cc_aat_magnetic_gauge_invariance(orbital_basis):
     """Invariant to the gauge of the redundant magnetic oo/vv response, all-electron and
     frozen-core.  With a frozen core the two choices genuinely differ."""
     for fc in ('false', 'true'):
-        d = _ccderiv(WATER_CS, freeze_core=fc, orbital_basis=orbital_basis)
+        d = _ccderiv(WATER_CS, basis='cc-pVDZ', freeze_core=fc, orbital_basis=orbital_basis)
         nc = np.asarray(d.aat(orbital_gauge='non-canonical').correlation)
         ca = np.asarray(d.aat(orbital_gauge='canonical').correlation)
+        record('AAT', 'CCSD', _fc_label(fc), 'identity', float(np.abs(nc - ca).max()),
+               reference='magnetic gauge', note=_route_label(orbital_basis), molecule='H2O',
+               ao_basis='cc-pVDZ')
         assert np.abs(nc - ca).max() < 1e-9, (fc, np.abs(nc - ca).max())
 
 
@@ -241,11 +263,14 @@ def test_cc_aat_perturbed_mo_gauge_invariance():
     a different knob from the magnetic orbital gauge above, which governs the imaginary ones.
     CCSD is oo/vv-invariant, so canonical and non-canonical perturbed orbitals must agree."""
     for fc in ('false', 'true'):
-        d = _ccderiv(WATER_CS, freeze_core=fc)
+        d = _ccderiv(WATER_CS, basis='cc-pVDZ', freeze_core=fc)
         nc = np.asarray(d.aat().correlation)
         dc = pycc.CCderiv(d.ccwfn)
         dc._gauge_override = 'canonical'
         ca = np.asarray(dc.aat().correlation)
+        record('AAT', 'CCSD', _fc_label(fc), 'identity', float(np.abs(nc - ca).max()),
+               reference='perturbed-MO gauge', note='spatial', molecule='H2O',
+               ao_basis='cc-pVDZ')
         assert np.abs(nc - ca).max() < 1e-9, (fc, np.abs(nc - ca).max())
 
 
@@ -308,11 +333,14 @@ def test_cc_aat_spinorbital_equals_spatial():
     agree.  Everything the AAT needs is basis-agnostic except the half-derivative overlaps, so this
     is what guards that dispatch."""
     for fc in ('false', 'true'):
-        sp = np.asarray(_ccderiv(WATER_CS, orbital_basis='spatial', freeze_core=fc)
-                        ._correlation_aat())
-        so = np.asarray(_ccderiv(WATER_CS, orbital_basis='spinorbital', freeze_core=fc)
-                        ._correlation_aat())
+        sp = np.asarray(_ccderiv(WATER_CS, basis='cc-pVDZ', orbital_basis='spatial',
+                                 freeze_core=fc)._correlation_aat())
+        so = np.asarray(_ccderiv(WATER_CS, basis='cc-pVDZ', orbital_basis='spinorbital',
+                                 freeze_core=fc)._correlation_aat())
         assert np.abs(sp).max() > 1e-3, (fc, np.abs(sp).max())
+        record('AAT', 'CCSD', _fc_label(fc), 'internal', float(np.abs(sp - so).max()),
+               reference='spin-orbital vs spatial', note='keystone', molecule='H2O',
+               ao_basis='cc-pVDZ')
         assert np.abs(sp - so).max() < 1e-10, (fc, np.abs(sp - so).max())
 
 

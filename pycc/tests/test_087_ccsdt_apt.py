@@ -27,6 +27,7 @@ the SO HOF case is marked slow.
 
 import psi4
 import pycc
+from .conftest import record, current_test_context
 import numpy as np
 import pytest
 
@@ -293,15 +294,20 @@ def _cfour_wfn(geom, freeze_core):
     return wfn
 
 
+_LAST_FC = None   # set by the builder below; read by _check for the validation table
+
+
 def _ccsdt_apt(geom, freeze_core, orbital_basis):
     """Converged CCSD(T) APT PropertyComponents for the CFOUR-basis reference."""
+    global _LAST_FC
+    _LAST_FC = 'frozen core' if str(freeze_core).lower() == 'true' else 'all-electron'
     wfn = _cfour_wfn(geom, freeze_core)
     cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=orbital_basis, make_t3_density=True)
     cc.solve_cc(1e-12, 1e-12, 100)
     return pycc.apt(pycc.CCderiv(cc))
 
 
-def _check(r, corr_ref, total_ref, Z, perp):
+def _check(r, corr_ref, total_ref, Z, perp, fc=None, ao='6-31G'):
     """Shared assertions for a planar-molecule CCSD/CCSD(T) APT run vs the CFOUR oracle: correlation
     and total tensors, the facade decomposition (total == nuclear + reference + correlation, nuclear
     == Z_A delta), the out-of-plane block vanishing, and the translational (acoustic) sum rule.  ``Z``
@@ -309,6 +315,12 @@ def _check(r, corr_ref, total_ref, Z, perp):
     in the xy plane, 0/x for water in the yz plane)."""
     corr = np.asarray(r.correlation)
     total = np.asarray(r.total)
+    _dev = float(np.max(np.abs(corr - corr_ref)))
+    _ctx = current_test_context()
+    record('APT (length gauge)', 'CCSD(T)', fc or _LAST_FC or _ctx.get('frozen_core') or 'all-electron', 'cfour', _dev,
+           molecule=_ctx.get('molecule'), note=_ctx.get('route'), ao_basis=ao,
+           limited_by='oracle-print')
+
     assert np.max(np.abs(corr - corr_ref)) < 1e-9, corr
     assert np.max(np.abs(total - total_ref)) < 1e-9, total
     # facade decomposition is exact
@@ -433,4 +445,106 @@ def test_ccsdt_apt_guards():
     cc.solve_cc(1e-12, 1e-12, 100)
     with pytest.raises(ValueError):                             # unknown route still raises
         pycc.CCderiv(cc).apt(route='bogus').correlation
+    psi4.core.clean()
+
+
+# ---- cc-pVDZ water, CCSD(T): d functions through the canonical perturbed-MO machinery ----------
+# The (T) energy derivatives go through the canonical perturbed-MO dependent-pair rotations, which
+# CCSD has no analogue for, so the s/p-only coverage gap had to be closed separately for (T).
+#
+# Oracle: xcfour 2.1 (CALC=CCSD(T), VIB=EXACT, SCF_CONV=13, CC_CONV=12,
+# LINEQ_CONV=12, COORD=CARTESIAN, UNITS=BOHR, SYMMETRY=OFF), same geometry as the 6-31G cases.
+# LINEQ_CONV=12 is required: at CFOUR's default the oracle shifts by ~5e-8.  psi4's cc-pVDZ and
+# CFOUR's PVDZ are the same basis, so no GENBAS transcription is needed.
+CFOUR_APT_T_WATER_PVDZ = np.array(
+    [[[ 4.3083011500e-02, -0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00,  9.6107941300e-02, -0.0000000000e+00],
+      [-0.0000000000e+00, -0.0000000000e+00,  1.0453710240e-01]],
+     [[-2.1541505700e-02,  0.0000000000e+00,  0.0000000000e+00],
+      [-0.0000000000e+00, -4.8053970700e-02,  2.8450636100e-02],
+      [ 0.0000000000e+00,  2.0499964400e-02, -5.2268551200e-02]],
+     [[-2.1541505700e-02,  0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00, -4.8053970700e-02, -2.8450636100e-02],
+      [ 0.0000000000e+00, -2.0499964400e-02, -5.2268551200e-02]]])
+
+CFOUR_APT_T_WATER_PVDZ_FC = np.array(
+    [[[ 4.3368918200e-02, -0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00,  9.6702203100e-02, -0.0000000000e+00],
+      [-0.0000000000e+00, -0.0000000000e+00,  1.0490434790e-01]],
+     [[-2.1684459000e-02,  0.0000000000e+00,  0.0000000000e+00],
+      [-0.0000000000e+00, -4.8351101600e-02,  2.8542391800e-02],
+      [ 0.0000000000e+00,  2.0619177700e-02, -5.2452174000e-02]],
+     [[-2.1684459000e-02,  0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00, -4.8351101600e-02, -2.8542391800e-02],
+      [ 0.0000000000e+00, -2.0619177700e-02, -5.2452174000e-02]]])
+
+CFOUR_APT_T_WATER_PVDZ_TOTAL = np.array(
+    [[[-6.8768225860e-01, -0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00, -4.1993183950e-01, -0.0000000000e+00],
+      [-0.0000000000e+00, -0.0000000000e+00, -3.1776538690e-01]],
+     [[ 3.4384112930e-01,  0.0000000000e+00, -0.0000000000e+00],
+      [-0.0000000000e+00,  2.0996591970e-01,  6.5789976400e-02],
+      [ 0.0000000000e+00,  1.0351497110e-01,  1.5888269350e-01]],
+     [[ 3.4384112930e-01,  0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00,  2.0996591970e-01, -6.5789976400e-02],
+      [ 0.0000000000e+00, -1.0351497110e-01,  1.5888269350e-01]]])
+
+CFOUR_APT_T_WATER_PVDZ_TOTAL_FC = np.array(
+    [[[-6.8739635190e-01, -0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00, -4.1933757770e-01, -0.0000000000e+00],
+      [-0.0000000000e+00, -0.0000000000e+00, -3.1739814140e-01]],
+     [[ 3.4369817600e-01,  0.0000000000e+00, -0.0000000000e+00],
+      [-0.0000000000e+00,  2.0966878880e-01,  6.5881732100e-02],
+      [ 0.0000000000e+00,  1.0363418440e-01,  1.5869907070e-01]],
+     [[ 3.4369817600e-01,  0.0000000000e+00,  0.0000000000e+00],
+      [ 0.0000000000e+00,  2.0966878880e-01, -6.5881732100e-02],
+      [ 0.0000000000e+00, -1.0363418440e-01,  1.5869907070e-01]]])
+
+def _pvdz_wfn(geom, freeze_core):
+    """RHF reference in plain cc-pVDZ.  Unlike the 6-31G cases, psi4's cc-pVDZ and CFOUR's PVDZ are
+    the same basis, so no GENBAS transcription is required."""
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.geometry(geom)
+    psi4.set_options({'scf_type': 'pk', 'basis': 'cc-pVDZ', 'freeze_core': freeze_core,
+                      'e_convergence': 1e-13, 'd_convergence': 1e-13})
+    _, wfn = psi4.energy('scf', return_wfn=True)
+    return wfn
+
+
+def _ccsdt_apt_pvdz(geom, freeze_core, orbital_basis):
+    """Converged CCSD(T) APT PropertyComponents in plain cc-pVDZ."""
+    global _LAST_FC
+    _LAST_FC = 'frozen core' if str(freeze_core).lower() == 'true' else 'all-electron'
+    wfn = _pvdz_wfn(geom, freeze_core)
+    cc = pycc.ccwfn(wfn, model='ccsd(t)', orbital_basis=orbital_basis, make_t3_density=True)
+    cc.solve_cc(1e-13, 1e-13, 100)
+    return pycc.apt(pycc.CCderiv(cc))
+
+
+def test_ccsdt_apt_cfour_water_pvdz_spatial():
+    """CCSD(T) length-gauge APT for water/cc-pVDZ (spatial, C2v, plane yz) vs the CFOUR DIPDER
+    oracle, all-electron and frozen core.  Exercises the canonical perturbed-MO dependent pairs
+    against a d-function basis; matches to 1.2e-10 (AE) and 1.7e-10 (FC).  ~10 s + ~6 s."""
+    _check(_ccsdt_apt_pvdz(WATER, 'false', 'spatial'),
+           CFOUR_APT_T_WATER_PVDZ, CFOUR_APT_T_WATER_PVDZ_TOTAL, [8.0, 1.0, 1.0], perp=0,
+           fc='all-electron', ao='cc-pVDZ')
+    psi4.core.clean()
+    _check(_ccsdt_apt_pvdz(WATER, 'true', 'spatial'),
+           CFOUR_APT_T_WATER_PVDZ_FC, CFOUR_APT_T_WATER_PVDZ_TOTAL_FC, [8.0, 1.0, 1.0], perp=0,
+           fc='frozen core', ao='cc-pVDZ')
+    psi4.core.clean()
+
+
+@pytest.mark.slow
+def test_so_ccsdt_apt_cfour_water_pvdz():
+    """Spin-orbital CCSD(T) APT for water/cc-pVDZ vs the CFOUR oracle.  Reproduces the spatial
+    agreements exactly, so it adds SO coverage at l >= 2; marked slow at ~121 s + ~62 s."""
+    _check(_ccsdt_apt_pvdz(WATER, 'false', 'spinorbital'),
+           CFOUR_APT_T_WATER_PVDZ, CFOUR_APT_T_WATER_PVDZ_TOTAL, [8.0, 1.0, 1.0], perp=0,
+           fc='all-electron', ao='cc-pVDZ')
+    psi4.core.clean()
+    _check(_ccsdt_apt_pvdz(WATER, 'true', 'spinorbital'),
+           CFOUR_APT_T_WATER_PVDZ_FC, CFOUR_APT_T_WATER_PVDZ_TOTAL_FC, [8.0, 1.0, 1.0], perp=0,
+           fc='frozen core', ao='cc-pVDZ')
     psi4.core.clean()
