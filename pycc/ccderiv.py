@@ -609,7 +609,14 @@ class CCderiv(CorrelatedDerivs):
         o, v, no, nv = cc.o, cc.v, cc.no, cc.nv
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
-        return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
+        d = cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
+        if self.perturbed_mo_gauge == 'non-canonical':
+            # Non-canonical perturbed MOs keep the off-diagonal d_x f, so the full (T) oo/vv
+            # response blocks are required; see CCderiv._ensure_t3_offdiag.
+            dDoo, dDvv = cctriples.so_dt3_density_offdiag(
+                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract)
+            d['Doo'], d['Dvv'] = dDoo, dDvv
+        return d
 
     def _perturbed_lambda(self, df, deri, dL, dt1, dt2, hbar, lam, dS1=None, dS2=None,
                           omega=0.0, maxiter=None, rconv=None, label=None, max_diis=None):

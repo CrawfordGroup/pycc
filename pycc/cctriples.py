@@ -1432,6 +1432,66 @@ def so_t3_density_offdiag(o, v, no, nv, t1, t2, F, ERI, contract):
     return Doo, Dvv
 
 
+def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    r"""Full (not diagonal-only) perturbed (T) ``Doo``/``Dvv``, spin-orbital.
+
+    The response counterpart of :func:`so_t3_density_offdiag`, needed for CCSD(T) **second**
+    derivatives under non-canonical perturbed MOs.  Same two opposite loop orders, same index
+    pairings; each block is the product rule of its contraction.
+
+    The perturbed T3 batches are obtained without a hand-written product-rule numerator: the
+    numerators of :func:`t3c_abc_so` / :func:`t3d_abc_so` (and their ijk counterparts) are
+    **bilinear** in (amplitude, integral), so with ``WithDenom=False``
+
+        dN = N(dt, W) + N(t, dW)
+
+    is exact.  ``F`` is passed as ``df`` in the integral half so the ``Fov`` factor of the
+    disconnected numerator is differentiated too.  The denominator response is ``diag(df)``, the
+    canonical-perturbed-orbital form; the off-diagonal ``d_x f`` coupling is a separate term and is
+    **not** included here.
+    """
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    docc, dvir = diag(df)[o], diag(df)[v]
+
+    dDvv = np.zeros((nv, nv), dtype=t2.dtype)
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                dNc = (t3c_ijk_so(o, v, i, j, k, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                       + t3c_ijk_so(o, v, i, j, k, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                dNd = (t3d_ijk_so(o, v, i, j, k, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                       + t3d_ijk_so(o, v, i, j, k, t1, t2, dWoovv, df, contract, WithDenom=False))
+                D = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
+                dD = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
+                dt3c = (dNc - t3c * dD) / D
+                dt3d = (dNd - t3d * dD) / D
+                dDvv += (1/12) * (contract('aef,bef->ab', (dt3c + dt3d), t3c)
+                                  + contract('aef,bef->ab', (t3c + t3d), dt3c))
+
+    dDoo = np.zeros((no, no), dtype=t2.dtype)
+    for a in range(nv):
+        for b in range(nv):
+            for c in range(nv):
+                t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
+                dNc = (t3c_abc_so(o, v, a, b, c, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                       + t3c_abc_so(o, v, a, b, c, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                dNd = (t3d_abc_so(o, v, a, b, c, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                       + t3d_abc_so(o, v, a, b, c, t1, t2, dWoovv, df, contract, WithDenom=False))
+                D = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ) - (vir[a] + vir[b] + vir[c])
+                dD = (docc.reshape(-1,1,1) + docc.reshape(-1,1) + docc) - (dvir[a] + dvir[b] + dvir[c])
+                dt3c = (dNc - t3c * dD) / D
+                dt3d = (dNd - t3d * dD) / D
+                dDoo -= (1/12) * (contract('ilm,jlm->ij', dt3c, (t3c + t3d))
+                                  + contract('ilm,jlm->ij', t3c, (dt3c + dt3d)))
+
+    return dDoo, dDvv
+
+
 def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
     r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
     perturbation (electric field, nuclear displacement, etc.) -- the product-rule
