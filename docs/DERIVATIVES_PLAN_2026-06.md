@@ -2107,6 +2107,10 @@ there would turn a silent wrong answer into a loud one at the cost of a few line
 both fillings are available for CCSD(T) and can be cross-checked against each other.  More
 expensive, numerically more stable on (near-)degenerate systems.
 
+**CCSD(T) only.**  MP2 is out of scope (PI 2026-11-16): its gradients and Hessians work cleanly
+with non-canonical perturbed MOs and canonical buys it nothing, so the choice matters only where
+the (T) density's diagonal-only construction makes it matter.
+
 **The degeneracy gate stays, and is principled.**  The 1e-8 cutoff in `CPHF.full_U` identifies
 pairs the canonical condition does *not* determine (a redundant rotation whose gap vanishes), and
 falls back to `-1/2 S^(x)`, which is the correct limit.  Exact symmetry degeneracy is therefore

@@ -451,22 +451,36 @@ class CPHF(object):
     def full_U(self, pert: "Perturbation", ncore: int = 0, canonical: bool = False) -> np.ndarray:
         r"""The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 
-        The matrix element ``U^x_qp = <phi_q|d phi_p/dx>`` (the coefficient of orbital ``q`` in
-        the first-order change of orbital ``p``, as it enters the integral derivatives). The
-        non-canonical perturbed-orbital conditions fix the diagonal blocks from the overlap
-        derivative, ``U^x_ij = -1/2 S^(x)_ij`` and ``U^x_ab = -1/2 S^(x)_ab``; the CPHF solve gives the
-        occupied response ``Uia[i,a] = <phi_a|d phi_i> = U^x_ai`` (so ``U[v,o] = Uia.T``), and
-        orthonormality ``U^x_pq + U^x_qp = -S^(x)_pq`` fixes ``U[o,v] = -S^(x)[o,v] - Uia``. For an
-        electric field ``S^(x) = 0``, so the oo/vv blocks vanish and ``U[o,v] = -Uia``::
+        ``U^x_qp`` is the **coefficient-rotation** matrix: the coefficient of orbital ``q`` in the
+        first-order change of orbital ``p`` at fixed basis functions,
+
+            d_x |phi_p> = sum_q |phi_q> U^x_qp + |d_x^AO phi_p>
+
+        so it is **not** the full overlap derivative.  Carrying the second term,
+
+            <phi_q|d_x phi_p> = U^x_qp + <phi_q|d_x^AO phi_p>   (the half-derivative overlap)
+
+        and the two coincide only for a basis that does not move with the perturbation (an
+        electric field).  For a nuclear displacement the AO term is the ``half_S`` that the AAT
+        and VG-APT blocks add as ``M_R = U^R + half_S^T``; it is also what makes ``S^(x)``
+        nonzero, since ``S^(x)_pq`` is the fixed-coefficient overlap derivative.
+
+        The non-canonical perturbed-orbital conditions fix the redundant diagonal blocks from
+        that overlap derivative, ``U^x_ij = -1/2 S^(x)_ij`` and ``U^x_ab = -1/2 S^(x)_ab``; the CPHF
+        solve gives the ov response, returned as an ``(no, nv)`` array holding ``U^x_ai`` (so
+        ``U[v,o]`` is its transpose), and orthonormality ``U^x_pq + U^x_qp = -S^(x)_pq`` fixes
+        ``U[o,v] = -S^(x)[o,v] - U^x_ai``.  Note this makes the ov and vo blocks **not** equal:
+        for an electric field ``S^(x) = 0``, so ``U^x_ia = -U^x_ai``, and the oo/vv blocks
+        vanish::
 
             U^x_ij = -1/2 S^(x)_ij,   U^x_ab = -1/2 S^(x)_ab
-            U^x_ai = <phi_a | d phi_i / dx>,   U^x_ia = -S^(x)_ia - U^x_ai   (U^x_pq + U^x_qp = -S^(x)_pq)
+            U^x_ai = (CPHF ov response),   U^x_ia = -S^(x)_ia - U^x_ai   (U^x_pq + U^x_qp = -S^(x)_pq)
 
         .. math::
 
             \begin{aligned}
             U^{x}_{ij} &= -\tfrac{1}{2} S^{(x)}_{ij}, \quad U^{x}_{ab} = -\tfrac{1}{2} S^{(x)}_{ab} \\
-            U^{x}_{ai} &= \langle \phi_a | \partial_x \phi_i \rangle, \quad
+            U^{x}_{ai} &= (\text{CPHF ov response}), \quad
                 U^{x}_{ia} = -S^{(x)}_{ia} - U^{x}_{ai} \quad (U^{x}_{pq} + U^{x}_{qp} = -S^{(x)}_{pq})
             \end{aligned}
 
@@ -477,21 +491,23 @@ class CPHF(object):
         divide by ``(eps_i - eps_j)``, using the already-solved ov response. The redundant
         core-core, active-active, and vir-vir blocks stay at ``-1/2 S^(x)``.
 
-        ``canonical=True`` (CCSD(T) derivatives): the (T) energy is *not* invariant to
-        active-occupied or virtual rotations, so the canonical perturbed-orbital condition
-        ``d_x f_pq = 0`` must also fix the active-oo and vv off-diagonal blocks -- the same
+        ``canonical=True`` (the default for CCSD(T) derivatives): the canonical perturbed-orbital
+        condition ``d_x f_pq = 0`` also fixes the active-oo and vv off-diagonal blocks -- the same
         ``(eps_p - eps_q)`` divide, generalized from the frozen-core core<->active block to the
-        full active-oo/vv space, so that ``d_x f`` is diagonal within oo and vv. Diagonal and
+        full active-oo/vv space, so that ``d_x f`` is diagonal within oo and vv.  This is a
+        **cost** choice, not a correctness one: (T) is oo/vv-invariant exactly like MP2 and CCSD,
+        so either filling is valid, and canonical is picked because it lets the (T) ``Doo``/``Dvv``
+        be built from their diagonal blocks alone, avoiding an O(N^7) step.  Diagonal and
         (near-)degenerate pairs keep the orthonormality value ``-1/2 S^(x)`` (the divide is
         ill-conditioned there -- the standard degeneracy caveat)."""
         o, v, nmo = self.o, self.v, self.wfn.nmo
         fx, Sx = self._skeleton_derivatives(pert)
-        Uia = self._ov_response(pert)                       # (no, nv): U_ai = <phi_a|d phi_i>
+        U_ai = self._ov_response(pert)                      # (no, nv) array holding U^x_ai
         U = np.zeros((nmo, nmo))
         U[o, o] = -0.5 * Sx[o, o]
         U[v, v] = -0.5 * Sx[v, v]
-        U[v, o] = Uia.T
-        U[o, v] = -Sx[o, v] - Uia
+        U[v, o] = U_ai.T
+        U[o, v] = -Sx[o, v] - U_ai
         if ncore:
             # Core <-> active-occupied block from d_x f_ij = 0 (i core, j active), with
             # U_ji = -S^(x)_ij - U_ij eliminated:
