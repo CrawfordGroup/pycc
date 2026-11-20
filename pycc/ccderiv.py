@@ -144,17 +144,12 @@ class CCderiv(CorrelatedDerivs):
             return
         if self.ccwfn.model.upper() != 'CCSD(T)' or self.perturbed_mo_gauge != 'non-canonical':
             return
-        if self.ccwfn.orbital_basis == 'spinorbital':
-            raise NotImplementedError(
-                "CCderiv: non-canonical perturbed MOs for CCSD(T) are implemented for the "
-                "spatial-orbital route only; the spin-orbital off-diagonal (T) density is not "
-                "built yet, and using the diagonal-only blocks here is silently wrong.  Use the "
-                "canonical gauge, or the spatial route.")
         from . import cctriples
         from .ccdensity import ccdensity
         cc = self.ccwfn
-        Doo, Dvv = cctriples.t3_density_offdiag(cc.o, cc.v, cc.no, cc.nv, cc.t1, cc.t2,
-                                                cc.H.F, cc.H.ERI, self.contract)
+        build = (cctriples.so_t3_density_offdiag if cc.orbital_basis == 'spinorbital'
+                 else cctriples.t3_density_offdiag)
+        Doo, Dvv = build(cc.o, cc.v, cc.no, cc.nv, cc.t1, cc.t2, cc.H.F, cc.H.ERI, self.contract)
         cc.Doo, cc.Dvv = Doo, Dvv
         self._t3_offdiag_installed = True
         self.ccdensity = ccdensity(cc, self.cclambda)

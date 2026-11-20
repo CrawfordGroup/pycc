@@ -1394,6 +1394,44 @@ def so_t3_density(o, v, no, nv, t1, t2, F, ERI, contract):
                 'Govoo': Govoo, 'Gvvvo': Gvvvo, 'S1': S1, 'S2': S2}
 
 
+def so_t3_density_offdiag(o, v, no, nv, t1, t2, F, ERI, contract):
+    r"""Full (not diagonal-only) (T) ``Doo``/``Dvv``, spin-orbital (UHF/ROHF references).
+
+    The spin-orbital companion to :func:`t3_density_offdiag`; see that routine for why the full
+    blocks are needed under non-canonical perturbed MOs and why exactly one of the two gauges may
+    apply them.
+
+    Per Table ccsdt_1pdm of ``docs/cc_gradients_orbital_response.tex``, with the free index on the
+    ``Lambda_3`` multiplier ``t3c+t3d`` for vv and on the connected ``t3c`` for oo::
+
+        Dvv_ab = +1/12 (t3c+t3d)_aef t3c_bef      (ijk loop: all abc in hand)
+        Doo_ij = -1/12 t3c_ilm (t3c+t3d)_jlm      (abc loop: all ijk in hand)
+
+    The table writes the free index in the third slot; the forms above follow from the full
+    antisymmetry of the spin-orbital T3 under cyclic permutation of either index triple.  The
+    diagonals reproduce :func:`so_t3_density`'s ``doo``/``dvv`` exactly.
+    """
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+
+    Dvv = np.zeros((nv, nv), dtype=t2.dtype)
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                Dvv += (1/12) * contract('aef,bef->ab', (t3c + t3d), t3c)
+
+    Doo = np.zeros((no, no), dtype=t2.dtype)
+    for a in range(nv):
+        for b in range(nv):
+            for c in range(nv):
+                t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
+                Doo -= (1/12) * contract('ilm,jlm->ij', t3c, (t3c + t3d))
+
+    return Doo, Dvv
+
+
 def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
     r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
     perturbation (electric field, nuclear displacement, etc.) -- the product-rule
