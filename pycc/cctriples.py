@@ -1432,7 +1432,73 @@ def so_t3_density_offdiag(o, v, no, nv, t1, t2, F, ERI, contract):
     return Doo, Dvv
 
 
-def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+def so_t3_full_coupled(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    r"""Materialise ``(t3c, t3d, dt3c, dt3d)`` over all six indices, with the **full**
+    off-diagonal ``d_x f`` coupling in the perturbed amplitudes (spin-orbital).
+
+    Before any assumption about the basis, the triples satisfy
+
+        sum_l f_il t3_ljk + sum_l f_jl t3_ilk + sum_l f_kl t3_ijl
+          - sum_d f_ad t3_dbc - sum_d f_bd t3_adc - sum_d f_cd t3_abd  =  N_ijk^abc
+
+    which collapses to ``D_ijk^abc t3 = N`` for diagonal ``f``.  Differentiating, and using that
+    the *unperturbed* ``f`` is still diagonal so the ``f . t3^x`` terms give ``D t3^x``,
+
+        D_ijk^abc t3^x = N^x - [ the same bracket built from d_x f ]
+
+    The ``l = i`` and ``d = a`` terms of that bracket are ``t3 * dD`` with
+    ``dD = d_x(f_ii + f_jj + f_kk - f_aa - f_bb - f_cc)``, which is all the batched routines keep;
+    that is exact only under canonical perturbed MOs, where the off-diagonal ``d_x f`` vanishes.
+    Here the whole bracket is carried, so the result is valid in either gauge.  No iteration is
+    involved: the unperturbed denominator still inverts directly.
+
+    The two sums need ``t3`` at *other* occupied and *other* virtual indices respectively, which
+    neither batched loop has, so the amplitudes are materialised.  Memory is ``4 no^3 nv^3``
+    (about 1 GB for ``no = 8``, ``nv = 40``), i.e. ``N^6``: adequate for validation-sized systems,
+    not for production.  A batched multi-pass version is the eventual replacement.
+
+    The numerator responses need no hand-written product rule: the numerators are bilinear in
+    (amplitude, integral), so ``dN = N(dt, W) + N(t, dW)`` with ``WithDenom=False``.
+    """
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    dfoo, dfvv = np.asarray(df)[o, o], np.asarray(df)[v, v]
+
+    shape = (no, no, no, nv, nv, nv)
+    t3c = np.zeros(shape, dtype=t2.dtype); t3d = np.zeros(shape, dtype=t2.dtype)
+    dNc = np.zeros(shape, dtype=t2.dtype); dNd = np.zeros(shape, dtype=t2.dtype)
+    for i in range(no):
+        for j in range(no):
+            for k in range(no):
+                t3c[i,j,k] = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                t3d[i,j,k] = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                dNc[i,j,k] = (t3c_ijk_so(o, v, i, j, k, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                              + t3c_ijk_so(o, v, i, j, k, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                dNd[i,j,k] = (t3d_ijk_so(o, v, i, j, k, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                              + t3d_ijk_so(o, v, i, j, k, t1, t2, dWoovv, df, contract, WithDenom=False))
+
+    D = (occ[:,None,None,None,None,None] + occ[None,:,None,None,None,None]
+         + occ[None,None,:,None,None,None] - vir[None,None,None,:,None,None]
+         - vir[None,None,None,None,:,None] - vir[None,None,None,None,None,:])
+
+    def coupling(x):
+        """The full bracket; its diagonal part is the usual ``x * dD``."""
+        out = contract('il,ljkabc->ijkabc', dfoo, x)
+        out += contract('jl,ilkabc->ijkabc', dfoo, x)
+        out += contract('kl,ijlabc->ijkabc', dfoo, x)
+        out -= contract('ad,ijkdbc->ijkabc', dfvv, x)
+        out -= contract('bd,ijkadc->ijkabc', dfvv, x)
+        out -= contract('cd,ijkabd->ijkabc', dfvv, x)
+        return out
+
+    dNc -= coupling(t3c); dNc /= D
+    dNd -= coupling(t3d); dNd /= D
+    return t3c, t3d, dNc, dNd
+
+
+def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract,
+                           t3_full=None):
     r"""Full (not diagonal-only) perturbed (T) ``Doo``/``Dvv``, spin-orbital.
 
     The response counterpart of :func:`so_t3_density_offdiag`, needed for CCSD(T) **second**
@@ -1459,16 +1525,20 @@ def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, con
     for i in range(no):
         for j in range(no):
             for k in range(no):
-                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
-                dNc = (t3c_ijk_so(o, v, i, j, k, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
-                       + t3c_ijk_so(o, v, i, j, k, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
-                dNd = (t3d_ijk_so(o, v, i, j, k, dt1, dt2, Woovv, F, contract, WithDenom=False)
-                       + t3d_ijk_so(o, v, i, j, k, t1, t2, dWoovv, df, contract, WithDenom=False))
-                D = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
-                dD = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
-                dt3c = (dNc - t3c * dD) / D
-                dt3d = (dNd - t3d * dD) / D
+                if t3_full is None:
+                    t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                    dNc = (t3c_ijk_so(o, v, i, j, k, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                           + t3c_ijk_so(o, v, i, j, k, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                    dNd = (t3d_ijk_so(o, v, i, j, k, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                           + t3d_ijk_so(o, v, i, j, k, t1, t2, dWoovv, df, contract, WithDenom=False))
+                    D = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
+                    dD = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
+                    dt3c = (dNc - t3c * dD) / D
+                    dt3d = (dNd - t3d * dD) / D
+                else:
+                    t3c, t3d = t3_full[0][i,j,k], t3_full[1][i,j,k]
+                    dt3c, dt3d = t3_full[2][i,j,k], t3_full[3][i,j,k]
                 dDvv += (1/12) * (contract('aef,bef->ab', (dt3c + dt3d), t3c)
                                   + contract('aef,bef->ab', (t3c + t3d), dt3c))
 
@@ -1476,23 +1546,27 @@ def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, con
     for a in range(nv):
         for b in range(nv):
             for c in range(nv):
-                t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
-                t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
-                dNc = (t3c_abc_so(o, v, a, b, c, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
-                       + t3c_abc_so(o, v, a, b, c, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
-                dNd = (t3d_abc_so(o, v, a, b, c, dt1, dt2, Woovv, F, contract, WithDenom=False)
-                       + t3d_abc_so(o, v, a, b, c, t1, t2, dWoovv, df, contract, WithDenom=False))
-                D = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ) - (vir[a] + vir[b] + vir[c])
-                dD = (docc.reshape(-1,1,1) + docc.reshape(-1,1) + docc) - (dvir[a] + dvir[b] + dvir[c])
-                dt3c = (dNc - t3c * dD) / D
-                dt3d = (dNd - t3d * dD) / D
+                if t3_full is None:
+                    t3c = t3c_abc_so(o, v, a, b, c, t2, Wvvvo, Wovoo, F, contract)
+                    t3d = t3d_abc_so(o, v, a, b, c, t1, t2, Woovv, F, contract)
+                    dNc = (t3c_abc_so(o, v, a, b, c, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                           + t3c_abc_so(o, v, a, b, c, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                    dNd = (t3d_abc_so(o, v, a, b, c, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                           + t3d_abc_so(o, v, a, b, c, t1, t2, dWoovv, df, contract, WithDenom=False))
+                    D = (occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ) - (vir[a] + vir[b] + vir[c])
+                    dD = (docc.reshape(-1,1,1) + docc.reshape(-1,1) + docc) - (dvir[a] + dvir[b] + dvir[c])
+                    dt3c = (dNc - t3c * dD) / D
+                    dt3d = (dNd - t3d * dD) / D
+                else:
+                    t3c, t3d = t3_full[0][:,:,:,a,b,c], t3_full[1][:,:,:,a,b,c]
+                    dt3c, dt3d = t3_full[2][:,:,:,a,b,c], t3_full[3][:,:,:,a,b,c]
                 dDoo -= (1/12) * (contract('ilm,jlm->ij', dt3c, (t3c + t3d))
                                   + contract('ilm,jlm->ij', t3c, (dt3c + dt3d)))
 
     return dDoo, dDvv
 
 
-def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract, t3_full=None):
     r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
     perturbation (electric field, nuclear displacement, etc.) -- the product-rule
     derivative of :func:`so_t3_density` along ``(t1+dt1, t2+dt2, F+df, ERI+deri)`` with **canonical**
@@ -1552,12 +1626,16 @@ def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
     for i in range(no):
         for j in range(no):
             for k in range(no):
-                t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
-                t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
-                denom = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
-                ddenom = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
-                dt3c = (dNc(i,j,k) - t3c*ddenom) / denom
-                dt3d = (dNd(i,j,k) - t3d*ddenom) / denom
+                if t3_full is None:
+                    t3c = t3c_ijk_so(o, v, i, j, k, t2, Wvvvo, Wovoo, F, contract)
+                    t3d = t3d_ijk_so(o, v, i, j, k, t1, t2, Woovv, F, contract)
+                    denom = occ[i] + occ[j] + occ[k] - (vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir)
+                    ddenom = docc[i] + docc[j] + docc[k] - (dvir.reshape(-1,1,1) + dvir.reshape(-1,1) + dvir)
+                    dt3c = (dNc(i,j,k) - t3c*ddenom) / denom
+                    dt3d = (dNd(i,j,k) - t3d*ddenom) / denom
+                else:   # non-canonical: amplitudes carry the full off-diagonal d_x f coupling
+                    t3c, t3d = t3_full[0][i,j,k], t3_full[1][i,j,k]
+                    dt3c, dt3d = t3_full[2][i,j,k], t3_full[3][i,j,k]
                 ddvv += (1/12) * (contract('abc,abc->a', (dt3c+dt3d), t3c) + contract('abc,abc->a', (t3c+t3d), dt3c))
                 ddoo[i] -= (1/12) * (contract('abc,abc->', dt3c, (t3c+t3d)) + contract('abc,abc->', t3c, (dt3c+dt3d)))
                 dDov[i] += (1/4) * (contract('ade,de->a', dt3c, t2[j,k]) + contract('ade,de->a', t3c, dt2[j,k]))
