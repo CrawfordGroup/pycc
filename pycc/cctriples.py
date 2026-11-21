@@ -1683,6 +1683,197 @@ def so_dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, con
     return dDoo, dDvv
 
 
+def so_dt3_density_pass1(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    r"""Occupied-anchored pass for the non-canonical perturbed (T) intermediates, spin-orbital.
+
+    Produces everything :func:`so_dt3_density` does, with ``Dvv`` **full** rather than diagonal,
+    without materialising the six-index amplitudes (`docs/batching_triples.md`,
+    `docs/anchored_batching_implementation_plan.md`).  ``Doo`` is returned diagonal-only here; the
+    virtual-anchored pass supplies the full block, and the diagonals of the two must agree.
+
+    The perturbed amplitude is ``dt3 = (dN + V - O)/D`` with
+
+        V_ijk = sum_d df_ad t3^dbc + sum_d df_bd t3^adc + sum_d df_cd t3^abd        (local)
+        O_ijk = sum_l df_il t3_ljk + sum_l df_jl t3_ilk + sum_l df_kl t3_ijl        (non-local)
+
+    ``V`` is local to a fixed occupied triple.  ``O`` is not, but using the antisymmetry
+    ``t3_ilk = -t3_lik`` and ``t3_ijl = t3_lij`` it collapses onto a single object anchored on the
+    *last two* occupied labels,
+
+        g_(pq)[m] = sum_l df_ml t3_lpq,     O_ijk = g_(jk)[i] - g_(ik)[j] + g_(ij)[k]
+
+    so one anchor ``(p,q)``, holding ``t3_lpq`` for all ``l``, serves three targets.  Since the
+    consumers are linear in ``dt3``, each contribution is contracted on arrival rather than
+    assembling ``dt3`` first; accumulating instead would need the ``no^3 nv^3`` storage this
+    avoids.  The amplitudes the consumers need at the three targets all come from the resident
+    family by antisymmetry:
+
+        target (m,p,q):  dt3 += base - g[m]/D,   t3 = +T[m]
+        target (p,m,q):  dt3 += + g[m]/D,        t3 = -T[m]
+        target (p,q,m):  dt3 += - g[m]/D,        t3 = +T[m]
+
+    ``D`` is a sum over the three occupied labels and so is common to all three.  Resident storage
+    is ``4 no nv^3``; the build count is ``no^3``, identical to the unanchored loop.
+    """
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    Wvovv, Wooov = ERI[v,o,v,v], ERI[o,o,o,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    dWvovv, dWooov = deri[v,o,v,v], deri[o,o,o,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    dfoo, dfvv = np.asarray(df)[o, o], np.asarray(df)[v, v]
+
+    dDvv = np.zeros((nv, nv), dtype=t2.dtype)
+    ddoo = np.zeros(no, dtype=t2.dtype)
+    dDov = np.zeros((no, nv), dtype=t2.dtype)
+    dGoovv = np.zeros_like(t2)
+    dGooov = np.zeros((no, no, no, nv), dtype=t2.dtype)
+    dGvovv = np.zeros((nv, no, nv, nv), dtype=t2.dtype)
+    dGovoo = np.zeros((no, nv, no, no), dtype=t2.dtype)
+    dGvvvo = np.zeros((nv, nv, nv, no), dtype=t2.dtype)
+    dS1 = np.zeros_like(t1)
+    dS2 = np.zeros_like(t2)
+
+    def vcoup(x):
+        """V: the virtual half of the d_x f coupling, local to a fixed occupied triple."""
+        return (contract('ad,dbc->abc', dfvv, x)
+                + contract('bd,adc->abc', dfvv, x)
+                + contract('cd,abd->abc', dfvv, x))
+
+    def deposit_dt3(i, j, k, t3c, t3d, dt3c, dt3d):
+        """The half of each consumer that carries dt3.  Linear in dt3, so it is accumulated once
+        per *deposit*: a target receives three, one from each of its anchors."""
+        dDvv[...] += (1/12) * (contract('aef,bef->ab', (dt3c+dt3d), t3c)
+                               + contract('aef,bef->ab', (t3c+t3d), dt3c))
+        ddoo[i] -= (1/12) * (contract('abc,abc->', dt3c, (t3c+t3d))
+                             + contract('abc,abc->', t3c, (dt3c+dt3d)))
+        dDov[i] += (1/4) * contract('ade,de->a', dt3c, t2[j,k])
+        dGoovv[i,j] += contract('abc,c->ab', dt3c, t1[k])
+        dGooov[i,j] -= (1/2) * contract('kbc,abc->ka', t2[k], dt3c)
+        dGvovv[:,i] += (1/2) * contract('ec,abe->cab', t2[j,k], dt3c)
+        dGovoo[:,:,i,j] -= (1/2) * contract('kbc,abc->ka', t2[k], (dt3c+dt3d))
+        dGvvvo[:,:,:,i] += (1/2) * contract('abe,ec->abc', (dt3c+dt3d), t2[j,k])
+        dS1[i] += (1/4) * contract('abc,bc->a', dt3c, Woovv[j,k])
+        dS2[i] -= (1/4) * contract('md,abd->mab', Wooov[j,k], (2*dt3c+dt3d))
+        dS2[i,j] += (1/4) * contract('ade,bde->ab', (2*dt3c+dt3d), Wvovv[:,k])
+
+    def deposit_t3(i, j, k, t3c, t3d):
+        """The half of each consumer that carries no dt3 -- the product-rule partner, built from
+        the unperturbed amplitude and the perturbed integrals.  Accumulated once per *target*.
+        Dvv and Doo have no such half; both of their terms carry dt3."""
+        dDov[i] += (1/4) * contract('ade,de->a', t3c, dt2[j,k])
+        dGoovv[i,j] += contract('abc,c->ab', t3c, dt1[k])
+        dGooov[i,j] -= (1/2) * contract('kbc,abc->ka', dt2[k], t3c)
+        dGvovv[:,i] += (1/2) * contract('ec,abe->cab', dt2[j,k], t3c)
+        dGovoo[:,:,i,j] -= (1/2) * contract('kbc,abc->ka', dt2[k], (t3c+t3d))
+        dGvvvo[:,:,:,i] += (1/2) * contract('abe,ec->abc', (t3c+t3d), dt2[j,k])
+        dS1[i] += (1/4) * contract('abc,bc->a', t3c, dWoovv[j,k])
+        dS2[i] -= (1/4) * contract('md,abd->mab', dWooov[j,k], (2*t3c+t3d))
+        dS2[i,j] += (1/4) * contract('ade,bde->ab', (2*t3c+t3d), dWvovv[:,k])
+
+    Dv = vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir
+    shape = (no, nv, nv, nv)
+    for p in range(no):
+        for q in range(no):
+            Tc = np.zeros(shape, dtype=t2.dtype); Td = np.zeros(shape, dtype=t2.dtype)
+            Bc = np.zeros(shape, dtype=t2.dtype); Bd = np.zeros(shape, dtype=t2.dtype)
+            for l in range(no):
+                tc = t3c_ijk_so(o, v, l, p, q, t2, Wvvvo, Wovoo, F, contract)
+                td = t3d_ijk_so(o, v, l, p, q, t1, t2, Woovv, F, contract)
+                dNc = (t3c_ijk_so(o, v, l, p, q, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                       + t3c_ijk_so(o, v, l, p, q, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                dNd = (t3d_ijk_so(o, v, l, p, q, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                       + t3d_ijk_so(o, v, l, p, q, t1, t2, dWoovv, df, contract, WithDenom=False))
+                D = occ[l] + occ[p] + occ[q] - Dv
+                Tc[l], Td[l] = tc, td
+                Bc[l] = (dNc + vcoup(tc)) / D
+                Bd[l] = (dNd + vcoup(td)) / D
+            gc = contract('ml,labc->mabc', dfoo, Tc)
+            gd = contract('ml,labc->mabc', dfoo, Td)
+            for m in range(no):
+                D = occ[m] + occ[p] + occ[q] - Dv       # common to all three targets
+                ec, ed = gc[m] / D, gd[m] / D
+                deposit_dt3(m, p, q,  Tc[m],  Td[m], Bc[m] - ec, Bd[m] - ed)
+                deposit_dt3(p, m, q, -Tc[m], -Td[m],  ec,  ed)
+                deposit_dt3(p, q, m,  Tc[m],  Td[m], -ec, -ed)
+                deposit_t3(m, p, q, Tc[m], Td[m])      # once per target
+
+    dS2 = dS2 - dS2.swapaxes(0,1) - dS2.swapaxes(2,3) + dS2.swapaxes(0,1).swapaxes(2,3)
+    return {'Doo': np.diag(ddoo), 'Dvv': dDvv, 'Dov': dDov,
+            'Goovv': dGoovv, 'Gooov': dGooov, 'Gvovv': dGvovv,
+            'Govoo': dGovoo, 'Gvvvo': dGvvvo, 'S1': dS1, 'S2': dS2}
+
+
+def so_dt3_doo_pass2(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    r"""Virtual-anchored pass for the full perturbed (T) ``Doo``, spin-orbital.
+
+    The mirror of :func:`so_dt3_density_pass1`.  ``Doo`` puts its free indices in an occupied slot,
+    so its two amplitudes carry different occupied triples and no ``ijk`` batch holds both; an
+    ``abc`` batch does.  Under that batching the roles of the two halves of the ``d_x f`` coupling
+    reverse: the occupied half
+
+        O_ijk = sum_l df_il t3_ljk + sum_l df_jl t3_ilk + sum_l df_kl t3_ijl
+
+    is local, since the batch holds every occupied triple, while the virtual half is not.  Using
+    the antisymmetry of the virtual triple it collapses onto an object anchored on the last two
+    virtual labels,
+
+        nu_(pq)[e] = sum_d df_ed t3^dpq,     V^abc = nu_(bc)[a] - nu_(ac)[b] + nu_(ab)[c]
+
+    so anchor ``(p,q)`` feeds targets ``(e,p,q)``, ``(p,e,q)`` and ``(p,q,e)``.  Note ``V`` enters
+    ``dt3 = (dN - O + V)/D`` with a *plus*, where ``O`` entered pass 1 with a minus, so the deposit
+    signs are the opposite of pass 1's.
+
+    Unlike pass 1 this consumer needs no separate once-per-target half: both terms of ``Doo``
+    carry ``dt3``.  Resident storage is ``4 nv no^3``; the build count is ``nv^3``, identical to
+    the unanchored ``abc`` loop.
+    """
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    dfoo, dfvv = np.asarray(df)[o, o], np.asarray(df)[v, v]
+
+    dDoo = np.zeros((no, no), dtype=t2.dtype)
+
+    def ocoup(x):
+        """O: the occupied half of the coupling, local to a fixed virtual triple."""
+        return (contract('il,ljk->ijk', dfoo, x)
+                + contract('jl,ilk->ijk', dfoo, x)
+                + contract('kl,ijl->ijk', dfoo, x))
+
+    def deposit(t3c, t3d, dt3c, dt3d):
+        """Both terms carry dt3, so this is purely linear and is applied once per deposit."""
+        dDoo[...] -= (1/12) * (contract('ilm,jlm->ij', dt3c, (t3c+t3d))
+                               + contract('ilm,jlm->ij', t3c, (dt3c+dt3d)))
+
+    Do = occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ
+    shape = (nv, no, no, no)
+    for p in range(nv):
+        for q in range(nv):
+            Tc = np.zeros(shape, dtype=t2.dtype); Td = np.zeros(shape, dtype=t2.dtype)
+            Bc = np.zeros(shape, dtype=t2.dtype); Bd = np.zeros(shape, dtype=t2.dtype)
+            for d in range(nv):
+                tc = t3c_abc_so(o, v, d, p, q, t2, Wvvvo, Wovoo, F, contract)
+                td = t3d_abc_so(o, v, d, p, q, t1, t2, Woovv, F, contract)
+                dNc = (t3c_abc_so(o, v, d, p, q, dt2, Wvvvo, Wovoo, F, contract, WithDenom=False)
+                       + t3c_abc_so(o, v, d, p, q, t2, dWvvvo, dWovoo, F, contract, WithDenom=False))
+                dNd = (t3d_abc_so(o, v, d, p, q, dt1, dt2, Woovv, F, contract, WithDenom=False)
+                       + t3d_abc_so(o, v, d, p, q, t1, t2, dWoovv, df, contract, WithDenom=False))
+                D = Do - (vir[d] + vir[p] + vir[q])
+                Tc[d], Td[d] = tc, td
+                Bc[d] = (dNc - ocoup(tc)) / D
+                Bd[d] = (dNd - ocoup(td)) / D
+            nuc = contract('ed,dijk->eijk', dfvv, Tc)
+            nud = contract('ed,dijk->eijk', dfvv, Td)
+            for e in range(nv):
+                D = Do - (vir[e] + vir[p] + vir[q])     # common to all three targets
+                fc, fd = nuc[e] / D, nud[e] / D
+                deposit( Tc[e],  Td[e], Bc[e] + fc, Bd[e] + fd)
+                deposit(-Tc[e], -Td[e], -fc, -fd)
+                deposit( Tc[e],  Td[e],  fc,  fd)
+
+    return dDoo
+
+
 def so_dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract, t3_full=None):
     r"""Analytic response of the spin-orbital (T) intermediates to any real (Hermitian)
     perturbation (electric field, nuclear displacement, etc.) -- the product-rule
