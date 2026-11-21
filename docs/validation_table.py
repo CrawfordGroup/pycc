@@ -38,6 +38,13 @@ LIMITS = {
     'oracle-print':  r'Set by the precision to which the reference provides the data, not by PyCC.',
     'fd-truncation': r'Set by the finite difference, not by PyCC: the residual is the $O(h^4)$ '
                      r'truncation of the stencil.',
+    'gauge-conditioning': r'Set by the conditioning of the canonical perturbed-MO gauge, not by '
+                     r"PyCC's formulation: this system has an accidental near-degeneracy between "
+                     r'virtual orbitals of different irreducible representations '
+                     r'($\Delta\epsilon = 3.5\times10^{-5}$~$E_\mathrm{h}$), and the canonical '
+                     r'gauge divides by that gap.  The value is reproducible within one execution '
+                     r'context but shifts by roughly 10\% between them, so it is quoted to one '
+                     r'figure.  The non-canonical rows for the same case are unaffected.',
 }
 
 
@@ -74,10 +81,22 @@ _REF_FIX = {
 
 _MOL_TEX = {'H2O': r'\ce{H2O}', 'H2O+': r'\ce{H2O+}', 'HOF': r'\ce{HOF}',
             'C2H4+': r'\ce{C2H4+}', 'H2O2': r'\ce{H2O2}', 'CH4': r'\ce{CH4}',
-            'NH2': r'\ce{NH2}', 'H4_2PLUS': r'\ce{H4^2+}',
+            'NH2': r'\ce{NH2}', 'H4_2PLUS': r'\ce{H4^2+}', 'CH2': r'\ce{CH2}',
             # test_084 parameterizes its CFOUR cases with lowercase keys
             'water': r'\ce{H2O}', 'hof': r'\ce{HOF}', 'nh2': r'\ce{NH2}',
-            'h2o': r'\ce{H2O}', 'h2o2': r'\ce{H2O2}'}
+            'h2o': r'\ce{H2O}', 'h2o2': r'\ce{H2O2}', 'ch2': r'\ce{CH2}'}
+
+
+def _mol_tex(mol):
+    """TeX for a molecule label.  An unmapped label used to fall through as a bare string and
+    typeset unformatted (CH2 rather than CH_2), silently -- so say so instead."""
+    if not mol:
+        return '---'
+    if mol not in _MOL_TEX:
+        print('validation_table: WARNING no _MOL_TEX entry for %r; emitting \\ce{%s}'
+              % (mol, mol), file=sys.stderr)
+        return r'\ce{%s}' % mol
+    return _MOL_TEX[mol]
 
 
 def _tidy(value, table):
@@ -130,9 +149,10 @@ def main(path):
         ref = _tidy(ref, _REF_FIX)
         refcol = ref if ref else label
         mant, expo = ('%.1e' % r['achieved']).split('e')
+        approx = r'\sim' if r.get('approximate') else ''
         body.append((marks, prop, r'%s & %s & %s & %s & %s & %s & %s@MARK@ & $%s\times10^{%d}$ \\' % (
-            shown_prop, meth, _MOL_TEX.get(mol, mol) if mol else '---', ao or '---',
-            route, case, refcol, mant, int(expo))))
+            shown_prop, meth, _mol_tex(mol), ao or '---',
+            route, case, refcol, approx + mant, int(expo))))
 
     def letter(kind, key):
         i = (used_oracles.index(key) if kind == 'oracle'
