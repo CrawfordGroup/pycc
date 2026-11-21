@@ -1316,6 +1316,164 @@ def dt3_density_offdiag(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contra
     return dDoo, dDvv
 
 
+def dt3_density_pass1(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract):
+    r"""Occupied-anchored pass, spatial spin-adapted closed shell.  Spatial companion of
+    :func:`so_dt3_density_pass1`; see that routine for the scheme.
+
+    The spin-adapted amplitude is not antisymmetric, so the three deposits use the
+    simultaneous-permutation symmetry instead of signs: permuting the occupied triple requires the
+    same permutation of the virtual triple, giving
+
+        x[p,m,q]^{abc} = x[m,p,q]^{bac},     x[p,q,m]^{abc} = x[m,p,q]^{cab}
+
+    and correspondingly ``O_ijk = g_(jk)[i] + (g_(ik)[j])^{bac} + (g_(ij)[k])^{cab}``, all with
+    plus signs.  ``sym`` is applied to the transposed view at each target.  The denominator is
+    invariant under both permutations, so one ``D`` serves all three.
+
+    ``Doo`` is diagonal-only here; :func:`dt3_doo_pass2` supplies the full block.
+    """
+    sym = lambda A: (8*A - 4*A.swapaxes(0,1) - 4*A.swapaxes(1,2) - 4*A.swapaxes(0,2)
+                     + 2*np.moveaxis(A, 0, 2) + 2*np.moveaxis(A, 2, 0))
+    bac = lambda A: np.transpose(A, (1, 0, 2))
+    cab = lambda A: np.transpose(A, (1, 2, 0))
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    Loovv, dLoovv = L[o,o,v,v], dL[o,o,v,v]
+    Wooov, dWooov = ERI[o,o,o,v], deri[o,o,o,v]
+    Wovvv, dWovvv = ERI[o,v,v,v], deri[o,v,v,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    dfoo, dfvv = np.asarray(df)[o, o], np.asarray(df)[v, v]
+
+    dDvv = np.zeros((nv, nv), dtype=t2.dtype)
+    ddoo = np.zeros(no, dtype=t2.dtype)
+    dDov = np.zeros((no, nv), dtype=t2.dtype)
+    dGoovv = np.zeros_like(t2)
+    dGooov = np.zeros((no, no, no, nv), dtype=t2.dtype)
+    dGvvvo = np.zeros((nv, nv, nv, no), dtype=t2.dtype)
+    dS1 = np.zeros_like(t1)
+    dS2 = np.zeros_like(t2)
+
+    def vcoup(x):
+        return (contract('ad,dbc->abc', dfvv, x)
+                + contract('bd,adc->abc', dfvv, x)
+                + contract('cd,abd->abc', dfvv, x))
+
+    def deposit_dt3(i, j, k, M3, N3, dM3, dN3):
+        """The half of each consumer carrying dM3/dN3; once per deposit."""
+        XY, dXY = sym(M3) + sym(N3), sym(dM3) + sym(dN3)
+        dDvv[...] += 0.5 * (contract('acd,bcd->ab', dXY, M3) + contract('acd,bcd->ab', XY, dM3))
+        ddoo[i] -= 0.5 * (contract('abc,abc->', dM3, XY) + contract('abc,abc->', M3, dXY))
+        dDov[i] += contract('abc,bc->a', (dM3 - dM3.swapaxes(0,2)), (4*t2[j,k] - 2*t2[j,k].T))
+        dZ3 = 2*(dM3 - dM3.swapaxes(1,2)) - (dM3.swapaxes(0,1) - np.moveaxis(dM3,2,0))
+        dGoovv[i,j] += 4*contract('c,abc->ab', t1[k], dZ3)
+        dGooov[j,i] -= contract('abc,lbc->la', (2*sym(dM3)+sym(dN3)), t2[:,k])
+        dGvvvo[:,:,:,j] += contract('abc,cd->abd', (2*sym(dM3)+sym(dN3)), t2[k,i])
+        dS1[i] += contract('abc,bc->a', 2*(dM3 - dM3.swapaxes(0,1)), Loovv[j,k])
+        dS2[i] -= contract('abc,lc->lab', (2*sym(dM3)+sym(dN3)), Wooov[j,k])
+        dS2[i,j] += contract('abc,dcb->ad', (2*sym(dM3)+sym(dN3)), Wovvv[k])
+
+    def deposit_t3(i, j, k, M3, N3):
+        """The half carrying no dM3/dN3; once per target.  Dvv and Doo have no such half."""
+        Z3 = 2*(M3 - M3.swapaxes(1,2)) - (M3.swapaxes(0,1) - np.moveaxis(M3,2,0))
+        XY = 2*sym(M3) + sym(N3)
+        dDov[i] += contract('abc,bc->a', (M3 - M3.swapaxes(0,2)), (4*dt2[j,k] - 2*dt2[j,k].T))
+        dGoovv[i,j] += 4*contract('c,abc->ab', dt1[k], Z3)
+        dGooov[j,i] -= contract('abc,lbc->la', XY, dt2[:,k])
+        dGvvvo[:,:,:,j] += contract('abc,cd->abd', XY, dt2[k,i])
+        dS1[i] += contract('abc,bc->a', 2*(M3 - M3.swapaxes(0,1)), dLoovv[j,k])
+        dS2[i] -= contract('abc,lc->lab', XY, dWooov[j,k])
+        dS2[i,j] += contract('abc,dcb->ad', XY, dWovvv[k])
+
+    Dv = vir.reshape(-1,1,1) + vir.reshape(-1,1) + vir
+    shape = (no, nv, nv, nv)
+    for p in range(no):
+        for q in range(no):
+            Mc = np.zeros(shape, dtype=t2.dtype); Nc = np.zeros(shape, dtype=t2.dtype)
+            Bc = np.zeros(shape, dtype=t2.dtype); Bd = np.zeros(shape, dtype=t2.dtype)
+            for l in range(no):
+                m3 = t3c_ijk(o, v, l, p, q, t2, Wvvvo, Wovoo, F, contract, True)
+                n3 = t3d_ijk(o, v, l, p, q, t1, t2, Woovv, F, contract, True)
+                dNc = (t3c_ijk(o, v, l, p, q, dt2, Wvvvo, Wovoo, F, contract, False)
+                       + t3c_ijk(o, v, l, p, q, t2, dWvvvo, dWovoo, F, contract, False))
+                dNd = (t3d_ijk(o, v, l, p, q, dt1, dt2, Woovv, F, contract, False)
+                       + t3d_ijk(o, v, l, p, q, t1, t2, dWoovv, df, contract, False))
+                D = occ[l] + occ[p] + occ[q] - Dv
+                Mc[l], Nc[l] = m3, n3
+                Bc[l] = (dNc + vcoup(m3)) / D
+                Bd[l] = (dNd + vcoup(n3)) / D
+            gc = contract('ml,labc->mabc', dfoo, Mc)
+            gd = contract('ml,labc->mabc', dfoo, Nc)
+            for m in range(no):
+                D = occ[m] + occ[p] + occ[q] - Dv
+                ec, ed = gc[m] / D, gd[m] / D
+                deposit_dt3(m, p, q, Mc[m], Nc[m], Bc[m] - ec, Bd[m] - ed)
+                deposit_dt3(p, m, q, bac(Mc[m]), bac(Nc[m]), -bac(ec), -bac(ed))
+                deposit_dt3(p, q, m, cab(Mc[m]), cab(Nc[m]), -cab(ec), -cab(ed))
+                deposit_t3(m, p, q, Mc[m], Nc[m])
+
+    dS2 = dS2 + dS2.swapaxes(0,1).swapaxes(2,3)
+    return {'Doo': np.diag(ddoo), 'Dvv': dDvv, 'Dov': dDov, 'Goovv': dGoovv,
+            'Gooov': dGooov, 'Gvvvo': dGvvvo, 'S1': dS1, 'S2': dS2}
+
+
+def dt3_doo_pass2(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, contract):
+    r"""Virtual-anchored pass for the full perturbed (T) ``Doo``, spatial.  Spatial companion of
+    :func:`so_dt3_doo_pass2`.
+
+    The occupied half of the coupling is local here; the virtual half anchors on the last two
+    virtual labels.  By simultaneous permutation ``x^{p,e,q}_{ijk} = x^{e,p,q}_{jik}`` and
+    ``x^{p,q,e}_{ijk} = x^{e,p,q}_{kij}``, so the deposits transpose the *occupied* axes.  ``V``
+    enters ``dt3 = (dN - O + V)/D`` with a plus, so the deposit signs are opposite pass 1's.
+    """
+    sym = lambda A: (8*A - 4*A.swapaxes(0,1) - 4*A.swapaxes(1,2) - 4*A.swapaxes(0,2)
+                     + 2*np.moveaxis(A, 0, 2) + 2*np.moveaxis(A, 2, 0))
+    jik = lambda A: np.transpose(A, (1, 0, 2))
+    kij = lambda A: np.transpose(A, (1, 2, 0))
+    Wvvvo, Wovoo, Woovv = ERI[v,v,v,o], ERI[o,v,o,o], ERI[o,o,v,v]
+    dWvvvo, dWovoo, dWoovv = deri[v,v,v,o], deri[o,v,o,o], deri[o,o,v,v]
+    occ, vir = diag(F)[o], diag(F)[v]
+    dfoo, dfvv = np.asarray(df)[o, o], np.asarray(df)[v, v]
+
+    dDoo = np.zeros((no, no), dtype=t2.dtype)
+
+    def ocoup(x):
+        return (contract('il,ljk->ijk', dfoo, x)
+                + contract('jl,ilk->ijk', dfoo, x)
+                + contract('kl,ijl->ijk', dfoo, x))
+
+    def deposit(M3, N3, dM3, dN3):
+        XY, dXY = sym(M3) + sym(N3), sym(dM3) + sym(dN3)
+        dDoo[...] -= 0.5 * (contract('ikl,jkl->ij', dM3, XY) + contract('ikl,jkl->ij', M3, dXY))
+
+    Do = occ.reshape(-1,1,1) + occ.reshape(-1,1) + occ
+    shape = (nv, no, no, no)
+    for p in range(nv):
+        for q in range(nv):
+            Mc = np.zeros(shape, dtype=t2.dtype); Nc = np.zeros(shape, dtype=t2.dtype)
+            Bc = np.zeros(shape, dtype=t2.dtype); Bd = np.zeros(shape, dtype=t2.dtype)
+            for d in range(nv):
+                m3 = t3c_abc(o, v, d, p, q, t2, Wvvvo, Wovoo, F, contract, True)
+                n3 = t3d_abc(o, v, d, p, q, t1, t2, Woovv, F, contract, True)
+                dNc = (t3c_abc(o, v, d, p, q, dt2, Wvvvo, Wovoo, F, contract, False)
+                       + t3c_abc(o, v, d, p, q, t2, dWvvvo, dWovoo, F, contract, False))
+                dNd = (t3d_abc(o, v, d, p, q, dt1, dt2, Woovv, F, contract, False)
+                       + t3d_abc(o, v, d, p, q, t1, t2, dWoovv, df, contract, False))
+                D = Do - (vir[d] + vir[p] + vir[q])
+                Mc[d], Nc[d] = m3, n3
+                Bc[d] = (dNc - ocoup(m3)) / D
+                Bd[d] = (dNd - ocoup(n3)) / D
+            nuc = contract('ed,dijk->eijk', dfvv, Mc)
+            nud = contract('ed,dijk->eijk', dfvv, Nc)
+            for e in range(nv):
+                D = Do - (vir[e] + vir[p] + vir[q])
+                fc, fd = nuc[e] / D, nud[e] / D
+                deposit(Mc[e], Nc[e], Bc[e] + fc, Bd[e] + fd)
+                deposit(jik(Mc[e]), jik(Nc[e]), jik(fc), jik(fd))
+                deposit(kij(Mc[e]), kij(Nc[e]), kij(fc), kij(fd))
+
+    return dDoo
+
+
 def dt3_density(o, v, no, nv, t1, t2, dt1, dt2, F, df, ERI, deri, L, dL, contract,
                 t3_full=None):
     r"""Analytic response of the spatial (closed-shell RHF) (T) intermediates to any real
