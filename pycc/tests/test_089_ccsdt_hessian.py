@@ -359,20 +359,27 @@ def _c2h4p_ccsdt_hess():
     return pycc.hessian(pycc.CCderiv(cc))
 
 
-def _check(r, corr_ref, fc=None, ao='6-31G'):
+def _check(r, corr_ref, fc=None, ao='6-31G', record_row=True):
     """Shared assertions for a CCSD(T) Hessian run vs the CFOUR oracle: the full 9x9 correlation
     matrix, the facade decomposition (total == nuclear + reference + correlation), and the FD-free
     physics checks -- symmetry and the translational (acoustic) sum rule (E_corr is invariant under
-    uniform translation, so summing over the second atom vanishes)."""
+    uniform translation, so summing over the second atom vanishes).
+    ``record_row=False`` for the open-shell cases: their reference is PyCC's OWN frozen analytic
+    Hessian, not CFOUR (``_check`` hard-codes ``oracle='cfour'`` for every caller), so recording
+    them would put a false attribution in the supplementary validation table.  They remain
+    regression tests.  The CH2/cc-pVDZ CCSD(T) Hessian in test_108 is the CFOUR-anchored
+    open-shell (T) Hessian that supersedes them for validation purposes.
+    """
     corr = np.asarray(r.correlation)
     total = np.asarray(r.total)
     natom = corr.shape[0] // 3
     assert corr.shape == (3 * natom, 3 * natom)
     _dev = float(np.max(np.abs(corr - corr_ref)))
     _ctx = current_test_context()
-    record('Hessian', 'CCSD(T)', fc or _ctx.get('frozen_core') or 'all-electron', 'cfour', _dev,
-           molecule=_ctx.get('molecule'), note=_ctx.get('route'), ao_basis=ao,
-           limited_by='oracle-print')
+    if record_row:
+        record('Hessian', 'CCSD(T)', fc or _ctx.get('frozen_core') or 'all-electron', 'cfour', _dev,
+               molecule=_ctx.get('molecule'), note=_ctx.get('route'), ao_basis=ao,
+               limited_by='oracle-print')
 
     assert np.max(np.abs(corr - corr_ref)) < 1e-9, np.max(np.abs(corr - corr_ref))
     parts = np.asarray(r.nuclear) + np.asarray(r.reference) + np.asarray(r.correlation)
@@ -426,9 +433,9 @@ def test_so_ccsdt_hessian_h2op():
     analytic Hessian, validated once against a full energy-2nd-derivative FD (3.4e-7).  Exercises the
     SO (T) perturbed amplitudes/Lambda/intermediates and the canonical perturbed-MO dependent pairs on
     a genuine UHF reference; also checks the facade decomposition, symmetry, and the sum rule."""
-    _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE, 'all-electron', ao='STO-3G')
+    _check(_h2op_ccsdt_hess('false'), H2OP_CCSDT_AE, 'all-electron', ao='STO-3G', record_row=False)
     psi4.core.clean()
-    _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC, 'frozen core', ao='STO-3G')
+    _check(_h2op_ccsdt_hess('true'), H2OP_CCSDT_FC, 'frozen core', ao='STO-3G', record_row=False)
     psi4.core.clean()
 
 
@@ -442,7 +449,7 @@ def test_so_ccsdt_hessian_c2h4p_twist_dependent_pair_gate():
     tiny-but-nonzero, so the old numerator gate shifts this Hessian by ~1.3e-7 (fails the 1e-9 check).
     vs pycc's own FD-of-analytic-gradient-validated gap-gate reference; also checks the facade
     decomposition, symmetry, and the acoustic sum rule.  Marked slow (~5 min for the SO (T) Hessian)."""
-    _check(_c2h4p_ccsdt_hess(), C2H4P_CCSDT_HESS, 'all-electron', ao='STO-3G')
+    _check(_c2h4p_ccsdt_hess(), C2H4P_CCSDT_HESS, 'all-electron', ao='STO-3G', record_row=False)
     psi4.core.clean()
 
 
