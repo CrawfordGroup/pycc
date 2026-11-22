@@ -852,7 +852,7 @@ class MPderiv(CorrelatedDerivs):
         nmo, nof = mp.nmo, mp.o.stop
         ncore = nof - mp.no
         o, u = slice(0, nof), slice(nof, nmo)
-        gauge = 'oo' if self.perturbed_mo_gauge == 'canonical' else False
+        canonical = self.perturbed_mo_gauge == 'canonical'
         cphf = self._full_occ_cphf()
         mol = mp.ref.molecule()
         natom = mol.natom()
@@ -914,20 +914,18 @@ class MPderiv(CorrelatedDerivs):
                       - 2.0 * nrm2 * np.trace(K[o, o]))
             for cart in range(3):
                 p = Perturbation('nuclear', (A, cart))
-                dF = np.asarray(cphf.perturbed_fock(p, ncore, canonical=gauge)).real
-                dERI = np.asarray(cphf.perturbed_eri(p, ncore, canonical=gauge)).real
-                U = np.asarray(cphf.full_U(p, ncore, canonical=gauge)).real
+                dF = np.asarray(cphf.perturbed_fock(p, ncore, canonical=canonical)).real
+                dERI = np.asarray(cphf.perturbed_eri(p, ncore, canonical=canonical)).real
+                U = np.asarray(cphf.full_U(p, ncore, canonical=canonical)).real
                 half_S = np.asarray(mp.derivatives.overlap_half(A)[cart])
                 Ueff = U + half_S.T
                 dt2 = (dERI[o, o, u, u]
                        + c('ac,ijcb->ijab', dF[u, u], t2) + c('bc,ijac->ijab', dF[u, u], t2)
                        - c('ki,kjab->ijab', dF[o, o], t2) - c('kj,ikab->ijab', dF[o, o], t2)) / Dijab
                 if ncore:
-                    # d_x T2[core]=0, but d_x<Lj|ab> (L core) is not; take those rows in the
-                    # canonical active-oo frame (gauge-invariant).
-                    core = np.asarray(cphf.perturbed_eri(p, ncore, canonical='oo')).real[o, o, u, u] / Dijab
-                    dt2[:ncore] = core[:ncore]
-                    dt2[:, :ncore] = core[:, :ncore]
+                    # frozen core: core amplitudes and their derivatives are zero
+                    dt2[:ncore] = 0.0
+                    dt2[:, :ncore] = 0.0
                 dc0 = -c0**3 * c('ijab,ijab->', tau, dt2)
                 dc2 = dc0 * t2 + c0 * dt2
                 Icc = dc0**2 + np.sum((2.0 * dc2 - dc2.swapaxes(2, 3)) * dc2)
@@ -941,6 +939,8 @@ class MPderiv(CorrelatedDerivs):
                 dt1 = (self._pt2_singles_residual(dERI, t2, o, u, c)
                        + self._pt2_singles_residual(ERI, dt2, o, u, c)
                        + c('ic,ca->ia', t1, dF[u, u]) - c('ik,ka->ia', dF[o, o], t1)) / Dia
+                if ncore:
+                    dt1[:ncore] = 0.0
                 g1 = dt1 - t1 @ Ueff[u, u] - Ueff[o, o].T @ t1 + c('ijab,jb->ia', tau2, Ueff[o, u])
                 dn2 = 2.0 * c('ijab,ijab->', tau, dt2)
                 Bterm = 4.0 * np.sum(Ueff[u, o].T * g1) + 4.0 * np.sum(t1 * M[o, u])

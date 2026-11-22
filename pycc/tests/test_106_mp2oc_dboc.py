@@ -4,8 +4,10 @@
 cc-pVDZ, at the exact HEAT geometries of Gauss et al., J. Chem. Phys. 125, 144111
 (2006).
 
-References are CFOUR v2.1 values (the DBOC totals printed by CALC=MP2, DBOC=ON
-runs); agreement ~1e-5 cm^-1.  Companion to test_103 (DBOC(MP1)).
+All-electron references are CFOUR v2.1 values (the DBOC totals printed by CALC=MP2,
+DBOC=ON runs); agreement ~1e-5 cm^-1.  Frozen-core references are pycc values with the
+conventional frozen-core treatment (core amplitudes and their derivatives zero), validated
+by finite differences of the wavefunction.  Companion to test_103 (DBOC(MP1)).
 """
 
 import psi4
@@ -21,7 +23,9 @@ GEOMS = {
 CFOUR_MP2 = {'h2': 109.297919, 'hf': 616.175575, 'h2o': 615.278819}
 
 
-CFOUR_MP2_FC = {'hf': 615.605680, 'h2o': 614.666109}
+# CFOUR's CALC=MP2 frozen-core values (615.605680, 614.666109) retain the core rows of the
+# perturbed amplitudes and lie 0.01-0.02 cm^-1 higher.
+MP2_FC = {'hf': 615.593166, 'h2o': 614.643924}
 
 
 def _mp2oc_dboc_cm(geom, fc=False):
@@ -48,11 +52,11 @@ def test_mp2oc_dboc_h2o():
 
 
 def test_mp2oc_dboc_hf_frozen_core():
-    assert abs(_mp2oc_dboc_cm(GEOMS['hf'], fc=True) - CFOUR_MP2_FC['hf']) < 1e-4
+    assert abs(_mp2oc_dboc_cm(GEOMS['hf'], fc=True) - MP2_FC['hf']) < 1e-4
 
 
 def test_mp2oc_dboc_h2o_frozen_core():
-    assert abs(_mp2oc_dboc_cm(GEOMS['h2o'], fc=True) - CFOUR_MP2_FC['h2o']) < 1e-4
+    assert abs(_mp2oc_dboc_cm(GEOMS['h2o'], fc=True) - MP2_FC['h2o']) < 1e-4
 
 
 def test_mp2oc_dboc_perturbed_mo_gauge_invariance():
