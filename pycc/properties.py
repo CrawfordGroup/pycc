@@ -34,6 +34,9 @@ NM_PER_EH = 1e7 / (qcel.constants.get('hartree-inverse meter relationship') / 10
 #: Electric dipole moment atomic units (e a0) to Debye.
 DEBYE_PER_AU = qcel.constants.conversion_factor('e * bohr', 'debye')
 
+# hartree -> wavenumber, the conventional unit for a DBOC
+CM_PER_EH = qcel.constants.get('hartree-inverse meter relationship') / 100.0
+
 
 @dataclass(frozen=True)
 class PropertyComponents:
@@ -226,6 +229,62 @@ def dipole(wfn) -> PropertyComponents:
         "%s dipole moment" % _method_label(wfn),
         summary=[("total (Debye)", debye),
                  ("|mu|", "%.6f a.u.   %.6f Debye" % (mag, mag * DEBYE_PER_AU))])
+
+
+def dboc(wfn, variant: str = None) -> PropertyComponents:
+    """Diagonal Born-Oppenheimer correction as a :class:`PropertyComponents` (scalar), in hartree,
+    with the wavenumber value in the summary.
+
+    The DBOC is the expectation value of the nuclear kinetic-energy operator over the electronic
+    wavefunction, `E = sum_{A,alpha} ||d psi / d R_{A,alpha}||^2 / 2 M_A`, with **bare nuclear**
+    masses.  It is a pure electronic quantity, so the nuclear block is zero; the driver methods
+    return the total, and ``correlation`` is that total minus the Hartree-Fock value, which is the
+    decomposition CFOUR's ``method - SCF`` oracle recipe assumes.  Frozen core is a no-op for the
+    reference, so the subtraction is valid for either.
+
+    Unlike the energy-derivative facades this is an overlap of wavefunction derivatives, the same
+    family as :func:`aat` and the velocity-gauge :func:`apt`: :meth:`~pycc.cideriv.CIderiv.dboc`
+    reuses the AAT's sectors with both perturbations nuclear, plus an AO contact term that has no
+    AAT analogue because both perturbations move the basis functions.
+
+    ``variant`` selects among the MP2 formulations, and applies only to
+    :class:`~pycc.mpderiv.MPderiv`:
+
+    * ``None`` (default) -- :meth:`~pycc.mpderiv.MPderiv.dboc`, the published formalism of Gauss,
+      Tajti, Kallay, Stanton and Szalay, J. Chem. Phys. **125**, 144111 (2006).  For CISD, CCSD and
+      Hartree-Fock this is the only route and ``variant`` must be left unset.
+    * ``'mp1'`` -- :meth:`~pycc.mpderiv.MPderiv.dboc_mp1`.
+    * ``'order-consistent'`` -- :meth:`~pycc.mpderiv.MPderiv.dboc_mp2_oc`, Eq. (31) of Tajti,
+      Szalay and Gauss, J. Chem. Phys. **127**, 014102 (2007); this is the quantity CFOUR's
+      ``CALC=MP2 DBOC=ON`` evaluates.
+    """
+    from .mpderiv import MPderiv
+    _require_driver(wfn)
+    routes = {None: 'dboc', 'mp1': 'dboc_mp1', 'order-consistent': 'dboc_mp2_oc'}
+    if variant not in routes:
+        raise ValueError("unknown DBOC variant %r: choose from %s"
+                         % (variant, ", ".join(repr(k) for k in routes if k is not None)))
+    if variant is not None and not isinstance(wfn, MPderiv):
+        raise ValueError("variant=%r applies only to MPderiv (the MP2 formulations); %s has a "
+                         "single DBOC route, so leave variant unset."
+                         % (variant, type(wfn).__name__))
+    label = {"mp1": "MP1", "order-consistent": "MP2 (order-consistent)"}.get(
+        variant, _method_label(wfn))
+
+    with timer("%s DBOC" % label):
+        if _is_hf(wfn):
+            reference = float(wfn.dboc())
+            correlation = 0.0
+        else:
+            reference = float(wfn._reference_hf().dboc())
+            correlation = float(getattr(wfn, routes[variant])()) - reference
+
+    pc = PropertyComponents(np.asarray(0.0), np.asarray(reference), np.asarray(correlation))
+    _record(wfn, 'dboc', pc)
+    return pc.report(
+        "%s diagonal Born-Oppenheimer correction" % label,
+        summary=[("total (cm^-1)", "%.6f" % (float(pc.total) * CM_PER_EH)),
+                 ("correlation (cm^-1)", "%.6f" % (correlation * CM_PER_EH))])
 
 
 def gradient(wfn) -> PropertyComponents:
