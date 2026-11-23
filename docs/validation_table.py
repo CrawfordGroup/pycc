@@ -102,6 +102,39 @@ def _mol_tex(mol):
 def _tidy(value, table):
     return table.get(value, value)
 
+
+def _alt_text(agg, body):
+    """One-sentence alt text for the table, computed from the rows themselves.
+
+    AIP asks that alt text summarise the key finding without listing individual values or
+    repeating column headings, so this states the scope, the overall level of agreement and
+    the one systematic exception, and nothing else.
+    """
+    import math
+    props = []
+    for _, prop, _ in body:
+        if prop and prop not in props:
+            props.append(prop)
+    meths = sorted({k[1] for k in agg})
+    vals = [r['achieved'] for r in agg.values()]
+    n_approx = sum(1 for r in agg.values() if r.get('approximate'))
+    lo, hi = math.floor(math.log10(min(vals))), math.floor(math.log10(max(vals)))
+    clean = [r['achieved'] for r in agg.values() if not r.get('approximate')]
+    hi_clean = math.floor(math.log10(max(clean))) if clean else hi
+    prop_list = ', '.join(props[:-1]) + ' and ' + props[-1] if len(props) > 1 else props[0]
+    meth_list = ' and '.join(meths) if len(meths) == 2 else ', '.join(meths)
+    # \par is illegal inside longtable's \caption (\LT@c@ption is not \long), so break
+    # the line with \newline instead.
+    txt = (r' \newline\textit{Alt text: table of the measured agreement between '
+           r'PyCC and each validation reference for %d cases, spanning %s for %s. Agreement is at '
+           r'the $10^{%d}$ to $10^{%d}$ level throughout'
+           % (len(agg), prop_list, meth_list, lo, hi_clean))   # keep case: APT/AAT are acronyms
+    if n_approx:
+        txt += (r', apart from %d open-shell CCSD(T) second-derivative rows reaching '
+                r'$10^{%d}$, where the canonical perturbed-MO gauge is ill-conditioned'
+                % (n_approx, hi))
+    return txt + r'.}'
+
 def main(path):
     rows = json.load(open(path))
     agg = collections.OrderedDict()
@@ -171,8 +204,12 @@ def main(path):
                r"assertion tolerance used in the test suite. ``NCP'' in the Route column marks "
                r'rows computed with non-canonical perturbed molecular orbitals; the remaining '
                r"CCSD(T) rows use the canonical perturbed-MO gauge, which is PyCC's default for "
-               r'that method. Lettered notes follow the table.}'
-               r'\label{tab:validation}\\')
+               r'that method. Lettered notes follow the table.'
+               # Alt text for accessibility, required by AIP for tables in the
+               # Supplementary Material and placed below the caption per their
+               # instructions.  Derived from the data so it cannot go stale.
+               + _alt_text(agg, body)
+               + r'}\label{tab:validation}\\')
     out.append(r'\hline\hline')
     out.append(HEADER)
     out.append(r'\hline')
