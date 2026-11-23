@@ -599,13 +599,11 @@ class CCderiv(CorrelatedDerivs):
         F0 = np.asarray(cc.H.F); ERI0 = np.asarray(cc.H.ERI); L0 = np.asarray(cc.H.L)
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
         if self.perturbed_mo_gauge == 'non-canonical':
-            # See the spin-orbital counterpart in _so_perturbed_t3_intermediates.
-            t3f = cctriples.t3_full_coupled(o, v, no, nv, t01, t02, dt1, dt2,
-                                            F0, df, ERI0, deri, self.contract)
-            d = cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
-                                      L0, dL, self.contract, t3_full=t3f)
-            d['Doo'], d['Dvv'] = cctriples.dt3_density_offdiag(
-                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract, t3_full=t3f)
+            # Two anchored passes; see the spin-orbital counterpart in
+            # _so_perturbed_t3_intermediates and docs/batching_triples.md.
+            args = (o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri)
+            d = cctriples.dt3_density_pass1(*args, L0, dL, self.contract)
+            d['Doo'] = cctriples.dt3_doo_pass2(*args, self.contract)
             return d
         return cctriples.dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, L0, dL, self.contract)
 
@@ -620,15 +618,17 @@ class CCderiv(CorrelatedDerivs):
         t01 = np.asarray(cc.t1); t02 = np.asarray(cc.t2)
         if self.perturbed_mo_gauge == 'non-canonical':
             # Non-canonical perturbed MOs keep the off-diagonal d_x f, which enters twice: the
-            # perturbed T3 acquires the full coupling (so_t3_full_coupled, materialised because
-            # neither batched loop has the needed indices), and the (T) oo/vv response blocks need
+            # perturbed T3 acquires the full coupling, and the (T) oo/vv response blocks need
             # their off-diagonal elements.  See CCderiv._ensure_t3_offdiag.
-            t3f = cctriples.so_t3_full_coupled(o, v, no, nv, t01, t02, dt1, dt2,
-                                               F0, df, ERI0, deri, self.contract)
-            d = cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
-                                         self.contract, t3_full=t3f)
-            d['Doo'], d['Dvv'] = cctriples.so_dt3_density_offdiag(
-                o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri, self.contract, t3_full=t3f)
+            #
+            # Two anchored passes (docs/batching_triples.md).  Dvv and Doo put their free indices
+            # in complementary slots, so each is batchable in the order the other is not; the
+            # occupied-anchored pass carries everything but Doo, the virtual-anchored pass carries
+            # Doo.  Resident storage is O(N^4) rather than the O(N^6) of materialising the
+            # amplitudes, which is what makes production-sized cases possible at all.
+            args = (o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri)
+            d = cctriples.so_dt3_density_pass1(*args, self.contract)
+            d['Doo'] = cctriples.so_dt3_doo_pass2(*args, self.contract)
             return d
         return cctriples.so_dt3_density(o, v, no, nv, t01, t02, dt1, dt2, F0, df, ERI0, deri,
                                         self.contract)
