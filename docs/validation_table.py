@@ -38,6 +38,13 @@ LIMITS = {
     'oracle-print':  r'Set by the precision to which the reference provides the data, not by PyCC.',
     'fd-truncation': r'Set by the finite difference, not by PyCC: the residual is the $O(h^4)$ '
                      r'truncation of the stencil.',
+    'gauge-conditioning': r'Set by the conditioning of the canonical perturbed-MO gauge, not by '
+                     r"PyCC's formulation: this system has an accidental near-degeneracy between "
+                     r'virtual orbitals of different irreducible representations '
+                     r'($\Delta\epsilon = 3.5\times10^{-5}$~$E_\mathrm{h}$), and the canonical '
+                     r'gauge divides by that gap.  The value is reproducible within one execution '
+                     r'context but shifts by roughly 10\% between them, so it is quoted to one '
+                     r'figure.  The non-canonical rows for the same case are unaffected.',
 }
 
 
@@ -74,14 +81,59 @@ _REF_FIX = {
 
 _MOL_TEX = {'H2O': r'\ce{H2O}', 'H2O+': r'\ce{H2O+}', 'HOF': r'\ce{HOF}',
             'C2H4+': r'\ce{C2H4+}', 'H2O2': r'\ce{H2O2}', 'CH4': r'\ce{CH4}',
-            'NH2': r'\ce{NH2}', 'H4_2PLUS': r'\ce{H4^2+}',
+            'NH2': r'\ce{NH2}', 'H4_2PLUS': r'\ce{H4^2+}', 'CH2': r'\ce{CH2}',
             # test_084 parameterizes its CFOUR cases with lowercase keys
             'water': r'\ce{H2O}', 'hof': r'\ce{HOF}', 'nh2': r'\ce{NH2}',
-            'h2o': r'\ce{H2O}', 'h2o2': r'\ce{H2O2}'}
+            'h2o': r'\ce{H2O}', 'h2o2': r'\ce{H2O2}', 'ch2': r'\ce{CH2}'}
+
+
+def _mol_tex(mol):
+    """TeX for a molecule label.  An unmapped label used to fall through as a bare string and
+    typeset unformatted (CH2 rather than CH_2), silently -- so say so instead."""
+    if not mol:
+        return '---'
+    if mol not in _MOL_TEX:
+        print('validation_table: WARNING no _MOL_TEX entry for %r; emitting \\ce{%s}'
+              % (mol, mol), file=sys.stderr)
+        return r'\ce{%s}' % mol
+    return _MOL_TEX[mol]
 
 
 def _tidy(value, table):
     return table.get(value, value)
+
+
+def _alt_text(agg, body):
+    """One-sentence alt text for the table, computed from the rows themselves.
+
+    AIP asks that alt text summarise the key finding without listing individual values or
+    repeating column headings, so this states the scope, the overall level of agreement and
+    the one systematic exception, and nothing else.
+    """
+    import math
+    props = []
+    for _, prop, _ in body:
+        if prop and prop not in props:
+            props.append(prop)
+    meths = sorted({k[1] for k in agg})
+    vals = [r['achieved'] for r in agg.values()]
+    n_approx = sum(1 for r in agg.values() if r.get('approximate'))
+    lo, hi = math.floor(math.log10(min(vals))), math.floor(math.log10(max(vals)))
+    clean = [r['achieved'] for r in agg.values() if not r.get('approximate')]
+    hi_clean = math.floor(math.log10(max(clean))) if clean else hi
+    prop_list = ', '.join(props[:-1]) + ' and ' + props[-1] if len(props) > 1 else props[0]
+    meth_list = ' and '.join(meths) if len(meths) == 2 else ', '.join(meths)
+    # \par is illegal inside longtable's \caption (\LT@c@ption is not \long), so break
+    # the line with \newline instead.
+    txt = (r' \newline\textit{Alt text: table of the measured agreement between '
+           r'PyCC and each validation reference for %d cases, spanning %s for %s. Agreement is at '
+           r'the $10^{%d}$ to $10^{%d}$ level throughout'
+           % (len(agg), prop_list, meth_list, lo, hi_clean))   # keep case: APT/AAT are acronyms
+    if n_approx:
+        txt += (r', apart from %d open-shell CCSD(T) second-derivative rows reaching '
+                r'$10^{%d}$, where the canonical perturbed-MO gauge is ill-conditioned'
+                % (n_approx, hi))
+    return txt + r'.}'
 
 def main(path):
     rows = json.load(open(path))
@@ -103,10 +155,12 @@ def main(path):
     # and when it overflows the page REVTeX silently DROPS the trailing \footnotetext entries
     # without a warning, so the notes are set as ordinary text after the table instead.
     LETTERS = 'abcdefghij'
-    # Force the page break at a property boundary.  longtable repeats the column header on a
-    # continuation page but cannot carry the current Property label across, so a break inside a
-    # group leaves the first rows of page 2 unlabelled.  Revisit if rows are added or removed.
-    BREAK_AFTER = ('APT (length gauge)',)
+    # longtable repeats the column header on a continuation page but cannot carry the current
+    # Property label across, so a break inside a group leaves the continuation's first rows
+    # unlabelled.  Rather than force a break after a named property (which goes stale the moment
+    # rows are added -- it once left a page holding eight rows), end every row of a group with
+    # `\\*`, which forbids a break there, so TeX must break at a group boundary.  Self-maintaining,
+    # provided no single property group is taller than a page.
     HEADER = (r'Property & Method & Molecule & Basis & Route & Case & Reference & Agreement \\')
 
     used_oracles, used_limits = [], []
@@ -130,9 +184,10 @@ def main(path):
         ref = _tidy(ref, _REF_FIX)
         refcol = ref if ref else label
         mant, expo = ('%.1e' % r['achieved']).split('e')
+        approx = r'\sim' if r.get('approximate') else ''
         body.append((marks, prop, r'%s & %s & %s & %s & %s & %s & %s@MARK@ & $%s\times10^{%d}$ \\' % (
-            shown_prop, meth, _MOL_TEX.get(mol, mol) if mol else '---', ao or '---',
-            route, case, refcol, mant, int(expo))))
+            shown_prop, meth, _mol_tex(mol), ao or '---',
+            route, case, refcol, approx + mant, int(expo))))
 
     def letter(kind, key):
         i = (used_oracles.index(key) if kind == 'oracle'
@@ -145,9 +200,16 @@ def main(path):
     out.append(r'\begin{longtable}{lllllllr}')
     out.append(r'\caption{Measured agreement between PyCC and its validation references. Each entry '
                r'is $\max|\mathrm{PyCC}-\mathrm{reference}|$ in atomic units. All-electron and '
-               r'frozen-core cases are listed separately. Agreement is \emph{measured}, not the '
-               r'assertion tolerance used in the test suite. Lettered notes follow the table.}'
-               r'\label{tab:validation}\\')
+               r'frozen-core cases are listed separately. Agreement is the measured result, not the '
+               r"assertion tolerance used in the test suite. ``NCP'' in the Route column marks "
+               r'rows computed with non-canonical perturbed molecular orbitals; the remaining '
+               r"CCSD(T) rows use the canonical perturbed-MO gauge, which is PyCC's default for "
+               r'that method. Lettered notes follow the table.'
+               # Alt text for accessibility, required by AIP for tables in the
+               # Supplementary Material and placed below the caption per their
+               # instructions.  Derived from the data so it cannot go stale.
+               + _alt_text(agg, body)
+               + r'}\label{tab:validation}\\')
     out.append(r'\hline\hline')
     out.append(HEADER)
     out.append(r'\hline')
@@ -164,19 +226,24 @@ def main(path):
     out.append(r'\endlastfoot')
     for i, (marks, prop, line) in enumerate(body):
         sup = r'\textsuperscript{%s}' % ','.join(letter(*m) for m in marks)
-        out.append(line.replace('@MARK@', sup))
-        if prop in BREAK_AFTER and (i + 1 == len(body) or body[i + 1][1] != prop):
-            out.append(r'\newpage')
+        line = line.replace('@MARK@', sup)
+        last_of_group = (i + 1 == len(body)) or body[i + 1][1] != prop
+        if not last_of_group:
+            line = line[:-2] + r'\\*'     # no page break within a property group
+        out.append(line)
+        if last_of_group and i + 1 != len(body):
+            out.append(r'\hline')         # separate the property groups
+
     out.append(r'\end{longtable}')
     out.append(r'\normalsize')
     out.append('')
-    out.append(r'\noindent\footnotesize\textbf{Notes.}')
-    out.append(r'\begin{description}[leftmargin=2.2em,style=sameline,nosep]')
-    for o in used_oracles:
-        out.append(r'\item[\textsuperscript{%s}] %s' % (letter('oracle', o), ORACLES[o][1]))
-    for l in used_limits:
-        out.append(r'\item[\textsuperscript{%s}] %s' % (letter('limit', l), LIMITS[l]))
-    out.append(r'\end{description}')
+    # The marker leads the note text directly, with no separating colon and no hanging label
+    # (a description list puts the label in its own column and REVTeX appends a colon).
+    out.append(r'\noindent\footnotesize\textbf{Notes.}\par\smallskip')
+    notes = ([(letter('oracle', o), ORACLES[o][1]) for o in used_oracles]
+             + [(letter('limit', l), LIMITS[l]) for l in used_limits])
+    for mark, text in notes:
+        out.append(r'\noindent\textsuperscript{%s}%s\par\smallskip' % (mark, text))
     out.append(r'\normalsize')
 
     return '\n'.join(out)

@@ -221,7 +221,8 @@ _VALIDATION_ROWS = []
 
 
 def record(property, method, basis, oracle, achieved, *,
-           reference=None, note=None, limited_by=None, molecule=None, ao_basis=None):
+           reference=None, note=None, limited_by=None, molecule=None, ao_basis=None,
+           approximate=False):
     """Record one measured agreement for the supplementary validation table.
 
     Parameters
@@ -235,8 +236,12 @@ def record(property, method, basis, oracle, achieved, *,
     oracle   : str   short key: 'cfour', 'fd-energy', 'fd-dipole', 'internal',
                      'identity', 'psi4'
     achieved : float measured max|pycc - reference|
-    limited_by : str, optional -- 'oracle-print' or 'fd-truncation' when the
-                 number reflects the reference's precision, not PyCC's error.
+    limited_by : str, optional -- 'oracle-print', 'fd-truncation' or
+                 'gauge-conditioning' when the number reflects something other than
+                 PyCC's error.
+    approximate : bool -- the value is not stable to the digits measured (an
+                 ill-conditioned quantity: identical within one execution context,
+                 shifting by ~10% across contexts).  Rendered with a leading ~.
     """
     if not os.environ.get('PYCC_VALIDATION_LOG'):
         return
@@ -245,6 +250,7 @@ def record(property, method, basis, oracle, achieved, *,
         'ao_basis': ao_basis,
         'molecule': molecule, 'oracle': oracle, 'achieved': float(achieved),
         'reference': reference, 'note': note, 'limited_by': limited_by,
+        'approximate': bool(approximate),
     })
 
 

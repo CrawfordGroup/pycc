@@ -156,6 +156,13 @@ CFOUR_HESS_T_CH2_PVDZ = np.array(
 # CFOUR POLAR - POLARSCF, yy component only (docs/openshell_ccsdt_second_derivative_defect.md).
 CFOUR_ALPHA_YY_T_CH2_PVDZ = 0.04267621340
 
+# Full CFOUR CCSD(T) correlation polarizability for CH2/cc-pVDZ (POLAR - POLARSCF); its
+# [1,1] element is CFOUR_ALPHA_YY_T_CH2_PVDZ above.
+CFOUR_ALPHA_T_CH2_PVDZ = np.array(
+    [[-9.4458972000e-03,  0.0000000000e+00,  0.0000000000e+00],
+     [ 0.0000000000e+00,  4.2676213400e-02,  0.0000000000e+00],
+     [ 0.0000000000e+00,  0.0000000000e+00,  4.3295179300e-02]])
+
 
 # --------------------------------------------------------------------------------------------
 # Builders
@@ -328,7 +335,7 @@ def _check_ch2(prop, basis, ref, tol, label):
     got = np.asarray(getattr(d, prop)().correlation)
     dev = float(np.max(np.abs(got - np.asarray(ref).reshape(got.shape))))
     record(label, 'CCSD(T)', 'all-electron', 'cfour', dev, molecule='CH2',
-           note='spin-orbital, non-canonical perturbed MOs', ao_basis=basis,
+           note='spin-orbital, NCP', ao_basis=basis,
            limited_by='oracle-print')
     assert dev < tol, (dev, got)
     return got
@@ -341,12 +348,12 @@ def test_so_ccsdt_gradient_noncanonical_cfour_ch2_631g():
 
 def test_so_ccsdt_polarizability_noncanonical_cfour_ch2_631g():
     """Open-shell CCSD(T) polarizability in the non-canonical gauge vs CFOUR POLAR-POLARSCF."""
-    _check_ch2('polarizability', '6-31G', CFOUR_ALPHA_T_CH2_631G, 1e-9, 'Polarizability')
+    _check_ch2('polarizability', '6-31G', CFOUR_ALPHA_T_CH2_631G, 1e-9, 'Static polarizability')
 
 
 def test_so_ccsdt_apt_noncanonical_cfour_ch2_631g():
     """Open-shell CCSD(T) length-gauge APT in the non-canonical gauge vs CFOUR DIPDER."""
-    _check_ch2('apt', '6-31G', CFOUR_APT_T_CH2_631G, 1e-9, 'APT')
+    _check_ch2('apt', '6-31G', CFOUR_APT_T_CH2_631G, 1e-9, 'APT (length gauge)')
 
 
 def test_so_ccsdt_hessian_noncanonical_cfour_ch2_631g():
@@ -369,7 +376,7 @@ def test_so_ccsdt_gradient_gauge_invariance_ch2_631g():
 @pytest.mark.slow
 @pytest.mark.parametrize('prop,ref,label', [
     ('hessian', CFOUR_HESS_T_CH2_PVDZ, 'Hessian'),
-    ('apt', CFOUR_APT_T_CH2_PVDZ, 'APT'),
+    ('apt', CFOUR_APT_T_CH2_PVDZ, 'APT (length gauge)'),
 ])
 def test_so_ccsdt_second_derivative_noncanonical_cfour_ch2_pvdz(prop, ref, label):
     """CH2/cc-pVDZ: the system that exposed the defect.
@@ -392,8 +399,8 @@ def test_so_ccsdt_polarizability_noncanonical_cfour_ch2_pvdz():
     """
     a = np.asarray(_ch2('cc-pVDZ', 'non-canonical').polarizability().correlation).reshape(3, 3)
     dev = abs(a[1, 1] - CFOUR_ALPHA_YY_T_CH2_PVDZ)
-    record('Polarizability', 'CCSD(T)', 'all-electron', 'cfour', dev, molecule='CH2',
-           note='spin-orbital, non-canonical perturbed MOs', ao_basis='cc-pVDZ',
+    record('Static polarizability', 'CCSD(T)', 'all-electron', 'cfour', dev, molecule='CH2',
+           note='spin-orbital, NCP', ao_basis='cc-pVDZ',
            limited_by='oracle-print')
     assert dev < 1e-9, a[1, 1]
     assert np.max(np.abs(a - a.T)) < 1e-14, a      # canonical: 4.4e-12
@@ -418,3 +425,61 @@ def test_ccsdt_second_derivative_noncanonical_cfour_water_pvdz_spatial(prop, ref
     """Spatial route, water/cc-pVDZ.  See the 6-31G case; slow for the larger virtual space."""
     got = np.asarray(getattr(_water('cc-pVDZ', 'non-canonical'), prop)().correlation)
     assert np.max(np.abs(got - np.asarray(ref).reshape(got.shape))) < 1e-9, got
+
+
+# --------------------------------------------------------------------------------------------
+# Canonical-gauge companions.  The canonical gauge remains the default for CCSD(T), so these are
+# what PyCC computes unless the caller asks otherwise, and the table reports both sets.
+#
+# The point of the pair is that the gauges are equivalent in exact arithmetic and the difference
+# is purely conditioning.  At 6-31G, where there is no near-degeneracy, the two agree to every
+# digit measured.  At cc-pVDZ this molecule has an ACCIDENTAL near-degeneracy between virtual
+# orbitals of different irreps (A1 0.674466, B2 0.674501; gap 3.48e-05), the canonical gauge
+# divides by that gap, and all three second derivatives degrade -- the polarizability and APT also
+# leaving perturbed solves unconverged.  See docs/openshell_ccsdt_second_derivative_defect.md.
+#
+# The cc-pVDZ assertions are deliberately loose BOUNDS, not value checks.  Those numbers are
+# reproducible within one execution context but shift by ~10% between contexts (measured:
+# polarizability 3.71e-08 and 4.17e-08; Hessian 4.68e-10 and 5.15e-10, asymmetry 3.5e-11 and
+# 7.0e-11), which is what an ill-conditioned quantity does.  They are recorded as approximate.
+# --------------------------------------------------------------------------------------------
+def _check_ch2_canonical(prop, basis, ref, tol, label, approximate):
+    d = _ch2(basis, 'canonical')
+    got = np.asarray(getattr(d, prop)().correlation)
+    dev = float(np.max(np.abs(got - np.asarray(ref).reshape(got.shape))))
+    record(label, 'CCSD(T)', 'all-electron', 'cfour', dev, molecule='CH2',
+           note='spin-orbital', ao_basis=basis,
+           limited_by='gauge-conditioning' if approximate else 'oracle-print',
+           approximate=approximate)
+    assert dev < tol, (dev, got)
+    return dev
+
+
+@pytest.mark.parametrize('prop,ref,label', [
+    ('polarizability', CFOUR_ALPHA_T_CH2_631G, 'Static polarizability'),
+    ('apt', CFOUR_APT_T_CH2_631G, 'APT (length gauge)'),
+    ('hessian', CFOUR_HESS_T_CH2_631G, 'Hessian'),
+])
+def test_so_ccsdt_second_derivative_canonical_cfour_ch2_631g(prop, ref, label):
+    """Canonical gauge, CH2/6-31G.  No near-degeneracy here, so the canonical divide is
+    well-conditioned and reproduces the non-canonical result to every digit measured
+    (polarizability 4.28e-11, APT 1.14e-10, Hessian 9.12e-11 on both routes).  This is the
+    control that makes the cc-pVDZ pair below attributable to conditioning alone."""
+    _check_ch2_canonical(prop, '6-31G', ref, 1e-9, label, approximate=False)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize('prop,ref,label,tol', [
+    ('polarizability', CFOUR_ALPHA_T_CH2_PVDZ, 'Static polarizability', 1e-7),
+    ('apt', CFOUR_APT_T_CH2_PVDZ, 'APT (length gauge)', 1e-8),
+    ('hessian', CFOUR_HESS_T_CH2_PVDZ, 'Hessian', 1e-9),
+])
+def test_so_ccsdt_second_derivative_canonical_cfour_ch2_pvdz(prop, ref, label, tol):
+    """Canonical gauge, CH2/cc-pVDZ -- the degraded case, kept so the table can report both sets.
+
+    Bounds, not value checks: ~4e-08 (polarizability), ~5e-09 (APT), ~5e-10 (Hessian), against
+    ~5e-11, ~6e-11 and ~1e-10 for the same cases in the non-canonical gauge.  The polarizability
+    and APT also leave two perturbed solves unconverged (reported, not silent, since
+    `ccderiv._unconverged`).  A failure here means the conditioning got materially worse, not that
+    a value moved."""
+    _check_ch2_canonical(prop, 'cc-pVDZ', ref, tol, label, approximate=True)
