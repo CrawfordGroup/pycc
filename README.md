@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/pycc_logo.png" alt="PyCC" width="420">
+</p>
+
 PyCC
 ==============================
 [//]: # (Badges)
