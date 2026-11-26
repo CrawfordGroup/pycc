@@ -490,7 +490,7 @@ class ccdensity(object):
         """
         contract = self.contract
         Dov = zeros_like(t1)
-        Zlmdi = zeros_like(t2[:,:,:,:no])
+        Zlmdi = zeros((no, no, nv, no), like=t2)   # not zeros_like(t2[:,:,:,:no]): wrong shape when nv < no
         for i in range(no):
             for j in range(no):
                 for k in range(no):
@@ -522,7 +522,7 @@ class ccdensity(object):
             \end{aligned}
         """
         contract = self.contract
-        Doo = zeros_like(l1[:,:no])
+        Doo = zeros((no, no), like=l1)   # not zeros_like(l1[:,:no]): wrong shape when nv < no
         for b in range(nv):
             for c in range(nv):
                 t3 = t3c_bc(o, v, b, c, t2, Wvvvo, Wovoo, F, contract)
