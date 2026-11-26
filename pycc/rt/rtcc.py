@@ -254,16 +254,16 @@ class rtcc(object):
 
         if self.ccwfn.model == 'CC3':
             # Calculating T1-transformed dipole integral
-            no = self.ccwfn.no
-            nv = self.ccwfn.nv
+            o = self.ccwfn.o
+            v = self.ccwfn.v
             ints_cc3 = zeros_like(ints)
             for i in range(3):
                 if HAS_TORCH and isinstance(t1, torch.Tensor):
                     ints_cc3 = ints_cc3.type_as(t1)
                 else:
                     ints_cc3 = ints_cc3.astype(t1.dtype)
-                ints_cc3[i][:no,:no] = self._build_Moo(no, nv, ints[i], t1)
-                ints_cc3[i][-nv:,-nv:] = self._build_Mvv(no, nv, ints[i], t1)
+                ints_cc3[i][o,o] = self._build_Moo(ints[i], t1)
+                ints_cc3[i][v,v] = self._build_Mvv(ints[i], t1)
 
             x = dot(ints[0].flatten(), opdm.flatten())
             y = dot(ints[1].flatten(), opdm.flatten())
@@ -283,7 +283,7 @@ class rtcc(object):
             return x, y, z
 
     # T1-transformed one-electron (dipole/magnetic) integrals for the CC3 dipole
-    def _build_Moo(self, no, nv, ints, t1):
+    def _build_Moo(self, ints, t1):
         r"""Occupied-occupied block of a T1-transformed one-electron property integral ``ints``,
         used in the CC3 dipole.  Repeated indices summed::
 
@@ -294,11 +294,12 @@ class rtcc(object):
             \tilde{M}_{mi} = M_{mi} + M_{ma}\, t^a_i
         """
         contract = self.contract
-        Moo = clone(ints[:no,:no])
-        Moo = Moo + contract('ma,ia->mi', ints[:no,-nv:], t1)
+        o, v = self.ccwfn.o, self.ccwfn.v
+        Moo = clone(ints[o,o])
+        Moo = Moo + contract('ma,ia->mi', ints[o,v], t1)
         return Moo
 
-    def _build_Mvv(self, no, nv, ints, t1):
+    def _build_Mvv(self, ints, t1):
         r"""Virtual-virtual block of a T1-transformed one-electron property integral ``ints``,
         used in the CC3 dipole.  Repeated indices summed::
 
@@ -309,8 +310,9 @@ class rtcc(object):
             \tilde{M}_{ae} = M_{ae} - M_{ie}\, t^a_i
         """
         contract = self.contract
-        Mvv = clone(ints[-nv:,-nv:])
-        Mvv = Mvv - contract('ie,ia->ae', ints[:no,-nv:], t1)
+        o, v = self.ccwfn.o, self.ccwfn.v
+        Mvv = clone(ints[v,v])
+        Mvv = Mvv - contract('ie,ia->ae', ints[o,v], t1)
         return Mvv
 
     def lagrangian(self, t, t1, t2, l1, l2):
