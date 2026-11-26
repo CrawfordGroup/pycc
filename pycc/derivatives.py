@@ -216,8 +216,53 @@ class DerivStore:
         name = self._name(quantity, pert, ctx)
         return self._f is not None and name in self._f
 
+    def report(self, stream=None) -> dict:
+        """Bytes currently held, grouped by ``quantity`` and by ``(quantity, ctx)``.
+
+        The store is keyed ``(quantity, perturbation, context)`` and every dataset name encodes
+        all three (:meth:`_name`), so the split is recoverable from the live file without any
+        extra bookkeeping during the run.  Returns the by-quantity mapping; writes a table to
+        ``stream`` (default stderr) when one is wanted.
+
+        Exists because the total high-water alone cannot say which tensors dominate: a VCD run
+        stores perturbed MO ERIs over 3N+6 perturbations alongside per-atom AO derivative
+        integrals, and the balance between them is what determines whether a calculation is
+        disk-bound."""
+        import sys
+        from collections import defaultdict
+        if self._f is None:
+            return {}
+        # _name() sanitises '|' to '_', so the separator is gone by the time it reaches HDF5.
+        # Match the known quantity names by prefix, longest first, or 'deri_field' would be
+        # silently folded into 'deri'.
+        known = sorted(('deri_field', 'deri', 'eri1'), key=len, reverse=True)
+        by_q, by_qc, counts = defaultdict(int), defaultdict(int), defaultdict(int)
+        def _visit(name, obj):
+            nbytes = getattr(obj, 'nbytes', None)
+            if nbytes is None:
+                return
+            quantity = next((k for k in known if name.startswith(k)), name.split('_')[0])
+            by_q[quantity] += nbytes
+            by_qc[(quantity, name)] += nbytes
+            counts[quantity] += 1
+        self._f.visititems(_visit)
+        total = sum(by_q.values())
+        out = stream if stream is not None else sys.stderr
+        print('DerivStore contents by quantity (live file, %.2f GiB total):'
+              % (total / 1024**3), file=out)
+        for q in sorted(by_q, key=by_q.get, reverse=True):
+            print('   %-14s %10.2f GiB  %5.1f%%  %4d datasets'
+                  % (q, by_q[q] / 1024**3, 100.0 * by_q[q] / total if total else 0.0,
+                     counts[q]), file=out)
+        return dict(by_q)
+
     def close(self) -> None:
         if self._f is not None:
+            if os.environ.get('PYCC_DERIV_STORE_REPORT'):
+                try:
+                    self.report()
+                except Exception as exc:                 # never let accounting kill a run
+                    print('DerivStore.report failed: %r' % (exc,))
             self._f.close()
             self._f = None
         if self._file is not None:
