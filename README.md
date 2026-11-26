@@ -86,7 +86,7 @@ build the full HTML site locally, install Sphinx (and the Read the Docs theme) a
 
 ### Authors
 
-T. Daniel Crawford, Benjamin G. Peyton, Zhe Wang, Jose Madriaga, Aparna Krishnan
+T. Daniel Crawford, Benjamin G. Peyton, Zhe Wang, Aparna Krishnan, Brendan M. Shumberger, Jose Madriaga, Joshua Atta-Kumi, Aaron De Clercq, Ritvik Prabhu
 
 ### Copyright
 
