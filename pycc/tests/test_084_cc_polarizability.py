@@ -163,14 +163,11 @@ def test_so_ccsd_polarizability_keystone(rhf_wfn):
 
 
 # ---- CCSD(T): spin-orbital, energy-second-derivative-FD anchored ----
-# The spin-orbital CCSD(T) correlation alpha (H2O/6-31G, WATER), frozen rather than re-run.  Unlike
-# CCSD above, the relaxed-dipole FD is NOT a reliable oracle for (T): the Lee-Rendell dependent-pair
-# numerator gate makes the relaxed dipole non-smooth under an out-of-plane (sigma_h-breaking) field,
-# which poisons the finite difference (the energy is untouched -- it never uses the dependent pairs).
-# So each (T) value was validated once against the ENERGY second-derivative finite field
+# The spin-orbital CCSD(T) correlation alpha (H2O/6-31G, WATER), frozen rather than re-run.  Each
+# (T) value was validated once against the ENERGY second-derivative finite field
 # (alpha_aa = -d^2 E_corr/dF_a^2, density-independent) -- diagonals to 2.4e-8 (see _energy_fd_alpha).
 # The deterministic analytic recomputation reproduces the frozen tensor to ~machine precision, so
-# 1e-9 is a tight regression guard.  Spatial CCSD(T) is not yet available.
+# 1e-9 is a tight regression guard.
 WATER_ALPHA_T_DIAG    = np.array([0.0749401988258554, 0.0992910106442475, 0.20111257930800613])   # SO, AE
 WATER_ALPHA_T_DIAG_FC = np.array([0.0752394685506570, 0.1001122215200233, 0.20165562805738180])   # SO, FC
 # frozen external anchor: alpha diagonal from the 5-point energy 2nd-derivative FD (validated once).
