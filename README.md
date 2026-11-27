@@ -53,10 +53,10 @@ include:
     (`pycc.save_checkpoint`) archives the tensors so a spectrum can be re-analyzed without
     recomputing anything
   - A uniform property interface -- `pycc.dipole`, `pycc.gradient`, `pycc.polarizability`,
-    `pycc.hessian`, `pycc.apt`, `pycc.aat` -- that takes a derivative driver (`pycc.CCderiv`,
-    `pycc.MPderiv`, `pycc.CIderiv`) or an `HFwfn`, and returns each property's
-    nuclear/reference/correlation decomposition as a `PropertyComponents` dataclass
-    (`.total`, `.nuclear`, `.reference`, `.correlation`, `.electronic`)
+    `pycc.optical_rotation`, `pycc.hessian`, `pycc.apt`, `pycc.aat`, `pycc.dboc` -- that takes a
+    derivative driver (`pycc.CCderiv`, `pycc.MPderiv`, `pycc.CIderiv`) or an `HFwfn`, and returns
+    each property's nuclear/reference/correlation decomposition as a `PropertyComponents`
+    dataclass (`.total`, `.nuclear`, `.reference`, `.correlation`, `.electronic`)
   - GPU implementations for multiple methods
   - Single- and mixed-precision arithmetic
 

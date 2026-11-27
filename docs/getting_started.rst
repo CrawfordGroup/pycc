@@ -98,6 +98,7 @@ once and reuse it across properties::
     pycc.apt(d, gauge='length')        # atomic polar tensors         (natom, 3, 3)
     pycc.apt(d, gauge='velocity')      # velocity-gauge APTs          (natom, 3, 3)
     pycc.aat(d)                        # atomic axial tensors (VCD)   (natom, 3, 3)
+    pycc.dboc(d)                       # DBOC (bare nuclear masses)   (scalar)
 
 The reference-only (SCF) property takes the :class:`~pycc.hfwfn.HFwfn` directly --
 ``pycc.hessian(hf)`` -- with a zero ``correlation`` block.
