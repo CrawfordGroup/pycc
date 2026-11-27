@@ -452,11 +452,11 @@ class CPHF(object):
         r"""The full ``nmo x nmo`` orbital-rotation matrix ``U^x_pq`` for ``pert``.
 
         ``U^x_qp`` is the **coefficient-rotation** matrix: the coefficient of orbital ``q`` in the
-        first-order change of orbital ``p`` at fixed basis functions,
+        first-order change of orbital ``p`` at fixed basis functions::
 
             d_x |phi_p> = sum_q |phi_q> U^x_qp + |d_x^AO phi_p>
 
-        so it is **not** the full overlap derivative.  Carrying the second term,
+        so it is **not** the full overlap derivative.  Carrying the second term::
 
             <phi_q|d_x phi_p> = U^x_qp + <phi_q|d_x^AO phi_p>   (the half-derivative overlap)
 

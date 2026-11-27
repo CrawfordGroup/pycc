@@ -679,28 +679,26 @@ class MPderiv(CorrelatedDerivs):
 
     @timed('MP2 DBOC')
     def dboc(self):
-        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the
-        fully normalized MP2 wave function
-        `|\Psi\rangle = N(1 + \hat T_2)|\Phi_0\rangle`,
+        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) for the fully
+        normalized MP2 wave function ``|Psi> = N(1 + T2)|Phi_0>``::
+
+            E_DBOC = sum_A,alpha 1/(2 M_A) || d_A,alpha Psi ||^2
+
+        .. math::
 
             E_\mathrm{DBOC} = \sum_{A\alpha} \frac{1}{2 M_A}
             \|\partial_{A\alpha}\Psi\|^2
 
-        with bare NUCLEAR masses (atomic mass minus `Z m_e`) - the
-        `c_1 = 0` case of `CIderiv.dboc` (Gauss, Tajti, Kallay,
-        Stanton, and Szalay, J. Chem. Phys. 125, 144111 (2006)), with the
-        amplitude responses in closed form (`_perturbed_t2`; no
-        iterative solves).  Sectors are the AAT's with both perturbations
-        nuclear: ``Icc`` (coefficient response norm, including
-        `\delta c_0 = -c_0^3\,\tilde\tau\cdot\delta t_2`),
-        ``Icphi = Iphic`` (transition density x `\tilde U`; oo/vv
-        blocks only - no singles), ``Iphiphi`` (1-RDM x
-        `\tilde U\tilde U^T` plus the 2-RDM contraction of the true
-        two-particle density of the normalized linear vector - the CISD
-        blocks with `c_1 = 0` - and the separable reference terms),
-        and the analytic AO contact term
-        `\sum D(Q - B^T B)` (the `Q` part through the kinetic sum
-        rule `\sum_X Q^{(X)} = 2T_{AA}`, `Derivatives.overlap_dd_sum`).
+        with bare NUCLEAR masses (atomic mass minus ``Z m_e``) - the ``c_1 = 0`` case of
+        ``CIderiv.dboc`` (Gauss, Tajti, Kallay, Stanton, and Szalay, J. Chem. Phys. 125, 144111
+        (2006)), with the amplitude responses in closed form (``_perturbed_t2``; no iterative
+        solves).  Sectors are the AAT's with both perturbations nuclear: ``Icc`` (coefficient
+        response norm, including ``delta c_0 = -c_0^3 tautilde . delta t2``), ``Icphi = Iphic``
+        (transition density x ``Utilde``; oo/vv blocks only - no singles), ``Iphiphi`` (1-RDM x
+        ``Utilde Utilde^T`` plus the 2-RDM contraction of the true two-particle density of the
+        normalized linear vector - the CISD blocks with ``c_1 = 0`` - and the separable
+        reference terms), and the analytic AO contact term ``sum D(Q - B^T B)`` (the ``Q`` part
+        through the kinetic sum rule ``sum_X Q^(X) = 2 T_AA``, ``Derivatives.overlap_dd_sum``).
         """
         from .cphf import Perturbation
         mp = self.mp
@@ -779,12 +777,18 @@ class MPderiv(CorrelatedDerivs):
 
     @timed('MP2 DBOC(MP1)')
     def dboc_mp1(self):
-        """Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.)
-        at the MP level: DBOC(MP1) of Tajti, Szalay, and Gauss, J. Chem. Phys. 127, 014102
-        (2007), Eq. (30): the SCF DBOC plus the first-order correlation
-        correction :math:`2\langle\partial\Psi^{(0)}|\partial\Psi^{(1)}\rangle
-        = -4\sum \tilde\tau_{ijab}\tilde U_{ia}\tilde U_{jb}` per coordinate -
-        linear in the MP2 doubles: no second-order amplitudes, no 2-rdm.
+        r"""Electronic diagonal Born-Oppenheimer correction (DBOC, a.u.) at the MP level:
+        DBOC(MP1) of Tajti, Szalay, and Gauss, J. Chem. Phys. 127, 014102 (2007), Eq. (30):
+        the SCF DBOC plus the first-order correlation correction::
+
+            2 <dPsi^(0)|dPsi^(1)> = -4 sum_ijab tautilde_ijab Utilde_ia Utilde_jb
+
+        .. math::
+
+            2\langle\partial\Psi^{(0)}|\partial\Psi^{(1)}\rangle
+            = -4\sum \tilde\tau_{ijab}\tilde U_{ia}\tilde U_{jb}
+
+        per coordinate - linear in the MP2 doubles: no second-order amplitudes, no 2-rdm.
         Matches the DBOC(MP1) totals CFOUR prints in ``CALC=SCF, DBOC=ON`` runs."""
         from .cphf import Perturbation
         mp = self.mp
